@@ -191,6 +191,10 @@ var AI_PROXY_ENDPOINT = function () {
   var _document;
   return ((_document = document.querySelector('meta[name="chantierai-ai-endpoint"]')) === null || _document === void 0 ? void 0 : _document.content) || window.CHANTIERAI_AI_ENDPOINT || "/api/ai";
 }();
+var STATE_API_ENDPOINT = function () {
+  var _document2;
+  return ((_document2 = document.querySelector('meta[name="chantierai-state-endpoint"]')) === null || _document2 === void 0 ? void 0 : _document2.content) || window.CHANTIERAI_STATE_ENDPOINT || "/api/state";
+}();
 var callAIProxy = function callAIProxy(payload) {
   return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1b() {
     var r, d;
@@ -226,6 +230,75 @@ var callAIProxy = function callAIProxy(payload) {
           return _context1b.a(2, d);
       }
     }, _callee1b);
+  }))();
+};
+var loadRemoteState = function loadRemoteState() {
+  return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1c() {
+    var response;
+    return _regenerator().w(function (_context1c) {
+      while (1) switch (_context1c.p = _context1c.n) {
+        case 0:
+          _context1c.p = 0;
+          _context1c.n = 1;
+          return fetch(STATE_API_ENDPOINT, {
+            cache: "no-store"
+          });
+        case 1:
+          response = _context1c.v;
+          if (!(response.status === 404)) {
+            _context1c.n = 2;
+            break;
+          }
+          return _context1c.a(2, null);
+        case 2:
+          if (response.ok) {
+            _context1c.n = 3;
+            break;
+          }
+          throw new Error("State API error (".concat(response.status, ")"));
+        case 3:
+          _context1c.n = 4;
+          return response.json();
+        case 4:
+          return _context1c.a(2, _context1c.v);
+        case 5:
+          _context1c.p = 5;
+          console.warn("Supabase load skipped:", _context1c.v);
+          return _context1c.a(2, null);
+      }
+    }, _callee1c, null, [[0, 5]]);
+  }))();
+};
+var saveRemoteState = function saveRemoteState(payload) {
+  return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1d() {
+    var response;
+    return _regenerator().w(function (_context1d) {
+      while (1) switch (_context1d.p = _context1d.n) {
+        case 0:
+          _context1d.p = 0;
+          _context1d.n = 1;
+          return fetch(STATE_API_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+        case 1:
+          response = _context1d.v;
+          if (response.ok) {
+            _context1d.n = 2;
+            break;
+          }
+          throw new Error("State API error (".concat(response.status, ")"));
+        case 2:
+          return _context1d.a(2, true);
+        case 3:
+          _context1d.p = 3;
+          console.warn("Supabase save skipped:", _context1d.v);
+          return _context1d.a(2, false);
+      }
+    }, _callee1d, null, [[0, 3]]);
   }))();
 };
 // ─── STORAGE ─────────────────────────────────────────────────────────────────
@@ -307,342 +380,98 @@ var _stor = {
     }))();
   }
 };
-var saveData = /*#__PURE__*/function () {
-  var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(ps) {
-    var slim, _iterator, _step, p, _iterator2, _step2, pl, _iterator3, _step3, l, _t4, _t5, _t6, _t7;
-    return _regenerator().w(function (_context4) {
-      while (1) switch (_context4.p = _context4.n) {
-        case 0:
-          _context4.p = 0;
-          slim = ps.map(function (p) {
-            return _objectSpread(_objectSpread({}, p), {}, {
-              planLibrary: (p.planLibrary || []).map(function (pl) {
-                return _objectSpread(_objectSpread({}, pl), {}, {
-                  bg: pl.bg ? "__img__" : null,
-                  data: pl.data ? "__pdf__" : null
-                });
-              }),
-              localisations: (p.localisations || []).map(function (l) {
-                return _objectSpread(_objectSpread({}, l), {}, {
-                  planBg: l.planBg ? "__img__" : null,
-                  planData: l.planData ? "__pdf__" : null
-                });
-              }),
-            });
+async function saveData(ps) {
+  try {
+    var remoteBlobs = {};
+    var slim = ps.map(function (p) {
+      return _objectSpread(_objectSpread({}, p), {}, {
+        planLibrary: (p.planLibrary || []).map(function (pl) {
+          if (pl.bg) remoteBlobs["plb_".concat(p.id, "_").concat(pl.id)] = pl.bg;
+          if (pl.data) remoteBlobs["pld_".concat(p.id, "_").concat(pl.id)] = pl.data;
+          return _objectSpread(_objectSpread({}, pl), {}, {
+            bg: pl.bg ? "__img__" : null,
+            data: pl.data ? "__pdf__" : null
           });
-          _context4.n = 1;
-          return _stor.set(SK, JSON.stringify(slim));
-        case 1:
-          _iterator = _createForOfIteratorHelper(ps);
-          _context4.p = 2;
-          _iterator.s();
-        case 3:
-          if ((_step = _iterator.n()).done) {
-            _context4.n = 20;
-            break;
-          }
-          p = _step.value;
-          // Plan library
-          _iterator2 = _createForOfIteratorHelper(p.planLibrary || []);
-          _context4.p = 4;
-          _iterator2.s();
-        case 5:
-          if ((_step2 = _iterator2.n()).done) {
-            _context4.n = 8;
-            break;
-          }
-          pl = _step2.value;
-          if (!pl.bg) {
-            _context4.n = 6;
-            break;
-          }
-          _context4.n = 6;
-          return _stor.set("plb_".concat(p.id, "_").concat(pl.id), pl.bg);
-        case 6:
-          if (!pl.data) {
-            _context4.n = 7;
-            break;
-          }
-          _context4.n = 7;
-          return _stor.set("pld_".concat(p.id, "_").concat(pl.id), pl.data);
-        case 7:
-          _context4.n = 5;
-          break;
-        case 8:
-          _context4.n = 10;
-          break;
-        case 9:
-          _context4.p = 9;
-          _t4 = _context4.v;
-          _iterator2.e(_t4);
-        case 10:
-          _context4.p = 10;
-          _iterator2.f();
-          return _context4.f(10);
-        case 11:
-          // Per-loc plans
-          _iterator3 = _createForOfIteratorHelper(p.localisations || []);
-          _context4.p = 12;
-          _iterator3.s();
-        case 13:
-          if ((_step3 = _iterator3.n()).done) {
-            _context4.n = 16;
-            break;
-          }
-          l = _step3.value;
-          if (!l.planBg) {
-            _context4.n = 14;
-            break;
-          }
-          _context4.n = 14;
-          return _stor.set("pb_".concat(p.id, "_").concat(l.id), l.planBg);
-        case 14:
-          if (!l.planData) {
-            _context4.n = 15;
-            break;
-          }
-          _context4.n = 15;
-          return _stor.set("pd_".concat(p.id, "_").concat(l.id), l.planData);
-        case 15:
-          _context4.n = 13;
-          break;
-        case 16:
-          _context4.n = 18;
-          break;
-        case 17:
-          _context4.p = 17;
-          _t5 = _context4.v;
-          _iterator3.e(_t5);
-        case 18:
-          _context4.p = 18;
-          _iterator3.f();
-          return _context4.f(18);
-        case 19:
-          _context4.n = 3;
-          break;
-        case 20:
-          _context4.n = 22;
-          break;
-        case 21:
-          _context4.p = 21;
-          _t6 = _context4.v;
-          _iterator.e(_t6);
-        case 22:
-          _context4.p = 22;
-          _iterator.f();
-          return _context4.f(22);
-        case 23:
-          _context4.n = 25;
-          break;
-        case 24:
-          _context4.p = 24;
-          _t7 = _context4.v;
-          console.warn("Erreur sauvegarde", _t7);
-        case 25:
-          return _context4.a(2);
+        }),
+        localisations: (p.localisations || []).map(function (l) {
+          if (l.planBg) remoteBlobs["pb_".concat(p.id, "_").concat(l.id)] = l.planBg;
+          if (l.planData) remoteBlobs["pd_".concat(p.id, "_").concat(l.id)] = l.planData;
+          return _objectSpread(_objectSpread({}, l), {}, {
+            planBg: l.planBg ? "__img__" : null,
+            planData: l.planData ? "__pdf__" : null
+          });
+        })
+      });
+    });
+    await _stor.set(SK, JSON.stringify(slim));
+    var blobEntries = Object.entries(remoteBlobs);
+    for (var i = 0; i < blobEntries.length; i++) {
+      var _blobEntries$i = _slicedToArray(blobEntries[i], 2),
+        key = _blobEntries$i[0],
+        value = _blobEntries$i[1];
+      await _stor.set(key, value);
+    }
+    await saveRemoteState({
+      key: SK,
+      payload: slim,
+      blobs: remoteBlobs
+    });
+  } catch (error) {
+    console.warn("Erreur sauvegarde", error);
+  }
+}
+async function loadData() {
+  try {
+    var remoteState = await loadRemoteState();
+    var remoteBlobs = remoteState && remoteState.blobs ? remoteState.blobs : {};
+    var raw = remoteState && remoteState.payload ? JSON.stringify(remoteState.payload) : null;
+    if (raw) {
+      await _stor.set(SK, raw);
+    } else {
+      raw = await _stor.get(SK);
+      if (!raw) {
+        var oldRaw = await _stor.get(SK_OLD);
+        if (oldRaw) raw = oldRaw;
       }
-    }, _callee4, null, [[12, 17, 18, 19], [4, 9, 10, 11], [2, 21, 22, 23], [0, 24]]);
-  }));
-  return function saveData(_x) {
-    return _ref2.apply(this, arguments);
-  };
-}();
-var loadData = /*#__PURE__*/function () {
-  var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
-    var raw, oldRaw, ps, _t30;
-    return _regenerator().w(function (_context8) {
-      while (1) switch (_context8.p = _context8.n) {
-        case 0:
-          _context8.p = 0;
-          _context8.n = 1;
-          return _stor.get(SK);
-        case 1:
-          raw = _context8.v;
-          if (raw) {
-            _context8.n = 3;
-            break;
-          }
-          _context8.n = 2;
-          return _stor.get(SK_OLD);
-        case 2:
-          oldRaw = _context8.v;
-          if (oldRaw) raw = oldRaw; // migrate old data
-        case 3:
-          if (raw) {
-            _context8.n = 4;
-            break;
-          }
-          return _context8.a(2, []);
-        case 4:
-          ps = JSON.parse(raw);
-          _context8.n = 5;
-          return Promise.all(ps.map(/*#__PURE__*/function () {
-            var _ref4 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(p) {
-              var _t24, _t25, _t26, _t27, _t28, _t29;
-              return _regenerator().w(function (_context7) {
-                while (1) switch (_context7.n) {
-                  case 0:
-                    _t24 = _objectSpread;
-                    _t25 = _objectSpread({}, p);
-                    _t26 = {};
-                    _context7.n = 1;
-                    return Promise.all((p.planLibrary || []).map(/*#__PURE__*/function () {
-                      var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(pl) {
-                        var _t8, _t9, _t0, _t1, _t10, _t11, _t12, _t13, _t14;
-                        return _regenerator().w(function (_context5) {
-                          while (1) switch (_context5.n) {
-                            case 0:
-                              _t8 = _objectSpread;
-                              _t9 = _objectSpread({}, pl);
-                              _t0 = {};
-                              if (!(pl.bg === "__img__")) {
-                                _context5.n = 3;
-                                break;
-                              }
-                              _context5.n = 1;
-                              return _stor.get("plb_".concat(p.id, "_").concat(pl.id));
-                            case 1:
-                              _t10 = _context5.v;
-                              if (_t10) {
-                                _context5.n = 2;
-                                break;
-                              }
-                              _t10 = null;
-                            case 2:
-                              _t1 = _t10;
-                              _context5.n = 4;
-                              break;
-                            case 3:
-                              _t1 = pl.bg;
-                            case 4:
-                              _t11 = _t1;
-                              if (!(pl.data === "__pdf__")) {
-                                _context5.n = 7;
-                                break;
-                              }
-                              _context5.n = 5;
-                              return _stor.get("pld_".concat(p.id, "_").concat(pl.id));
-                            case 5:
-                              _t13 = _context5.v;
-                              if (_t13) {
-                                _context5.n = 6;
-                                break;
-                              }
-                              _t13 = null;
-                            case 6:
-                              _t12 = _t13;
-                              _context5.n = 8;
-                              break;
-                            case 7:
-                              _t12 = pl.data;
-                            case 8:
-                              _t14 = _t12;
-                              return _context5.a(2, _t8(_t9, _t0, {
-                                bg: _t11,
-                                data: _t14
-                              }));
-                          }
-                        }, _callee5);
-                      }));
-                      return function (_x3) {
-                        return _ref5.apply(this, arguments);
-                      };
-                    }()));
-                  case 1:
-                    _t27 = _context7.v;
-                    _t28 = (p.tableauRecap || []).map(function (row) {
-                      return _objectSpread({}, row);
-                    });
-                    _context7.n = 2;
-                    return Promise.all((p.localisations || []).map(/*#__PURE__*/function () {
-                      var _ref6 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(l) {
-                        var _t15, _t16, _t17, _t18, _t19, _t20, _t21, _t22, _t23;
-                        return _regenerator().w(function (_context6) {
-                          while (1) switch (_context6.n) {
-                            case 0:
-                              _t15 = _objectSpread;
-                              _t16 = _objectSpread({}, l);
-                              _t17 = {};
-                              if (!(l.planBg === "__img__")) {
-                                _context6.n = 3;
-                                break;
-                              }
-                              _context6.n = 1;
-                              return _stor.get("pb_".concat(p.id, "_").concat(l.id));
-                            case 1:
-                              _t19 = _context6.v;
-                              if (_t19) {
-                                _context6.n = 2;
-                                break;
-                              }
-                              _t19 = null;
-                            case 2:
-                              _t18 = _t19;
-                              _context6.n = 4;
-                              break;
-                            case 3:
-                              _t18 = l.planBg;
-                            case 4:
-                              _t20 = _t18;
-                              if (!(l.planData === "__pdf__")) {
-                                _context6.n = 7;
-                                break;
-                              }
-                              _context6.n = 5;
-                              return _stor.get("pd_".concat(p.id, "_").concat(l.id));
-                            case 5:
-                              _t22 = _context6.v;
-                              if (_t22) {
-                                _context6.n = 6;
-                                break;
-                              }
-                              _t22 = null;
-                            case 6:
-                              _t21 = _t22;
-                              _context6.n = 8;
-                              break;
-                            case 7:
-                              _t21 = l.planData;
-                            case 8:
-                              _t23 = _t21;
-                              return _context6.a(2, _t15(_t16, _t17, {
-                                planBg: _t20,
-                                planData: _t23
-                              }));
-                          }
-                        }, _callee6);
-                      }));
-                      return function (_x4) {
-                        return _ref6.apply(this, arguments);
-                      };
-                    }()));
-                  case 2:
-                    _t29 = _context7.v;
-                    return _context7.a(2, _t24(_t25, _t26, {
-                      planLibrary: _t27,
-                      tableauRecap: _t28,
-                      localisations: _t29
-                    }));
-                }
-              }, _callee7);
-            }));
-            return function (_x2) {
-              return _ref4.apply(this, arguments);
-            };
-          }()));
-        case 5:
-          return _context8.a(2, _context8.v);
-        case 6:
-          _context8.p = 6;
-          _t30 = _context8.v;
-          return _context8.a(2, []);
-      }
-    }, _callee8, null, [[0, 6]]);
-  }));
-  return function loadData() {
-    return _ref3.apply(this, arguments);
-  };
-}();
+    }
+    if (!raw) return [];
+    var ps = JSON.parse(raw);
+    var getBlobValue = async function getBlobValue(key) {
+      if (remoteBlobs[key] != null) return remoteBlobs[key];
+      var localValue = await _stor.get(key);
+      return localValue || null;
+    };
+    return await Promise.all(ps.map(async function (p) {
+      var planLibrary = await Promise.all((p.planLibrary || []).map(async function (pl) {
+        var bg = pl.bg === "__img__" ? await getBlobValue("plb_".concat(p.id, "_").concat(pl.id)) : pl.bg || null;
+        var data = pl.data === "__pdf__" ? await getBlobValue("pld_".concat(p.id, "_").concat(pl.id)) : pl.data || null;
+        return _objectSpread(_objectSpread({}, pl), {}, {
+          bg: bg,
+          data: data
+        });
+      }));
+      var tableauRecap = (p.tableauRecap || []).map(function (row) {
+        return _objectSpread({}, row);
+      });
+      var localisations = await Promise.all((p.localisations || []).map(async function (l) {
+        var planBg = l.planBg === "__img__" ? await getBlobValue("pb_".concat(p.id, "_").concat(l.id)) : l.planBg || null;
+        var planData = l.planData === "__pdf__" ? await getBlobValue("pd_".concat(p.id, "_").concat(l.id)) : l.planData || null;
+        return _objectSpread(_objectSpread({}, l), {}, {
+          planBg: planBg,
+          planData: planData
+        });
+      }));
+      return _objectSpread(_objectSpread({}, p), {}, {
+        planLibrary: planLibrary,
+        tableauRecap: tableauRecap,
+        localisations: localisations
+      });
+    }));
+  } catch (error) {
+    console.warn("Erreur chargement", error);
+    return [];
+  }
+}
 
 // ─── DA ─────────────────────────────────────────────────────────────────────
 var DA = {
@@ -8943,15 +8772,23 @@ function ChantierAI() {
     _useState158 = _slicedToArray(_useState157, 2),
     showNew = _useState158[0],
     setShowNew = _useState158[1];
+  var _useState159 = useState(false),
+    _useState160 = _slicedToArray(_useState159, 2),
+    hydrated = _useState160[0],
+    setHydrated = _useState160[1];
   useEffect(function () {
     ensureLibs().catch(function () {});
     loadData().then(function (d) {
       if (d.length) setProjets(d);
+      setHydrated(true);
+    }).catch(function () {
+      setHydrated(true);
     });
   }, []);
   useEffect(function () {
+    if (!hydrated) return;
     saveData(projets);
-  }, [projets]);
+  }, [hydrated, projets]);
   var upP = function upP(id, upd) {
     setProjets(function (ps) {
       return ps.map(function (p) {
