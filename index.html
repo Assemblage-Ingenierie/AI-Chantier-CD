@@ -189,7 +189,7 @@ var ensureLibs = function ensureLibs() {
 };
 var AI_PROXY_ENDPOINT = function () {
   var _document;
-  return ((_document = document.querySelector('meta[name="chantierai-ai-endpoint"]')) === null || _document === void 0 ? void 0 : _document.content) || window.CHANTIERAI_AI_ENDPOINT || "";
+  return ((_document = document.querySelector('meta[name="chantierai-ai-endpoint"]')) === null || _document === void 0 ? void 0 : _document.content) || window.CHANTIERAI_AI_ENDPOINT || "/api/ai";
 }();
 var callAIProxy = function callAIProxy(payload) {
   return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1b() {
