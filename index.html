@@ -232,75 +232,65 @@ var callAIProxy = function callAIProxy(payload) {
     }, _callee1b);
   }))();
 };
-var loadRemoteState = function loadRemoteState() {
-  return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1c() {
-    var response;
-    return _regenerator().w(function (_context1c) {
-      while (1) switch (_context1c.p = _context1c.n) {
-        case 0:
-          _context1c.p = 0;
-          _context1c.n = 1;
-          return fetch(STATE_API_ENDPOINT, {
-            cache: "no-store"
-          });
-        case 1:
-          response = _context1c.v;
-          if (!(response.status === 404)) {
-            _context1c.n = 2;
-            break;
-          }
-          return _context1c.a(2, null);
-        case 2:
-          if (response.ok) {
-            _context1c.n = 3;
-            break;
-          }
-          throw new Error("State API error (".concat(response.status, ")"));
-        case 3:
-          _context1c.n = 4;
-          return response.json();
-        case 4:
-          return _context1c.a(2, _context1c.v);
-        case 5:
-          _context1c.p = 5;
-          console.warn("Supabase load skipped:", _context1c.v);
-          showSyncWarning("Synchronisation distante indisponible — données chargées depuis le cache local.");
-          return _context1c.a(2, null);
-      }
-    }, _callee1c, null, [[0, 5]]);
-  }))();
+var _sbConfig = null;
+var _getSupabaseConfig = async function() {
+  if (_sbConfig) return _sbConfig;
+  var r = await fetch("/api/config", { cache: "no-store" });
+  if (!r.ok) throw new Error("Config error (" + r.status + ")");
+  _sbConfig = await r.json();
+  return _sbConfig;
 };
-var saveRemoteState = function saveRemoteState(payload) {
-  return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1d() {
-    var response;
-    return _regenerator().w(function (_context1d) {
-      while (1) switch (_context1d.p = _context1d.n) {
-        case 0:
-          _context1d.p = 0;
-          _context1d.n = 1;
-          return fetch(STATE_API_ENDPOINT, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-        case 1:
-          response = _context1d.v;
-          if (response.ok) {
-            _context1d.n = 2;
-            break;
-          }
-          throw new Error("State API error (".concat(response.status, ")"));
-        case 2:
-          return _context1d.a(2, true);
-        case 3:
-          _context1d.p = 3;
-          console.warn("Supabase save skipped:", _context1d.v);
-          return _context1d.a(2, false);
-      }
-    }, _callee1d, null, [[0, 3]]);
-  }))();
+var _sbHeaders = function(key, extra) {
+  return Object.assign({ apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" }, extra || {});
+};
+var loadRemoteState = async function loadRemoteState() {
+  try {
+    var cfg = await _getSupabaseConfig();
+    var stateResp = await fetch(cfg.url + "/rest/v1/app_state_store?id=eq.default&select=payload", {
+      headers: _sbHeaders(cfg.key), cache: "no-store"
+    });
+    if (stateResp.status === 404) return null;
+    if (!stateResp.ok) throw new Error("State load error (" + stateResp.status + "): " + await stateResp.text());
+    var stateRows = await stateResp.json();
+    var blobResp = await fetch(cfg.url + "/rest/v1/app_blob_store?select=id,value", {
+      headers: _sbHeaders(cfg.key), cache: "no-store"
+    });
+    if (!blobResp.ok) throw new Error("Blob load error (" + blobResp.status + ")");
+    var blobRows = await blobResp.json();
+    var blobs = blobRows.reduce(function(acc, row) { acc[row.id] = row.value; return acc; }, {});
+    return { payload: stateRows[0] ? stateRows[0].payload : null, blobs: blobs };
+  } catch(e) {
+    console.warn("Supabase load skipped:", e);
+    showSyncWarning("Synchronisation distante indisponible \u2014 donn\u00e9es charg\u00e9es depuis le cache local.");
+    return null;
+  }
+};
+var saveRemoteState = async function saveRemoteState(payload) {
+  try {
+    var cfg = await _getSupabaseConfig();
+    var now = new Date().toISOString();
+    var stateUpsert = await fetch(cfg.url + "/rest/v1/app_state_store?on_conflict=id", {
+      method: "POST",
+      headers: _sbHeaders(cfg.key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+      body: JSON.stringify([{ id: "default", payload: payload.payload || [], updated_at: now }])
+    });
+    if (!stateUpsert.ok) throw new Error("State save error (" + stateUpsert.status + "): " + await stateUpsert.text());
+    var blobs = payload.blobs || {};
+    var blobKeys = Object.keys(blobs);
+    for (var i = 0; i < blobKeys.length; i++) {
+      var blobId = blobKeys[i];
+      var blobUpsert = await fetch(cfg.url + "/rest/v1/app_blob_store?on_conflict=id", {
+        method: "POST",
+        headers: _sbHeaders(cfg.key, { Prefer: "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify([{ id: blobId, value: blobs[blobId], updated_at: now }])
+      });
+      if (!blobUpsert.ok) console.warn("Blob save failed:", blobId, blobUpsert.status, await blobUpsert.text());
+    }
+    return true;
+  } catch(e) {
+    console.warn("Supabase save skipped:", e);
+    return false;
+  }
 };
 // ─── STORAGE ─────────────────────────────────────────────────────────────────
 // Utilise window.storage (API Claude artifacts) avec fallback localStorage,
