@@ -9102,5 +9102,76 @@ Date : ' + new Date(data.report.published_at).toLocaleString('fr-FR'));
   }
 })();
 </script>
+
+<script>
+(function () {
+  var UPLOAD_API = '/api/upload';
+
+  function patchJsPDF(jsPDFClass) {
+    var proto = jsPDFClass.prototype;
+    var originalSave = proto.save;
+
+    proto.save = function (filename, options) {
+      // Déclenche le téléchargement normal
+      originalSave.call(this, filename, options);
+
+      // Upload silencieux vers Supabase Storage
+      var name = (typeof filename === 'string' && filename) ? filename : 'rapport.pdf';
+      if (!name.endsWith('.pdf')) name += '.pdf';
+
+      try {
+        var blob = this.output('blob');
+        var fd = new FormData();
+        fd.append('file', blob, name);
+        fd.append('filename', name);
+
+        fetch(UPLOAD_API, { method: 'POST', body: fd })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              console.log('[ChantierAI] PDF sauvegardé dans Supabase Storage :', data.path);
+              showToast('PDF sauvegardé dans Supabase Storage');
+            } else {
+              console.warn('[ChantierAI] Échec upload Storage :', data.error);
+            }
+          })
+          .catch(function (err) {
+            console.warn('[ChantierAI] Erreur upload Storage :', err.message);
+          });
+      } catch (e) {
+        console.warn('[ChantierAI] Impossible de préparer l'upload :', e.message);
+      }
+    };
+  }
+
+  function showToast(msg) {
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#16a34a;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-family:system-ui,sans-serif;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,.2);opacity:1;transition:opacity .5s';
+    document.body.appendChild(t);
+    setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 500); }, 3500);
+  }
+
+  // Surveille le chargement de jsPDF (chargé dynamiquement via CDN)
+  var _checked = false;
+  function tryPatch() {
+    if (_checked) return;
+    var cls = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (cls) {
+      _checked = true;
+      patchJsPDF(cls);
+      console.log('[ChantierAI] jsPDF patché — les exports PDF seront sauvegardés dans Supabase Storage');
+      return;
+    }
+    setTimeout(tryPatch, 300);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryPatch);
+  } else {
+    tryPatch();
+  }
+})();
+</script>
 </body>
 </html>
