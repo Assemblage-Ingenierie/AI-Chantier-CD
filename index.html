@@ -26,11 +26,13 @@
     ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
     input[type="date"] { -webkit-appearance: none; appearance: none; }
     [draggable] { -webkit-user-drag: element; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
@@ -240,8 +242,17 @@ var _getSupabaseConfig = async function() {
   _sbConfig = await r.json();
   return _sbConfig;
 };
+var _supabaseClient = null;
+var _currentSession = null;
+var getSupabaseClient = async function() {
+  if (_supabaseClient) return _supabaseClient;
+  var cfg = await _getSupabaseConfig();
+  _supabaseClient = window.supabase.createClient(cfg.url, cfg.key);
+  return _supabaseClient;
+};
 var _sbHeaders = function(key, extra) {
-  return Object.assign({ apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" }, extra || {});
+  var token = (_currentSession && _currentSession.access_token) ? _currentSession.access_token : key;
+  return Object.assign({ apikey: key, Authorization: "Bearer " + token, "Content-Type": "application/json" }, extra || {});
 };
 var loadRemoteState = async function loadRemoteState() {
   try {
@@ -8764,8 +8775,273 @@ var NewProjet = function NewProjet(_ref42) {
   }, "Cr\xE9er le projet")));
 };
 
+// ─── AUTH COMPONENTS ─────────────────────────────────────────────────────────
+
+function LoginScreen(_ref_login) {
+  var onLogin = _ref_login.onLogin;
+  var _useState_ls1 = useState("login"),
+    _usls1 = _slicedToArray(_useState_ls1, 2),
+    mode = _usls1[0], setMode = _usls1[1];
+  var _useState_ls2 = useState(""),
+    _usls2 = _slicedToArray(_useState_ls2, 2),
+    email = _usls2[0], setEmail = _usls2[1];
+  var _useState_ls3 = useState(""),
+    _usls3 = _slicedToArray(_useState_ls3, 2),
+    password = _usls3[0], setPassword = _usls3[1];
+  var _useState_ls4 = useState(""),
+    _usls4 = _slicedToArray(_useState_ls4, 2),
+    msg = _usls4[0], setMsg = _usls4[1];
+  var _useState_ls5 = useState(false),
+    _usls5 = _slicedToArray(_useState_ls5, 2),
+    loading = _usls5[0], setLoading = _usls5[1];
+
+  var handleGoogle = async function() {
+    setLoading(true); setMsg("");
+    try {
+      var sb = await getSupabaseClient();
+      var _ref = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
+      if (_ref.error) setMsg(_ref.error.message);
+    } catch(e) { setMsg(e.message); setLoading(false); }
+  };
+
+  var handleMagicLink = async function() {
+    if (!email) { setMsg("Entrez votre email."); return; }
+    setLoading(true); setMsg("");
+    try {
+      var sb = await getSupabaseClient();
+      var _ref = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: window.location.origin } });
+      if (_ref.error) { setMsg(_ref.error.message); setLoading(false); }
+      else { setMsg("Lien envoyé ! Vérifiez votre boîte mail."); setLoading(false); }
+    } catch(e) { setMsg(e.message); setLoading(false); }
+  };
+
+  var handleEmailAuth = async function() {
+    if (!email || !password) { setMsg("Email et mot de passe requis."); return; }
+    setLoading(true); setMsg("");
+    try {
+      var sb = await getSupabaseClient();
+      var result;
+      if (mode === "signup") {
+        result = await sb.auth.signUp({ email: email, password: password });
+        if (result.error) { setMsg(result.error.message); setLoading(false); return; }
+        setMsg("Compte créé ! En attente d'approbation par un administrateur."); setLoading(false); return;
+      } else {
+        result = await sb.auth.signInWithPassword({ email: email, password: password });
+        if (result.error) { setMsg(result.error.message); setLoading(false); return; }
+        if (result.data && result.data.session) onLogin(result.data.session);
+      }
+    } catch(e) { setMsg(e.message); setLoading(false); }
+  };
+
+  var inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "white", fontSize: 14, boxSizing: "border-box", outline: "none" };
+  var btnStyle = function(bg, color) { return { width: "100%", padding: "11px", borderRadius: 8, border: "none", background: bg, color: color || "white", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }; };
+
+  return React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#30323E", padding: 24 } },
+    React.createElement("div", { style: { width: "100%", maxWidth: 360 } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 32, justifyContent: "center" } },
+        React.createElement("div", { style: { width: 3, height: 22, background: "#E30513", borderRadius: 2 } }),
+        React.createElement("div", null,
+          React.createElement("div", { style: { color: "#E30513", fontWeight: 900, fontSize: 13, fontStyle: "italic" } },
+            "Assembl", React.createElement("span", { style: { color: "white" } }, "!"), "age"
+          ),
+          React.createElement("div", { style: { color: "rgba(255,255,255,0.6)", fontWeight: 700, fontSize: 9, fontStyle: "italic" } }, "ingénierie")
+        ),
+        React.createElement("div", { style: { color: "white", fontWeight: 900, fontSize: 18, marginLeft: 8 } }, "ChantierAI")
+      ),
+      React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 20, background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: 4 } },
+        React.createElement("button", { onClick: function() { setMode("login"); setMsg(""); }, style: { flex: 1, padding: "8px", borderRadius: 6, border: "none", background: mode === "login" ? "#E30513" : "transparent", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, "Connexion"),
+        React.createElement("button", { onClick: function() { setMode("signup"); setMsg(""); }, style: { flex: 1, padding: "8px", borderRadius: 6, border: "none", background: mode === "signup" ? "#E30513" : "transparent", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, "Créer un compte")
+      ),
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+        React.createElement("input", { type: "email", placeholder: "Email", value: email, onChange: function(e) { return setEmail(e.target.value); }, style: inputStyle }),
+        React.createElement("input", { type: "password", placeholder: "Mot de passe", value: password, onChange: function(e) { return setPassword(e.target.value); }, onKeyDown: function(e) { if (e.key === "Enter") handleEmailAuth(); }, style: inputStyle }),
+        React.createElement("button", { onClick: handleEmailAuth, disabled: loading, style: btnStyle("#E30513") }, loading ? "..." : mode === "signup" ? "Créer le compte" : "Se connecter"),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, margin: "4px 0" } },
+          React.createElement("div", { style: { flex: 1, height: 1, background: "rgba(255,255,255,0.1)" } }),
+          React.createElement("span", { style: { color: "rgba(255,255,255,0.3)", fontSize: 12 } }, "ou"),
+          React.createElement("div", { style: { flex: 1, height: 1, background: "rgba(255,255,255,0.1)" } })
+        ),
+        React.createElement("button", { onClick: handleGoogle, disabled: loading, style: btnStyle("white", "#30323E") },
+          React.createElement("span", null, "G  "), "Continuer avec Google"
+        ),
+        mode === "login" && React.createElement("button", { onClick: handleMagicLink, disabled: loading, style: Object.assign({}, btnStyle("transparent"), { border: "1px solid rgba(255,255,255,0.2)" }) }, "Envoyer un lien magique")
+      ),
+      msg && React.createElement("div", { style: { marginTop: 16, padding: "10px 14px", borderRadius: 8, background: msg.includes("Lien") || msg.includes("créé") ? "rgba(22,163,74,0.15)" : "rgba(227,5,19,0.15)", color: msg.includes("Lien") || msg.includes("créé") ? "#16A34A" : "#FCA5A5", fontSize: 13, textAlign: "center" } }, msg)
+    )
+  );
+}
+
+function WaitingScreen(_ref_ws) {
+  var email = _ref_ws.email, onLogout = _ref_ws.onLogout;
+  return React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#30323E", padding: 24, textAlign: "center" } },
+    React.createElement("div", { style: { width: 60, height: 60, borderRadius: "50%", background: "rgba(227,5,19,0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 } },
+      React.createElement("div", { style: { width: 24, height: 24, borderRadius: "50%", border: "3px solid #E30513", borderTopColor: "transparent", animation: "spin 1s linear infinite" } })
+    ),
+    React.createElement("div", { style: { color: "white", fontWeight: 700, fontSize: 18, marginBottom: 8 } }, "Accès en attente"),
+    React.createElement("div", { style: { color: "rgba(255,255,255,0.5)", fontSize: 14, marginBottom: 4 } }, email),
+    React.createElement("div", { style: { color: "rgba(255,255,255,0.4)", fontSize: 13, maxWidth: 280, marginBottom: 28 } }, "Votre compte doit être approuvé par un administrateur avant d'accéder à l'application."),
+    React.createElement("button", { onClick: onLogout, style: { padding: "10px 20px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer" } }, "Se déconnecter")
+  );
+}
+
+function AdminPanel(_ref_ap) {
+  var onClose = _ref_ap.onClose, sbClient = _ref_ap.sbClient;
+  var _useState_ap1 = useState([]),
+    _usap1 = _slicedToArray(_useState_ap1, 2),
+    profiles = _usap1[0], setProfiles = _usap1[1];
+  var _useState_ap2 = useState(true),
+    _usap2 = _slicedToArray(_useState_ap2, 2),
+    loading = _usap2[0], setLoading = _usap2[1];
+  var _useState_ap3 = useState(""),
+    _usap3 = _slicedToArray(_useState_ap3, 2),
+    err = _usap3[0], setErr = _usap3[1];
+
+  var fetchProfiles = async function() {
+    setLoading(true); setErr("");
+    try {
+      var cfg = await _getSupabaseConfig();
+      var r = await fetch(cfg.url + "/rest/v1/profiles?select=*&order=created_at.asc", { headers: _sbHeaders(cfg.key) });
+      if (!r.ok) throw new Error("Erreur " + r.status);
+      setProfiles(await r.json());
+    } catch(e) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  useEffect(function() { fetchProfiles(); }, []);
+
+  var setApproval = async function(id, approved) {
+    try {
+      var cfg = await _getSupabaseConfig();
+      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + id, {
+        method: "PATCH",
+        headers: _sbHeaders(cfg.key, { Prefer: "return=minimal" }),
+        body: JSON.stringify({ is_approved: approved })
+      });
+      if (!r.ok) throw new Error("Erreur " + r.status);
+      fetchProfiles();
+    } catch(e) { setErr(e.message); }
+  };
+
+  var setRole = async function(id, role) {
+    try {
+      var cfg = await _getSupabaseConfig();
+      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + id, {
+        method: "PATCH",
+        headers: _sbHeaders(cfg.key, { Prefer: "return=minimal" }),
+        body: JSON.stringify({ role: role })
+      });
+      if (!r.ok) throw new Error("Erreur " + r.status);
+      fetchProfiles();
+    } catch(e) { setErr(e.message); }
+  };
+
+  var rowStyle = { display: "flex", alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + DA.border, gap: 10 };
+  var badgeStyle = function(ok) { return { fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: ok ? "rgba(22,163,74,0.12)" : "rgba(227,5,19,0.1)", color: ok ? DA.urgGrn : DA.red }; };
+
+  return React.createElement("div", { style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 9999, display: "flex", alignItems: "flex-end" } },
+    React.createElement("div", { style: { width: "100%", maxWidth: 390, margin: "0 auto", background: "white", borderRadius: "16px 16px 0 0", maxHeight: "85vh", display: "flex", flexDirection: "column" } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 16px 12px", borderBottom: "1px solid " + DA.border, flexShrink: 0 } },
+        React.createElement("div", { style: { fontWeight: 800, fontSize: 15, color: DA.black } }, "Administration"),
+        React.createElement("button", { onClick: onClose, style: { background: "none", border: "none", fontSize: 22, cursor: "pointer", color: DA.gray, lineHeight: 1 } }, "×")
+      ),
+      React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "0 16px" } },
+        loading && React.createElement("div", { style: { padding: 20, textAlign: "center", color: DA.gray, fontSize: 13 } }, "Chargement..."),
+        err && React.createElement("div", { style: { padding: "10px", color: DA.red, fontSize: 13 } }, err),
+        !loading && profiles.map(function(p) {
+          return React.createElement("div", { key: p.id, style: rowStyle },
+            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: DA.black, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, p.full_name || p.email || p.id.slice(0,8)),
+              p.full_name && React.createElement("div", { style: { fontSize: 11, color: DA.gray, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, p.email)
+            ),
+            React.createElement("span", { style: badgeStyle(p.is_approved) }, p.is_approved ? "Approuvé" : "En attente"),
+            React.createElement("span", { style: { fontSize: 11, color: DA.gray, padding: "2px 6px", borderRadius: 8, background: DA.grayXL } }, p.role || "user"),
+            React.createElement("div", { style: { display: "flex", gap: 4 } },
+              p.is_approved
+                ? React.createElement("button", { onClick: function() { setApproval(p.id, false); }, style: { fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid " + DA.border, background: "white", cursor: "pointer", color: DA.red } }, "Révoquer")
+                : React.createElement("button", { onClick: function() { setApproval(p.id, true); }, style: { fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "none", background: DA.urgGrn, color: "white", cursor: "pointer" } }, "Approuver"),
+              p.role !== "admin"
+                ? React.createElement("button", { onClick: function() { setRole(p.id, "admin"); }, style: { fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid " + DA.border, background: "white", cursor: "pointer", color: DA.gray } }, "→Admin")
+                : React.createElement("button", { onClick: function() { setRole(p.id, "user"); }, style: { fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid " + DA.border, background: "white", cursor: "pointer", color: DA.gray } }, "→User")
+            )
+          );
+        })
+      )
+    )
+  );
+}
+
+function AuthGate() {
+  var _useState_ag1 = useState("loading"),
+    _usag1 = _slicedToArray(_useState_ag1, 2),
+    authState = _usag1[0], setAuthState = _usag1[1];
+  var _useState_ag2 = useState(null),
+    _usag2 = _slicedToArray(_useState_ag2, 2),
+    profile = _usag2[0], setProfile = _usag2[1];
+  var _useState_ag3 = useState(null),
+    _usag3 = _slicedToArray(_useState_ag3, 2),
+    session = _usag3[0], setSession = _usag3[1];
+
+  var checkProfile = async function(userId, cfg) {
+    try {
+      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + userId + "&select=*", { headers: _sbHeaders(cfg.key) });
+      if (!r.ok) return null;
+      var rows = await r.json();
+      return rows[0] || null;
+    } catch(e) { return null; }
+  };
+
+  var handleSession = async function(s) {
+    if (!s) { _currentSession = null; setSession(null); setProfile(null); setAuthState("loggedout"); return; }
+    _currentSession = s;
+    setSession(s);
+    var cfg = await _getSupabaseConfig();
+    var prof = await checkProfile(s.user.id, cfg);
+    setProfile(prof);
+    if (!prof || !prof.is_approved) { setAuthState("waiting"); }
+    else { setAuthState("approved"); }
+  };
+
+  useEffect(function() {
+    var sub = null;
+    var init = async function() {
+      try {
+        var sb = await getSupabaseClient();
+        var _ref = await sb.auth.getSession();
+        await handleSession(_ref.data && _ref.data.session ? _ref.data.session : null);
+        var listener = sb.auth.onAuthStateChange(function(event, s) {
+          if (event === "SIGNED_OUT") { _currentSession = null; setSession(null); setProfile(null); setAuthState("loggedout"); return; }
+          if (s) handleSession(s);
+        });
+        sub = listener.data && listener.data.subscription ? listener.data.subscription : null;
+      } catch(e) { setAuthState("loggedout"); }
+    };
+    init();
+    return function() { if (sub) sub.unsubscribe(); };
+  }, []);
+
+  var logout = async function() {
+    try { var sb = await getSupabaseClient(); await sb.auth.signOut(); } catch(e) {}
+    _currentSession = null; setSession(null); setProfile(null); setAuthState("loggedout");
+  };
+
+  if (authState === "loading") {
+    return React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#30323E" } },
+      React.createElement("div", { style: { width: 32, height: 32, borderRadius: "50%", border: "3px solid #E30513", borderTopColor: "transparent", animation: "spin 1s linear infinite" } })
+    );
+  }
+  if (authState === "loggedout") {
+    return React.createElement(LoginScreen, { onLogin: handleSession });
+  }
+  if (authState === "waiting") {
+    return React.createElement(WaitingScreen, { email: session && session.user ? session.user.email : "", onLogout: logout });
+  }
+  return React.createElement(ChantierAI, { profile: profile, onLogout: logout });
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
-function ChantierAI() {
+function ChantierAI(_ref_app) {
+  var profile = _ref_app ? _ref_app.profile : null;
+  var onLogout = _ref_app ? _ref_app.onLogout : null;
   var _useState153 = useState([]),
     _useState154 = _slicedToArray(_useState153, 2),
     projets = _useState154[0],
@@ -8782,6 +9058,9 @@ function ChantierAI() {
     _useState160 = _slicedToArray(_useState159, 2),
     hydrated = _useState160[0],
     setHydrated = _useState160[1];
+  var _useState_adm = useState(false),
+    _usadm = _slicedToArray(_useState_adm, 2),
+    showAdmin = _usadm[0], setShowAdmin = _usadm[1];
   useEffect(function () {
     ensureLibs().catch(function () {});
     loadData().then(function (d) {
@@ -8885,8 +9164,16 @@ function ChantierAI() {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 6
+      gap: 8
     }
+  }, profile && profile.role === "admin" && /*#__PURE__*/React.createElement("button", {
+    onClick: function() { return setShowAdmin(true); },
+    style: { background: "rgba(255,255,255,0.1)", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, padding: "4px 8px", borderRadius: 6, cursor: "pointer" }
+  }, "Admin"), onLogout && /*#__PURE__*/React.createElement("button", {
+    onClick: onLogout,
+    style: { background: "none", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.5)", fontSize: 10, padding: "3px 7px", borderRadius: 5, cursor: "pointer" }
+  }, "Sortir"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 5 }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       width: 5,
@@ -8899,7 +9186,7 @@ function ChantierAI() {
       color: "rgba(255,255,255,0.3)",
       fontSize: 10
     }
-  }, "Sauvegard\xE9"))), /*#__PURE__*/React.createElement("div", {
+  }, "Sauvegard\xE9")))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: "hidden"
@@ -8959,9 +9246,11 @@ function ChantierAI() {
         }]);
       });
     }
+  }), showAdmin && /*#__PURE__*/React.createElement(AdminPanel, {
+    onClose: function() { return setShowAdmin(false); }
   }));
 }
-  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(ChantierAI));
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthGate));
   </script>
 </body>
 </html>
