@@ -1,21 +1,9 @@
-var cleanEnv = function cleanEnv(value) {
-  return (value || "").replace(/\r\n|\n|\r/g, "").trim();
-};
-
-export default function handler(request) {
-  var url = cleanEnv(process.env.SUPABASE_URL);
-  var key = cleanEnv(process.env.SUPABASE_ANON_KEY);
+export default function handler(req, res) {
+  var url = (process.env.SUPABASE_URL || "").replace(/\r\n|\n|\r/g, "").trim();
+  var key = (process.env.SUPABASE_ANON_KEY || "").replace(/\r\n|\n|\r/g, "").trim();
   if (!url || !key) {
-    return new Response(JSON.stringify({ error: "Missing Supabase config" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    return res.status(500).json({ error: "Missing Supabase config" });
   }
-  return new Response(JSON.stringify({ url: url, key: key }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "private, max-age=300"
-    }
-  });
+  res.setHeader("Cache-Control", "private, max-age=300");
+  res.status(200).json({ url: url, key: key });
 }
