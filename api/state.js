@@ -38,8 +38,10 @@ export default async function handler(request) {
         headers: supabaseHeaders()
       });
       if (!stateResponse.ok) {
+        var stateErrText = await stateResponse.text();
         return json({
-          error: "Failed to load state"
+          error: "Failed to load state",
+          detail: stateErrText
         }, stateResponse.status);
       }
       var stateRows = await stateResponse.json();
@@ -47,8 +49,10 @@ export default async function handler(request) {
         headers: supabaseHeaders()
       });
       if (!blobResponse.ok) {
+        var blobErrText = await blobResponse.text();
         return json({
-          error: "Failed to load blobs"
+          error: "Failed to load blobs",
+          detail: blobErrText
         }, blobResponse.status);
       }
       var blobRows = await blobResponse.json();
@@ -85,8 +89,10 @@ export default async function handler(request) {
         }])
       });
       if (!stateUpsert.ok) {
+        var stateUpsertErr = await stateUpsert.text();
         return json({
-          error: "Failed to save state"
+          error: "Failed to save state",
+          detail: stateUpsertErr
         }, stateUpsert.status);
       }
       var blobRows = Object.keys(blobs).map(function (id) {
@@ -105,8 +111,10 @@ export default async function handler(request) {
           body: JSON.stringify(blobRows)
         });
         if (!blobUpsert.ok) {
+          var blobUpsertErr = await blobUpsert.text();
           return json({
-            error: "Failed to save blobs"
+            error: "Failed to save blobs",
+            detail: blobUpsertErr
           }, blobUpsert.status);
         }
       }
