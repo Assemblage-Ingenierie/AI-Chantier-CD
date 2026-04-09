@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ChantierAI (static)",
+      "runtimeExecutable": "C:\\Users\\Thmas\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "3000", "--directory", "C:\\Users\\Thmas\\Desktop\\AI-Chantier-CD"],
+      "port": 3000
+    }
+  ]
+}
