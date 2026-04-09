@@ -8973,5 +8973,134 @@ function ChantierAI() {
 }
   ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(ChantierAI));
   </script>
+
+<script>
+(function () {
+  var REPORT_API = '/api/reports';
+  var STATE_API  = '/api/state';
+
+  /* ---- UI bootstrap ---- */
+  function init() {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;gap:8px;font-family:system-ui,sans-serif';
+
+    var histBtn = btn('Historique', '#f3f4f6', '#374151', '1px solid #d1d5db');
+    var pubBtn  = btn('Publier le rapport', '#2563eb', '#fff', 'none');
+
+    histBtn.onclick = showHistory;
+    pubBtn.onclick  = publishReport;
+
+    wrap.appendChild(histBtn);
+    wrap.appendChild(pubBtn);
+    document.body.appendChild(wrap);
+  }
+
+  function btn(label, bg, color, border) {
+    var b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'background:'+bg+';color:'+color+';border:'+border+';border-radius:8px;padding:10px 18px;cursor:pointer;font-size:14px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.15)';
+    return b;
+  }
+
+  /* ---- Publish ---- */
+  async function publishReport() {
+    var stateRes = await fetch(STATE_API, { cache: 'no-store' });
+    if (!stateRes.ok) { alert('Impossible de lire l'état de l'application.'); return; }
+    var state = await stateRes.json();
+    var payload = state.payload || [];
+
+    if (!payload.length) { alert('Aucun chantier trouvé.'); return; }
+
+    var chantier;
+    if (payload.length === 1) {
+      chantier = payload[0];
+    } else {
+      var names = payload.map(function (c, i) { return (i + 1) + '. ' + (c.nom || 'Chantier ' + (i + 1)); }).join('
+');
+      var choice = prompt('Choisir le chantier à publier :
+' + names + '
+
+Entrer le numéro :');
+      var idx = parseInt(choice, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= payload.length) return;
+      chantier = payload[idx];
+    }
+
+    var res = await fetch(REPORT_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chantier_id:  chantier.id,
+        chantier_nom: chantier.nom || 'Sans nom',
+        snapshot:     chantier
+      })
+    });
+    var data = await res.json();
+    if (res.ok) {
+      alert('Rapport publié.
+ID : ' + data.report.id + '
+Date : ' + new Date(data.report.published_at).toLocaleString('fr-FR'));
+    } else {
+      alert('Erreur : ' + (data.error || 'Inconnue'));
+    }
+  }
+
+  /* ---- History modal ---- */
+  async function showHistory() {
+    var res = await fetch(REPORT_API);
+    var data = await res.json();
+    if (!res.ok) { alert('Erreur : ' + data.error); return; }
+
+    var reports = data.reports || [];
+
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#fff;border-radius:12px;padding:24px;max-width:620px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)';
+
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Historique des rapports publiés';
+    h2.style.cssText = 'margin:0 0 16px;font-size:18px;color:#111;font-family:system-ui,sans-serif';
+    modal.appendChild(h2);
+
+    if (!reports.length) {
+      var empty = document.createElement('p');
+      empty.textContent = 'Aucun rapport publié pour l'instant.';
+      empty.style.color = '#6b7280';
+      modal.appendChild(empty);
+    }
+
+    reports.forEach(function (r) {
+      var row = document.createElement('div');
+      row.style.cssText = 'padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px';
+      row.innerHTML =
+        '<div style="font-weight:600;color:#111;font-size:14px">' + escHtml(r.chantier_nom) + '</div>' +
+        '<div style="font-size:12px;color:#6b7280;margin-top:4px">Publié le ' + new Date(r.published_at).toLocaleString('fr-FR') + '</div>' +
+        '<div style="font-size:11px;color:#9ca3af;margin-top:2px;font-family:monospace">' + r.id + '</div>';
+      modal.appendChild(row);
+    });
+
+    var closeBtn = btn('Fermer', '#f3f4f6', '#374151', '1px solid #d1d5db');
+    closeBtn.style.marginTop = '16px';
+    closeBtn.onclick = function () { document.body.removeChild(overlay); };
+    modal.appendChild(closeBtn);
+
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) document.body.removeChild(overlay); });
+    document.body.appendChild(overlay);
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
 </body>
 </html>
