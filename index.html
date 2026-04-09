@@ -32,9 +32,9 @@
 <body>
   <div id="root"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
   <script>
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
@@ -396,6 +396,13 @@ function showSyncWarning(msg) {
   el.appendChild(close);
   document.body.appendChild(el);
 }
+var _saveDebounceTimer = null;
+var _syncStatusCallback = null;
+var saveDataDebounced = function(ps) {
+  if (_syncStatusCallback) _syncStatusCallback("saving");
+  clearTimeout(_saveDebounceTimer);
+  _saveDebounceTimer = setTimeout(function() { saveData(ps); }, 2000);
+};
 async function saveData(ps) {
   try {
     var remoteBlobs = {};
@@ -432,9 +439,15 @@ async function saveData(ps) {
       payload: slim,
       blobs: remoteBlobs
     });
-    if (!remoteSaved) showSyncWarning();
+    if (!remoteSaved) {
+      showSyncWarning();
+      if (_syncStatusCallback) _syncStatusCallback("error");
+    } else {
+      if (_syncStatusCallback) _syncStatusCallback("ok");
+    }
   } catch (error) {
     console.warn("Erreur sauvegarde", error);
+    if (_syncStatusCallback) _syncStatusCallback("error");
   }
 }
 async function loadData() {
@@ -8775,6 +8788,23 @@ var NewProjet = function NewProjet(_ref42) {
   }, "Cr\xE9er le projet")));
 };
 
+// ─── ERROR BOUNDARY ──────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  componentDidCatch(e, info) { console.error("ChantierAI crash:", e, info); }
+  render() {
+    if (this.state.error) {
+      return React.createElement("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#30323E", padding: 32, textAlign: "center" } },
+        React.createElement("div", { style: { color: "#E30513", fontWeight: 800, fontSize: 18, marginBottom: 12 } }, "Erreur inattendue"),
+        React.createElement("pre", { style: { color: "rgba(255,255,255,0.6)", fontSize: 12, whiteSpace: "pre-wrap", maxWidth: 340, marginBottom: 24 } }, this.state.error.message),
+        React.createElement("button", { onClick: function() { window.location.reload(); }, style: { padding: "10px 24px", borderRadius: 8, border: "none", background: "#E30513", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer" } }, "Recharger l'app")
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── AUTH COMPONENTS ─────────────────────────────────────────────────────────
 
 function LoginScreen(_ref_login) {
@@ -9061,6 +9091,13 @@ function ChantierAI(_ref_app) {
   var _useState_adm = useState(false),
     _usadm = _slicedToArray(_useState_adm, 2),
     showAdmin = _usadm[0], setShowAdmin = _usadm[1];
+  var _useState_sync = useState("ok"),
+    _ussync = _slicedToArray(_useState_sync, 2),
+    syncStatus = _ussync[0], setSyncStatus = _ussync[1];
+  useEffect(function () {
+    _syncStatusCallback = setSyncStatus;
+    return function() { _syncStatusCallback = null; };
+  }, []);
   useEffect(function () {
     ensureLibs().catch(function () {});
     loadData().then(function (d) {
@@ -9072,7 +9109,7 @@ function ChantierAI(_ref_app) {
   }, []);
   useEffect(function () {
     if (!hydrated) return;
-    saveData(projets);
+    saveDataDebounced(projets);
   }, [hydrated, projets]);
   var upP = function upP(id, upd) {
     setProjets(function (ps) {
@@ -9176,17 +9213,13 @@ function ChantierAI(_ref_app) {
     style: { display: "flex", alignItems: "center", gap: 5 }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 5,
-      height: 5,
-      borderRadius: "50%",
-      background: DA.urgGrn
+      width: 5, height: 5, borderRadius: "50%",
+      background: syncStatus === "ok" ? DA.urgGrn : syncStatus === "saving" ? DA.urgAmb : DA.red,
+      transition: "background 0.3s"
     }
   }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "rgba(255,255,255,0.3)",
-      fontSize: 10
-    }
-  }, "Sauvegard\xE9")))), /*#__PURE__*/React.createElement("div", {
+    style: { color: "rgba(255,255,255,0.3)", fontSize: 10 }
+  }, syncStatus === "saving" ? "Sauvegarde\u2026" : syncStatus === "error" ? "Erreur sync" : "Sauvegard\xE9")))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: "hidden"
@@ -9250,7 +9283,9 @@ function ChantierAI(_ref_app) {
     onClose: function() { return setShowAdmin(false); }
   }));
 }
-  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthGate));
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    React.createElement(ErrorBoundary, null, React.createElement(AuthGate))
+  );
   </script>
 </body>
 </html>
