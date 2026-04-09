@@ -35,20 +35,26 @@ export default async function handler(request) {
   if (request.method === "GET") {
     try {
       var stateResponse = await fetch("".concat(SUPABASE_URL, "/rest/v1/").concat(STATE_TABLE, "?id=eq.").concat(STATE_ROW_ID, "&select=payload"), {
-        headers: supabaseHeaders()
+        headers: supabaseHeaders(),
+        signal: AbortSignal.timeout(8000)
       });
       if (!stateResponse.ok) {
+        var stateErrText = await stateResponse.text();
         return json({
-          error: "Failed to load state"
+          error: "Failed to load state",
+          detail: stateErrText
         }, stateResponse.status);
       }
       var stateRows = await stateResponse.json();
       var blobResponse = await fetch("".concat(SUPABASE_URL, "/rest/v1/").concat(BLOB_TABLE, "?select=id,value"), {
-        headers: supabaseHeaders()
+        headers: supabaseHeaders(),
+        signal: AbortSignal.timeout(8000)
       });
       if (!blobResponse.ok) {
+        var blobErrText = await blobResponse.text();
         return json({
-          error: "Failed to load blobs"
+          error: "Failed to load blobs",
+          detail: blobErrText
         }, blobResponse.status);
       }
       var blobRows = await blobResponse.json();
@@ -78,6 +84,7 @@ export default async function handler(request) {
         headers: supabaseHeaders({
           Prefer: "resolution=merge-duplicates,return=minimal"
         }),
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify([{
           id: STATE_ROW_ID,
           payload: payload,
@@ -85,8 +92,10 @@ export default async function handler(request) {
         }])
       });
       if (!stateUpsert.ok) {
+        var stateUpsertErr = await stateUpsert.text();
         return json({
-          error: "Failed to save state"
+          error: "Failed to save state",
+          detail: stateUpsertErr
         }, stateUpsert.status);
       }
       var blobRows = Object.keys(blobs).map(function (id) {
@@ -102,11 +111,14 @@ export default async function handler(request) {
           headers: supabaseHeaders({
             Prefer: "resolution=merge-duplicates,return=minimal"
           }),
+          signal: AbortSignal.timeout(8000),
           body: JSON.stringify(blobRows)
         });
         if (!blobUpsert.ok) {
+          var blobUpsertErr = await blobUpsert.text();
           return json({
-            error: "Failed to save blobs"
+            error: "Failed to save blobs",
+            detail: blobUpsertErr
           }, blobUpsert.status);
         }
       }
