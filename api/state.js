@@ -1,5 +1,8 @@
-var SUPABASE_URL = process.env.SUPABASE_URL;
-var SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+var cleanEnv = function cleanEnv(value) {
+  return (value || "").replace(/\\r\\n|\\n|\\r/g, "").trim();
+};
+var SUPABASE_URL = cleanEnv(process.env.SUPABASE_URL);
+var SUPABASE_KEY = cleanEnv(process.env.SUPABASE_ANON_KEY);
 var STATE_TABLE = "app_state_store";
 var BLOB_TABLE = "app_blob_store";
 var STATE_ROW_ID = "default";
