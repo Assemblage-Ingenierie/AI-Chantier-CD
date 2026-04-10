@@ -77,11 +77,20 @@ async function resolveBlobs(ps, remoteBlobs) {
   })));
 }
 
-// Charge uniquement depuis le cache local (instantané, sans réseau)
-export async function loadLocalData() {
-  const raw = await stor.get(SK) ?? await stor.get(SK_OLD);
-  if (!raw) return [];
-  return resolveBlobs(JSON.parse(raw), {});
+// Charge uniquement depuis le cache local (synchrone, sans réseau ni blobs)
+// Les blobs (plans) ne sont pas nécessaires sur les cartes projet — ils chargent via loadData()
+export function loadLocalData() {
+  try {
+    const raw = _hasLS ? (localStorage.getItem(SK) || localStorage.getItem(SK_OLD)) : (_mem[SK] || _mem[SK_OLD] || null);
+    if (!raw) return Promise.resolve([]);
+    return Promise.resolve(JSON.parse(raw).map(p => ({
+      ...p,
+      planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.bg === '__img__' ? null : (pl.bg ?? null), data: pl.data === '__pdf__' ? null : (pl.data ?? null) })),
+      localisations: (p.localisations || []).map(l => ({ ...l, planBg: l.planBg === '__img__' ? null : (l.planBg ?? null), planData: l.planData === '__pdf__' ? null : (l.planData ?? null) })),
+    })));
+  } catch {
+    return Promise.resolve([]);
+  }
 }
 
 export async function loadData() {
