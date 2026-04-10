@@ -1,10 +1,21 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { Item, Urgence, Suivi } from '@/lib/types'
-import { URGENCE_CONFIG, SUIVI_CONFIG } from '@/lib/types'
 
-const URGENCE_LIST: Urgence[] = ['haute', 'moyenne', 'basse']
-const SUIVI_LIST: Suivi[] = ['rien', 'a_faire', 'en_cours', 'prochaine', 'fait']
+const URGENCE: Record<Urgence, { bg:string; text:string; dot:string; border:string; label:string }> = {
+  haute: { bg:'#FFF0F0', text:'#B91C1C', dot:'#E30513', border:'#FCA5A5', label:'Urgent' },
+  moyenne: { bg:'#FFFBEB', text:'#92400E', dot:'#D97706', border:'#FCD34D', label:'À planifier' },
+  basse: { bg:'#F0FDF4', text:'#15803D', dot:'#16A34A', border:'#86EFAC', label:'Mineur' },
+}
+const SUIVI_MAP: Record<Suivi, { label:string; bg:string; text:string; dot:string; border:string }> = {
+  rien: { label:'—', bg:'#F3F4F6', text:'#6B7280', dot:'#9CA3AF', border:'#E5E7EB' },
+  a_faire: { label:'À faire', bg:'#FFF7ED', text:'#C2410C', dot:'#F97316', border:'#FED7AA' },
+  en_cours: { label:'En cours', bg:'#EFF6FF', text:'#1D4ED8', dot:'#3B82F6', border:'#BFDBFE' },
+  prochaine: { label:'Prochaine visite', bg:'#FDF4FF', text:'#7E22CE', dot:'#A855F7', border:'#E9D5FF' },
+  fait: { label:'Fait', bg:'#F0FDF4', text:'#15803D', dot:'#22C55E', border:'#BBF7D0' },
+}
+const URGENCES: Urgence[] = ['haute', 'moyenne', 'basse']
+const SUIVIS: Suivi[] = ['rien', 'a_faire', 'en_cours', 'prochaine', 'fait']
 
 interface Props {
   item: Item | null
@@ -17,14 +28,20 @@ export function ItemModal({ item, onSave, onClose }: Props) {
   const [commentaire, setCommentaire] = useState(item?.commentaire ?? '')
   const [urgence, setUrgence] = useState<Urgence>(item?.urgence ?? 'basse')
   const [suivi, setSuivi] = useState<Suivi>(item?.suivi ?? 'rien')
-  const [photo, setPhoto] = useState<string | undefined>(item?.photo)
+  const [photos, setPhotos] = useState<string[]>(item?.photos ?? (item?.photo ? [item.photo] : []))
+  const galleryRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
 
-  function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => setPhoto(ev.target?.result as string)
-    reader.readAsDataURL(file)
+  function readFiles(files: FileList) {
+    Array.from(files).forEach(file => {
+      const reader = new FileReader()
+      reader.onload = ev => setPhotos(prev => [...prev, ev.target?.result as string])
+      reader.readAsDataURL(file)
+    })
+  }
+
+  function removePhoto(idx: number) {
+    setPhotos(photos.filter((_, i) => i !== idx))
   }
 
   function handleSave() {
@@ -35,61 +52,50 @@ export function ItemModal({ item, onSave, onClose }: Props) {
       commentaire: commentaire.trim() || undefined,
       urgence,
       suivi,
-      photo,
+      photos: photos.length > 0 ? photos : undefined,
+      photo: photos[0] ?? item?.photo,
     })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: '#fff' }}
-        className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
-
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:50, display:'flex', alignItems:'flex-end' }}>
+      <div style={{ background:'#FFFFFF', width:'100%', borderRadius:'16px 16px 0 0', padding:20, maxHeight:'90vh', overflowY:'auto' }}>
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 style={{ color: '#222' }} className="font-bold text-lg">
-            {item ? 'Modifier l\'observation' : 'Nouvelle observation'}
-          </h2>
-          <button onClick={onClose} style={{ color: '#697280' }} className="text-2xl leading-none">✕</button>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <p style={{ fontWeight:800, fontSize:15, color:'#222222', margin:0 }}>
+            {item ? "Modifier l'observation" : 'Nouvelle observation'}
+          </p>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#AAAAAA', fontSize:22 }}>×</button>
         </div>
 
         {/* Titre */}
-        <div>
-          <label style={{ color: '#697280' }} className="text-xs font-semibold uppercase tracking-wide block mb-1.5">Titre *</label>
+        <div style={{ marginBottom:14 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#697280', margin:'0 0 6px', textTransform:'uppercase', letterSpacing:0.3 }}>Titre *</p>
           <input value={titre} onChange={e => setTitre(e.target.value)}
             placeholder="Ex: Fissure plafond RDC..."
-            style={{ borderColor: '#E8E8E8', color: '#222' }}
-            className="w-full px-4 py-3 rounded-xl border text-sm outline-none focus:border-red-500" />
+            style={{ width:'100%', padding:'10px 12px', border:`1.5px solid #E8E8E8`, borderRadius:10, fontSize:14, outline:'none', color:'#222222', boxSizing:'border-box' }} />
         </div>
 
         {/* Commentaire */}
-        <div>
-          <label style={{ color: '#697280' }} className="text-xs font-semibold uppercase tracking-wide block mb-1.5">Commentaire</label>
+        <div style={{ marginBottom:14 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#697280', margin:'0 0 6px', textTransform:'uppercase', letterSpacing:0.3 }}>Commentaire</p>
           <textarea value={commentaire} onChange={e => setCommentaire(e.target.value)}
-            placeholder="Description, contexte, notes..."
+            placeholder="Description, contexte, mesures..."
             rows={3}
-            style={{ borderColor: '#E8E8E8', color: '#222' }}
-            className="w-full px-4 py-3 rounded-xl border text-sm outline-none focus:border-red-500 resize-none" />
+            style={{ width:'100%', padding:'10px 12px', border:`1.5px solid #E8E8E8`, borderRadius:10, fontSize:13, outline:'none', color:'#222222', resize:'vertical', boxSizing:'border-box', fontFamily:'inherit' }} />
         </div>
 
         {/* Urgence */}
-        <div>
-          <label style={{ color: '#697280' }} className="text-xs font-semibold uppercase tracking-wide block mb-2">Urgence</label>
-          <div className="flex gap-2">
-            {URGENCE_LIST.map(u => {
-              const cfg = URGENCE_CONFIG[u]
+        <div style={{ marginBottom:14 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#697280', margin:'0 0 8px', textTransform:'uppercase', letterSpacing:0.3 }}>Urgence</p>
+          <div style={{ display:'flex', gap:8 }}>
+            {URGENCES.map(u => {
+              const cfg = URGENCE[u]
               const active = urgence === u
               return (
                 <button key={u} onClick={() => setUrgence(u)}
-                  style={{
-                    background: active ? cfg.bg : '#F9F9F9',
-                    color: active ? cfg.text : '#697280',
-                    borderColor: active ? cfg.border : '#E8E8E8',
-                    borderWidth: 2,
-                  }}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold border transition-all flex items-center justify-center gap-1.5">
-                  <span style={{ background: cfg.dot }} className="w-2 h-2 rounded-full" />
+                  style={{ flex:1, padding:'10px 4px', borderRadius:10, border:`2px solid ${active ? cfg.border : '#E8E8E8'}`, background: active ? cfg.bg : '#F9F9F9', color: active ? cfg.text : '#AAAAAA', cursor:'pointer', fontSize:12, fontWeight:700, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background: cfg.dot }} />
                   {cfg.label}
                 </button>
               )
@@ -98,21 +104,16 @@ export function ItemModal({ item, onSave, onClose }: Props) {
         </div>
 
         {/* Suivi */}
-        <div>
-          <label style={{ color: '#697280' }} className="text-xs font-semibold uppercase tracking-wide block mb-2">Suivi</label>
-          <div className="flex flex-wrap gap-2">
-            {SUIVI_LIST.map(s => {
-              const cfg = SUIVI_CONFIG[s]
+        <div style={{ marginBottom:14 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#697280', margin:'0 0 8px', textTransform:'uppercase', letterSpacing:0.3 }}>Suivi</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+            {SUIVIS.map(s => {
+              const cfg = SUIVI_MAP[s]
               const active = suivi === s
               return (
                 <button key={s} onClick={() => setSuivi(s)}
-                  style={{
-                    background: active ? cfg.bg : '#F9F9F9',
-                    color: active ? cfg.text : '#697280',
-                    borderColor: active ? cfg.border : '#E8E8E8',
-                    borderWidth: 2,
-                  }}
-                  className="px-3 py-2 rounded-xl text-sm font-medium border transition-all">
+                  style={{ padding:'6px 12px', borderRadius:20, border:`2px solid ${active ? cfg.border : '#E8E8E8'}`, background: active ? cfg.bg : '#F9F9F9', color: active ? cfg.text : '#AAAAAA', cursor:'pointer', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ width:6, height:6, borderRadius:'50%', background: cfg.dot }} />
                   {cfg.label}
                 </button>
               )
@@ -120,37 +121,51 @@ export function ItemModal({ item, onSave, onClose }: Props) {
           </div>
         </div>
 
-        {/* Photo */}
-        <div>
-          <label style={{ color: '#697280' }} className="text-xs font-semibold uppercase tracking-wide block mb-2">Photo</label>
-          {photo ? (
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photo} alt="observation" className="w-full h-40 object-cover rounded-xl" />
-              <button onClick={() => setPhoto(undefined)}
-                style={{ background: '#E30513', color: '#fff' }}
-                className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm flex items-center justify-center">✕</button>
+        {/* Photos */}
+        <div style={{ marginBottom:16 }}>
+          <p style={{ fontSize:11, fontWeight:700, color:'#697280', margin:'0 0 8px', textTransform:'uppercase', letterSpacing:0.3 }}>Photos</p>
+
+          {photos.length > 0 ? (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:8 }}>
+              {photos.map((p, idx) => (
+                <div key={idx} style={{ position:'relative', aspectRatio:'1', borderRadius:8, overflow:'hidden' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                  <button onClick={() => removePhoto(idx)}
+                    style={{ position:'absolute', top:4, right:4, background:'#E30513', color:'white', border:'none', borderRadius:'50%', width:22, height:22, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>×</button>
+                </div>
+              ))}
+              {/* Add more */}
+              <label style={{ aspectRatio:'1', borderRadius:8, border:`2px dashed #E8E8E8`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'#F9F9F9' }}>
+                <span style={{ fontSize:22, color:'#AAAAAA' }}>+</span>
+                <input type="file" accept="image/*" multiple onChange={e => e.target.files && readFiles(e.target.files)} style={{ display:'none' }} />
+              </label>
             </div>
           ) : (
-            <label style={{ borderColor: '#E8E8E8', color: '#697280' }}
-              className="flex items-center justify-center gap-2 w-full h-14 rounded-xl border-2 border-dashed text-sm cursor-pointer hover:bg-gray-50">
-              📷 Ajouter une photo
-              <input type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
-            </label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              <label style={{ height:80, borderRadius:10, border:`2px dashed #E8E8E8`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'#F9F9F9', gap:4 }}>
+                <span style={{ fontSize:22 }}>🖼</span>
+                <span style={{ fontSize:11, color:'#AAAAAA', fontWeight:600 }}>Galerie</span>
+                <input ref={galleryRef} type="file" accept="image/*" multiple onChange={e => e.target.files && readFiles(e.target.files)} style={{ display:'none' }} />
+              </label>
+              <label style={{ height:80, borderRadius:10, border:`2px dashed #E8E8E8`, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'#F9F9F9', gap:4 }}>
+                <span style={{ fontSize:22 }}>📷</span>
+                <span style={{ fontSize:11, color:'#AAAAAA', fontWeight:600 }}>Caméra</span>
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={e => e.target.files && readFiles(e.target.files)} style={{ display:'none' }} />
+              </label>
+            </div>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3 pt-2">
+        <div style={{ display:'flex', gap:10 }}>
           <button onClick={onClose}
-            style={{ borderColor: '#E8E8E8', color: '#697280' }}
-            className="flex-1 h-14 rounded-xl border font-semibold text-sm">
+            style={{ flex:1, padding:'13px 0', background:'#F9F9F9', color:'#697280', border:`1px solid #E8E8E8`, borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer' }}>
             Annuler
           </button>
           <button onClick={handleSave} disabled={!titre.trim()}
-            style={{ background: titre.trim() ? '#E30513' : '#E8E8E8', color: titre.trim() ? '#fff' : '#AAAAAA' }}
-            className="flex-1 h-14 rounded-xl font-semibold text-sm transition-colors">
-            Sauvegarder
+            style={{ flex:2, padding:'13px 0', background: titre.trim() ? '#E30513' : '#E8E8E8', color: titre.trim() ? 'white' : '#AAAAAA', border:'none', borderRadius:10, fontSize:13, fontWeight:700, cursor: titre.trim() ? 'pointer' : 'default' }}>
+            Enregistrer
           </button>
         </div>
       </div>
