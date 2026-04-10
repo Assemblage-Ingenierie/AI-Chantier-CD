@@ -25,14 +25,8 @@ export default function ChantierAI({ profile, onLogout }) {
 
       {/* Header */}
       <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
-        <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-          <div style={{ width:3,height:20,background:DA.red,borderRadius:2 }}/>
-          <div style={{ display:'flex',flexDirection:'column',lineHeight:1.1 }}>
-            <span style={{ color:DA.red,fontWeight:900,fontSize:12,fontStyle:'italic',letterSpacing:-0.5 }}>
-              Assembl<span style={{ color:'white' }}>!</span>age
-            </span>
-            <span style={{ color:'rgba(255,255,255,0.7)',fontWeight:700,fontSize:9,fontStyle:'italic',letterSpacing:-0.3 }}>ingénierie</span>
-          </div>
+        <div style={{ display:'flex',alignItems:'center' }}>
+          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (

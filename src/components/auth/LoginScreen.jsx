@@ -71,15 +71,9 @@ export default function LoginScreen({ onLogin }) {
       <div style={{ width: '100%', maxWidth: 360 }}>
 
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 32, justifyContent: 'center' }}>
-          <div style={{ width: 3, height: 22, background: RED, borderRadius: 2 }} />
-          <div>
-            <div style={{ color: RED, fontWeight: 900, fontSize: 13, fontStyle: 'italic' }}>
-              Assembl<span style={{ color: 'white' }}>!</span>age
-            </div>
-            <div style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 700, fontSize: 9, fontStyle: 'italic' }}>ingénierie</div>
-          </div>
-          <div style={{ color: 'white', fontWeight: 900, fontSize: 18, marginLeft: 8 }}>ChantierAI</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 32 }}>
+          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />
+          <div style={{ color: 'white', fontWeight: 900, fontSize: 18, letterSpacing: -0.5 }}>AI Chantier</div>
         </div>
 
         {/* Tabs */}
