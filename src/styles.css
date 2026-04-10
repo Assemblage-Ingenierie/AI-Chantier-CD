@@ -1,0 +1,15 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: #F7F7F7;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+#root { height: 100%; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+input[type="date"] { -webkit-appearance: none; appearance: none; }
+[draggable] { -webkit-user-drag: element; }
+@keyframes spin { to { transform: rotate(360deg); } }
