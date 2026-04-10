@@ -9,17 +9,23 @@ import { VueProjet } from '@/components/VueProjet'
 import { NewProjet } from '@/components/NewProjet'
 
 type AuthState = 'loading' | 'loggedout' | 'waiting' | 'approved'
+type SyncStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 let _saveTimeout: ReturnType<typeof setTimeout> | null = null
+let _setSyncStatus: ((s: SyncStatus) => void) | null = null
 
 function scheduleSave(projets: Projet[]) {
   if (_saveTimeout) clearTimeout(_saveTimeout)
+  _setSyncStatus?.('saving')
   _saveTimeout = setTimeout(async () => {
     saveLocal(projets)
     try {
       const { slim, blobs } = extractForRemote(projets)
       await saveRemoteState({ payload: slim, blobs })
-    } catch {}
+      _setSyncStatus?.('saved')
+    } catch {
+      _setSyncStatus?.('error')
+    }
   }, 2000)
 }
 
@@ -47,7 +53,15 @@ function extractForRemote(projets: Projet[]) {
 }
 
 // ---- Top bar (header noir commun à toutes les vues) ----
-function TopBar({ onLogout, synced }: { onLogout: () => void; synced: boolean }) {
+const SYNC_CONFIG: Record<SyncStatus, { dot: string; label: string }> = {
+  idle:   { dot: '#AAAAAA', label: 'Local' },
+  saving: { dot: '#D97706', label: 'Sauvegarde…' },
+  saved:  { dot: '#16A34A', label: 'Sauvegardé' },
+  error:  { dot: '#E30513', label: 'Erreur sync' },
+}
+
+function TopBar({ onLogout, syncStatus }: { onLogout: () => void; syncStatus: SyncStatus }) {
+  const sc = SYNC_CONFIG[syncStatus]
   return (
     <div style={{ background: '#222222', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
       {/* Logo Assemblage */}
@@ -69,8 +83,8 @@ function TopBar({ onLogout, synced }: { onLogout: () => void; synced: boolean })
           Sortir
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <div style={{ width: 5, height: 5, borderRadius: '50%', background: synced ? '#16A34A' : '#AAAAAA' }} />
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>Sauvegardé</span>
+          <div style={{ width: 5, height: 5, borderRadius: '50%', background: sc.dot, transition: 'background 0.3s' }} />
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>{sc.label}</span>
         </div>
       </div>
     </div>
@@ -81,10 +95,13 @@ export default function Home() {
   const [authState, setAuthState] = useState<AuthState>('loading')
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [projets, setProjets] = useState<Projet[]>([])
-  const [synced, setSynced] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [selected, setSelected] = useState<Projet | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [sbClient, setSbClient] = useState<unknown>(null)
+
+  // Wire the module-level setter so scheduleSave can update UI
+  useEffect(() => { _setSyncStatus = setSyncStatus; return () => { _setSyncStatus = null } }, [])
 
   // Init auth
   useEffect(() => {
@@ -144,11 +161,11 @@ export default function Home() {
           })),
         }))
         setProjets(rehydrated)
-        setSynced(true)
+        setSyncStatus('saved')
       } else {
         const local = loadLocal()
         if (local) setProjets(local)
-        setSynced(false)
+        setSyncStatus('idle')
       }
     }
     load()
@@ -217,7 +234,7 @@ export default function Home() {
   // ---- App shell (390px, header noir) ----
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', maxWidth: 390, margin: '0 auto', overflow: 'hidden', fontFamily: "'Inter',system-ui,sans-serif", background: '#F9F9F9' }}>
-      <TopBar onLogout={logout} synced={synced} />
+      <TopBar onLogout={logout} syncStatus={syncStatus} />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {selected ? (
@@ -235,7 +252,7 @@ export default function Home() {
               onUpdate={handleUpdate}
               onArchive={handleArchive}
               onDelete={handleDelete}
-              synced={synced}
+              synced={syncStatus === 'saved'}
             />
           </div>
         )}
