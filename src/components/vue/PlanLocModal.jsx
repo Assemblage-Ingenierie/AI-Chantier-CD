@@ -112,8 +112,8 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave }) {
             </button>
           )}
           <button onClick={() => { onSave({ planBg: planBg||null, planData: planData||null, planAnnotations: annot||null }); onClose(); }}
-            style={{ flex:1,background:planBg?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer' }}>
-            {planBg ? 'Confirmer ce plan' : 'Confirmer (aucun plan)'}
+            style={{ flex:1,background:planBg?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            <Ic n="chk" s={15}/> Terminer
           </button>
         </div>
       </div>
