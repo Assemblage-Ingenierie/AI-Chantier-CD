@@ -46,7 +46,7 @@ export default function TableauRecap({ localisations, tableauData, onUpdate }) {
   };
 
   const addRow = () => {
-    const next = [...rows, { id: Date.now(), urgence:'moyenne', locNom:'', desordre:'', travaux:'', suivi:'rien' }];
+    const next = [...rows, { id: crypto.randomUUID(), urgence:'moyenne', locNom:'', desordre:'', travaux:'', suivi:'rien' }];
     setRows(next); onUpdate(next);
   };
 
@@ -77,7 +77,7 @@ export default function TableauRecap({ localisations, tableauData, onUpdate }) {
       });
       const txt = d.content?.[0]?.text || '[]';
       const parsed = JSON.parse(txt.replace(/```json|```/g, '').trim());
-      const next = parsed.map((row, i) => ({ ...row, id: Date.now() + i, suivi: 'rien' }));
+      const next = parsed.map((row) => ({ ...row, id: crypto.randomUUID(), suivi: 'rien' }));
       setRows(next); onUpdate(next);
     } catch (e) {
       console.error('IA tableau:', e);

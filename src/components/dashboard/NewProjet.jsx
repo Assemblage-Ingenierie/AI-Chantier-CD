@@ -37,6 +37,7 @@ export default function NewProjet({ onClose, onSave }) {
         </div>
         <input ref={ref} type="file" accept="image/*" style={{ display:'none' }} onChange={(e) => {
           const fl = e.target.files[0]; if (!fl) return;
+          if (fl.size > 5 * 1024 * 1024) { alert('Image trop grande (max 5 Mo)'); e.target.value = ''; return; }
           const r = new FileReader(); r.onload = (ev) => setF((p) => ({ ...p, photo: ev.target.result })); r.readAsDataURL(fl);
         }}/>
 

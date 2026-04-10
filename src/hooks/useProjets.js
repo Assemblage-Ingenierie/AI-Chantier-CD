@@ -5,6 +5,10 @@ export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
   const [hydrated, setHydrated] = useState(false);
   const debounceRef = useRef(null);
+  const projetsRef = useRef(projets);
+
+  // Garde projetsRef à jour pour le handler beforeunload
+  useEffect(() => { projetsRef.current = projets; }, [projets]);
 
   // Chargement initial
   useEffect(() => {
@@ -25,6 +29,16 @@ export function useProjets(onSyncStatus) {
     return () => clearTimeout(debounceRef.current);
   }, [hydrated, projets]);
 
+  // Flush immédiat avant fermeture de l'onglet (évite la perte sur debounce en cours)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      clearTimeout(debounceRef.current);
+      saveData(projetsRef.current, onSyncStatus);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   const updateProjet = (id, upd) => {
     setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd } : p));
   };
@@ -35,7 +49,7 @@ export function useProjets(onSyncStatus) {
 
   const addProjet = (data) => {
     const projet = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       nom: data.nom,
       adresse: data.adresse ?? '',
       maitreOuvrage: data.maitreOuvrage ?? '',

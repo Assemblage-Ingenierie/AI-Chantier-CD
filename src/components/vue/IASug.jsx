@@ -12,12 +12,13 @@ export default function IASug({ content, onApply }) {
     setLoading(true);
     setOpen(true);
     try {
+      const texte = (content || '').slice(0, 2000);
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'claude-sonnet-4-20250514',
         max_tokens: 400,
         system: 'Expert MOE/BET batiment. Compte-rendu de visite chantier. Francais, concis, professionnel.',
-        messages: [{ role: 'user', content: `Observation:\n\n${content}\n\n1. 💬 Reformulation professionnelle (1-2 phrases)\n2. 🔧 Conseil technique si pertinent\nCommencer chaque partie par le symbole.` }],
+        messages: [{ role: 'user', content: `Observation:\n\n${texte}\n\n1. 💬 Reformulation professionnelle (1-2 phrases)\n2. 🔧 Conseil technique si pertinent\nCommencer chaque partie par le symbole.` }],
       });
       setResult(d.content?.[0]?.text || 'Erreur');
     } catch (e) {

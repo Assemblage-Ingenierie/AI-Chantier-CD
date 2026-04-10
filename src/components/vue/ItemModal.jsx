@@ -9,7 +9,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const camRef = useRef();
 
   const readFiles = files => {
-    Promise.all(Array.from(files).map(f => new Promise(res => {
+    const filtered = Array.from(files).filter(f => {
+      if (f.size > 5 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 5 Mo)`); return false; }
+      return true;
+    });
+    if (!filtered.length) return;
+    Promise.all(filtered.map(f => new Promise(res => {
       const r = new FileReader();
       r.onload = ev => res({ data: ev.target.result, name: f.name });
       r.readAsDataURL(f);

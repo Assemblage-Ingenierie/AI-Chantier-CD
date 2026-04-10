@@ -15,6 +15,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
   const handleFile = e => {
     const f = e.target.files[0];
     if (!f) return;
+    if (f.size > 20 * 1024 * 1024) { setRenderErr('Fichier trop volumineux (max 20 Mo)'); e.target.value = ''; return; }
     setRenderErr(null);
     const nom = f.name.replace(/\.[^.]+$/, '');
     if (f.type === 'application/pdf') {
@@ -27,7 +28,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
       r.readAsDataURL(f);
     } else if (f.type.startsWith('image/')) {
       const r = new FileReader();
-      r.onload = ev => { onAdd({ id: Date.now(), nom, bg: ev.target.result, data: null }); };
+      r.onload = ev => { onAdd({ id: crypto.randomUUID(), nom, bg: ev.target.result, data: null }); };
       r.readAsDataURL(f);
     } else {
       setRenderErr('Format non supporté. Utilisez PDF, JPG ou PNG.');
@@ -51,7 +52,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
         const img = await renderPdfPage(pdfToUse, i);
         if (img) {
           const nom = total === 1 ? nomToUse : `${nomToUse} — Page ${i}`;
-          onAdd({ id: Date.now() + i, nom, bg: img, data: pdfToUse });
+          onAdd({ id: crypto.randomUUID(), nom, bg: img, data: pdfToUse });
           await new Promise(r => setTimeout(r, 30));
         }
       }
@@ -68,7 +69,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
     setRendering(true);
     setRenderErr(null);
     const img = await renderPdfPage(pendingPdf, pageNum);
-    if (img) { onAdd({ id: Date.now(), nom: pendingName, bg: img, data: pendingPdf }); }
+    if (img) { onAdd({ id: crypto.randomUUID(), nom: pendingName, bg: img, data: pendingPdf }); }
     else { setRenderErr('Impossible de rendre cette page PDF.'); }
     setPendingPdf(null);
     setRendering(false);
