@@ -116,6 +116,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
 
       {/* ── Corps scrollable ── */}
       <div style={{ flex:1, overflowY:'auto' }}>
+      <div style={{ maxWidth:960, margin:'0 auto' }}>
 
         {/* ════ TAB VISITE ════ */}
         {tab === 'visite' && (
@@ -208,6 +209,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             />
           </div>
         )}
+      </div>
       </div>
 
       {/* ── Modals ── */}

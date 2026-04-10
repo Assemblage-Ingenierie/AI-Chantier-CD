@@ -13,3 +13,66 @@ html, body {
 input[type="date"] { -webkit-appearance: none; appearance: none; }
 [draggable] { -webkit-user-drag: element; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Grille projets responsive ── */
+.proj-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 640px)  { .proj-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .proj-grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* ── Stats responsive ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* ── Modals : bottom-sheet mobile → fenêtre centrée desktop ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+}
+.modal-overlay-dark {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+}
+.modal-sheet {
+  background: white;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  max-height: 93vh;
+  overflow-y: auto;
+}
+.modal-sheet-flex {
+  background: white;
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 640px) {
+  .modal-overlay,
+  .modal-overlay-dark {
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-sheet,
+  .modal-sheet-flex {
+    width: 100%;
+    max-width: 540px;
+    border-radius: 16px;
+    max-height: 85vh;
+  }
+}

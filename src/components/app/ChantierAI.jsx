@@ -21,7 +21,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const handleUnarchive = (id) => updateProjet(id, { statut: 'en_cours' });
 
   return (
-    <div style={{ display:'flex',flexDirection:'column',height:'100vh',maxWidth:390,margin:'0 auto',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
+    <div style={{ display:'flex',flexDirection:'column',height:'100vh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
 
       {/* Header */}
       <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>

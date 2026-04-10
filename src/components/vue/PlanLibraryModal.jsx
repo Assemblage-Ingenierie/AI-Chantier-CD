@@ -80,8 +80,8 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
   );
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:60,display:'flex',alignItems:'flex-end' }}>
-      <div style={{ background:DA.white,width:'100%',borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column' }}>
+    <div className="modal-overlay" style={{ zIndex:60 }}>
+      <div className="modal-sheet-flex">
         <div style={{ padding:'16px 18px 14px',borderBottom:`1px solid ${DA.border}`,flexShrink:0 }}>
           <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4 }}>
             <div style={{ display:'flex',alignItems:'center',gap:8 }}>

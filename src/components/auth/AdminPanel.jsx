@@ -41,8 +41,8 @@ export default function AdminPanel({ onClose }) {
   });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'flex-end' }}>
-      <div style={{ width: '100%', maxWidth: 390, margin: '0 auto', background: 'white', borderRadius: '16px 16px 0 0', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="modal-overlay-dark">
+      <div className="modal-sheet-flex">
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 16px 12px', borderBottom: `1px solid ${DA.border}`, flexShrink: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 15, color: DA.black }}>Administration</div>

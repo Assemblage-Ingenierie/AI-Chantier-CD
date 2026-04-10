@@ -46,8 +46,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   );
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:40,display:'flex',alignItems:'flex-end' }}>
-      <div style={{ background:DA.white,width:'100%',borderRadius:'16px 16px 0 0',maxHeight:'93vh',overflowY:'auto' }}>
+    <div className="modal-overlay" style={{ zIndex:40 }}>
+      <div className="modal-sheet">
         <div style={{ padding:20 }}>
           <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16 }}>
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>

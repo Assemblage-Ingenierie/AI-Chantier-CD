@@ -58,7 +58,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:10 }}>
+      <div className="stats-grid">
         {stats.map(s => (
           <div key={s.l} style={{ background:DA.grayXL,borderRadius:12,padding:'12px 14px',border:`1px solid ${DA.border}` }}>
             <p style={{ fontSize:22,fontWeight:900,color:s.red ? DA.red : DA.black,margin:0 }}>{s.v}</p>
@@ -97,7 +97,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
             </div>
           </div>
         ) : (
-          <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
+          <div className="proj-grid">
             {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         )}
@@ -109,7 +109,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
           <h2 style={{ fontSize:12,fontWeight:700,color:DA.grayL,margin:'0 0 10px',display:'flex',alignItems:'center',gap:6 }}>
             <Ic n="arc" s={13}/> Archivés ({archives.length})
           </h2>
-          <div style={{ display:'flex',flexDirection:'column',gap:10,opacity:0.65 }}>
+          <div className="proj-grid" style={{ opacity:0.65 }}>
             {archives.map(p => <ProjectCard key={p.id} p={p} arc={true} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         </div>

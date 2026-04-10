@@ -13,8 +13,8 @@ export default function NewProjet({ onClose, onSave }) {
   const ref = useRef();
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:50,display:'flex',alignItems:'flex-end' }}>
-      <div style={{ background:DA.white,width:'100%',borderRadius:'16px 16px 0 0',padding:20,maxHeight:'90vh',overflowY:'auto' }}>
+    <div className="modal-overlay">
+      <div className="modal-sheet" style={{ padding:20 }}>
         <div style={{ display:'flex',justifyContent:'space-between',marginBottom:16 }}>
           <p style={{ fontWeight:800,fontSize:15,color:DA.black,margin:0 }}>Nouveau projet</p>
           <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL }}><Ic n="x" s={20}/></button>
