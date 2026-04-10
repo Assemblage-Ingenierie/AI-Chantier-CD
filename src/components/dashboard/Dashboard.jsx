@@ -30,8 +30,9 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
-  const actifs   = projets.filter(p => p.statut !== 'archive');
-  const archives = projets.filter(p => p.statut === 'archive');
+  const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base', numeric: true });
+  const actifs   = projets.filter(p => p.statut !== 'archive').sort(byName);
+  const archives = projets.filter(p => p.statut === 'archive').sort(byName);
   const stats = [
     { l:'Projets actifs',  v:actifs.length },
     { l:'Observations',    v:countItems(projets) },

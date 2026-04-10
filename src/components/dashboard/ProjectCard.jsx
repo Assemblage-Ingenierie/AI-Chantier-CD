@@ -26,6 +26,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
           <p style={{ fontWeight:800,fontSize:13,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
           {p.maitreOuvrage && <p style={{ fontSize:11,color:DA.red,margin:'2px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>MO : {p.maitreOuvrage}</p>}
           <p style={{ fontSize:11,color:DA.grayL,margin:'2px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.adresse || '—'}</p>
+          {p.updatedAt && <p style={{ fontSize:10,color:DA.grayL,margin:'3px 0 0' }}>Modifié le {new Date(p.updatedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</p>}
           {!arc && <p style={{ fontSize:10,color:DA.red,margin:'4px 0 0',fontWeight:600,display:'flex',alignItems:'center',gap:3 }}>Ouvrir la visite →</p>}
         </div>
 
