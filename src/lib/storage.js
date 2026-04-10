@@ -11,15 +11,18 @@ const _hasLS = canLS();
 
 export const stor = {
   get: async (k) => {
-    try { const r = await window.storage?.get(k); if (r?.value != null) return r.value; } catch {}
+    if (window.storage) {
+      try { const r = await window.storage.get(k); if (r?.value != null) return r.value; } catch {}
+    }
     if (_hasLS) return localStorage.getItem(k) ?? null;
     return _mem[k] ?? null;
   },
   set: async (k, v) => {
     _mem[k] = v;
-    try { await window.storage?.set(k, v); return; } catch {}
+    if (window.storage) {
+      try { await window.storage.set(k, v); return; } catch {}
+    }
     if (_hasLS) try { localStorage.setItem(k, v); } catch {}
-    _mem[k] = v;
   },
 };
 
