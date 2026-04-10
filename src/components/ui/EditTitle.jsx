@@ -8,6 +8,8 @@ export default function EditTitle({ value, onSave, onDelete, style = {}, inputSt
   const ref = useRef();
 
   useEffect(() => { if (ed) ref.current?.select(); }, [ed]);
+  // Resync l'état interne quand la valeur externe change (hors mode édition)
+  useEffect(() => { if (!ed) setV(value); }, [value, ed]);
 
   const commit = () => {
     const t = v.trim();
@@ -19,16 +21,17 @@ export default function EditTitle({ value, onSave, onDelete, style = {}, inputSt
       <input ref={ref} value={v} onChange={e => setV(e.target.value)}
         onKeyDown={e => { if (e.key==='Enter') commit(); if (e.key==='Escape') { setV(value); setEd(false); } }}
         style={{ flex:1,borderBottom:`2px solid ${DA.red}`,outline:'none',background:'transparent',...inputStyle }}/>
-      <button onClick={commit} style={{ color:DA.red,padding:2,flexShrink:0 }}><Ic n="chk" s={13}/></button>
+      <button onClick={commit} style={{ color:DA.red,padding:2,flexShrink:0 }}><Ic n="chk" s={14}/></button>
       {onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} style={{ color:'#E30513',padding:2,flexShrink:0 }}><Ic n="del" s={13}/></button>}
       <button onClick={() => { setV(value); setEd(false); }} style={{ color:DA.grayL,padding:2,flexShrink:0 }}><Ic n="x" s={13}/></button>
     </div>
   );
 
   return (
-    <span style={{ display:'flex',alignItems:'center',gap:4,cursor:'pointer',flex:1,minWidth:0,...style }} onDoubleClick={() => setEd(true)}>
-      <span style={{ flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{value}</span>
-      <button onClick={e => { e.stopPropagation(); setEd(true); }} style={{ color:DA.grayL,padding:2,flexShrink:0,opacity:0.4 }}><Ic n="edt" s={11}/></button>
+    <span style={{ display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0,...style }}
+      onClick={e => { e.stopPropagation(); setEd(true); }}>
+      <span style={{ flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:'text' }}>{value}</span>
+      <span style={{ color:DA.grayL,flexShrink:0,lineHeight:0 }}><Ic n="edt" s={13}/></span>
     </span>
   );
 }
