@@ -40,7 +40,7 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   const updateProjet = (id, upd) => {
-    setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd } : p));
+    setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd, updatedAt: new Date().toISOString() } : p));
   };
 
   const deleteProjet = (id) => {
@@ -59,6 +59,7 @@ export function useProjets(onSyncStatus) {
       tableauRecap: [],
       planLibrary: [],
       localisations: [],
+      updatedAt: new Date().toISOString(),
     };
     setProjets((ps) => [...ps, projet]);
     return projet;
