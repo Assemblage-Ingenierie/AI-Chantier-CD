@@ -4,6 +4,7 @@ import { useProjets } from '../../hooks/useProjets.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
+import VueProjet from './VueProjet.jsx';
 
 export default function ChantierAI({ profile, onLogout }) {
   const [syncStatus, setSyncStatus] = useState('ok');
@@ -50,12 +51,11 @@ export default function ChantierAI({ profile, onLogout }) {
       {/* Corps */}
       <div style={{ flex:1,overflow:'hidden' }}>
         {ouvert ? (
-          // VueProjet sera migré à l'étape 5
-          <div style={{ height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:32,textAlign:'center' }}>
-            <p style={{ fontWeight:700,fontSize:16,color:DA.black,marginBottom:8 }}>{ouvert.nom}</p>
-            <p style={{ color:DA.gray,fontSize:13,marginBottom:24 }}>Vue projet en cours de migration…</p>
-            <button onClick={() => setOuvert(null)} style={{ padding:'10px 20px',borderRadius:8,background:DA.red,color:'white',border:'none',fontSize:13,fontWeight:700,cursor:'pointer' }}>← Retour</button>
-          </div>
+          <VueProjet
+            projet={projets.find(p => p.id === ouvert.id) ?? ouvert}
+            onBack={() => setOuvert(null)}
+            onUpdate={upd => updateProjet(ouvert.id, upd)}
+          />
         ) : (
           <div style={{ height:'100%',overflowY:'auto' }}>
             <Dashboard

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import IASug from './IASug.jsx';
 
 export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
   const [form, setForm] = useState(item ? { ...item, photos: item.photos||[], suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
@@ -97,6 +98,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               placeholder="Description détaillée…" rows={4}
               style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
+            <IASug
+              content={`${form.titre}${form.commentaire ? ' — ' + form.commentaire : ''}`}
+              onApply={text => setForm(f => ({ ...f, commentaire: text }))}
+            />
           </div>
 
           {/* Photos */}
