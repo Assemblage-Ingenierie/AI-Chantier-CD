@@ -8,6 +8,9 @@ desktop.ini
 node_modules/
 dist/
 coverage/
+.next/
+.env.local
+*.env.local
 
 
 .vercel
