@@ -4,12 +4,14 @@ import { useProjets } from '../../hooks/useProjets.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
+import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 
 export default function ChantierAI({ profile, onLogout }) {
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
   const { projets, updateProjet, deleteProjet, addProjet } = useProjets(setSyncStatus);
@@ -60,12 +62,14 @@ export default function ChantierAI({ profile, onLogout }) {
               onArchive={handleArchive}
               onUnarchive={handleUnarchive}
               onDelete={deleteProjet}
+              onEdit={setEditTarget}
             />
           </div>
         )}
       </div>
 
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
+      {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)}/>}
     </div>
   );

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
-export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, menuOpen, setMenuOpen, setPhotoTgt }) {
+export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
 
   return (
@@ -36,6 +36,8 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
           </button>
           {menuOpen === p.id && (
             <div style={{ position:'absolute',right:0,top:32,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:200,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => { onEdit(p); setMenuOpen(null); }} style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}><Ic n="edt" s={15}/> Modifier</button>
+              <div style={{ borderTop:`1px solid ${DA.border}` }}/>
               {!arc
                 ? <button onClick={() => { onArchive(p.id); setMenuOpen(null); }} style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}><Ic n="arc" s={15}/> Archiver</button>
                 : <button onClick={() => { onUnarchive(p.id); setMenuOpen(null); }} style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}><Ic n="bld" s={15}/> Réactiver</button>
