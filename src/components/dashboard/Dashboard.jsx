@@ -26,7 +26,7 @@ function countUrgent(ps) {
   }, 0), 0);
 }
 
-export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete }) {
+export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
@@ -98,7 +98,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
           </div>
         ) : (
           <div className="proj-grid">
-            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
+            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         )}
       </div>
@@ -110,7 +110,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
             <Ic n="arc" s={13}/> Archivés ({archives.length})
           </h2>
           <div className="proj-grid" style={{ opacity:0.65 }}>
-            {archives.map(p => <ProjectCard key={p.id} p={p} arc={true} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
+            {archives.map(p => <ProjectCard key={p.id} p={p} arc={true} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         </div>
       )}
