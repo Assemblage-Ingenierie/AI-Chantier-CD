@@ -1,5 +1,13 @@
 import React from 'react';
-import { DA } from '../../lib/constants.js';
+import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+
+// Inject spin keyframes once
+if (typeof document !== 'undefined' && !document.getElementById('ic-spin')) {
+  const st = document.createElement('style');
+  st.id = 'ic-spin';
+  st.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+  document.head.appendChild(st);
+}
 
 const p = (s) => ({
   width: s, height: s, viewBox: '0 0 24 24', fill: 'none',
@@ -35,6 +43,11 @@ const ICONS = {
   clk: (s) => <svg {...p(s)}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
   lib: (s) => <svg {...p(s)}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   spk: (s) => <svg {...p(s)}><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>,
+  spn: (s) => <svg {...p(s)} style={{animation:'spin 1s linear infinite'}}><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>,
+  grp: (s) => <svg {...p(s)}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+  eras: (s) => <svg {...p(s)}><path d="M20 20H7L3 16l10-10 7 7-4.5 4.5"/><path d="M6.5 17.5l4-4"/></svg>,
+  txt: (s) => <svg {...p(s)}><line x1="17" y1="10" x2="3" y2="10"/><path d="M21 6H3"/><path d="M21 14H3"/><line x1="11" y1="18" x2="3" y2="18"/></svg>,
+  sym: (s) => <svg {...p(s)}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="8" y="3" width="8" height="4" rx="1"/></svg>,
 };
 
 export function Ic({ n, s = 18 }) {
@@ -43,12 +56,22 @@ export function Ic({ n, s = 18 }) {
 }
 
 export function Badge({ level }) {
-  const u = DA['urgRed'] && { haute: { bg:'#FFF0F0',text:'#B91C1C',dot:'#E30513',border:'#FCA5A5',label:'Urgent' }, moyenne: { bg:'#FFFBEB',text:'#92400E',dot:'#D97706',border:'#FCD34D',label:'À planifier' }, basse: { bg:'#F0FDF4',text:'#15803D',dot:'#16A34A',border:'#86EFAC',label:'Mineur' } }[level];
+  const u = URGENCE[level];
   if (!u) return null;
   return (
     <span style={{ display:'inline-flex',alignItems:'center',gap:4,padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,background:u.bg,color:u.text,border:`1px solid ${u.border}` }}>
       <span style={{ width:6,height:6,borderRadius:'50%',background:u.dot,display:'inline-block' }} />
       {u.label}
+    </span>
+  );
+}
+
+export function BadgeSuivi({ suivi, onClick, small = false }) {
+  const s = SUIVI[suivi || 'rien'];
+  return (
+    <span onClick={onClick} style={{ display:'inline-flex',alignItems:'center',gap:3,padding:small?'1px 6px':'2px 8px',borderRadius:20,fontSize:small?9:10,fontWeight:700,background:s.bg,color:s.text,border:`1px solid ${s.border}`,cursor:onClick?'pointer':'default',whiteSpace:'nowrap',userSelect:'none' }}>
+      <span style={{ width:5,height:5,borderRadius:'50%',background:s.dot,display:'inline-block',flexShrink:0 }} />
+      {s.label}
     </span>
   );
 }
