@@ -1,21 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
-import { loadData, saveData } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData } from '../lib/storage.js';
 
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
   const [hydrated, setHydrated] = useState(false);
   const debounceRef = useRef(null);
   const projetsRef = useRef(projets);
+  const userModified = useRef(false);
 
   // Garde projetsRef à jour pour le handler beforeunload
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
-  // Chargement initial
+  // Chargement en deux phases :
+  // 1. Cache local → affichage instantané
+  // 2. Supabase en arrière-plan → mise à jour si l'utilisateur n'a pas encore modifié
   useEffect(() => {
-    loadData()
+    loadLocalData()
       .then((d) => { if (d.length) setProjets(d); })
       .catch(() => {})
       .finally(() => setHydrated(true));
+
+    loadData()
+      .then((d) => { if (!userModified.current && d.length) setProjets(d); })
+      .catch(() => {});
   }, []);
 
   // Sauvegarde avec debounce 2s
@@ -40,14 +47,17 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   const updateProjet = (id, upd) => {
+    userModified.current = true;
     setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd, updatedAt: new Date().toISOString() } : p));
   };
 
   const deleteProjet = (id) => {
+    userModified.current = true;
     setProjets((ps) => ps.filter((p) => p.id !== id));
   };
 
   const addProjet = (data) => {
+    userModified.current = true;
     const projet = {
       id: crypto.randomUUID(),
       nom: data.nom,

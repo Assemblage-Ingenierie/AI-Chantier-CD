@@ -60,21 +60,8 @@ async function loadRemote() {
   }
 }
 
-export async function loadData() {
-  const remote = await loadRemote();
-  const remoteBlobs = remote?.blobs ?? {};
-
-  let raw = remote?.payload ? JSON.stringify(remote.payload) : null;
-  if (raw) {
-    await stor.set(SK, raw);
-  } else {
-    raw = await stor.get(SK) ?? await stor.get(SK_OLD);
-  }
-  if (!raw) return [];
-
-  const ps = JSON.parse(raw);
+async function resolveBlobs(ps, remoteBlobs) {
   const getBlob = async (key) => remoteBlobs[key] ?? await stor.get(key) ?? null;
-
   return Promise.all(ps.map(async (p) => ({
     ...p,
     planLibrary: await Promise.all((p.planLibrary || []).map(async (pl) => ({
@@ -88,6 +75,28 @@ export async function loadData() {
       planData: l.planData === '__pdf__' ? await getBlob(`pd_${p.id}_${l.id}`) : l.planData ?? null,
     }))),
   })));
+}
+
+// Charge uniquement depuis le cache local (instantané, sans réseau)
+export async function loadLocalData() {
+  const raw = await stor.get(SK) ?? await stor.get(SK_OLD);
+  if (!raw) return [];
+  return resolveBlobs(JSON.parse(raw), {});
+}
+
+export async function loadData() {
+  const remote = await loadRemote();
+  const remoteBlobs = remote?.blobs ?? {};
+
+  let raw = remote?.payload ? JSON.stringify(remote.payload) : null;
+  if (raw) {
+    await stor.set(SK, raw);
+  } else {
+    raw = await stor.get(SK) ?? await stor.get(SK_OLD);
+  }
+  if (!raw) return [];
+
+  return resolveBlobs(JSON.parse(raw), remoteBlobs);
 }
 
 export async function saveData(ps, onStatus) {
