@@ -4,19 +4,15 @@ import LoginScreen from './LoginScreen.jsx';
 import WaitingScreen from './WaitingScreen.jsx';
 import ChantierAI from '../app/ChantierAI.jsx';
 
-function Spinner() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#30323E' }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid #E30513', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
-    </div>
-  );
-}
-
 export default function AuthGate() {
   const { authState, session, profile, logout, handleSession } = useAuth();
 
-  if (authState === 'loading') return <Spinner />;
+  // Déconnexion explicite ou compte non approuvé — seuls vrais blocages
   if (authState === 'loggedout') return <LoginScreen onLogin={handleSession} />;
   if (authState === 'waiting') return <WaitingScreen email={session?.user?.email ?? ''} onLogout={logout} />;
+
+  // 'loading' ET 'approved' → on affiche l'app immédiatement
+  // La vérification Supabase se termine en arrière-plan ; si la session
+  // est invalide, authState passera à 'loggedout' et l'écran de login s'affichera.
   return <ChantierAI profile={profile} onLogout={logout} />;
 }
