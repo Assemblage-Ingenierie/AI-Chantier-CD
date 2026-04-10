@@ -124,11 +124,14 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onClose
           </div>
         </div>
 
-        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0 }}>
+        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',flexDirection:'column',gap:8 }}>
           <button onClick={() => fileRef.current.click()} style={{ width:'100%',background:DA.black,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
             <Ic n="plus" s={16}/> Ajouter un plan (PDF, JPG, PNG)
           </button>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleFile}/>
+          <button onClick={onClose} style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            <Ic n="chk" s={15}/> Terminer
+          </button>
         </div>
       </div>
     </div>
