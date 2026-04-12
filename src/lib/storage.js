@@ -1,11 +1,11 @@
 import { getSupabase } from '../supabase.js';
 
-const SK = 'chantierai_v11';
-const SK_OLD = 'chantierai_v10';
+// v12 = format normalisé (tables séparées, sans placeholders __img__/__pdf__)
+const SK = 'chantierai_v12';
 const _mem = {};
 
 function canLS() {
-  try { localStorage.setItem('__probe__','1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
 }
 const _hasLS = canLS();
 
@@ -26,112 +26,253 @@ export const stor = {
   },
 };
 
-async function saveRemote(payload) {
-  try {
-    const sb = await getSupabase();
-    const now = new Date().toISOString();
-    const { error: se } = await sb.from('app_state_store').upsert(
-      [{ id: 'default', payload: payload.payload, updated_at: now }],
-      { onConflict: 'id' }
-    );
-    if (se) throw se;
+// --- Utilitaires ---
 
-    const blobRows = Object.entries(payload.blobs).map(([id, value]) => ({ id, value, updated_at: now }));
-    if (blobRows.length > 0) {
-      const { error: be } = await sb.from('app_blob_store').upsert(blobRows, { onConflict: 'id' });
-      if (be) throw be;
-    }
-    return true;
-  } catch (e) {
-    console.warn('Supabase save error:', e);
-    return false;
-  }
+function groupBy(arr, key) {
+  return arr.reduce((acc, row) => {
+    const k = row[key];
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(row);
+    return acc;
+  }, {});
 }
+
+function tryParseJson(str) {
+  if (!str) return null;
+  try { return JSON.parse(str); } catch { return null; }
+}
+
+// Version allégée pour le cache localStorage : sans les blobs volumineux
+function toSlim(ps) {
+  return ps.map(p => ({
+    ...p,
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })),
+    localisations: (p.localisations || []).map(l => ({
+      ...l,
+      planBg: null,
+      planData: null,
+      items: (l.items || []).map(item => ({
+        ...item,
+        photos: (item.photos || []).map(ph => ({ ...ph, data: null })),
+      })),
+    })),
+  }));
+}
+
+// --- Lecture depuis les tables normalisées ---
 
 async function loadRemote() {
-  try {
-    const sb = await getSupabase();
-    const { data: stateRows, error: se } = await sb.from('app_state_store').select('payload').eq('id', 'default');
-    if (se) throw se;
-    const { data: blobRows, error: be } = await sb.from('app_blob_store').select('id,value');
-    if (be) throw be;
-    const blobs = (blobRows || []).reduce((acc, r) => { acc[r.id] = r.value; return acc; }, {});
-    return { payload: stateRows?.[0]?.payload ?? null, blobs };
-  } catch (e) {
-    console.warn('Supabase load error:', e);
-    return null;
+  const sb = await getSupabase();
+  const [r1, r2, r3, r4, r5] = await Promise.all([
+    sb.from('chantiers').select('*'),
+    sb.from('chantier_plans')
+      .select('id,chantier_id,nom,bg,data,sort_order')
+      .order('sort_order'),
+    sb.from('chantier_localisations')
+      .select('id,chantier_id,nom,plan_bg,plan_data,plan_annotations,sort_order')
+      .order('sort_order'),
+    sb.from('localisation_items')
+      .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
+      .order('sort_order'),
+    sb.from('item_photos')
+      .select('id,item_id,name,data,sort_order')
+      .order('sort_order'),
+  ]);
+
+  if (r1.error) throw r1.error;
+  if (r2.error) throw r2.error;
+  if (r3.error) throw r3.error;
+  if (r4.error) throw r4.error;
+  if (r5.error) throw r5.error;
+
+  const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
+  const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
+  const itemsByLoc      = groupBy(r4.data ?? [], 'localisation_id');
+  const photosByItem    = groupBy(r5.data ?? [], 'item_id');
+
+  return (r1.data ?? []).map(c => ({
+    id:            c.id,
+    nom:           c.nom ?? '',
+    statut:        c.statut ?? 'en_cours',
+    adresse:       c.adresse ?? '',
+    maitreOuvrage: c.maitre_ouvrage ?? '',
+    photo:         c.photo ?? null,
+    photosParLigne: c.photos_par_ligne ?? 2,
+    participants:  c.participants ?? [],
+    tableauRecap:  c.tableau_recap ?? [],
+    updatedAt:     c.updated_at,
+    planLibrary: (plansByChantier[c.id] ?? []).map(pl => ({
+      id:   pl.id,
+      nom:  pl.nom ?? '',
+      bg:   pl.bg ?? null,
+      data: pl.data ?? null,
+    })),
+    localisations: (locsByChantier[c.id] ?? []).map(loc => ({
+      id:              loc.id,
+      nom:             loc.nom ?? '',
+      planBg:          loc.plan_bg ?? null,
+      planData:        loc.plan_data ?? null,
+      planAnnotations: tryParseJson(loc.plan_annotations),
+      items: (itemsByLoc[loc.id] ?? []).map(item => ({
+        id:              item.id,
+        titre:           item.titre ?? '',
+        suivi:           item.suivi ?? 'rien',
+        urgence:         item.urgence ?? 'basse',
+        commentaire:     item.commentaire ?? '',
+        planAnnotations: tryParseJson(item.plan_annotations),
+        photos: (photosByItem[item.id] ?? []).map(ph => ({
+          name: ph.name ?? '',
+          data: ph.data ?? '',
+        })),
+      })),
+    })),
+  }));
+}
+
+// --- Écriture dans les tables normalisées ---
+
+async function saveRemote(ps) {
+  const sb = await getSupabase();
+  const now = new Date().toISOString();
+  const errors = [];
+
+  // Supprimer les chantiers qui n'existent plus en mémoire (CASCADE sur les enfants)
+  const { data: dbChantiers } = await sb.from('chantiers').select('id');
+  const memIds  = new Set(ps.map(p => p.id));
+  const toDelete = (dbChantiers ?? []).map(r => r.id).filter(id => !memIds.has(id));
+  if (toDelete.length > 0) {
+    const { error } = await sb.from('chantiers').delete().in('id', toDelete);
+    if (error) errors.push(error);
   }
+
+  // Upsert chaque chantier et synchroniser ses enfants
+  for (const p of ps) {
+    const { error: ce } = await sb.from('chantiers').upsert({
+      id:             p.id,
+      nom:            p.nom ?? '',
+      statut:         p.statut ?? 'en_cours',
+      adresse:        p.adresse ?? '',
+      maitre_ouvrage: p.maitreOuvrage ?? '',
+      photo:          p.photo ?? null,
+      photos_par_ligne: p.photosParLigne ?? 2,
+      participants:   p.participants ?? [],
+      tableau_recap:  p.tableauRecap ?? [],
+      updated_at:     now,
+    }, { onConflict: 'id' });
+    if (ce) { errors.push(ce); continue; }
+
+    // Plans : supprimer tous puis réinsérer (gère suppressions + réordonnancement)
+    await sb.from('chantier_plans').delete().eq('chantier_id', p.id);
+    const planRows = (p.planLibrary || []).map((pl, i) => ({
+      id:          pl.id || crypto.randomUUID(),
+      chantier_id: p.id,
+      nom:         pl.nom ?? '',
+      bg:          pl.bg ?? null,
+      data:        pl.data ?? null,
+      sort_order:  i,
+    }));
+    if (planRows.length > 0) {
+      const { error } = await sb.from('chantier_plans').insert(planRows);
+      if (error) errors.push(error);
+    }
+
+    // Localisations : supprimer toutes (CASCADE → items + photos), puis réinsérer
+    await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
+    const locs = p.localisations || [];
+    const locRows = locs.map((l, i) => ({
+      id:              l.id || crypto.randomUUID(),
+      chantier_id:     p.id,
+      nom:             l.nom ?? '',
+      plan_bg:         l.planBg ?? null,
+      plan_data:       l.planData ?? null,
+      plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
+      sort_order:      i,
+    }));
+    if (locRows.length > 0) {
+      const { error: le } = await sb.from('chantier_localisations').insert(locRows);
+      if (le) { errors.push(le); continue; }
+    }
+
+    // Items et photos (les localisations viennent d'être réinsérées)
+    const allItems  = [];
+    const allPhotos = [];
+    locs.forEach((l, li) => {
+      const locId = locRows[li]?.id;
+      if (!locId) return;
+      (l.items || []).forEach((item, ii) => {
+        const itemId = item.id || crypto.randomUUID();
+        allItems.push({
+          id:              itemId,
+          localisation_id: locId,
+          titre:           item.titre ?? '',
+          suivi:           item.suivi ?? 'rien',
+          urgence:         item.urgence ?? 'basse',
+          commentaire:     item.commentaire ?? '',
+          plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
+          sort_order:      ii,
+        });
+        (item.photos || []).forEach((ph, pi) => {
+          allPhotos.push({
+            item_id:    itemId,
+            name:       ph.name ?? '',
+            data:       ph.data ?? '',
+            sort_order: pi,
+          });
+        });
+      });
+    });
+
+    if (allItems.length > 0) {
+      const { error } = await sb.from('localisation_items').insert(allItems);
+      if (error) errors.push(error);
+    }
+    if (allPhotos.length > 0) {
+      const { error } = await sb.from('item_photos').insert(allPhotos);
+      if (error) errors.push(error);
+    }
+  }
+
+  if (errors.length > 0) console.warn('saveRemote errors:', errors);
+  return errors.length === 0;
 }
 
-async function resolveBlobs(ps, remoteBlobs) {
-  const getBlob = async (key) => remoteBlobs[key] ?? await stor.get(key) ?? null;
-  return Promise.all(ps.map(async (p) => ({
-    ...p,
-    planLibrary: await Promise.all((p.planLibrary || []).map(async (pl) => ({
-      ...pl,
-      bg: pl.bg === '__img__' ? await getBlob(`plb_${p.id}_${pl.id}`) : pl.bg ?? null,
-      data: pl.data === '__pdf__' ? await getBlob(`pld_${p.id}_${pl.id}`) : pl.data ?? null,
-    }))),
-    localisations: await Promise.all((p.localisations || []).map(async (l) => ({
-      ...l,
-      planBg: l.planBg === '__img__' ? await getBlob(`pb_${p.id}_${l.id}`) : l.planBg ?? null,
-      planData: l.planData === '__pdf__' ? await getBlob(`pd_${p.id}_${l.id}`) : l.planData ?? null,
-    }))),
-  })));
-}
+// --- API publique (inchangée) ---
 
-// Charge uniquement depuis le cache local (synchrone, sans réseau ni blobs)
-// Les blobs (plans) ne sont pas nécessaires sur les cartes projet — ils chargent via loadData()
+// Charge uniquement depuis le cache local (sans réseau ni blobs)
+// Utilisé pour l'affichage instantané des cartes projet au démarrage
 export function loadLocalData() {
   try {
-    const raw = _hasLS ? (localStorage.getItem(SK) || localStorage.getItem(SK_OLD)) : (_mem[SK] || _mem[SK_OLD] || null);
+    const raw = _hasLS ? localStorage.getItem(SK) : (_mem[SK] ?? null);
     if (!raw) return Promise.resolve([]);
-    return Promise.resolve(JSON.parse(raw).map(p => ({
-      ...p,
-      planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.bg === '__img__' ? null : (pl.bg ?? null), data: pl.data === '__pdf__' ? null : (pl.data ?? null) })),
-      localisations: (p.localisations || []).map(l => ({ ...l, planBg: l.planBg === '__img__' ? null : (l.planBg ?? null), planData: l.planData === '__pdf__' ? null : (l.planData ?? null) })),
-    })));
+    return Promise.resolve(JSON.parse(raw));
   } catch {
     return Promise.resolve([]);
   }
 }
 
 export async function loadData() {
-  const remote = await loadRemote();
-  const remoteBlobs = remote?.blobs ?? {};
-
-  let raw = remote?.payload ? JSON.stringify(remote.payload) : null;
-  if (raw) {
-    await stor.set(SK, raw);
-  } else {
-    raw = await stor.get(SK) ?? await stor.get(SK_OLD);
+  try {
+    const ps = await loadRemote();
+    // Mettre à jour le cache local seulement si Supabase a retourné des données
+    if (ps.length > 0) await stor.set(SK, JSON.stringify(toSlim(ps)));
+    return ps;
+  } catch (e) {
+    console.warn('Supabase load error:', e);
+    // Fallback sur le cache local (version allégée, sans blobs)
+    try {
+      const raw = await stor.get(SK);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
-  if (!raw) return [];
-
-  return resolveBlobs(JSON.parse(raw), remoteBlobs);
 }
 
 export async function saveData(ps, onStatus) {
   try {
-    const remoteBlobs = {};
-    const slim = ps.map((p) => ({
-      ...p,
-      planLibrary: (p.planLibrary || []).map((pl) => {
-        if (pl.bg) remoteBlobs[`plb_${p.id}_${pl.id}`] = pl.bg;
-        if (pl.data) remoteBlobs[`pld_${p.id}_${pl.id}`] = pl.data;
-        return { ...pl, bg: pl.bg ? '__img__' : null, data: pl.data ? '__pdf__' : null };
-      }),
-      localisations: (p.localisations || []).map((l) => {
-        if (l.planBg) remoteBlobs[`pb_${p.id}_${l.id}`] = l.planBg;
-        if (l.planData) remoteBlobs[`pd_${p.id}_${l.id}`] = l.planData;
-        return { ...l, planBg: l.planBg ? '__img__' : null, planData: l.planData ? '__pdf__' : null };
-      }),
-    }));
-
-    await stor.set(SK, JSON.stringify(slim));
-    for (const [k, v] of Object.entries(remoteBlobs)) await stor.set(k, v);
-
-    const ok = await saveRemote({ payload: slim, blobs: remoteBlobs });
+    // Sauvegarder localement en premier (résilience hors-ligne)
+    await stor.set(SK, JSON.stringify(toSlim(ps)));
+    const ok = await saveRemote(ps);
     onStatus?.(ok ? 'ok' : 'error');
     if (!ok) showSyncWarning();
   } catch (e) {
