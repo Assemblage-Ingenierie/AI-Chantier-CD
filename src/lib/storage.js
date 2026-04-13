@@ -255,8 +255,9 @@ export function loadLocalData() {
 export async function loadData() {
   try {
     const ps = await loadRemote();
-    // Mettre à jour le cache local seulement si Supabase a retourné des données
-    if (ps.length > 0) await stor.set(SK, JSON.stringify(toSlim(ps)));
+    // NE PAS mettre à jour le cache local ici : seul saveData() écrit dans
+    // localStorage. Cela évite que loadData() n'écrase des modifications
+    // locales non encore synchronisées (race condition beforeunload vs microtask).
     return ps;
   } catch (e) {
     console.warn('Supabase load error:', e);
