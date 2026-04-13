@@ -67,18 +67,22 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                 <span style={{ fontSize:9,color:DA.grayL,fontStyle:'italic' }}>↺</span>
               </span>
             </div>
-            {item.photos?.length > 0 && (
-              <div style={{ display:'flex',gap:4,marginTop:6,flexWrap:'wrap' }}>
-                {item.photos.slice(0,5).map((ph,pi) => (
-                  <img key={pi} src={ph.data} alt="" style={{ width:44,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
-                ))}
-                {item.photos.length > 5 && (
-                  <div style={{ width:44,height:44,borderRadius:6,background:DA.grayXL,border:`1px solid ${DA.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:DA.gray,flexShrink:0 }}>
-                    +{item.photos.length - 5}
-                  </div>
-                )}
-              </div>
-            )}
+            {(() => {
+              const validPhotos = (item.photos || []).filter(ph => ph.data);
+              if (!validPhotos.length) return null;
+              return (
+                <div style={{ display:'flex',gap:4,marginTop:6,flexWrap:'wrap' }}>
+                  {validPhotos.slice(0,5).map((ph,pi) => (
+                    <img key={pi} src={ph.data} alt="" style={{ width:44,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                  ))}
+                  {validPhotos.length > 5 && (
+                    <div style={{ width:44,height:44,borderRadius:6,background:DA.grayXL,border:`1px solid ${DA.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:DA.gray,flexShrink:0 }}>
+                      +{validPhotos.length - 5}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {!sortMode && (confirmDelId === item.id

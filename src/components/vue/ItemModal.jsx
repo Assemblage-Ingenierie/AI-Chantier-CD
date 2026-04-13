@@ -4,7 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 
 export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
-  const [form, setForm] = useState(item ? { ...item, photos: item.photos||[], suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
+  const [form, setForm] = useState(item ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
   const [showPlan, setShowPlan] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();

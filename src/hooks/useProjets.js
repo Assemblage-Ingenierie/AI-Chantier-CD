@@ -25,20 +25,30 @@ export function useProjets(onSyncStatus) {
         if (!remotePs.length) return;
         if (userModified.current) return; // l'utilisateur édite déjà, on ne touche pas
 
-        // Fusionner : garder les projets locaux absents de Supabase (non encore synchronisés)
+        const localPs = projetsRef.current;
+        const localById = new Map(localPs.map(p => [p.id, p]));
         const remoteIds = new Set(remotePs.map(p => p.id));
-        const unsynced = projetsRef.current.filter(p => !remoteIds.has(p.id));
 
-        if (unsynced.length > 0) {
-          const merged = [...remotePs, ...unsynced]
-            .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
-          setProjets(merged);
-          saveLocalCache(merged);
-          userModified.current = true; // déclenche la sauvegarde Supabase des projets non synchronisés
-        } else {
-          setProjets(remotePs);
-          saveLocalCache(remotePs); // met à jour localStorage sans écriture Supabase
-        }
+        // Projets locaux absents de Supabase (jamais synchronisés)
+        const unsynced = localPs.filter(p => !remoteIds.has(p.id));
+
+        // Pour chaque projet remote, préférer la version locale si elle est plus récente
+        // (cas typique : save Supabase avait échoué, le local est plus à jour)
+        const merged = remotePs.map(rp => {
+          const lp = localById.get(rp.id);
+          if (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt) return lp;
+          return rp;
+        });
+
+        const allMerged = [...merged, ...unsynced]
+          .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
+
+        setProjets(allMerged);
+        saveLocalCache(allMerged);
+
+        // Si on a des données locales plus récentes ou non-sync → les pousser vers Supabase
+        const hasLocalChanges = unsynced.length > 0 || merged.some((p, i) => p !== remotePs[i]);
+        if (hasLocalChanges) userModified.current = true;
       })
       .catch(() => {});
   }, []);
