@@ -5,8 +5,18 @@ export async function callAIProxy(params) {
   const { data: { session } } = await sb.auth.getSession();
   const token = session?.access_token;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000); // 30s max
+  // Combiner le signal venant du composant (annulation manuelle) avec un timeout 30s
+  const timeoutCtrl = new AbortController();
+  const timer = setTimeout(() => timeoutCtrl.abort(), 30000);
+  const externalSignal = params._signal;
+  delete params._signal;
+
+  // Si l'un des deux signaux abort, on abort la requête
+  const signal = externalSignal
+    ? AbortSignal.any
+      ? AbortSignal.any([timeoutCtrl.signal, externalSignal])
+      : timeoutCtrl.signal
+    : timeoutCtrl.signal;
 
   let r;
   try {
@@ -17,7 +27,7 @@ export async function callAIProxy(params) {
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(params),
-      signal: controller.signal,
+      signal,
     });
   } catch (e) {
     clearTimeout(timer);

@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 
 function parseSuggestions(text) {
-  // Parse numbered suggestions: "1. ...\n2. ...\n3. ..."
   const lines = text.split('\n');
   const items = [];
   let current = null;
@@ -27,13 +26,46 @@ export default function IASug({ content, onApply }) {
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState(null);
   const [applied, setApplied] = useState(new Set());
+  const abortRef = useRef(null);
+
+  // Sécurité : si le loading dure plus de 35s, on force l'arrêt
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => {
+      setLoading(false);
+      setError('Délai dépassé — vérifie ta connexion et réessaie');
+    }, 35000);
+    return () => clearTimeout(t);
+  }, [loading]);
+
+  const reset = () => {
+    setSuggestions([]);
+    setError(null);
+    setApplied(new Set());
+    setLoading(false);
+  };
+
+  const handleClose = () => {
+    // Annuler la requête en cours si besoin
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setOpen(false);
+    reset();
+  };
 
   const ask = async () => {
+    if (loading) return; // empêche les requêtes concurrentes
+    // Annuler toute requête précédente
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setOpen(true);
     setError(null);
     setSuggestions([]);
     setApplied(new Set());
+
     try {
       const texte = (content || '').slice(0, 2000);
       const d = await callAIProxy({
@@ -45,21 +77,18 @@ export default function IASug({ content, onApply }) {
           role: 'user',
           content: `Observation de chantier :\n\n"${texte}"\n\nPropose 3 reformulations professionnelles améliorées. Numérote-les 1. 2. 3. Une par ligne. Uniquement les suggestions, sans introduction ni explication.`,
         }],
+        _signal: controller.signal,
       });
+      if (controller.signal.aborted) return; // fermé pendant la requête
       const rawText = d.content?.[0]?.text || '';
-      if (!rawText) throw new Error('Réponse vide');
+      if (!rawText) throw new Error('Réponse vide du modèle');
       setSuggestions(parseSuggestions(rawText));
     } catch (e) {
+      if (controller.signal.aborted) return; // annulation volontaire, pas d'erreur
       setError(e.message || 'Erreur de connexion');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    setSuggestions([]);
-    setError(null);
-    setApplied(new Set());
   };
 
   const handleApply = (sug, i) => {
@@ -71,6 +100,7 @@ export default function IASug({ content, onApply }) {
     <div style={{ marginTop: 8 }}>
       <button
         onClick={open ? handleClose : ask}
+        disabled={loading && !open}
         style={{ fontSize: 11, border: `1px solid ${open ? '#8B5CF6' : DA.border}`, borderRadius: 20, padding: '3px 10px', background: open ? '#F5F3FF' : 'white', color: open ? '#7C3AED' : DA.gray, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
         <Ic n="spk" s={10}/> {open ? 'Fermer IA' : 'Suggestions IA'}
       </button>
@@ -78,12 +108,15 @@ export default function IASug({ content, onApply }) {
       {open && (
         <div style={{ marginTop: 8, background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 12 }}>
           {loading ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#7C3AED' }}>
-              <Ic n="spn" s={12}/> Analyse en cours…
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#7C3AED' }}>
+                <Ic n="spn" s={12}/> Analyse en cours…
+              </div>
+              <button onClick={handleClose} style={{ fontSize: 11, color: '#7C3AED', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Annuler</button>
             </div>
           ) : error ? (
             <div style={{ fontSize: 12, color: '#B91C1C' }}>
-              Erreur : {error}
+              {error}
               <button onClick={ask} style={{ marginLeft: 8, fontSize: 11, color: '#7C3AED', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Réessayer</button>
             </div>
           ) : suggestions.length > 0 ? (
