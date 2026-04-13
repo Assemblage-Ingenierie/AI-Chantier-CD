@@ -5,14 +5,27 @@ export async function callAIProxy(params) {
   const { data: { session } } = await sb.auth.getSession();
   const token = session?.access_token;
 
-  const r = await fetch('/api/ai-proxy', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(params),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000); // 30s max
+
+  let r;
+  try {
+    r = await fetch('/api/ai-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Timeout IA (30s) — réessaie');
+    throw new Error(`Erreur réseau : ${e.message}`);
+  }
+  clearTimeout(timer);
+
   if (!r.ok) {
     let detail = '';
     try {
@@ -23,8 +36,9 @@ export async function callAIProxy(params) {
     }
     throw new Error(`Erreur IA (${r.status})${detail}`);
   }
+
   const data = await r.json();
-  // L'API Anthropic renvoie les erreurs avec un champ "error" même en 200
+  // L'API Anthropic renvoie parfois les erreurs avec un champ "error" en 200
   if (data.error) throw new Error(typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error);
   return data;
 }
