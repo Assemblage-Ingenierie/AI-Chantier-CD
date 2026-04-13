@@ -34,9 +34,13 @@ export function useProjets(onSyncStatus) {
 
         // Pour chaque projet remote, préférer la version locale si elle est plus récente
         // (cas typique : save Supabase avait échoué, le local est plus à jour)
+        let keptLocal = false;
         const merged = remotePs.map(rp => {
           const lp = localById.get(rp.id);
-          if (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt) return lp;
+          if (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt) {
+            keptLocal = true;
+            return lp;
+          }
           return rp;
         });
 
@@ -46,8 +50,8 @@ export function useProjets(onSyncStatus) {
         setProjets(allMerged);
         saveLocalCache(allMerged);
 
-        // Si on a des données locales plus récentes ou non-sync → les pousser vers Supabase
-        const hasLocalChanges = unsynced.length > 0 || merged.some((p, i) => p !== remotePs[i]);
+        // Pousser vers Supabase uniquement si on a réellement des données locales plus récentes
+        const hasLocalChanges = unsynced.length > 0 || keptLocal;
         if (hasLocalChanges) userModified.current = true;
       })
       .catch(() => {});

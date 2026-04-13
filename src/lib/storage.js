@@ -224,10 +224,11 @@ async function saveRemote(ps) {
           sort_order:      ii,
         });
         (item.photos || []).forEach((ph, pi) => {
+          if (!ph.data) return; // ignorer les photos sans données (cache slim localStorage)
           allPhotos.push({
             item_id:    itemId,
             name:       ph.name ?? '',
-            data:       ph.data ?? '',
+            data:       ph.data,
             sort_order: pi,
           });
         });
@@ -244,8 +245,10 @@ async function saveRemote(ps) {
     }
   }
 
-  if (errors.length > 0) console.warn('saveRemote errors:', errors);
-  return errors.length === 0;
+  if (errors.length > 0) {
+    console.warn('saveRemote errors:', errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint })));
+  }
+  return errors;
 }
 
 // --- API publique (inchangée) ---
@@ -297,22 +300,24 @@ export async function saveData(ps, onStatus) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
-    const ok = await saveRemote(ps);
+    const errors = await saveRemote(ps);
+    const ok = errors.length === 0;
     onStatus?.(ok ? 'ok' : 'error');
-    if (!ok) showSyncWarning();
+    if (!ok) showSyncWarning(errors[0]);
   } catch (e) {
     console.warn('Save error:', e);
     onStatus?.('error');
   }
 }
 
-function showSyncWarning() {
+function showSyncWarning(firstError) {
   const id = '__sync_warn__';
   if (document.getElementById(id)) return;
   const el = document.createElement('div');
   el.id = id;
   el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99999;background:#7f1d1d;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-family:inherit;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:90vw;text-align:center;';
-  el.textContent = 'Sauvegarde distante échouée — données conservées localement.';
+  const errMsg = firstError?.message ? ` — ${firstError.message.slice(0, 100)}` : '';
+  el.textContent = `Sync échoué${errMsg}`;
   const btn = document.createElement('button');
   btn.textContent = '×';
   btn.style.cssText = 'margin-left:12px;background:none;border:none;color:#fff;font-size:16px;cursor:pointer;vertical-align:middle;';
