@@ -99,8 +99,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
             <IASug
-              content={`${form.titre}${form.commentaire ? ' — ' + form.commentaire : ''}`}
-              onApply={text => setForm(f => ({ ...f, commentaire: text }))}
+              content={form.titre}
+              onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
             />
           </div>
 
