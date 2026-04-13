@@ -65,7 +65,12 @@ export default async function handler(request) {
       },
       body: JSON.stringify({ model, max_tokens, system: payload.system, messages: payload.messages })
     });
-    const data = await upstream.json();
+
+    // Lire le corps même en cas d'erreur pour propager le message Anthropic
+    const text = await upstream.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { error: text }; }
+
     return new Response(JSON.stringify(data), {
       status: upstream.status,
       headers: { "Content-Type": "application/json" }
