@@ -17,7 +17,16 @@ function parseSuggestions(text) {
     }
   }
   if (current !== null) items.push(current.trim());
-  return items.length > 0 ? items : [text.trim()];
+  if (items.length === 0) return [{ type: 'reformulation', text: text.trim() }];
+
+  return items.map(raw => {
+    // Détecter le type selon le préfixe [R] ou [T]
+    const rMatch = raw.match(/^\[R\]\s*/i);
+    const tMatch = raw.match(/^\[T\]\s*/i);
+    if (rMatch) return { type: 'reformulation', text: raw.slice(rMatch[0].length).trim() };
+    if (tMatch) return { type: 'technique', text: raw.slice(tMatch[0].length).trim() };
+    return { type: 'reformulation', text: raw };
+  });
 }
 
 export default function IASug({ content, onApply }) {
@@ -71,11 +80,11 @@ export default function IASug({ content, onApply }) {
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 700,
-        system: 'Expert MOE/BET bâtiment. Tu rédiges des comptes-rendus de visite chantier. Français, concis, professionnel.',
+        max_tokens: 900,
+        system: 'Tu es expert MOE/BET bâtiment et rédiges des comptes-rendus de visite chantier. Français technique, concis, professionnel.',
         messages: [{
           role: 'user',
-          content: `Observation de chantier :\n\n"${texte}"\n\nPropose 3 reformulations professionnelles améliorées. Numérote-les 1. 2. 3. Une par ligne. Uniquement les suggestions, sans introduction ni explication.`,
+          content: `Observation de chantier :\n\n"${texte}"\n\nGénère 4 propositions numérotées :\n1. [R] reformulation professionnelle concise\n2. [R] autre reformulation (angle différent)\n3. [T] suggestion technique : action corrective ou point de vigilance\n4. [T] suggestion technique : préconisation ou réserve formelle\n\nFormat strict : "1. [R] texte", "2. [R] texte", "3. [T] texte", "4. [T] texte". Une par ligne, sans introduction.`,
         }],
         _signal: controller.signal,
       });
@@ -122,17 +131,28 @@ export default function IASug({ content, onApply }) {
           ) : suggestions.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions IA — valide ce qui te convient</p>
-              {suggestions.map((sug, i) => (
-                <div key={i} style={{ background: applied.has(i) ? '#EDE9FE' : 'white', border: `1px solid ${applied.has(i) ? '#8B5CF6' : '#DDD6FE'}`, borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ flex: 1, fontSize: 12, color: '#4C1D95', lineHeight: 1.5 }}>{sug}</div>
-                  <button
-                    onClick={() => handleApply(sug, i)}
-                    disabled={applied.has(i)}
-                    style={{ flexShrink: 0, background: applied.has(i) ? '#8B5CF6' : '#7C3AED', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.7 : 1, minWidth: 60 }}>
-                    {applied.has(i) ? '✓' : 'Valider'}
-                  </button>
-                </div>
-              ))}
+              {suggestions.map((sug, i) => {
+                const isTech = sug.type === 'technique';
+                const accent = isTech ? '#059669' : '#7C3AED';
+                const bgActive = isTech ? '#D1FAE5' : '#EDE9FE';
+                const borderActive = isTech ? '#059669' : '#8B5CF6';
+                return (
+                  <div key={i} style={{ background: applied.has(i) ? bgActive : 'white', border: `1px solid ${applied.has(i) ? borderActive : '#DDD6FE'}`, borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: accent, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: 3 }}>
+                        {isTech ? 'Technique' : 'Reformulation'}
+                      </span>
+                      <span style={{ fontSize: 12, color: '#1e1e2e', lineHeight: 1.5 }}>{sug.text}</span>
+                    </div>
+                    <button
+                      onClick={() => handleApply(sug.text, i)}
+                      disabled={applied.has(i)}
+                      style={{ flexShrink: 0, background: applied.has(i) ? accent : accent, color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.6 : 1, minWidth: 60 }}>
+                      {applied.has(i) ? '✓' : 'Valider'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </div>
