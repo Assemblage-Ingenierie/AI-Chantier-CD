@@ -13,6 +13,13 @@ export async function callAIProxy(params) {
     },
     body: JSON.stringify(params),
   });
-  if (!r.ok) throw new Error(`Erreur IA (${r.status})`);
-  return r.json();
+  if (!r.ok) {
+    let detail = '';
+    try { const b = await r.json(); detail = b.error ? ` — ${b.error}` : ''; } catch {}
+    throw new Error(`Erreur IA (${r.status})${detail}`);
+  }
+  const data = await r.json();
+  // L'API Anthropic renvoie les erreurs avec un champ "error" même en 200
+  if (data.error) throw new Error(typeof data.error === 'object' ? (data.error.message || JSON.stringify(data.error)) : data.error);
+  return data;
 }
