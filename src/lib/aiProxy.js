@@ -15,7 +15,12 @@ export async function callAIProxy(params) {
   });
   if (!r.ok) {
     let detail = '';
-    try { const b = await r.json(); detail = b.error ? ` — ${b.error}` : ''; } catch {}
+    try {
+      const b = await r.json();
+      detail = b.error ? ` — ${b.error}` : '';
+    } catch {
+      try { const t = await r.text(); if (t) detail = ` — ${t.slice(0, 150)}`; } catch {}
+    }
     throw new Error(`Erreur IA (${r.status})${detail}`);
   }
   const data = await r.json();
