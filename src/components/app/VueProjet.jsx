@@ -4,7 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
-import TableauRecap from '../vue/TableauRecap.jsx';
+import RapportTab from '../vue/RapportTab.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import Annotator from '../vue/Annotator.jsx';
@@ -104,14 +104,22 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display:'flex', gap:4, marginTop:10 }}>
-          {[{ k:'visite', l:'Visite' }, { k:'recap', l:'Récap' }].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              style={{ flex:1, padding:'6px 0', fontSize:12, fontWeight:700, borderRadius:6, border:'none', cursor:'pointer', transition:'all 0.15s', background:tab===t.k ? DA.red : 'rgba(255,255,255,0.08)', color:tab===t.k ? 'white' : 'rgba(255,255,255,0.45)' }}>
-              {t.l}
-            </button>
-          ))}
-        </div>
+        {(() => {
+          const totalItems = projet.localisations.flatMap(l => l.items || []).length;
+          return (
+            <div style={{ display:'flex', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:10 }}>
+              {[
+                { k:'visite',  n:'bld', l:'Visite' },
+                { k:'rapport', n:'fil', l: `Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
+              ].map(t => (
+                <button key={t.k} onClick={() => setTab(t.k)}
+                  style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:12, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? DA.red : 'transparent'}`, background:'transparent', color:tab===t.k ? DA.red : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+                  <Ic n={t.n} s={13}/>{t.l}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Corps scrollable ── */}
@@ -121,6 +129,22 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
         {/* ════ TAB VISITE ════ */}
         {tab === 'visite' && (
           <div>
+            {/* Bannière résumé + raccourci rapport */}
+            {(() => {
+              const total = projet.localisations.flatMap(l => l.items || []).length;
+              const urgs  = projet.localisations.flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
+              if (!total) return null;
+              return (
+                <div style={{ padding:'8px 14px', background: urgs > 0 ? '#FFF0F0' : DA.grayXL, borderBottom:`1px solid ${urgs > 0 ? '#FCA5A5' : DA.border}`, display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:11, color: urgs > 0 ? DA.red : DA.gray, fontWeight:700 }}>{total} obs.</span>
+                  {urgs > 0 && <span style={{ fontSize:11, color:DA.red, fontWeight:700 }}>· {urgs} urgente{urgs > 1 ? 's' : ''} ⚠️</span>}
+                  <button onClick={() => setTab('rapport')}
+                    style={{ marginLeft:'auto', fontSize:11, color:DA.red, fontWeight:700, background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+                    Voir rapport <Ic n="chv" s={10}/>
+                  </button>
+                </div>
+              );
+            })()}
             {projet.localisations.length === 0 ? (
               <div style={{ padding:'48px 24px', textAlign:'center' }}>
                 <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -199,15 +223,9 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           </div>
         )}
 
-        {/* ════ TAB RÉCAP ════ */}
-        {tab === 'recap' && (
-          <div style={{ padding:12 }}>
-            <TableauRecap
-              localisations={projet.localisations}
-              tableauData={projet.tableauRecap}
-              onUpdate={rows => onUpdate({ tableauRecap: rows })}
-            />
-          </div>
+        {/* ════ TAB RAPPORT ════ */}
+        {tab === 'rapport' && (
+          <RapportTab projet={projet} onUpdate={onUpdate} />
         )}
       </div>
       </div>

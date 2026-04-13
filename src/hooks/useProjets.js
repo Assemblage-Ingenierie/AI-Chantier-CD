@@ -62,6 +62,7 @@ export function useProjets(onSyncStatus) {
       id: crypto.randomUUID(),
       nom: data.nom,
       adresse: data.adresse ?? '',
+      dateVisite: null,
       maitreOuvrage: data.maitreOuvrage ?? '',
       photo: data.photo ?? null,
       participants: [],
