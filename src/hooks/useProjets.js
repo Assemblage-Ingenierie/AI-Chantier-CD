@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { loadData, loadLocalData, saveData } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache } from '../lib/storage.js';
 
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
@@ -23,31 +23,30 @@ export function useProjets(onSyncStatus) {
     loadData()
       .then((remotePs) => {
         if (!remotePs.length) return;
-        if (userModified.current) {
-          // L'utilisateur a déjà modifié → on ne touche pas l'état,
-          // mais on re-tente la synchro Supabase des données locales
-          saveData(projetsRef.current, onSyncStatus);
-          return;
-        }
+        if (userModified.current) return; // l'utilisateur édite déjà, on ne touche pas
+
         // Fusionner : garder les projets locaux absents de Supabase (non encore synchronisés)
         const remoteIds = new Set(remotePs.map(p => p.id));
         const unsynced = projetsRef.current.filter(p => !remoteIds.has(p.id));
+
         if (unsynced.length > 0) {
           const merged = [...remotePs, ...unsynced]
             .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
           setProjets(merged);
-          // Déclencher une sauvegarde pour pousser les projets non synchronisés vers Supabase
-          userModified.current = true;
+          saveLocalCache(merged);
+          userModified.current = true; // déclenche la sauvegarde Supabase des projets non synchronisés
         } else {
           setProjets(remotePs);
+          saveLocalCache(remotePs); // met à jour localStorage sans écriture Supabase
         }
       })
       .catch(() => {});
   }, []);
 
-  // Sauvegarde avec debounce 2s
+  // Sauvegarde avec debounce 2s — uniquement si l'utilisateur a modifié quelque chose
   useEffect(() => {
     if (!hydrated) return;
+    if (!userModified.current) return; // pas de sauvegarde Supabase sur le chargement initial
     onSyncStatus?.('saving');
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -60,6 +59,7 @@ export function useProjets(onSyncStatus) {
   // pagehide est plus fiable que beforeunload sur iOS/mobile
   useEffect(() => {
     const flush = () => {
+      if (!userModified.current) return; // rien à sauvegarder
       clearTimeout(debounceRef.current);
       saveData(projetsRef.current, onSyncStatus);
     };

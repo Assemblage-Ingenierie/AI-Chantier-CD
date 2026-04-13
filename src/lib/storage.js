@@ -4,6 +4,11 @@ import { getSupabase } from '../supabase.js';
 const SK = 'chantierai_v12';
 const _mem = {};
 
+// IDs connus depuis le dernier loadData() — seuls ces IDs peuvent être supprimés de Supabase.
+// Null = loadData() pas encore terminé → on ne supprime rien (évite de détruire
+// des projets ajoutés depuis un autre appareil non encore chargés localement).
+let _lastRemoteIds = null;
+
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
 }
@@ -137,14 +142,19 @@ async function saveRemote(ps) {
   const now = new Date().toISOString();
   const errors = [];
 
-  // Supprimer les chantiers qui n'existent plus en mémoire (CASCADE sur les enfants)
-  const { data: dbChantiers } = await sb.from('chantiers').select('id');
-  const memIds  = new Set(ps.map(p => p.id));
-  const toDelete = (dbChantiers ?? []).map(r => r.id).filter(id => !memIds.has(id));
-  if (toDelete.length > 0) {
-    const { error } = await sb.from('chantiers').delete().in('id', toDelete);
-    if (error) errors.push(error);
+  // Supprimer uniquement les chantiers CONNUS de ce client qui ont été supprimés localement.
+  // On n'utilise PAS une requête Supabase pour lister les chantiers existants car ça
+  // supprimerait les projets ajoutés depuis un autre appareil non encore chargés ici.
+  const memIds = new Set(ps.map(p => p.id));
+  if (_lastRemoteIds !== null) {
+    const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
+    if (toDelete.length > 0) {
+      const { error } = await sb.from('chantiers').delete().in('id', toDelete);
+      if (error) errors.push(error);
+    }
   }
+  // Mettre à jour _lastRemoteIds pour refléter l'état après cette sauvegarde
+  _lastRemoteIds = new Set(ps.map(p => p.id));
 
   // Upsert chaque chantier et synchroniser ses enfants
   for (const p of ps) {
@@ -255,6 +265,8 @@ export function loadLocalData() {
 export async function loadData() {
   try {
     const ps = await loadRemote();
+    // Mémoriser les IDs Supabase pour que saveRemote() sache quoi supprimer
+    _lastRemoteIds = new Set(ps.map(p => p.id));
     // NE PAS mettre à jour le cache local ici : seul saveData() écrit dans
     // localStorage. Cela évite que loadData() n'écrase des modifications
     // locales non encore synchronisées (race condition beforeunload vs microtask).
@@ -269,6 +281,16 @@ export async function loadData() {
       return [];
     }
   }
+}
+
+// Mise à jour du cache local UNIQUEMENT (sans écriture Supabase).
+// Utilisé quand on accepte des données fraîches de Supabase sans modification utilisateur.
+export function saveLocalCache(ps) {
+  try {
+    const slim = JSON.stringify(toSlim(ps));
+    if (_hasLS) localStorage.setItem(SK, slim);
+    _mem[SK] = slim;
+  } catch {}
 }
 
 export async function saveData(ps, onStatus) {
