@@ -2,6 +2,9 @@ const ALLOWED_MODELS = [
   'claude-sonnet-4-20250514',
   'claude-haiku-4-5-20251001',
   'claude-opus-4-5-20251101',
+  'claude-haiku-4-5',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-6',
 ];
 const MAX_TOKENS_CAP = 2000;
 
@@ -50,7 +53,7 @@ export default async function handler(request) {
 
   try {
     const payload = await request.json();
-    const model = ALLOWED_MODELS.includes(payload.model) ? payload.model : 'claude-sonnet-4-20250514';
+    const model = ALLOWED_MODELS.includes(payload.model) ? payload.model : 'claude-haiku-4-5-20251001';
     const max_tokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
 
     const upstream = await fetch("https://api.anthropic.com/v1/messages", {
