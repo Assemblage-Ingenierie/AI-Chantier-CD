@@ -10,7 +10,7 @@ Développée par **Assemblage Ingénierie**.
 | Couche | Technologie |
 |--------|-------------|
 | **Frontend** | React 18 + Vite |
-| **Déploiement** | Vercel (pas GitHub Pages) |
+| **Déploiement** | Vercel |
 | **Base de données** | Supabase (PostgreSQL) |
 | **Authentification** | Supabase Auth |
 | **API serverless** | Vercel Functions (`/api/`) |
