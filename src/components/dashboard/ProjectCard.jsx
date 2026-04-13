@@ -8,7 +8,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
   return (
     <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative' }}>
       {/* Photo */}
-      <div style={{ position:'relative',width:'100%',height:130,background:DA.grayXL,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
+      <div style={{ position:'relative',width:'100%',aspectRatio:'3/2',background:DA.grayXL,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
         {p.photo
           ? <img src={p.photo} alt={p.nom} style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
           : <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
