@@ -8,6 +8,13 @@ function getAdmin() {
   return createClient(url, key)
 }
 
+// Découpe un tableau en chunks de taille n
+function chunk<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
 export async function GET() {
   const sb = getAdmin()
   if (!sb) return NextResponse.json({ error: 'No Supabase config' }, { status: 500 })
@@ -31,11 +38,28 @@ export async function POST(request: NextRequest) {
   try {
     const { payload, blobs } = await request.json()
     const now = new Date().toISOString()
-    await sb.from('app_state_store').upsert({ id: 'default', payload, updated_at: now })
+
+    // 1. Sauvegarde état principal (rapide)
+    const { error: stateErr } = await sb
+      .from('app_state_store')
+      .upsert({ id: 'default', payload, updated_at: now })
+    if (stateErr) throw stateErr
+
+    // 2. Sauvegarde blobs par batches de 10 en parallèle
     if (blobs && Object.keys(blobs).length > 0) {
-      const rows = Object.entries(blobs).map(([id, value]) => ({ id, value, updated_at: now }))
-      await sb.from('app_blob_store').upsert(rows)
+      const rows = Object.entries(blobs as Record<string, string>)
+        .map(([id, value]) => ({ id, value, updated_at: now }))
+
+      const batches = chunk(rows, 10)
+      const results = await Promise.allSettled(
+        batches.map(batch => sb.from('app_blob_store').upsert(batch))
+      )
+      const failed = results.filter(r => r.status === 'rejected')
+      if (failed.length > 0) {
+        console.warn(`[state] ${failed.length}/${batches.length} blob batches failed`)
+      }
     }
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })
