@@ -239,8 +239,8 @@ async function saveRemote(ps) {
       const { error } = await sb.from('localisation_items').insert(allItems);
       if (error) errors.push(error);
     }
-    if (allPhotos.length > 0) {
-      const { error } = await sb.from('item_photos').insert(allPhotos);
+    for (const photo of allPhotos) {
+      const { error } = await sb.from('item_photos').insert([photo]);
       if (error) errors.push(error);
     }
   }
