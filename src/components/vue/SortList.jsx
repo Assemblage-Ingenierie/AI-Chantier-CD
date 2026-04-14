@@ -95,7 +95,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                   {validPhotos.map((ph, pi) => (
                     <img key={pi} src={ph.data} alt=""
                       onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                      style={{ width:48,height:48,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
+                      style={{ width:'clamp(48px, 6vw, 90px)',height:'clamp(48px, 6vw, 90px)',objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
                   ))}
                 </div>
               );
