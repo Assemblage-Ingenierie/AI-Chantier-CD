@@ -7,6 +7,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
   const [over, setOver] = useState(null);
   const [sortMode, setSortMode] = useState(false);
   const [confirmDelId, setConfirmDelId] = useState(null);
+  const [lightbox, setLightbox] = useState(null); // { photos:[...], idx:0 }
 
   const onDE = () => {
     if (drag !== null && over !== null && drag !== over) {
@@ -19,6 +20,25 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
   };
 
   return (
+    <>
+    {lightbox && (
+      <div onClick={() => setLightbox(null)}
+        style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.96)',zIndex:9999,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12 }}>
+        <img src={lightbox.photos[lightbox.idx].data} alt=""
+          style={{ maxWidth:'100%',maxHeight:'80vh',objectFit:'contain',borderRadius:6 }}/>
+        {lightbox.photos.length > 1 && (
+          <div style={{ display:'flex',gap:6,flexWrap:'wrap',justifyContent:'center',padding:'0 16px' }}
+            onClick={e => e.stopPropagation()}>
+            {lightbox.photos.map((ph, pi) => (
+              <img key={pi} src={ph.data} alt=""
+                onClick={() => setLightbox(v => ({ ...v, idx: pi }))}
+                style={{ width:44,height:44,objectFit:'cover',borderRadius:5,cursor:'pointer',border:`2px solid ${lightbox.idx===pi ? 'white' : 'transparent'}`,opacity:lightbox.idx===pi ? 1 : 0.5,transition:'all 0.1s' }}/>
+            ))}
+          </div>
+        )}
+        <p style={{ color:'rgba(255,255,255,0.35)',fontSize:11,margin:0 }}>Toucher pour fermer</p>
+      </div>
+    )}
     <div>
       {items.length === 0 && (
         <div style={{ padding:'20px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
@@ -71,15 +91,12 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
               const validPhotos = (item.photos || []).filter(ph => ph.data);
               if (!validPhotos.length) return null;
               return (
-                <div style={{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5,marginTop:8 }}>
-                  {validPhotos.slice(0,4).map((ph,pi) => (
-                    <img key={pi} src={ph.data} alt="" style={{ width:'100%',aspectRatio:'1',objectFit:'cover',borderRadius:8,border:`1px solid ${DA.border}`,display:'block' }}/>
+                <div style={{ display:'flex',gap:4,marginTop:8,flexWrap:'wrap' }}>
+                  {validPhotos.map((ph, pi) => (
+                    <img key={pi} src={ph.data} alt=""
+                      onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
+                      style={{ width:48,height:48,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
                   ))}
-                  {validPhotos.length > 4 && (
-                    <div style={{ aspectRatio:'1',borderRadius:8,background:DA.grayXL,border:`1px solid ${DA.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:DA.gray }}>
-                      +{validPhotos.length - 4}
-                    </div>
-                  )}
                 </div>
               );
             })()}
@@ -109,5 +126,6 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
         )}
       </div>
     </div>
+    </>
   );
 }
