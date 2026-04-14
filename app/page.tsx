@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import type { Projet, Item, UserProfile } from '@/lib/types'
-import { saveLocal, loadLocal } from '@/lib/storage'
+import { saveLocal, loadLocal, loadLocalBlobs } from '@/lib/storage'
 import { loadRemoteState, saveRemoteState } from '@/lib/supabase'
 import { LoginScreen } from '@/components/LoginScreen'
 import { Dashboard } from '@/components/Dashboard'
@@ -20,8 +20,9 @@ function scheduleSave(projets: Projet[]) {
   _saveTimeout = setTimeout(async () => {
     saveLocal(projets)
     try {
-      const { slim, blobs } = extractForRemote(projets)
-      await saveRemoteState({ payload: slim, blobs })
+      const { slim } = extractForRemote(projets)
+      // Blobs (images/PDFs) restent en localStorage uniquement — évite le timeout Supabase
+      await saveRemoteState({ payload: slim, blobs: {} })
       _setSyncStatus?.('saved')
     } catch {
       _setSyncStatus?.('error')
@@ -172,7 +173,8 @@ export default function Home() {
     async function load() {
       const remote = await loadRemoteState()
       if (remote?.payload?.length) {
-        const blobs = remote.blobs ?? {}
+        // Merge remote blobs (vides désormais) avec blobs locaux pour restituer les images
+        const blobs = { ...(remote.blobs ?? {}), ...loadLocalBlobs() }
         const rehydrateItem = (item: Item): Item => ({
           ...item,
           photo:  item.photo  === '__img__' ? (blobs[`iph_${item.id}`]  ?? '') : item.photo,

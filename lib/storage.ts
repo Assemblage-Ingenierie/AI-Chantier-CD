@@ -134,13 +134,10 @@ export function saveLocal(projets: Projet[]): void {
   for (const [k, v] of Object.entries(blobs)) lsSet(k, v)
 }
 
-// ---- Load local ----
-export function loadLocal(): Projet[] | null {
-  const raw = lsGet(STORAGE_KEY)
-  if (!raw) return null
+// ---- Load raw blobs from localStorage (for remote rehydration) ----
+export function loadLocalBlobs(): Record<string, string> {
+  const blobs: Record<string, string> = {}
   try {
-    const slim: Projet[] = JSON.parse(raw)
-    const blobs: Record<string, string> = {}
     const prefixes = [PFX_PLB, PFX_PLD, PFX_PB, PFX_PD, PFX_PPH, PFX_IPH, PFX_IPHS]
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)
@@ -148,6 +145,17 @@ export function loadLocal(): Projet[] | null {
         blobs[k] = localStorage.getItem(k) ?? ''
       }
     }
+  } catch {}
+  return blobs
+}
+
+// ---- Load local ----
+export function loadLocal(): Projet[] | null {
+  const raw = lsGet(STORAGE_KEY)
+  if (!raw) return null
+  try {
+    const slim: Projet[] = JSON.parse(raw)
+    const blobs = loadLocalBlobs()
     return rehydrateBlobs(slim, blobs)
   } catch { return null }
 }
