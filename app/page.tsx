@@ -126,6 +126,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Projet | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [sbClient, setSbClient] = useState<unknown>(null)
+  const [dataReady, setDataReady] = useState(false)
 
   // Wire the module-level setter so scheduleSave can update UI
   useEffect(() => { _setSyncStatus = setSyncStatus; return () => { _setSyncStatus = null } }, [])
@@ -171,14 +172,6 @@ export default function Home() {
   useEffect(() => {
     if (authState !== 'approved') return
 
-    // 1. Affichage instantané depuis localStorage (synchrone)
-    const local = loadLocal()
-    if (local?.length) {
-      setProjets(local)
-      setSyncStatus('idle')
-    }
-
-    // 2. Sync remote en arrière-plan (sans bloquer l'affichage)
     function rehydrateFromRemote(payload: Projet[]) {
       const blobs = loadLocalBlobs()
       const rehydrateItem = (item: Item): Item => ({
@@ -204,12 +197,34 @@ export default function Home() {
       }))
     }
 
+    // Timeout de secours : après 6s on affiche les données locales quoi qu'il arrive
+    const fallback = setTimeout(() => {
+      const local = loadLocal()
+      if (local?.length) setProjets(local)
+      setSyncStatus('idle')
+      setDataReady(true)
+    }, 6000)
+
     loadRemoteState().then(remote => {
+      clearTimeout(fallback)
       if (remote?.payload?.length) {
         setProjets(rehydrateFromRemote(remote.payload as Projet[]))
         setSyncStatus('saved')
+      } else {
+        const local = loadLocal()
+        if (local?.length) setProjets(local)
+        setSyncStatus('idle')
       }
-    }).catch(() => {/* remote indispo — données locales déjà affichées */})
+      setDataReady(true)
+    }).catch(() => {
+      clearTimeout(fallback)
+      const local = loadLocal()
+      if (local?.length) setProjets(local)
+      setSyncStatus('idle')
+      setDataReady(true)
+    })
+
+    return () => clearTimeout(fallback)
   }, [authState])
 
   const updateProjets = useCallback((next: Projet[]) => {
@@ -247,28 +262,25 @@ export default function Home() {
     if (selected?.id === p.id) setSelected(p)
   }
 
-  // ---- Auth states ----
-  if (authState === 'loading') {
+  // ---- Écran de chargement (auth + data) ----
+  if (authState === 'loading' || (authState === 'approved' && !dataReady)) {
     return (
       <div style={{ background: '#1C1E26', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32 }}>
         <style>{`
-          @keyframes spin { to { transform: rotate(360deg) } }
           @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
           @keyframes bar { 0% { width:0% } 60% { width:70% } 100% { width:100% } }
         `}</style>
 
         {/* Logo Assemblage grand format */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 5, height: 48, background: '#E30513', borderRadius: 3 }} />
-            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-              <span style={{ color: '#E30513', fontWeight: 900, fontSize: 38, fontStyle: 'italic', letterSpacing: -1, fontFamily: "'Inter',system-ui,sans-serif" }}>
-                Assembl<span style={{ color: 'white' }}>!</span>age
-              </span>
-              <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, fontSize: 13, fontStyle: 'italic', letterSpacing: 1, fontFamily: "'Inter',system-ui,sans-serif" }}>
-                ingénierie
-              </span>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 5, height: 48, background: '#E30513', borderRadius: 3 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+            <span style={{ color: '#E30513', fontWeight: 900, fontSize: 38, fontStyle: 'italic', letterSpacing: -1, fontFamily: "'Inter',system-ui,sans-serif" }}>
+              Assembl<span style={{ color: 'white' }}>!</span>age
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, fontSize: 13, fontStyle: 'italic', letterSpacing: 1, fontFamily: "'Inter',system-ui,sans-serif" }}>
+              ingénierie
+            </span>
           </div>
         </div>
 
