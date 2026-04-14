@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
+import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
@@ -14,13 +15,28 @@ export default function ChantierAI({ profile, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded } = useProjets(setSyncStatus);
+
+  // Écran de chargement :
+  // - Toujours affiché jusqu'à la fin du chargement localStorage (hydrated)
+  // - Pour les nouveaux utilisateurs (pas de cache), attendre aussi Supabase
+  const showSplash = !hydrated || (!remoteLoaded && projets.length === 0);
 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
 
   const handleArchive = (id) => { updateProjet(id, { statut: 'archive' }); setOuvert(null); };
   const handleUnarchive = (id) => updateProjet(id, { statut: 'en_cours' });
+
+  if (showSplash) return (
+    <div style={{ position:'fixed',inset:0,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:9999 }}>
+      <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ width:220,maxWidth:'60vw',objectFit:'contain' }}/>
+      <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:10,color:DA.grayL }}>
+        <Ic n="spn" s={28}/>
+        <span style={{ fontSize:11,letterSpacing:1,textTransform:'uppercase',fontWeight:600 }}>Chargement…</span>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100vh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
