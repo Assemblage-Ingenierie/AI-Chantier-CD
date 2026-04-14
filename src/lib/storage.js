@@ -188,9 +188,29 @@ async function saveRemote(ps) {
       if (error) errors.push(error);
     }
 
+    const locs = p.localisations || [];
+
+    // Avant de supprimer (CASCADE → photos perdues), récupérer les photos Supabase
+    // pour les items dont le cache local a perdu les données (toSlim() met data=null).
+    // Distinction clé :
+    //   - photos strippées : [{name:'x.jpg', data:null}]  → toSlim a effacé les données → restaurer
+    //   - pas de photos    : []                           → l'utilisateur a tout supprimé → ne pas restaurer
+    const strippedItemIds = [];
+    locs.forEach(l => (l.items || []).forEach(item => {
+      const hasNull  = (item.photos || []).some(ph => !ph.data);
+      const hasLocal = (item.photos || []).some(ph =>  ph.data);
+      if (hasNull && !hasLocal) strippedItemIds.push(item.id);
+    }));
+    let restoredPhotosMap = {};
+    if (strippedItemIds.length > 0) {
+      const { data: epData } = await sb.from('item_photos')
+        .select('item_id, name, data, sort_order')
+        .in('item_id', strippedItemIds);
+      if (epData?.length) restoredPhotosMap = groupBy(epData, 'item_id');
+    }
+
     // Localisations : supprimer toutes (CASCADE → items + photos), puis réinsérer
     await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
-    const locs = p.localisations || [];
     const locRows = locs.map((l, i) => ({
       id:              l.id || crypto.randomUUID(),
       chantier_id:     p.id,
@@ -223,21 +243,25 @@ async function saveRemote(ps) {
           plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
           sort_order:      ii,
         });
-        (item.photos || []).forEach((ph, pi) => {
-          if (!ph.data) return; // ignorer les photos sans données (cache slim localStorage)
-          allPhotos.push({
-            item_id:    itemId,
-            name:       ph.name ?? '',
-            data:       ph.data,
-            sort_order: pi,
-          });
-        });
+        const localPhotos = (item.photos || []).filter(ph => ph.data);
+        if (localPhotos.length > 0) {
+          // Photos présentes localement → utiliser les données locales
+          localPhotos.forEach((ph, pi) => allPhotos.push({
+            item_id: itemId, name: ph.name ?? '', data: ph.data, sort_order: pi,
+          }));
+        } else if (restoredPhotosMap[item.id]?.length > 0) {
+          // Photos strippées par toSlim → restaurer depuis Supabase
+          restoredPhotosMap[item.id].forEach(ep => allPhotos.push({
+            item_id: itemId, name: ep.name ?? '', data: ep.data ?? '', sort_order: ep.sort_order,
+          }));
+        }
+        // Photos explicitement supprimées (tableau vide) → ne rien insérer ✓
       });
     });
 
     if (allItems.length > 0) {
       const { error } = await sb.from('localisation_items').insert(allItems);
-      if (error) errors.push(error);
+      if (error) { errors.push(error); continue; } // si items échouent, photos aussi (FK) → skip
     }
     for (const photo of allPhotos) {
       const { error } = await sb.from('item_photos').insert([photo]);
