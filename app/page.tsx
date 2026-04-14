@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import type { Projet, UserProfile } from '@/lib/types'
+import type { Projet, Item, UserProfile } from '@/lib/types'
 import { saveLocal, loadLocal } from '@/lib/storage'
 import { loadRemoteState, saveRemoteState } from '@/lib/supabase'
 import { LoginScreen } from '@/components/LoginScreen'
@@ -29,22 +29,48 @@ function scheduleSave(projets: Projet[]) {
   }, 2000)
 }
 
+// extractForRemote : même logique que storage.ts — toutes les images en blobs séparés
+function extractItemBlobs(item: Item, blobs: Record<string, string>): Item {
+  const slim = { ...item }
+  if (slim.photo && slim.photo.startsWith('data:')) {
+    blobs[`iph_${item.id}`] = slim.photo
+    slim.photo = '__img__'
+  }
+  if (slim.photos?.length) {
+    slim.photos = slim.photos.map((p, i) => {
+      if (p.startsWith('data:')) { blobs[`iphs_${item.id}_${i}`] = p; return '__img__' }
+      return p
+    })
+  }
+  return slim
+}
+
 function extractForRemote(projets: Projet[]) {
   const blobs: Record<string, string> = {}
   const slim = projets.map(p => {
     const proj = { ...p }
+
+    if (proj.photo && proj.photo.startsWith('data:')) {
+      blobs[`pph_${p.id}`] = proj.photo
+      proj.photo = '__img__'
+    }
     if (proj.planLibrary) {
       proj.planLibrary = proj.planLibrary.map(pl => {
-        if (pl.bg && pl.bg !== '__img__') blobs[`plb_${p.id}_${pl.id}`] = pl.bg
+        if (pl.bg && pl.bg !== '__img__')   blobs[`plb_${p.id}_${pl.id}`] = pl.bg
         if (pl.data && pl.data !== '__pdf__') blobs[`pld_${p.id}_${pl.id}`] = pl.data
         return { ...pl, bg: pl.bg ? '__img__' : '', data: pl.data ? '__pdf__' : '' }
       })
     }
     if (proj.localisations) {
       proj.localisations = proj.localisations.map(loc => {
-        if (loc.planBg) blobs[`pb_${p.id}_${loc.id}`] = loc.planBg
-        if (loc.planData) blobs[`pd_${p.id}_${loc.id}`] = loc.planData
-        return { ...loc, planBg: loc.planBg ? '__img__' : undefined, planData: loc.planData ? '__pdf__' : undefined }
+        const l = { ...loc }
+        if (l.planBg)   { blobs[`pb_${p.id}_${loc.id}`] = l.planBg;   l.planBg   = '__img__' }
+        if (l.planData) { blobs[`pd_${p.id}_${loc.id}`] = l.planData; l.planData = '__pdf__' }
+        if (l.items)    l.items    = l.items.map(i => extractItemBlobs(i, blobs))
+        if (l.sections) l.sections = l.sections.map(s => ({
+          ...s, items: (s.items ?? []).map(i => extractItemBlobs(i, blobs))
+        }))
+        return l
       })
     }
     return proj
@@ -147,17 +173,25 @@ export default function Home() {
       const remote = await loadRemoteState()
       if (remote?.payload?.length) {
         const blobs = remote.blobs ?? {}
+        const rehydrateItem = (item: Item): Item => ({
+          ...item,
+          photo:  item.photo  === '__img__' ? (blobs[`iph_${item.id}`]  ?? '') : item.photo,
+          photos: item.photos?.map((p2, i) => p2 === '__img__' ? (blobs[`iphs_${item.id}_${i}`] ?? '') : p2),
+        })
         const rehydrated = (remote.payload as Projet[]).map(p => ({
           ...p,
+          photo: p.photo === '__img__' ? (blobs[`pph_${p.id}`] ?? '') : p.photo,
           planLibrary: (p.planLibrary ?? []).map(pl => ({
             ...pl,
-            bg: blobs[`plb_${p.id}_${pl.id}`] ?? '',
+            bg:   blobs[`plb_${p.id}_${pl.id}`] ?? '',
             data: blobs[`pld_${p.id}_${pl.id}`] ?? '',
           })),
           localisations: (p.localisations ?? []).map(loc => ({
             ...loc,
-            planBg: blobs[`pb_${p.id}_${loc.id}`] ?? undefined,
+            planBg:   blobs[`pb_${p.id}_${loc.id}`] ?? undefined,
             planData: blobs[`pd_${p.id}_${loc.id}`] ?? undefined,
+            items:    (loc.items ?? []).map(rehydrateItem),
+            sections: (loc.sections ?? []).map(s => ({ ...s, items: (s.items ?? []).map(rehydrateItem) })),
           })),
         }))
         setProjets(rehydrated)
