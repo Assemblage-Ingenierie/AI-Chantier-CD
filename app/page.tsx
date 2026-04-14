@@ -170,41 +170,46 @@ export default function Home() {
   // Load data when approved
   useEffect(() => {
     if (authState !== 'approved') return
-    async function load() {
-      const remote = await loadRemoteState()
-      if (remote?.payload?.length) {
-        // Merge remote blobs (vides désormais) avec blobs locaux pour restituer les images
-        const blobs = { ...(remote.blobs ?? {}), ...loadLocalBlobs() }
-        const rehydrateItem = (item: Item): Item => ({
-          ...item,
-          photo:  item.photo  === '__img__' ? (blobs[`iph_${item.id}`]  ?? '') : item.photo,
-          photos: item.photos?.map((p2, i) => p2 === '__img__' ? (blobs[`iphs_${item.id}_${i}`] ?? '') : p2),
-        })
-        const rehydrated = (remote.payload as Projet[]).map(p => ({
-          ...p,
-          photo: p.photo === '__img__' ? (blobs[`pph_${p.id}`] ?? '') : p.photo,
-          planLibrary: (p.planLibrary ?? []).map(pl => ({
-            ...pl,
-            bg:   blobs[`plb_${p.id}_${pl.id}`] ?? '',
-            data: blobs[`pld_${p.id}_${pl.id}`] ?? '',
-          })),
-          localisations: (p.localisations ?? []).map(loc => ({
-            ...loc,
-            planBg:   blobs[`pb_${p.id}_${loc.id}`] ?? undefined,
-            planData: blobs[`pd_${p.id}_${loc.id}`] ?? undefined,
-            items:    (loc.items ?? []).map(rehydrateItem),
-            sections: (loc.sections ?? []).map(s => ({ ...s, items: (s.items ?? []).map(rehydrateItem) })),
-          })),
-        }))
-        setProjets(rehydrated)
-        setSyncStatus('saved')
-      } else {
-        const local = loadLocal()
-        if (local) setProjets(local)
-        setSyncStatus('idle')
-      }
+
+    // 1. Affichage instantané depuis localStorage (synchrone)
+    const local = loadLocal()
+    if (local?.length) {
+      setProjets(local)
+      setSyncStatus('idle')
     }
-    load()
+
+    // 2. Sync remote en arrière-plan (sans bloquer l'affichage)
+    function rehydrateFromRemote(payload: Projet[]) {
+      const blobs = loadLocalBlobs()
+      const rehydrateItem = (item: Item): Item => ({
+        ...item,
+        photo:  item.photo  === '__img__' ? (blobs[`iph_${item.id}`]  ?? '') : item.photo,
+        photos: item.photos?.map((p2, i) => p2 === '__img__' ? (blobs[`iphs_${item.id}_${i}`] ?? '') : p2),
+      })
+      return payload.map(p => ({
+        ...p,
+        photo: p.photo === '__img__' ? (blobs[`pph_${p.id}`] ?? '') : p.photo,
+        planLibrary: (p.planLibrary ?? []).map(pl => ({
+          ...pl,
+          bg:   blobs[`plb_${p.id}_${pl.id}`] ?? '',
+          data: blobs[`pld_${p.id}_${pl.id}`] ?? '',
+        })),
+        localisations: (p.localisations ?? []).map(loc => ({
+          ...loc,
+          planBg:   blobs[`pb_${p.id}_${loc.id}`] ?? undefined,
+          planData: blobs[`pd_${p.id}_${loc.id}`] ?? undefined,
+          items:    (loc.items ?? []).map(rehydrateItem),
+          sections: (loc.sections ?? []).map(s => ({ ...s, items: (s.items ?? []).map(rehydrateItem) })),
+        })),
+      }))
+    }
+
+    loadRemoteState().then(remote => {
+      if (remote?.payload?.length) {
+        setProjets(rehydrateFromRemote(remote.payload as Projet[]))
+        setSyncStatus('saved')
+      }
+    }).catch(() => {/* remote indispo — données locales déjà affichées */})
   }, [authState])
 
   const updateProjets = useCallback((next: Projet[]) => {
@@ -245,8 +250,37 @@ export default function Home() {
   // ---- Auth states ----
   if (authState === 'loading') {
     return (
-      <div style={{ background: '#30323E', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid #E30513', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+      <div style={{ background: '#1C1E26', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32 }}>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg) } }
+          @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+          @keyframes bar { 0% { width:0% } 60% { width:70% } 100% { width:100% } }
+        `}</style>
+
+        {/* Logo Assemblage grand format */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 5, height: 48, background: '#E30513', borderRadius: 3 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+              <span style={{ color: '#E30513', fontWeight: 900, fontSize: 38, fontStyle: 'italic', letterSpacing: -1, fontFamily: "'Inter',system-ui,sans-serif" }}>
+                Assembl<span style={{ color: 'white' }}>!</span>age
+              </span>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, fontSize: 13, fontStyle: 'italic', letterSpacing: 1, fontFamily: "'Inter',system-ui,sans-serif" }}>
+                ingénierie
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Barre de progression animée */}
+        <div style={{ width: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: '#E30513', borderRadius: 2, animation: 'bar 1.8s ease-in-out infinite' }} />
+          </div>
+          <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, letterSpacing: 2, fontFamily: "'Inter',system-ui,sans-serif", animation: 'pulse 1.8s ease-in-out infinite' }}>
+            CHARGEMENT
+          </span>
+        </div>
       </div>
     )
   }
