@@ -6,8 +6,8 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 
 export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onClose }) {
   const [rendering, setRendering] = useState(false);
-  const [renderErr, setRenderErr] = useState(null);
   const [renderProgress, setRenderProgress] = useState('');
+  const [renderErr, setRenderErr] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
   const [pendingPdf, setPendingPdf] = useState(null);
   const [pendingName, setPendingName] = useState('');
@@ -41,7 +41,11 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
 
   // Appelé par le picker avec les numéros de pages sélectionnées
   const handlePagesSelected = async selectedNums => {
+    const pdfData = pendingPdf;
+    const baseName = pendingName;
     setShowPicker(false);
+    setPendingPdf(null);
+    setPendingName('');
     setRendering(true);
     setRenderErr(null);
     try {
@@ -49,19 +53,18 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
       for (let idx = 0; idx < selectedNums.length; idx++) {
         const pageNum = selectedNums[idx];
         setRenderProgress(`Rendu page ${idx + 1} / ${selectedNums.length}…`);
-        const img = await renderPdfPage(pendingPdf, pageNum);
+        const img = await renderPdfPage(pdfData, pageNum);
         if (img) {
-          const nom = selectedNums.length === 1 ? pendingName : `${pendingName} — Page ${pageNum}`;
-          results.push({ id: crypto.randomUUID(), nom, bg: img, data: pendingPdf });
+          const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
+          results.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
         }
+        await new Promise(r => setTimeout(r, 30));
       }
       if (results.length > 0) onAdd(results); // batch add en une seule fois → pas de race condition
       else setRenderErr('Aucune page n\'a pu être rendue.');
     } catch (e) {
       setRenderErr('Erreur rendu PDF: ' + e.message);
     }
-    setPendingPdf(null);
-    setPendingName('');
     setRenderProgress('');
     setRendering(false);
   };
@@ -74,6 +77,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const confirmRename = () => {
     if (editingNom.trim() && onRename) onRename(editingId, editingNom.trim());
     setEditingId(null);
+    setEditingNom('');
   };
 
   if (showPicker && pendingPdf) return (
@@ -87,6 +91,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   return (
     <div className="modal-overlay" style={{ zIndex:60 }}>
       <div className="modal-sheet-flex">
+        {/* Header */}
         <div style={{ padding:'16px 18px 14px',borderBottom:`1px solid ${DA.border}`,flexShrink:0 }}>
           <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4 }}>
             <div style={{ display:'flex',alignItems:'center',gap:8 }}>
@@ -98,8 +103,13 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
           <p style={{ fontSize:12,color:DA.gray,margin:0 }}>Importez votre PDF — choisissez les pages à garder.</p>
         </div>
 
+        {/* Corps */}
         <div style={{ flex:1,overflowY:'auto',padding:14 }}>
-          {renderErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:'#B91C1C' }}>⚠️ {renderErr}</div>}
+          {renderErr && (
+            <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:'#B91C1C' }}>
+              ⚠️ {renderErr}
+            </div>
+          )}
           {rendering && (
             <div style={{ display:'flex',alignItems:'center',gap:8,padding:'16px 0',color:DA.gray,justifyContent:'center' }}>
               <Ic n="spn" s={20}/><span style={{ fontSize:13 }}>{renderProgress || 'Rendu en cours…'}</span>
@@ -150,9 +160,10 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
           </div>
         </div>
 
+        {/* Footer */}
         <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',flexDirection:'column',gap:8 }}>
-          <button onClick={() => fileRef.current.click()}
-            style={{ width:'100%',background:DA.black,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
+          <button onClick={() => fileRef.current.click()} disabled={rendering}
+            style={{ width:'100%',background:rendering ? DA.grayL : DA.black,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:rendering?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
             <Ic n="plus" s={16}/> Ajouter un plan (PDF, JPG, PNG)
           </button>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleFile}/>

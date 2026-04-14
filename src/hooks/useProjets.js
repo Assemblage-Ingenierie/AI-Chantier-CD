@@ -4,6 +4,7 @@ import { loadData, loadLocalData, saveData, saveLocalCache } from '../lib/storag
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
   const [hydrated, setHydrated] = useState(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
   const debounceRef = useRef(null);
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
@@ -54,7 +55,8 @@ export function useProjets(onSyncStatus) {
         const hasLocalChanges = unsynced.length > 0 || keptLocal;
         if (hasLocalChanges) userModified.current = true;
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setRemoteLoaded(true));
   }, []);
 
   // Sauvegarde avec debounce 2s — uniquement si l'utilisateur a modifié quelque chose
@@ -115,5 +117,5 @@ export function useProjets(onSyncStatus) {
     return projet;
   };
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated };
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded };
 }

@@ -108,7 +108,9 @@ export default function PdfPagePicker({ pdfData, onSelect, onSelectMany, onClose
               </button>
             </>
           )}
-          <button onClick={onClose} style={{ color:DA.grayL,background:'none',border:'none',cursor:'pointer' }}><Ic n="x" s={20}/></button>
+          <button onClick={onClose} style={{ color:DA.grayL,background:'none',border:'none',cursor:'pointer' }}>
+            <Ic n="x" s={20}/>
+          </button>
         </div>
       </div>
 

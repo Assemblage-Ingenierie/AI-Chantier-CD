@@ -7,6 +7,7 @@ import ItemModal from '../vue/ItemModal.jsx';
 import RapportTab from '../vue/RapportTab.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
+import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator from '../vue/Annotator.jsx';
 
 export default function VueProjet({ projet, onBack, onUpdate }) {
@@ -16,6 +17,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
   //      | { t:'item',    locId, item, savedForm? }
   //      | { t:'plan',    locId }
   //      | { t:'planLib' }
+  //      | { t:'niveaux' }
   //      | { t:'annotate', locId, form }
   const [modal, setModal] = useState(null);
 
@@ -97,10 +99,16 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
             {projet.adresse && <p style={{ fontSize:10, color:'rgba(255,255,255,0.45)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
-          <button onClick={() => setModal({ t:'planLib' })}
-            style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.7)', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer', flexShrink:0 }}>
-            <Ic n="lib" s={13}/> Plans
-          </button>
+          <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+            <button onClick={() => setModal({ t:'niveaux' })}
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.7)', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+              <Ic n="bld" s={13}/> Niveaux
+            </button>
+            <button onClick={() => setModal({ t:'planLib' })}
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.7)', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+              <Ic n="lib" s={13}/> Plans
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -274,6 +282,15 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           onAdd={plans => onUpdate({ planLibrary: [...(projet.planLibrary || []), ...(Array.isArray(plans) ? plans : [plans])] })}
           onDelete={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+          onClose={() => setModal(null)}
+        />
+      )}
+
+      {modal?.t === 'niveaux' && (
+        <NiveauxModal
+          localisations={projet.localisations}
+          planLibrary={projet.planLibrary || []}
+          onChange={newLocs => onUpdate({ localisations: newLocs })}
           onClose={() => setModal(null)}
         />
       )}
