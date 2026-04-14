@@ -17,10 +17,9 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded } = useProjets(setSyncStatus);
 
-  // Écran de chargement :
-  // - Toujours affiché jusqu'à la fin du chargement localStorage (hydrated)
-  // - Pour les nouveaux utilisateurs (pas de cache), attendre aussi Supabase
-  const showSplash = !hydrated || (!remoteLoaded && projets.length === 0);
+  // Écran de chargement : toujours attendre que Supabase ait répondu
+  // Empêche toute interaction (création, suppression) avant que les données soient stables
+  const showSplash = !remoteLoaded;
 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
