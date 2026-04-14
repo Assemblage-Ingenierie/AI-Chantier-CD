@@ -5,7 +5,7 @@ import { renderPdfPage } from '../../lib/pdfUtils.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan }) {
   const [planBg, setPlanBg] = useState(loc.planBg || null);
   const [planData, setPlanData] = useState(loc.planData || null);
   const [annot, setAnnot] = useState(loc.planAnnotations || null);
@@ -14,6 +14,9 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave }) {
   const [rendering, setRendering] = useState(false);
   const [renderErr, setRenderErr] = useState(null);
   const [pendingPdf, setPendingPdf] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editingNom, setEditingNom] = useState('');
+  const [confirmDelId, setConfirmDelId] = useState(null);
 
   if (showAnnot) return (
     <Annotator bgImage={planBg} savedPaths={annot?.paths || []}
@@ -63,15 +66,51 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave }) {
                 {planLibrary.map(pl => {
                   const sel = planBg === pl.bg;
                   return (
-                    <button key={pl.id} onClick={() => { if(sel){setPlanBg(null);setPlanData(null);setAnnot(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setAnnot(null); }}
-                      style={{ display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,cursor:'pointer',textAlign:'left',transition:'all 0.15s' }}>
-                      {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
-                      <div style={{ flex:1,minWidth:0 }}>
-                        <p style={{ fontWeight:700,fontSize:13,color:sel?DA.red:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{pl.nom}</p>
-                        <p style={{ fontSize:10,color:DA.grayL,margin:'2px 0 0' }}>{pl.data?'PDF':'Image'}</p>
+                    <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,transition:'all 0.15s',overflow:'hidden' }}>
+                      {/* Zone cliquable = sélection */}
+                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);setAnnot(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setAnnot(null); setConfirmDelId(null); }}
+                        style={{ flex:1,display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',minWidth:0 }}>
+                        {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
+                        <div style={{ flex:1,minWidth:0 }}>
+                          {editingId === pl.id ? (
+                            <input autoFocus value={editingNom}
+                              onChange={e => setEditingNom(e.target.value)}
+                              onClick={e => e.stopPropagation()}
+                              onBlur={() => { if (editingNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingNom.trim()); setEditingId(null); }}
+                              onKeyDown={e => { e.stopPropagation(); if (e.key==='Enter') { if (editingNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingNom.trim()); setEditingId(null); } if (e.key==='Escape') setEditingId(null); }}
+                              style={{ width:'100%',fontSize:13,fontWeight:700,border:`1px solid ${DA.red}`,borderRadius:5,padding:'2px 6px',outline:'none',boxSizing:'border-box' }}/>
+                          ) : (
+                            <p style={{ fontWeight:700,fontSize:13,color:sel?DA.red:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{pl.nom}</p>
+                          )}
+                          <p style={{ fontSize:10,color:DA.grayL,margin:'2px 0 0' }}>{pl.data?'PDF':'Image'}</p>
+                        </div>
+                        {sel && editingId !== pl.id && <Ic n="chk" s={18}/>}
+                      </button>
+                      {/* Actions renommer / supprimer */}
+                      <div style={{ display:'flex',gap:2,paddingRight:8,flexShrink:0 }} onClick={e=>e.stopPropagation()}>
+                        {onRenamePlan && (
+                          <button onClick={() => { setEditingId(pl.id); setEditingNom(pl.nom); setConfirmDelId(null); }}
+                            style={{ padding:'5px 7px',color:'#ccc',background:'none',border:'none',cursor:'pointer',borderRadius:6 }}
+                            onMouseEnter={e=>e.currentTarget.style.color=DA.black} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+                            <Ic n="pen" s={13}/>
+                          </button>
+                        )}
+                        {onDeletePlan && (confirmDelId === pl.id ? (
+                          <>
+                            <button onClick={() => { if (sel) { setPlanBg(null); setPlanData(null); setAnnot(null); } onDeletePlan(pl.id); setConfirmDelId(null); }}
+                              style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer' }}>Oui</button>
+                            <button onClick={() => setConfirmDelId(null)}
+                              style={{ padding:'4px 6px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:5,fontSize:11,cursor:'pointer' }}>Non</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmDelId(pl.id)}
+                            style={{ padding:'5px 7px',color:'#ccc',background:'none',border:'none',cursor:'pointer',borderRadius:6 }}
+                            onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+                            <Ic n="del" s={13}/>
+                          </button>
+                        ))}
                       </div>
-                      {sel && <Ic n="chk" s={18}/>}
-                    </button>
+                    </div>
                   );
                 })}
               </div>

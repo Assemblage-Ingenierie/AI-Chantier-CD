@@ -262,6 +262,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
               patchLoc(modal.locId, { planBg, planData, planAnnotations });
               setModal(null);
             }}
+            onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           />
         );
       })()}
@@ -269,8 +271,9 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
       {modal?.t === 'planLib' && (
         <PlanLibraryModal
           planLibrary={projet.planLibrary || []}
-          onAdd={plan => onUpdate({ planLibrary: [...(projet.planLibrary || []), plan] })}
+          onAdd={plans => onUpdate({ planLibrary: [...(projet.planLibrary || []), ...(Array.isArray(plans) ? plans : [plans])] })}
           onDelete={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           onClose={() => setModal(null)}
         />
       )}
