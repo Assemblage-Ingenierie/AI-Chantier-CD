@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage } from '../lib/storage.js';
 
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
@@ -128,6 +128,7 @@ export function useProjets(onSyncStatus) {
     const photosMap = itemIds.length ? await loadProjectPhotos(itemIds) : {};
     if (photosMap === null) return;
     // Met à jour les photos dans le state SANS marquer userModified → pas de sauvegarde déclenchée
+    // Inclut _id et _legacy pour la migration background ; ils seront strippés par toSlim() lors de la sauvegarde.
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -138,12 +139,41 @@ export function useProjets(onSyncStatus) {
             ...item,
             _photosHydrated: true,
             photos: photosMap[item.id]
-              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? '' })).filter(ph => ph.data)
+              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false })).filter(ph => ph.data)
               : [],
           })),
         })),
       };
     }));
+
+    // Migration background : photos legacy (base64 en DB) → Supabase Storage, une à la fois
+    const legacyPhotoIds = [];
+    Object.values(photosMap).forEach(photos => {
+      photos.forEach(ph => { if (ph._legacy && ph.id) legacyPhotoIds.push(ph.id); });
+    });
+    if (legacyPhotoIds.length > 0) {
+      migratePhotosToStorage(legacyPhotoIds).then(migrated => {
+        if (!Object.keys(migrated).length) return;
+        // Mettre à jour le state : remplacer null data par les URLs migrées
+        setProjets(ps => ps.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            localisations: (p.localisations || []).map(loc => ({
+              ...loc,
+              items: (loc.items || []).map(item => ({
+                ...item,
+                photos: (item.photos || []).map(ph => ({
+                  ...ph,
+                  data: (ph._id && migrated[ph._id]) ? migrated[ph._id] : ph.data,
+                  _legacy: (ph._id && migrated[ph._id]) ? false : ph._legacy,
+                })),
+              })),
+            })),
+          };
+        }));
+      }).catch(e => console.warn('Background migration error:', e));
+    }
   };
 
   return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos };
