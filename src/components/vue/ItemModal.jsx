@@ -9,17 +9,36 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const gallRef = useRef();
   const camRef = useRef();
 
+  const compressPhoto = (file) => new Promise(res => {
+    const r = new FileReader();
+    r.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1920;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const name = file.name.replace(/\.[^.]+$/, '.jpg');
+        res({ data: canvas.toDataURL('image/jpeg', 0.78), name });
+      };
+      img.src = ev.target.result;
+    };
+    r.readAsDataURL(file);
+  });
+
   const readFiles = files => {
     const filtered = Array.from(files).filter(f => {
-      if (f.size > 5 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 5 Mo)`); return false; }
+      if (f.size > 25 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 25 Mo)`); return false; }
       return true;
     });
     if (!filtered.length) return;
-    Promise.all(filtered.map(f => new Promise(res => {
-      const r = new FileReader();
-      r.onload = ev => res({ data: ev.target.result, name: f.name });
-      r.readAsDataURL(f);
-    }))).then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done] })));
+    Promise.all(filtered.map(compressPhoto))
+      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done] })));
   };
 
   if (showPlan) return (
