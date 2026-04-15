@@ -15,7 +15,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos } = useProjets(setSyncStatus);
 
   // Écran de chargement : toujours attendre que Supabase ait répondu
   // Empêche toute interaction (création, suppression) avant que les données soient stables
@@ -71,7 +71,7 @@ export default function ChantierAI({ profile, onLogout }) {
           <div style={{ height:'100%',overflowY:'auto' }}>
             <Dashboard
               projets={projets}
-              onSelect={setOuvert}
+              onSelect={(p) => { setOuvert(p); hydratePhotos(p.id); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
               onArchive={handleArchive}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos } from '../lib/storage.js';
 
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
@@ -117,5 +117,31 @@ export function useProjets(onSyncStatus) {
     return projet;
   };
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded };
+  // Charge les photos complètes pour un projet sans déclencher de sauvegarde
+  const hydratePhotos = async (projectId) => {
+    const projet = projetsRef.current.find(p => p.id === projectId);
+    if (!projet) return;
+    const itemIds = (projet.localisations || []).flatMap(l => (l.items || []).map(i => i.id));
+    if (!itemIds.length) return;
+    const photosMap = await loadProjectPhotos(itemIds);
+    if (!Object.keys(photosMap).length) return;
+    // Met à jour les photos dans le state SANS marquer userModified → pas de sauvegarde déclenchée
+    setProjets(ps => ps.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        localisations: (p.localisations || []).map(loc => ({
+          ...loc,
+          items: (loc.items || []).map(item => ({
+            ...item,
+            photos: photosMap[item.id]
+              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? '' })).filter(ph => ph.data)
+              : item.photos,
+          })),
+        })),
+      };
+    }));
+  };
+
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos };
 }

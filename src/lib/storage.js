@@ -80,7 +80,7 @@ async function loadRemote() {
       .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
       .order('sort_order'),
     sb.from('item_photos')
-      .select('id,item_id,name,data,sort_order')
+      .select('id,item_id,name,sort_order')
       .order('sort_order'),
   ]);
 
@@ -130,11 +130,23 @@ async function loadRemote() {
         planAnnotations: tryParseJson(item.plan_annotations),
         photos: (photosByItem[item.id] ?? []).map(ph => ({
           name: ph.name ?? '',
-          data: ph.data ?? '',
+          data: null,
         })),
       })),
     })),
   }));
+}
+
+// Charge les photos (avec données complètes) pour un ensemble d'items — appelé à l'ouverture d'un projet
+export async function loadProjectPhotos(itemIds) {
+  if (!itemIds.length) return {};
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('item_photos')
+      .select('item_id,name,data,sort_order').in('item_id', itemIds).order('sort_order');
+    if (error) { console.warn('loadProjectPhotos error:', error); return {}; }
+    return groupBy(data ?? [], 'item_id');
+  } catch (e) { console.warn('loadProjectPhotos error:', e); return {}; }
 }
 
 // --- Écriture dans les tables normalisées ---
@@ -190,6 +202,22 @@ async function saveRemote(ps) {
       if (error) errors.push(error);
     }
 
+    // Récupérer les photos non encore chargées (data: null) avant le CASCADE delete
+    const unloadedItemIds = [];
+    (p.localisations || []).forEach(l => {
+      (l.items || []).forEach(item => {
+        if ((item.photos || []).some(ph => ph.name && ph.data === null)) {
+          unloadedItemIds.push(item.id);
+        }
+      });
+    });
+    const fetchedPhotosByItem = {};
+    if (unloadedItemIds.length > 0) {
+      const { data: pData, error: pErr } = await sb.from('item_photos')
+        .select('item_id,name,data,sort_order').in('item_id', unloadedItemIds).order('sort_order');
+      if (!pErr && pData) Object.assign(fetchedPhotosByItem, groupBy(pData, 'item_id'));
+    }
+
     // Localisations : supprimer toutes (CASCADE → items + photos), puis réinsérer
     await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
     const locs = p.localisations || [];
@@ -225,8 +253,12 @@ async function saveRemote(ps) {
           plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
           sort_order:      ii,
         });
-        (item.photos || []).forEach((ph, pi) => {
-          if (!ph.data) return; // ignorer les photos sans données (cache slim localStorage)
+        // Si les photos ne sont pas encore chargées (lazy), utiliser celles récupérées depuis Supabase
+        const rawPhotos = (item.photos || []).some(ph => ph.name && ph.data === null)
+          ? (fetchedPhotosByItem[item.id] ?? [])
+          : (item.photos || []);
+        rawPhotos.forEach((ph, pi) => {
+          if (!ph.data) return;
           allPhotos.push({
             item_id:    itemId,
             name:       ph.name ?? '',
