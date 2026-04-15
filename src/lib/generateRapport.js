@@ -6,7 +6,7 @@ import { SYMBOLS } from '../components/vue/Annotator.jsx';
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, tableauRecap, photosParLigne = 2 }) {
+export async function exportPdf({ projet, localisations, tableauRecap, photosParLigne = 2, rapportPageBreaks = [] }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -18,6 +18,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   const GR = [105, 114, 125], LG = [249, 249, 249], WH = [255, 255, 255];
   const AM = [217, 119, 6], GN = [22, 163, 74];
 
+  const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
   const today = dvPdf.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   const allItems = localisations.flatMap(l => l.items || []);
@@ -141,6 +142,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
 
   const renderItems = (items) => {
     items.forEach(item => {
+      if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
       const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
       const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
       const cLines = item.commentaire ? doc.splitTextToSize(item.commentaire, CW - 14) : [];
@@ -199,7 +201,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   localisations.forEach(loc => {
     const items = loc.items || [];
     if (!items.length) return;
-    pb(18);
+    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(18); }
     doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
     doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
     doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
