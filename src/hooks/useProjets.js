@@ -139,7 +139,7 @@ export function useProjets(onSyncStatus) {
             ...item,
             _photosHydrated: true,
             photos: photosMap[item.id]
-              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false })).filter(ph => ph.data)
+              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false }))
               : [],
           })),
         })),

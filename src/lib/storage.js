@@ -270,7 +270,7 @@ async function saveRemote(ps) {
     const fetchedPhotosByItem = {};
     if (unloadedItemIds.length > 0) {
       const { data: pData, error: pErr } = await sb.from('item_photos')
-        .select('item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
+        .select('id,item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
       if (pErr) {
         // Pré-fetch échoué (ex: timeout) : risqué de faire le CASCADE delete
         // → on saute la sync localisations/items/photos pour ce projet pour ne pas perdre les photos.
@@ -325,16 +325,27 @@ async function saveRemote(ps) {
           : (item.photos || []);
         for (let pi = 0; pi < rawPhotos.length; pi++) {
           const ph = rawPhotos[pi];
-          if (!ph.data) continue;
           let storageUrl = ph.storage_url ?? null;
-          // If it's a base64 (new/just-taken photo), upload to Storage
-          if (ph.data.startsWith('data:')) {
+          if (storageUrl) {
+            // Already in Storage (pre-fetched migrated photo or previously saved URL) — reuse as-is
+          } else if (ph.data?.startsWith('data:')) {
+            // New base64 photo (just taken) — upload to Storage
             storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
-            if (!storageUrl) continue; // upload failed, skip this photo
-          } else if (ph.data.startsWith('http')) {
-            storageUrl = ph.data; // already a URL from previous migration
+            if (!storageUrl) continue;
+          } else if (ph.data?.startsWith('http')) {
+            // data field contains the URL directly (older interim format)
+            storageUrl = ph.data;
+          } else {
+            // Legacy photo: base64 is in the DB `data` column — fetch by PK and migrate to Storage
+            const legacyId = ph._id || ph.id;
+            if (!legacyId) continue;
+            const { data: legRow } = await sb.from('item_photos')
+              .select('data').eq('id', legacyId).maybeSingle();
+            if (!legRow?.data) continue;
+            storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, legRow.data);
+            if (!storageUrl) continue;
+            await sb.from('item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
           }
-          if (!storageUrl) continue;
           allPhotos.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
         }
       }
