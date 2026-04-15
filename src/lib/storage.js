@@ -59,7 +59,8 @@ function toSlim(ps) {
       // eslint-disable-next-line no-unused-vars
       items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
         ...item,
-        photos: [],
+        // eslint-disable-next-line no-unused-vars
+        photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
       })),
     })),
   }));
@@ -131,19 +132,74 @@ async function loadRemote() {
   }));
 }
 
-// Charge les photos (avec données complètes) pour un ensemble d'items — appelé à l'ouverture d'un projet
+// Charge les photos pour un ensemble d'items — sans la colonne `data` (évite timeout 57014)
+// Les photos avec storage_url ont leur URL renvoyée dans le champ `data` pour compatibilité frontend.
+// Les photos legacy (data en DB, pas de storage_url) sont marquées _legacy:true pour migration background.
 export async function loadProjectPhotos(itemIds) {
   if (!itemIds.length) return {};
   try {
     const sb = await getSupabase();
     const { data, error } = await sb.from('item_photos')
-      .select('item_id,name,data,sort_order').in('item_id', itemIds).order('sort_order');
+      .select('id,item_id,name,storage_url,sort_order').in('item_id', itemIds).order('sort_order');
     if (error) { console.warn('loadProjectPhotos error:', error); return null; }
-    return groupBy(data ?? [], 'item_id');
+    // Map storage_url → data field so frontend works unchanged
+    const mapped = (data ?? []).map(ph => ({
+      id:         ph.id,
+      item_id:    ph.item_id,
+      name:       ph.name,
+      data:       ph.storage_url ?? null,  // URL or null (legacy without storage_url)
+      sort_order: ph.sort_order,
+      _legacy:    !ph.storage_url,  // true = old base64 in DB, needs migration
+    }));
+    return groupBy(mapped, 'item_id');
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
 }
 
+// Migre les photos legacy (base64 en DB) vers Supabase Storage — une à la fois pour éviter les timeouts.
+// Retourne un objet { [photoId]: storageUrl } pour les photos migrées avec succès.
+export async function migratePhotosToStorage(legacyPhotoIds) {
+  if (!legacyPhotoIds.length) return {};
+  const sb = await getSupabase();
+  const result = {};  // photoId → storage_url
+  for (const id of legacyPhotoIds) {
+    try {
+      // Fetch one photo's data (by PK = fast even with large TOAST)
+      const { data: row, error } = await sb.from('item_photos')
+        .select('id,item_id,name,data').eq('id', id).maybeSingle();
+      if (error || !row?.data) continue;
+      // Upload to Storage
+      const resp = await fetch(row.data);
+      const blob = await resp.blob();
+      const ext = (row.name || 'photo').replace(/.*\./, '') || 'jpg';
+      const path = `${row.item_id}/${id}.${ext}`;
+      const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+      if (upErr) { console.warn('Storage upload error:', upErr); continue; }
+      const { data: urlData } = sb.storage.from('photos').getPublicUrl(path);
+      const url = urlData.publicUrl;
+      // Update DB: set storage_url, clear data
+      await sb.from('item_photos').update({ storage_url: url, data: null }).eq('id', id);
+      result[id] = url;
+    } catch (e) { console.warn('migratePhotosToStorage error for', id, e); }
+  }
+  return result;
+}
+
 // --- Écriture dans les tables normalisées ---
+
+// Convertit un base64 data URL en blob et l'upload dans le bucket Storage `photos`.
+// Retourne l'URL publique ou null en cas d'erreur.
+async function uploadPhotoToStorage(sb, itemId, photoIndex, name, base64) {
+  try {
+    const resp = await fetch(base64);
+    const blob = await resp.blob();
+    const ext = (name || 'photo').replace(/.*\./, '') || 'jpg';
+    const path = `${itemId}/${Date.now()}_${photoIndex}.${ext}`;
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+    if (error) { console.warn('Storage upload error:', error); return null; }
+    const { data } = sb.storage.from('photos').getPublicUrl(path);
+    return data.publicUrl;
+  } catch (e) { console.warn('Storage upload error:', e); return null; }
+}
 
 async function saveRemote(ps) {
   const sb = await getSupabase();
@@ -203,7 +259,7 @@ async function saveRemote(ps) {
     const unloadedItemIds = [];
     (p.localisations || []).forEach(l => {
       (l.items || []).forEach(item => {
-        const hasLocalPhotos = (item.photos || []).some(ph => ph.data);
+        const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
         if (!item._photosHydrated && !hasLocalPhotos && item.id) {
           unloadedItemIds.push(item.id);
         }
@@ -212,7 +268,7 @@ async function saveRemote(ps) {
     const fetchedPhotosByItem = {};
     if (unloadedItemIds.length > 0) {
       const { data: pData, error: pErr } = await sb.from('item_photos')
-        .select('item_id,name,data,sort_order').in('item_id', unloadedItemIds).order('sort_order');
+        .select('item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
       if (pErr) {
         // Pré-fetch échoué (ex: timeout) : risqué de faire le CASCADE delete
         // → on saute la sync localisations/items/photos pour ce projet pour ne pas perdre les photos.
@@ -243,10 +299,12 @@ async function saveRemote(ps) {
     // Items et photos (les localisations viennent d'être réinsérées)
     const allItems  = [];
     const allPhotos = [];
-    locs.forEach((l, li) => {
+    for (let li = 0; li < locs.length; li++) {
+      const l = locs[li];
       const locId = locRows[li]?.id;
-      if (!locId) return;
-      (l.items || []).forEach((item, ii) => {
+      if (!locId) continue;
+      for (let ii = 0; ii < (l.items || []).length; ii++) {
+        const item = l.items[ii];
         const itemId = item.id || crypto.randomUUID();
         allItems.push({
           id:              itemId,
@@ -260,21 +318,26 @@ async function saveRemote(ps) {
         });
         // Photos : utiliser les données Supabase pré-fetchées pour les items non hydratés,
         // les données locales pour les items hydratés (y compris photos supprimées = [])
-        const hasLocalPhotos = (item.photos || []).some(ph => ph.data);
+        const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
         const rawPhotos = (!item._photosHydrated && !hasLocalPhotos)
           ? (fetchedPhotosByItem[item.id] ?? [])
           : (item.photos || []);
-        rawPhotos.forEach((ph, pi) => {
-          if (!ph.data) return;
-          allPhotos.push({
-            item_id:    itemId,
-            name:       ph.name ?? '',
-            data:       ph.data,
-            sort_order: pi,
-          });
-        });
-      });
-    });
+        for (let pi = 0; pi < rawPhotos.length; pi++) {
+          const ph = rawPhotos[pi];
+          if (!ph.data) continue;
+          let storageUrl = ph.storage_url ?? null;
+          // If it's a base64 (new/just-taken photo), upload to Storage
+          if (ph.data.startsWith('data:')) {
+            storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
+            if (!storageUrl) continue; // upload failed, skip this photo
+          } else if (ph.data.startsWith('http')) {
+            storageUrl = ph.data; // already a URL from previous migration
+          }
+          if (!storageUrl) continue;
+          allPhotos.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
+        }
+      }
+    }
 
     if (allItems.length > 0) {
       const { error } = await sb.from('localisation_items').insert(allItems);
