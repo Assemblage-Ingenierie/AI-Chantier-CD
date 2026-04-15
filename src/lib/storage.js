@@ -88,12 +88,14 @@ async function loadRemote() {
   if (r2.error) throw r2.error;
   if (r3.error) throw r3.error;
   if (r4.error) throw r4.error;
-  if (r5.error) throw r5.error;
+  // item_photos peut échouer (500) si le volume de données est trop grand —
+  // on log et on continue sans photos plutôt que de perdre tous les projets.
+  if (r5.error) console.warn('item_photos load error (photos ignorées):', r5.error);
 
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
   const itemsByLoc      = groupBy(r4.data ?? [], 'localisation_id');
-  const photosByItem    = groupBy(r5.data ?? [], 'item_id');
+  const photosByItem    = r5.error ? {} : groupBy(r5.data ?? [], 'item_id');
 
   return (r1.data ?? []).map(c => ({
     id:            c.id,
