@@ -123,8 +123,10 @@ export function useProjets(onSyncStatus) {
     const projet = projetsRef.current.find(p => p.id === projectId);
     if (!projet) return;
     const itemIds = (projet.localisations || []).flatMap(l => (l.items || []).map(i => i.id));
-    // Fetch même si certains items ont déjà des photos (cas rechargement)
+    // Fetch même si certains items ont déjà des photos (cas rechargement).
+    // null = erreur réseau/timeout → on ne touche pas l'état (évite d'écraser des photos valides)
     const photosMap = itemIds.length ? await loadProjectPhotos(itemIds) : {};
+    if (photosMap === null) return;
     // Met à jour les photos dans le state SANS marquer userModified → pas de sauvegarde déclenchée
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;

@@ -138,9 +138,9 @@ export async function loadProjectPhotos(itemIds) {
     const sb = await getSupabase();
     const { data, error } = await sb.from('item_photos')
       .select('item_id,name,data,sort_order').in('item_id', itemIds).order('sort_order');
-    if (error) { console.warn('loadProjectPhotos error:', error); return {}; }
+    if (error) { console.warn('loadProjectPhotos error:', error); return null; }
     return groupBy(data ?? [], 'item_id');
-  } catch (e) { console.warn('loadProjectPhotos error:', e); return {}; }
+  } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
 }
 
 // --- Écriture dans les tables normalisées ---
@@ -213,7 +213,14 @@ async function saveRemote(ps) {
     if (unloadedItemIds.length > 0) {
       const { data: pData, error: pErr } = await sb.from('item_photos')
         .select('item_id,name,data,sort_order').in('item_id', unloadedItemIds).order('sort_order');
-      if (!pErr && pData) Object.assign(fetchedPhotosByItem, groupBy(pData, 'item_id'));
+      if (pErr) {
+        // Pré-fetch échoué (ex: timeout) : risqué de faire le CASCADE delete
+        // → on saute la sync localisations/items/photos pour ce projet pour ne pas perdre les photos.
+        console.warn('Photo pre-fetch failed, skipping localisation sync for safety:', pErr);
+        errors.push(pErr);
+        continue;
+      }
+      Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
     }
 
     // Localisations : supprimer toutes (CASCADE → items + photos), puis réinsérer
