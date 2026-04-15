@@ -24,10 +24,12 @@ function itemMm(item, ppl) {
   return h + 4;
 }
 
+const PLAN_MM = 120; // hauteur estimée d'un bloc plan (header 12 + image ~104 + gap 4)
+
 // ── Pagination ─────────────────────────────────────────────────────────────
 // Retourne un tableau de pages ; chaque page = tableau de blocs
-// bloc = { type:'zone'|'item', id, loc?, item? }
-function buildPages(locs, ppl, breaks) {
+// bloc = { type:'zone'|'item'|'plan', id, loc?, item? }
+function buildPages(locs, ppl, breaks, plansEnFin) {
   const pages = [];
   let blocks = [], yMm = 0;
   const flush = () => { if (blocks.length) { pages.push(blocks); blocks = []; yMm = 0; } };
@@ -48,6 +50,17 @@ function buildPages(locs, ppl, breaks) {
       blocks.push({ type: 'item', id: item.id, item });
       yMm += h;
     }
+
+    // Plan inline (si !plansEnFin et plan disponible pour cette zone)
+    if (!plansEnFin) {
+      const hasPlan = loc.planAnnotations?.exported || loc.planBg;
+      if (hasPlan) {
+        if (yMm + PLAN_MM > USABLE_MM && blocks.length) flush();
+        blocks.push({ type: 'plan', id: `plan-${loc.id}`, loc });
+        yMm += PLAN_MM;
+      }
+    }
+
     yMm += 5;
   }
   flush();
@@ -120,6 +133,23 @@ function ItemBlock({ item, ppl }) {
   );
 }
 
+function PlanBlock({ loc }) {
+  const planImg = loc.planAnnotations?.exported || loc.planBg;
+  if (!planImg) return null;
+  return (
+    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
+      <div style={{ background:DA.black, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
+        <div style={{ width:3, height:12, background:DA.red, borderRadius:1, flexShrink:0 }}/>
+        <span style={{ fontSize:9, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>
+          Plan — {loc.nom}
+        </span>
+      </div>
+      <img src={planImg} alt={`Plan ${loc.nom}`}
+        style={{ width:'100%', display:'block', objectFit:'contain' }}/>
+    </div>
+  );
+}
+
 function A4Card({ children, projet, pageNum, totalPages }) {
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
@@ -170,15 +200,19 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+  const planLocs = useMemo(
+    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg) : [],
+    [localisations, plansEnFin]
+  );
 
-  const pages = useMemo(() => buildPages(locs, ppl, breaks), [locs, ppl, breaks]);
+  const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
 
   const hasTableau  = (projet.tableauRecap || []).length > 0;
-  const totalPages  = 1 + pages.length + (hasTableau ? 1 : 0);
+  const totalPages  = 1 + pages.length + (hasTableau ? 1 : 0) + planLocs.length;
   const allItems    = localisations.flatMap(l => l.items || []);
 
   if (!pages.length) {
@@ -251,6 +285,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                   )}
                   {block.type === 'zone'
                     ? <ZoneHeader loc={block.loc} />
+                    : block.type === 'plan'
+                    ? <PlanBlock loc={block.loc} />
                     : <ItemBlock item={block.item} ppl={ppl} />
                   }
                 </div>
@@ -283,6 +319,19 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           </div>
         </>
       )}
+
+      {/* ── PLANS EN FIN DE RAPPORT ── */}
+      {planLocs.map((loc, pi) => {
+        const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + pi + 1;
+        return (
+          <React.Fragment key={`plan-end-${loc.id}`}>
+            <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+            <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
+              <PlanBlock loc={loc} />
+            </A4Card>
+          </React.Fragment>
+        );
+      })}
 
       <div style={{ height:24 }}/>
     </div>
