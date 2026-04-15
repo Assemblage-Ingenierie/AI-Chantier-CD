@@ -47,7 +47,7 @@ function tryParseJson(str) {
   try { return JSON.parse(str); } catch { return null; }
 }
 
-// Version allégée pour le cache localStorage : sans les blobs volumineux
+// Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
 function toSlim(ps) {
   return ps.map(p => ({
     ...p,
@@ -56,9 +56,10 @@ function toSlim(ps) {
       ...l,
       planBg: null,
       planData: null,
-      items: (l.items || []).map(item => ({
+      // eslint-disable-next-line no-unused-vars
+      items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
         ...item,
-        photos: (item.photos || []).map(ph => ({ ...ph, data: null })),
+        photos: [],
       })),
     })),
   }));
@@ -68,7 +69,9 @@ function toSlim(ps) {
 
 async function loadRemote() {
   const sb = await getSupabase();
-  const [r1, r2, r3, r4, r5] = await Promise.all([
+  // NE PAS charger item_photos globalement : la table est trop volumineuse → timeout 57014.
+  // Les photos sont chargées à la demande par loadProjectPhotos() à l'ouverture d'un projet.
+  const [r1, r2, r3, r4] = await Promise.all([
     sb.from('chantiers').select('*'),
     sb.from('chantier_plans')
       .select('id,chantier_id,nom,bg,data,sort_order')
@@ -79,23 +82,16 @@ async function loadRemote() {
     sb.from('localisation_items')
       .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
       .order('sort_order'),
-    sb.from('item_photos')
-      .select('id,item_id,name,sort_order')
-      .order('sort_order'),
   ]);
 
   if (r1.error) throw r1.error;
   if (r2.error) throw r2.error;
   if (r3.error) throw r3.error;
   if (r4.error) throw r4.error;
-  // item_photos peut échouer (500) si le volume de données est trop grand —
-  // on log et on continue sans photos plutôt que de perdre tous les projets.
-  if (r5.error) console.warn('item_photos load error (photos ignorées):', r5.error);
 
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
   const itemsByLoc      = groupBy(r4.data ?? [], 'localisation_id');
-  const photosByItem    = r5.error ? {} : groupBy(r5.data ?? [], 'item_id');
 
   return (r1.data ?? []).map(c => ({
     id:            c.id,
@@ -122,16 +118,14 @@ async function loadRemote() {
       planData:        loc.plan_data ?? null,
       planAnnotations: tryParseJson(loc.plan_annotations),
       items: (itemsByLoc[loc.id] ?? []).map(item => ({
-        id:              item.id,
-        titre:           item.titre ?? '',
-        suivi:           item.suivi ?? 'rien',
-        urgence:         item.urgence ?? 'basse',
-        commentaire:     item.commentaire ?? '',
-        planAnnotations: tryParseJson(item.plan_annotations),
-        photos: (photosByItem[item.id] ?? []).map(ph => ({
-          name: ph.name ?? '',
-          data: null,
-        })),
+        id:               item.id,
+        titre:            item.titre ?? '',
+        suivi:            item.suivi ?? 'rien',
+        urgence:          item.urgence ?? 'basse',
+        commentaire:      item.commentaire ?? '',
+        planAnnotations:  tryParseJson(item.plan_annotations),
+        photos:           [],
+        _photosHydrated:  false, // flag runtime : photos pas encore chargées pour cet item
       })),
     })),
   }));
@@ -202,11 +196,15 @@ async function saveRemote(ps) {
       if (error) errors.push(error);
     }
 
-    // Récupérer les photos non encore chargées (data: null) avant le CASCADE delete
+    // Pour les items dont les photos n'ont pas encore été hydratées ET dont l'état local
+    // ne contient aucune photo avec data (= pas de modification utilisateur), il faut
+    // récupérer les photos existantes dans Supabase avant le CASCADE delete,
+    // sinon elles seraient perdues.
     const unloadedItemIds = [];
     (p.localisations || []).forEach(l => {
       (l.items || []).forEach(item => {
-        if ((item.photos || []).some(ph => ph.name && ph.data === null)) {
+        const hasLocalPhotos = (item.photos || []).some(ph => ph.data);
+        if (!item._photosHydrated && !hasLocalPhotos && item.id) {
           unloadedItemIds.push(item.id);
         }
       });
@@ -253,8 +251,10 @@ async function saveRemote(ps) {
           plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
           sort_order:      ii,
         });
-        // Si les photos ne sont pas encore chargées (lazy), utiliser celles récupérées depuis Supabase
-        const rawPhotos = (item.photos || []).some(ph => ph.name && ph.data === null)
+        // Photos : utiliser les données Supabase pré-fetchées pour les items non hydratés,
+        // les données locales pour les items hydratés (y compris photos supprimées = [])
+        const hasLocalPhotos = (item.photos || []).some(ph => ph.data);
+        const rawPhotos = (!item._photosHydrated && !hasLocalPhotos)
           ? (fetchedPhotosByItem[item.id] ?? [])
           : (item.photos || []);
         rawPhotos.forEach((ph, pi) => {
