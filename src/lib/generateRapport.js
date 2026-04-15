@@ -6,7 +6,7 @@ import { SYMBOLS } from '../components/vue/Annotator.jsx';
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, tableauRecap, photosParLigne = 2 }) {
+export async function exportPdf({ projet, localisations, tableauRecap, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -18,6 +18,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   const GR = [105, 114, 125], LG = [249, 249, 249], WH = [255, 255, 255];
   const AM = [217, 119, 6], GN = [22, 163, 74];
 
+  const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
   const today = dvPdf.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   const allItems = localisations.flatMap(l => l.items || []);
@@ -141,6 +142,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
 
   const renderItems = (items) => {
     items.forEach(item => {
+      if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
       const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
       const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
       const cLines = item.commentaire ? doc.splitTextToSize(item.commentaire, CW - 14) : [];
@@ -199,13 +201,33 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   localisations.forEach(loc => {
     const items = loc.items || [];
     if (!items.length) return;
-    pb(18);
+    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(18); }
     doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
     doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
     doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
     doc.text(loc.nom.toUpperCase(), ML + 6, y + 7);
     doc.setTextColor(0, 0, 0); y += 14;
     renderItems(items);
+
+    // Plan inline (si !plansEnFin et plan disponible)
+    if (!plansEnFin) {
+      const planImg = loc.planAnnotations?.exported || loc.planBg;
+      if (planImg) {
+        const ih = CW * 0.58;
+        pb(22 + ih + 6);
+        doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
+        doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
+        doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+        doc.text(`PLAN — ${loc.nom.toUpperCase()}`, ML + 6, y + 7);
+        doc.setTextColor(0, 0, 0); y += 12;
+        try {
+          const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
+          y += ih + 4;
+        } catch {}
+      }
+    }
+
     y += 5;
   });
 
@@ -273,41 +295,47 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
 
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────
 
-  const annotLocs = localisations.filter(l => l.planAnnotations?.exported);
-  annotLocs.forEach(loc => {
-    doc.addPage(); hdr();
-    let ay = 18;
-    doc.setFillColor(...BK); doc.roundedRect(ML, ay, CW, 10, 2, 2, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, ay, 3, 10, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-    doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 6, ay + 7);
-    doc.setTextColor(0, 0, 0); ay += 14;
-    try {
-      const ih = CW * 0.58;
-      doc.addImage(loc.planAnnotations.exported, 'PNG', ML, ay, CW, ih);
-      ay += ih + 8;
-    } catch { ay += 6; }
+  if (plansEnFin) {
+    const planLocs = localisations.filter(l => l.planAnnotations?.exported || l.planBg);
+    planLocs.forEach(loc => {
+      doc.addPage(); hdr();
+      let ay = 18;
+      doc.setFillColor(...BK); doc.roundedRect(ML, ay, CW, 10, 2, 2, 'F');
+      doc.setFillColor(...RD); doc.rect(ML, ay, 3, 10, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 6, ay + 7);
+      doc.setTextColor(0, 0, 0); ay += 14;
+      const planImg = loc.planAnnotations?.exported || loc.planBg;
+      try {
+        const ih = CW * 0.58;
+        const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+        doc.addImage(planImg, ext, ML, ay, CW, ih, undefined, 'FAST');
+        ay += ih + 8;
+      } catch { ay += 6; }
 
-    // Légende des symboles utilisés
-    const usedSymbols = new Set((loc.planAnnotations?.paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
-    const EXCL = ['fleche', 'arrow', 'trait', 'texte', 'text'];
-    const legendSyms = SYMBOLS.filter(s => usedSymbols.has(s.id) && !EXCL.some(x => s.id.toLowerCase().includes(x)));
-    if (legendSyms.length > 0) {
-      doc.setFillColor(250, 250, 250); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'F');
-      doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'S');
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-      doc.text('LÉGENDE', ML + 4, ay + 5.5);
-      doc.setTextColor(0, 0, 0); ay += 10;
-      let lx = ML, ly = ay;
-      legendSyms.forEach(s => {
-        if (lx + 60 > W - MR) { lx = ML; ly += 9; }
-        doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
-        doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(s.label, lx + 9, ly + 0.2);
-        lx += Math.max(60, doc.getTextWidth(s.label) + 14);
-      });
-    }
-  });
+      // Légende des symboles utilisés (uniquement si plan annoté)
+      if (loc.planAnnotations?.exported) {
+        const usedSymbols = new Set((loc.planAnnotations?.paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
+        const EXCL = ['fleche', 'arrow', 'trait', 'texte', 'text'];
+        const legendSyms = SYMBOLS.filter(s => usedSymbols.has(s.id) && !EXCL.some(x => s.id.toLowerCase().includes(x)));
+        if (legendSyms.length > 0) {
+          doc.setFillColor(250, 250, 250); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'F');
+          doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'S');
+          doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
+          doc.text('LÉGENDE', ML + 4, ay + 5.5);
+          doc.setTextColor(0, 0, 0); ay += 10;
+          let lx = ML, ly = ay;
+          legendSyms.forEach(s => {
+            if (lx + 60 > W - MR) { lx = ML; ly += 9; }
+            doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
+            doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+            doc.text(s.label, lx + 9, ly + 0.2);
+            lx += Math.max(60, doc.getTextWidth(s.label) + 14);
+          });
+        }
+      }
+    });
+  }
 
   // ── FOOTERS ───────────────────────────────────────────────────────────────────
 
