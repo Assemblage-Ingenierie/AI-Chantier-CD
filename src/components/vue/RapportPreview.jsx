@@ -199,6 +199,95 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
   );
 }
 
+// ── Page Intervenants ─────────────────────────────────────────────────────────
+function IntervenantsPage({ projet, pageNum, totalPages }) {
+  const participants = projet.participants || [];
+  const dateStr = projet.dateVisite
+    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
+    : new Date().toLocaleDateString('fr-FR');
+  return (
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+      {/* Header */}
+      <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
+        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
+        <span style={{ fontSize:6, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:0.5 }}>AI CHANTIER</span>
+        <span style={{ flex:1 }}/>
+        <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom} · {dateStr}</span>
+      </div>
+      {/* Content */}
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+        {/* Présentation */}
+        <ZoneHeader loc={{ nom: 'Présentation du projet' }}/>
+        <div style={{ marginTop:6, marginBottom:16, display:'flex', flexDirection:'column', gap:4 }}>
+          {projet.adresse && (
+            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
+              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Adresse</span>
+              <span>{projet.adresse}</span>
+            </div>
+          )}
+          {projet.dateVisite && (
+            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
+              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Date de visite</span>
+              <span>{dateStr}</span>
+            </div>
+          )}
+          {projet.maitreOuvrage && (
+            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
+              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Maître d'ouvrage</span>
+              <span>{projet.maitreOuvrage}</span>
+            </div>
+          )}
+        </div>
+        {/* Intervenants */}
+        <ZoneHeader loc={{ nom: 'Intervenants' }}/>
+        {/* En-tête tableau */}
+        <div style={{ display:'flex', alignItems:'center', background:'#333', borderRadius:3, padding:'4px 0', marginTop:4, marginBottom:2 }}>
+          <div style={{ width:22, flexShrink:0 }}/>
+          <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'white', paddingRight:8 }}>NOM / POSTE</div>
+          <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'white', paddingRight:8 }}>CONTACT</div>
+          <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'white', textAlign:'right', paddingRight:4 }}>PRÉSENCE</div>
+        </div>
+        {participants.map(pt => {
+          const isPresent = !pt.presence || pt.presence === 'present';
+          return (
+            <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'6px 0', borderBottom:`1px solid ${DA.border}` }}>
+              {/* Badge */}
+              <div style={{ width:22, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {pt.isAssemblage
+                  ? <span style={{ fontSize:6.5, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px' }}>A!</span>
+                  : <div style={{ width:6, height:6, borderRadius:'50%', background:'#ccc' }}/>
+                }
+              </div>
+              {/* Nom + poste */}
+              <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
+                <div style={{ fontSize:9, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                {pt.poste && <div style={{ fontSize:8, color:DA.gray }}>{pt.poste}</div>}
+              </div>
+              {/* Contact */}
+              <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
+                {pt.email && <div style={{ fontSize:8, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email}</div>}
+                {pt.tel && <div style={{ fontSize:8, color:DA.gray }}>{pt.tel}</div>}
+              </div>
+              {/* Présence */}
+              <div style={{ flex:'0 0 28%', textAlign:'right', paddingRight:4 }}>
+                <span style={{ fontSize:8, fontWeight:700, color: isPresent ? '#16A34A' : DA.red }}>
+                  {isPresent ? '✓ Présent' : '✗ Absent'}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Footer */}
+      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
+        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
+        <span style={{ flex:1 }}/>
+        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Composant principal ────────────────────────────────────────────────────
 export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin }) {
   const ppl    = photosParLigne ?? 2;
@@ -211,9 +300,11 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
   const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
 
-  const hasTableau  = (projet.tableauRecap || []).length > 0;
-  const totalPages  = 1 + pages.length + (hasTableau ? 1 : 0) + planLocs.length;
-  const allItems    = localisations.flatMap(l => l.items || []);
+  const hasTableau      = (projet.tableauRecap || []).length > 0;
+  const hasParticipants = (projet.participants || []).length > 0;
+  const pOff            = hasParticipants ? 1 : 0;
+  const totalPages      = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + planLocs.length;
+  const allItems        = localisations.flatMap(l => l.items || []);
 
   if (!pages.length) {
     return (
@@ -280,20 +371,29 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
         </div>
       </div>
 
+      {/* ── PAGE INTERVENANTS (dédiée) ── */}
+      {hasParticipants && (
+        <>
+          <PageSepBanner pageNum={2} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+          <IntervenantsPage projet={projet} pageNum={2} totalPages={totalPages}/>
+        </>
+      )}
+
       {/* ── PAGES OBSERVATIONS ── */}
       {pages.map((pageBlocks, pi) => {
         const firstId     = pageBlocks[0]?.id;
         const firstForced = breaks.has(firstId);
+        const pageNum     = pi + 2 + pOff;
         return (
           <React.Fragment key={pi}>
             <PageSepBanner
-              pageNum={pi + 2}
+              pageNum={pageNum}
               totalPages={totalPages}
               firstBlockId={firstId}
               isForced={firstForced}
               onToggle={onTogglePageBreak}
             />
-            <A4Card projet={projet} pageNum={pi + 2} totalPages={totalPages}>
+            <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
               {pageBlocks.map((block, bi) => (
                 <div key={block.id}>
                   {/* Contrôle saut entre blocs sur la MÊME page */}
@@ -320,7 +420,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       {/* ── PAGE TABLEAU RÉCAP ── */}
       {hasTableau && (
         <>
-          <PageSepBanner pageNum={totalPages} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+          <PageSepBanner pageNum={1 + pOff + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
           <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
             <div style={{ height:HDR, background:DA.black, position:'relative', display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
               <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
@@ -343,7 +443,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
       {/* ── PLANS EN FIN DE RAPPORT ── */}
       {planLocs.map((loc, pi) => {
-        const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + pi + 1;
+        const pageNum = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + pi + 1;
         return (
           <React.Fragment key={`plan-end-${loc.id}`}>
             <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
