@@ -199,85 +199,105 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
   );
 }
 
-// ── Page Intervenants ─────────────────────────────────────────────────────────
+// ── Page Présentation & Intervenants ──────────────────────────────────────────
 function IntervenantsPage({ projet, pageNum, totalPages }) {
   const participants = projet.participants || [];
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
-    : new Date().toLocaleDateString('fr-FR');
+    : null;
+  const infoRows = [
+    projet.adresse       && ['Adresse',          projet.adresse],
+    dateStr              && ['Date de visite',    dateStr],
+    projet.maitreOuvrage && ["Maître d'ouvrage",  projet.maitreOuvrage],
+  ].filter(Boolean);
+
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-      {/* Header */}
+      {/* Header standard */}
       <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
         <span style={{ fontSize:6, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:0.5 }}>AI CHANTIER</span>
         <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom} · {dateStr}</span>
+        <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
       </div>
-      {/* Content */}
+
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
-        {/* Présentation */}
-        <ZoneHeader loc={{ nom: 'Présentation du projet' }}/>
-        <div style={{ marginTop:6, marginBottom:16, display:'flex', flexDirection:'column', gap:4 }}>
-          {projet.adresse && (
-            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
-              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Adresse</span>
-              <span>{projet.adresse}</span>
+
+        {/* ── Présentation du projet ── */}
+        {infoRows.length > 0 && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+              <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+              <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Présentation du projet</span>
             </div>
-          )}
-          {projet.dateVisite && (
-            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
-              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Date de visite</span>
-              <span>{dateStr}</span>
+            <div style={{ background:DA.grayXL, borderRadius:6, padding:'8px 10px', marginBottom:14, display:'flex', flexDirection:'column', gap:5, border:`1px solid ${DA.border}` }}>
+              {infoRows.map(([k, v]) => (
+                <div key={k} style={{ display:'flex', gap:0, fontSize:9 }}>
+                  <span style={{ color:DA.gray, fontWeight:700, width:90, flexShrink:0 }}>{k}</span>
+                  <span style={{ color:DA.black }}>{v}</span>
+                </div>
+              ))}
             </div>
-          )}
-          {projet.maitreOuvrage && (
-            <div style={{ display:'flex', gap:8, fontSize:10, color:DA.black }}>
-              <span style={{ color:DA.gray, fontWeight:600, minWidth:80 }}>Maître d'ouvrage</span>
-              <span>{projet.maitreOuvrage}</span>
-            </div>
-          )}
+          </>
+        )}
+
+        {/* ── Intervenants ── */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+          <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>
+            Intervenants ({participants.length})
+          </span>
         </div>
-        {/* Intervenants */}
-        <ZoneHeader loc={{ nom: 'Intervenants' }}/>
+
         {/* En-tête tableau */}
-        <div style={{ display:'flex', alignItems:'center', background:'#333', borderRadius:3, padding:'4px 0', marginTop:4, marginBottom:2 }}>
-          <div style={{ width:22, flexShrink:0 }}/>
-          <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'white', paddingRight:8 }}>NOM / POSTE</div>
-          <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'white', paddingRight:8 }}>CONTACT</div>
-          <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'white', textAlign:'right', paddingRight:4 }}>PRÉSENCE</div>
+        <div style={{ display:'flex', alignItems:'center', background:DA.black, borderRadius:'4px 4px 0 0', padding:'5px 0' }}>
+          <div style={{ width:24, flexShrink:0 }}/>
+          <div style={{ flex:'0 0 34%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
+          <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
+          <div style={{ flex:'0 0 26%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
+          <div style={{ flex:'0 0 18%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
         </div>
-        {participants.map(pt => {
+
+        {/* Lignes */}
+        {participants.map((pt, i) => {
           const isPresent = !pt.presence || pt.presence === 'present';
+          const bg = i % 2 === 0 ? DA.grayXL : 'white';
           return (
-            <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'6px 0', borderBottom:`1px solid ${DA.border}` }}>
-              {/* Badge */}
-              <div style={{ width:22, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', background:bg, borderBottom:`1px solid ${DA.border}` }}>
+              {/* Badge — largeur fixe */}
+              <div style={{ width:24, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                 {pt.isAssemblage
-                  ? <span style={{ fontSize:6.5, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px' }}>A!</span>
-                  : <div style={{ width:6, height:6, borderRadius:'50%', background:'#ccc' }}/>
+                  ? <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', border:`1px solid #FECACA` }}>A!</span>
+                  : <div style={{ width:5, height:5, borderRadius:'50%', background:'#bbb' }}/>
                 }
               </div>
               {/* Nom + poste */}
-              <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
-                <div style={{ fontSize:9, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
-                {pt.poste && <div style={{ fontSize:8, color:DA.gray }}>{pt.poste}</div>}
+              <div style={{ flex:'0 0 34%', minWidth:0, paddingRight:8 }}>
+                <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
               </div>
-              {/* Contact */}
-              <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
-                {pt.email && <div style={{ fontSize:8, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email}</div>}
-                {pt.tel && <div style={{ fontSize:8, color:DA.gray }}>{pt.tel}</div>}
+              {/* Téléphone */}
+              <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {pt.tel || '—'}
+              </div>
+              {/* Email */}
+              <div style={{ flex:'0 0 26%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {pt.email || '—'}
               </div>
               {/* Présence */}
-              <div style={{ flex:'0 0 28%', textAlign:'right', paddingRight:4 }}>
-                <span style={{ fontSize:8, fontWeight:700, color: isPresent ? '#16A34A' : DA.red }}>
-                  {isPresent ? '✓ Présent' : '✗ Absent'}
+              <div style={{ flex:'0 0 18%', textAlign:'right', paddingRight:6 }}>
+                <span style={{ fontSize:7.5, fontWeight:700,
+                  color: isPresent ? '#16A34A' : DA.red,
+                  background: isPresent ? '#DCFCE7' : '#FEE2E2',
+                  borderRadius:4, padding:'1px 5px' }}>
+                  {isPresent ? 'Présent' : 'Absent'}
                 </span>
               </div>
             </div>
           );
         })}
       </div>
+
       {/* Footer */}
       <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
         <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
@@ -348,26 +368,6 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             ))}
           </div>
 
-          {/* Intervenants sur la page de garde */}
-          {(projet.participants || []).length > 0 && (
-            <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ fontSize:6, fontWeight:700, color:'rgba(255,255,255,0.35)', letterSpacing:1, textTransform:'uppercase', marginBottom:5 }}>
-                Intervenants
-              </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-                {(projet.participants || []).map(pt => (
-                  <div key={pt.id} style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    {pt.isAssemblage && (
-                      <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'rgba(227,5,19,0.2)', borderRadius:3, padding:'1px 3px', flexShrink:0 }}>A!</span>
-                    )}
-                    <span style={{ fontSize:8, fontWeight:700, color:'white' }}>{pt.nom}</span>
-                    {pt.poste && <span style={{ fontSize:7, color:'rgba(255,255,255,0.4)' }}>— {pt.poste}</span>}
-                    {pt.email && <span style={{ fontSize:7, color:'rgba(255,255,255,0.3)', marginLeft:'auto' }}>{pt.email}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
