@@ -150,23 +150,28 @@ function PlanBlock({ loc }) {
   );
 }
 
+// ── Bandeau header commun (logo + titre projet) ─────────────────────────────
+function HdrBar({ projet, dateStr }) {
+  return (
+    <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
+      <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
+      <img src="/logo_Ai_rouge_HD.png" alt="AI"
+        style={{ height:16, objectFit:'contain', opacity:0.9, flexShrink:0 }}/>
+      <span style={{ flex:1 }}/>
+      <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
+    </div>
+  );
+}
+
 function A4Card({ children, projet, pageNum, totalPages }) {
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : new Date().toLocaleDateString('fr-FR');
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-      {/* Header */}
-      <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
-        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
-        <span style={{ fontSize:6, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:0.5 }}>AI CHANTIER</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom} · {dateStr}</span>
-      </div>
+      <HdrBar projet={projet} dateStr={dateStr}/>
       {/* Contenu */}
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
-        {children}
-      </div>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>{children}</div>
       {/* Footer */}
       <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
         <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
@@ -213,13 +218,7 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-      {/* Header standard */}
-      <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
-        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
-        <span style={{ fontSize:6, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:0.5 }}>AI CHANTIER</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
-      </div>
+      <HdrBar projet={projet} dateStr={dateStr}/>
 
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
 
@@ -249,13 +248,15 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
           </span>
         </div>
 
-        {/* En-tête tableau */}
+        {/* En-tête tableau — badge fixe 24px + colonnes dans flex:1 pour éviter overflow */}
         <div style={{ display:'flex', alignItems:'center', background:DA.black, borderRadius:'4px 4px 0 0', padding:'5px 0' }}>
           <div style={{ width:24, flexShrink:0 }}/>
-          <div style={{ flex:'0 0 34%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
-          <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
-          <div style={{ flex:'0 0 26%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
-          <div style={{ flex:'0 0 18%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
+          <div style={{ flex:1, display:'flex', minWidth:0 }}>
+            <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
+            <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
+            <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
+            <div style={{ flex:'0 0 14%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
+          </div>
         </div>
 
         {/* Lignes */}
@@ -271,27 +272,30 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
                   : <div style={{ width:5, height:5, borderRadius:'50%', background:'#bbb' }}/>
                 }
               </div>
-              {/* Nom + poste */}
-              <div style={{ flex:'0 0 34%', minWidth:0, paddingRight:8 }}>
-                <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
-                {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
-              </div>
-              {/* Téléphone */}
-              <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                {pt.tel || '—'}
-              </div>
-              {/* Email */}
-              <div style={{ flex:'0 0 26%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                {pt.email || '—'}
-              </div>
-              {/* Présence */}
-              <div style={{ flex:'0 0 18%', textAlign:'right', paddingRight:6 }}>
-                <span style={{ fontSize:7.5, fontWeight:700,
-                  color: isPresent ? '#16A34A' : DA.red,
-                  background: isPresent ? '#DCFCE7' : '#FEE2E2',
-                  borderRadius:4, padding:'1px 5px' }}>
-                  {isPresent ? 'Présent' : 'Absent'}
-                </span>
+              {/* Colonnes dans flex:1 pour respecter le même % que l'en-tête */}
+              <div style={{ flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
+                {/* Nom + poste */}
+                <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
+                  <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                  {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
+                </div>
+                {/* Téléphone */}
+                <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {pt.tel || '—'}
+                </div>
+                {/* Email */}
+                <div style={{ flex:'0 0 28%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {pt.email || '—'}
+                </div>
+                {/* Présence */}
+                <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
+                  <span style={{ fontSize:7.5, fontWeight:700,
+                    color: isPresent ? '#16A34A' : DA.red,
+                    background: isPresent ? '#DCFCE7' : '#FEE2E2',
+                    borderRadius:4, padding:'1px 5px' }}>
+                    {isPresent ? 'Présent' : 'Absent'}
+                  </span>
+                </div>
               </div>
             </div>
           );
@@ -348,6 +352,12 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
         )}
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
+        {/* Logo Assemblage Ingénierie — coin supérieur droit */}
+        <div style={{ position:'absolute', top:MX, right:MX,
+          background:'white', borderRadius:6, padding:'6px 10px', boxShadow:'0 2px 8px rgba(0,0,0,0.3)' }}>
+          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
+            style={{ height:22, objectFit:'contain', display:'block' }}/>
+        </div>
         <div style={{ position:'relative' }}>
           <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
             Compte-rendu de visite
@@ -422,10 +432,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
         <>
           <PageSepBanner pageNum={1 + pOff + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
           <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-            <div style={{ height:HDR, background:DA.black, position:'relative', display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-              <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
-              <span style={{ fontSize:6, color:'rgba(255,255,255,0.5)', fontWeight:600, letterSpacing:0.5 }}>AI CHANTIER</span>
-            </div>
+            <HdrBar projet={projet} dateStr={null}/>
             <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
               <ZoneHeader loc={{ nom:'Tableau récapitulatif' }}/>
               <div style={{ fontSize:10, color:DA.gray, marginTop:4 }}>

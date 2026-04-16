@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { loadGlobalContacts, saveGlobalContact } from '../../lib/contacts.js';
+import { loadGlobalContacts, saveGlobalContact, deleteGlobalContact } from '../../lib/contacts.js';
 
 export const ASSEMBLAGE_TEAM = [
   { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net',     tel: '07 86 51 55 48' },
@@ -24,15 +24,15 @@ export const ASSEMBLAGE_TEAM = [
 ];
 
 const EMPTY = { nom: '', poste: '', email: '', tel: '' };
-const BADGE_W = 24; // largeur colonne badge, fixe pour tous
+const BADGE_W = 24;
 
 // ── Ligne participant ──────────────────────────────────────────────────────────
-function ParticipantRow({ p, onRemove, onToggle }) {
+function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
   const isPresent = !p.presence || p.presence === 'present';
   return (
     <div style={{ display:'flex', alignItems:'center', gap:0, background:DA.grayXL, borderRadius:8,
       border:`1px solid ${DA.border}`, padding:'5px 8px 5px 0' }}>
-      {/* Badge – largeur fixe, aligné pour tous */}
+      {/* Badge – largeur fixe */}
       <div style={{ width:BADGE_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
         {p.isAssemblage
           ? <span style={{ fontSize:7, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', lineHeight:1.3 }}>A!</span>
@@ -47,6 +47,21 @@ function ParticipantRow({ p, onRemove, onToggle }) {
             {[p.poste, p.email].filter(Boolean).join(' · ')}
           </div>
         )}
+      </div>
+      {/* Réordonner ↑↓ */}
+      <div style={{ display:'flex', flexDirection:'column', marginLeft:6, gap:1, flexShrink:0 }}>
+        <button onClick={onMoveUp} disabled={!onMoveUp}
+          style={{ fontSize:9, lineHeight:1, padding:'2px 5px', borderRadius:4,
+            border:`1px solid ${onMoveUp ? DA.border : 'transparent'}`,
+            background: onMoveUp ? 'white' : 'transparent',
+            color: onMoveUp ? DA.gray : DA.border,
+            cursor: onMoveUp ? 'pointer' : 'default' }}>↑</button>
+        <button onClick={onMoveDown} disabled={!onMoveDown}
+          style={{ fontSize:9, lineHeight:1, padding:'2px 5px', borderRadius:4,
+            border:`1px solid ${onMoveDown ? DA.border : 'transparent'}`,
+            background: onMoveDown ? 'white' : 'transparent',
+            color: onMoveDown ? DA.gray : DA.border,
+            cursor: onMoveDown ? 'pointer' : 'default' }}>↓</button>
       </div>
       {/* Toggle présence */}
       <button onClick={onToggle}
@@ -79,6 +94,20 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
   const toggle = (id) => onChange(participants.map(p =>
     p.id === id ? { ...p, presence: p.presence === 'absent' ? 'present' : 'absent' } : p
   ));
+  const move = (id, dir) => {
+    const idx = participants.findIndex(p => p.id === id);
+    if (idx < 0) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= participants.length) return;
+    const arr = [...participants];
+    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+    onChange(arr);
+  };
+
+  const deleteSaved = (id) => {
+    deleteGlobalContact(id);
+    setSaved(loadGlobalContacts());
+  };
 
   const addedEmails = new Set(participants.map(p => p.email).filter(Boolean));
 
@@ -113,8 +142,15 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
       {/* Liste des participants ajoutés */}
       {participants.length > 0 && (
         <div style={{ display:'flex', flexDirection:'column', gap:3, marginBottom:8 }}>
-          {participants.map(p => (
-            <ParticipantRow key={p.id} p={p} onRemove={() => remove(p.id)} onToggle={() => toggle(p.id)}/>
+          {participants.map((p, i) => (
+            <ParticipantRow
+              key={p.id}
+              p={p}
+              onRemove={() => remove(p.id)}
+              onToggle={() => toggle(p.id)}
+              onMoveUp={i > 0 ? () => move(p.id, -1) : null}
+              onMoveDown={i < participants.length - 1 ? () => move(p.id, 1) : null}
+            />
           ))}
         </div>
       )}
@@ -159,36 +195,44 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
         <div style={{ background:'white', border:`1px solid ${DA.border}`, borderRadius:8, marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.12)' }}>
 
           {/* Contacts enregistrés */}
-          {filteredSaved.length > 0 || extSearch ? (
+          {(filteredSaved.length > 0 || extSearch || saved.length > 0) ? (
             <>
               <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
                 <input value={extSearch} onChange={e => setExtSearch(e.target.value)}
-                  placeholder="Rechercher dans les contacts enregistrés…"
+                  placeholder="Rechercher dans les contacts…"
                   style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
               </div>
-              <div style={{ maxHeight:160, overflowY:'auto' }}>
+              <div style={{ maxHeight:180, overflowY:'auto' }}>
                 {filteredSaved.map(c => {
                   const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
                   const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
                   return (
                     <div key={c.id}
-                      onClick={() => { if (!isAdded) add({ ...c, isAssemblage: false }); }}
-                      style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', cursor: isAdded ? 'default' : 'pointer',
-                        opacity: isAdded ? 0.4 : 1, borderBottom:`1px solid ${DA.border}`, background:'white', transition:'background 0.1s' }}
-                      onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
-                      <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
+                        opacity: isAdded ? 0.5 : 1, borderBottom:`1px solid ${DA.border}`, background:'white' }}>
+                      <div onClick={() => { if (!isAdded) add({ ...c, isAssemblage: false }); }}
+                        style={{ display:'flex', alignItems:'center', gap:8, flex:1, minWidth:0, cursor: isAdded ? 'default' : 'pointer' }}>
+                        <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
+                          <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
+                        </div>
+                        {isAdded && <span style={{ fontSize:9, color:DA.grayL, flexShrink:0 }}>✓</span>}
                       </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
-                        <div style={{ fontSize:9, color:DA.gray }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
-                      </div>
-                      {isAdded && <span style={{ fontSize:9, color:DA.grayL }}>✓</span>}
+                      {/* Supprimer du carnet */}
+                      <button onClick={() => deleteSaved(c.id)}
+                        title="Supprimer du carnet"
+                        style={{ color:'#FCA5A5', background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px' }}>
+                        <Ic n="x" s={10}/>
+                      </button>
                     </div>
                   );
                 })}
-                {filteredSaved.length === 0 && <div style={{ padding:10, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>}
+                {filteredSaved.length === 0 && extSearch && (
+                  <div style={{ padding:10, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>
+                )}
               </div>
             </>
           ) : null}

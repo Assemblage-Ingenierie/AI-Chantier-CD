@@ -10,6 +10,20 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
+  // Charger le logo Assemblage Ingénierie en base64
+  let logoDataUrl = null;
+  try {
+    const resp = await fetch('/logo_Ai_rouge_HD.png');
+    if (resp.ok) {
+      const blob = await resp.blob();
+      logoDataUrl = await new Promise(res => {
+        const r = new FileReader();
+        r.onloadend = () => res(r.result);
+        r.readAsDataURL(blob);
+      });
+    }
+  } catch {}
+
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const W = 210, H = 297, ML = 18, MR = 18, CW = W - ML - MR;
 
@@ -28,8 +42,13 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   const hdr = () => {
     doc.setFillColor(...BK); doc.rect(0, 0, W, 10, 'F');
     doc.setFillColor(...RD); doc.rect(0, 0, 3, 10, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
-    doc.text('AI CHANTIER', ML + 3, 6.5);
+    if (logoDataUrl) {
+      try { doc.addImage(logoDataUrl, 'PNG', ML + 3, 1.8, 30, 6.5, undefined, 'FAST'); } catch {}
+    } else {
+      doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
+      doc.text('AI CHANTIER', ML + 3, 6.5);
+    }
+    doc.setTextColor(200, 200, 200); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
     doc.text(`${projet.nom} · ${today}`, W - MR, 6.5, { align: 'right' });
     doc.setTextColor(0, 0, 0);
   };
@@ -67,15 +86,19 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   }
   doc.setFillColor(...RD); doc.rect(0, 0, 4, H * 0.52, 'F');
 
-  // Logo Assemblage Ingénierie
+  // Logo Assemblage Ingénierie — coin supérieur droit de la page de garde
   try {
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(W - MR - 52, 10, 52, 20, 2, 2, 'F');
-    doc.setTextColor(227, 5, 19); doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(8);
-    doc.text('Assembl!age', W - MR - 50, 18);
-    doc.setFontSize(7); doc.setTextColor(100, 100, 100);
-    doc.text('ingénierie', W - MR - 50, 24);
-    doc.setTextColor(0, 0, 0);
+    doc.roundedRect(W - MR - 54, 8, 54, 20, 2, 2, 'F');
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, 'PNG', W - MR - 52, 10.5, 48, 14, undefined, 'FAST');
+    } else {
+      doc.setTextColor(227, 5, 19); doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(8);
+      doc.text('Assembl!age', W - MR - 52, 18);
+      doc.setFontSize(7); doc.setTextColor(100, 100, 100);
+      doc.text('ingénierie', W - MR - 52, 24);
+      doc.setTextColor(0, 0, 0);
+    }
   } catch {}
 
   // Titre projet
