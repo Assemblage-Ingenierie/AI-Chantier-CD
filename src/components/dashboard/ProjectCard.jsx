@@ -2,8 +2,20 @@ import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
+function getLocs(p) {
+  if (p.visites?.length) return p.visites.flatMap(v => v.localisations || []);
+  return p.localisations || [];
+}
+function getItems(l) {
+  return l.sections?.length ? l.sections.flatMap(s => s.items || []) : (l.items || []);
+}
+function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
+function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
+
 export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  const obs = obsCount(p);
+  const urg = urgCount(p);
 
   return (
     <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative' }}>
@@ -28,6 +40,20 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
           <p style={{ fontSize:11,color:DA.grayL,margin:'2px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.adresse || '—'}</p>
           {p.updatedAt && <p style={{ fontSize:10,color:DA.grayL,margin:'3px 0 0' }}>Modifié le {new Date(p.updatedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</p>}
           {!arc && <p style={{ fontSize:10,color:DA.red,margin:'4px 0 0',fontWeight:600,display:'flex',alignItems:'center',gap:3 }}>Ouvrir la visite →</p>}
+          {(obs > 0 || urg > 0) && (
+            <div style={{ display:'flex',gap:5,marginTop:5,flexWrap:'wrap' }}>
+              {obs > 0 && (
+                <span style={{ display:'inline-flex',alignItems:'center',gap:3,fontSize:10,color:DA.grayL,background:DA.grayXL,border:`1px solid ${DA.border}`,borderRadius:20,padding:'2px 7px' }}>
+                  <Ic n="pin" s={9}/> {obs} obs
+                </span>
+              )}
+              {urg > 0 && (
+                <span style={{ display:'inline-flex',alignItems:'center',gap:3,fontSize:10,color:DA.red,background:DA.redL,border:`1px solid rgba(185,28,28,0.15)`,borderRadius:20,padding:'2px 7px',fontWeight:700 }}>
+                  <Ic n="spk" s={9}/> {urg} urgente{urg > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Menu */}

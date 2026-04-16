@@ -48,37 +48,62 @@ function tryParseJson(str) {
 }
 
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
+function slimLoc(l) {
+  return {
+    ...l,
+    planBg: null,
+    planData: null,
+    // eslint-disable-next-line no-unused-vars
+    items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
+      ...item,
+      // eslint-disable-next-line no-unused-vars
+      photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
+    })),
+  };
+}
+
 function toSlim(ps) {
   return ps.map(p => ({
     ...p,
     planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })),
-    localisations: (p.localisations || []).map(l => ({
-      ...l,
-      planBg: null,
-      planData: null,
-      // eslint-disable-next-line no-unused-vars
-      items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
-        ...item,
-        // eslint-disable-next-line no-unused-vars
-        photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
-      })),
+    visites: (p.visites || []).map(v => ({
+      ...v,
+      localisations: (v.localisations || []).map(slimLoc),
     })),
   }));
 }
 
 // --- Lecture depuis les tables normalisées ---
 
+function buildLocFromRow(loc, itemsByLoc) {
+  return {
+    id:              loc.id,
+    nom:             loc.nom ?? '',
+    planBg:          loc.plan_bg ?? null,
+    planData:        loc.plan_data ?? null,
+    planAnnotations: tryParseJson(loc.plan_annotations),
+    items: (itemsByLoc[loc.id] ?? []).map(item => ({
+      id:              item.id,
+      titre:           item.titre ?? '',
+      suivi:           item.suivi ?? 'rien',
+      urgence:         item.urgence ?? 'basse',
+      commentaire:     item.commentaire ?? '',
+      planAnnotations: tryParseJson(item.plan_annotations),
+      photos:          [],
+      _photosHydrated: false,
+    })),
+  };
+}
+
 async function loadRemote() {
   const sb = await getSupabase();
-  // NE PAS charger item_photos globalement : la table est trop volumineuse → timeout 57014.
-  // Les photos sont chargées à la demande par loadProjectPhotos() à l'ouverture d'un projet.
   const [r1, r2, r3, r4] = await Promise.all([
     sb.from('chantiers').select('*'),
     sb.from('chantier_plans')
       .select('id,chantier_id,nom,bg,data,sort_order')
       .order('sort_order'),
     sb.from('chantier_localisations')
-      .select('id,chantier_id,nom,plan_bg,plan_data,plan_annotations,sort_order')
+      .select('id,chantier_id,nom,plan_bg,plan_data,plan_annotations,sort_order,visite_id')
       .order('sort_order'),
     sb.from('localisation_items')
       .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
@@ -94,42 +119,60 @@ async function loadRemote() {
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
   const itemsByLoc      = groupBy(r4.data ?? [], 'localisation_id');
 
-  return (r1.data ?? []).map(c => ({
-    id:            c.id,
-    nom:           c.nom ?? '',
-    statut:        c.statut ?? 'en_cours',
-    adresse:       c.adresse ?? '',
-    dateVisite:    c.date_visite ?? null,
-    maitreOuvrage: c.maitre_ouvrage ?? '',
-    photo:         c.photo ?? null,
-    photosParLigne: c.photos_par_ligne ?? 2,
-    participants:  c.participants ?? [],
-    tableauRecap:  c.tableau_recap ?? [],
-    updatedAt:     c.updated_at,
-    planLibrary: (plansByChantier[c.id] ?? []).map(pl => ({
-      id:   pl.id,
-      nom:  pl.nom ?? '',
-      bg:   pl.bg ?? null,
-      data: pl.data ?? null,
-    })),
-    localisations: (locsByChantier[c.id] ?? []).map(loc => ({
-      id:              loc.id,
-      nom:             loc.nom ?? '',
-      planBg:          loc.plan_bg ?? null,
-      planData:        loc.plan_data ?? null,
-      planAnnotations: tryParseJson(loc.plan_annotations),
-      items: (itemsByLoc[loc.id] ?? []).map(item => ({
-        id:               item.id,
-        titre:            item.titre ?? '',
-        suivi:            item.suivi ?? 'rien',
-        urgence:          item.urgence ?? 'basse',
-        commentaire:      item.commentaire ?? '',
-        planAnnotations:  tryParseJson(item.plan_annotations),
-        photos:           [],
-        _photosHydrated:  false, // flag runtime : photos pas encore chargées pour cet item
+  return (r1.data ?? []).map(c => {
+    const allLocs      = locsByChantier[c.id] ?? [];
+    const storedVisites = c.visites ?? [];
+
+    let visites;
+    if (storedVisites.length === 0) {
+      // Ancien projet sans visites → créer une visite synthétique
+      const visitId = `v1_${c.id}`;
+      visites = [{
+        id:              visitId,
+        label:           'Visite 1',
+        dateVisite:      c.date_visite ?? null,
+        participants:    c.participants ?? [],
+        tableauRecap:    c.tableau_recap ?? [],
+        photosParLigne:  c.photos_par_ligne ?? 2,
+        plansEnFin:      false,
+        rapportPageBreaks: [],
+        localisations:   allLocs.map(loc => buildLocFromRow(loc, itemsByLoc)),
+      }];
+    } else {
+      // Nouveau format : visites définies en DB
+      visites = storedVisites.map(rv => ({
+        ...rv,
+        localisations: allLocs
+          .filter(loc => loc.visite_id === rv.id)
+          .map(loc => buildLocFromRow(loc, itemsByLoc)),
+      }));
+      // Localisations orphelines (visite_id null = legacy) → première visite
+      const orphans = allLocs.filter(loc => !loc.visite_id);
+      if (orphans.length > 0 && visites.length > 0) {
+        visites[0] = {
+          ...visites[0],
+          localisations: [
+            ...(visites[0].localisations || []),
+            ...orphans.map(loc => buildLocFromRow(loc, itemsByLoc)),
+          ],
+        };
+      }
+    }
+
+    return {
+      id:            c.id,
+      nom:           c.nom ?? '',
+      statut:        c.statut ?? 'en_cours',
+      adresse:       c.adresse ?? '',
+      maitreOuvrage: c.maitre_ouvrage ?? '',
+      photo:         c.photo ?? null,
+      updatedAt:     c.updated_at,
+      planLibrary:   (plansByChantier[c.id] ?? []).map(pl => ({
+        id: pl.id, nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null,
       })),
-    })),
-  }));
+      visites,
+    };
+  });
 }
 
 // Charge les photos pour un ensemble d'items — sans la colonne `data` (évite timeout 57014)
@@ -201,14 +244,42 @@ async function uploadPhotoToStorage(sb, itemId, photoIndex, name, base64) {
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
+async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
+  const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
+  const rawPhotos = (!item._photosHydrated && !hasLocalPhotos)
+    ? (fetchedPhotosByItem[item.id] ?? [])
+    : (item.photos || []);
+
+  const result = [];
+  for (let pi = 0; pi < rawPhotos.length; pi++) {
+    const ph = rawPhotos[pi];
+    let storageUrl = ph.storage_url ?? null;
+    if (storageUrl) {
+      // Already in Storage — reuse
+    } else if (ph.data?.startsWith('data:')) {
+      storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
+      if (!storageUrl) continue;
+    } else if (ph.data?.startsWith('http')) {
+      storageUrl = ph.data;
+    } else {
+      const legacyId = ph._id || ph.id;
+      if (!legacyId) continue;
+      const { data: legRow } = await sb.from('item_photos').select('data').eq('id', legacyId).maybeSingle();
+      if (!legRow?.data) continue;
+      storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, legRow.data);
+      if (!storageUrl) continue;
+      await sb.from('item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
+    }
+    result.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
+  }
+  return result;
+}
+
 async function saveRemote(ps) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
   const errors = [];
 
-  // Supprimer uniquement les chantiers CONNUS de ce client qui ont été supprimés localement.
-  // On n'utilise PAS une requête Supabase pour lister les chantiers existants car ça
-  // supprimerait les projets ajoutés depuis un autre appareil non encore chargés ici.
   const memIds = new Set(ps.map(p => p.id));
   if (_lastRemoteIds !== null) {
     const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
@@ -217,54 +288,61 @@ async function saveRemote(ps) {
       if (error) errors.push(error);
     }
   }
-  // Mettre à jour _lastRemoteIds pour refléter l'état après cette sauvegarde
   _lastRemoteIds = new Set(ps.map(p => p.id));
 
-  // Upsert chaque chantier et synchroniser ses enfants
   for (const p of ps) {
+    // Métadonnées visites (sans localisations)
+    const visitesMetadata = (p.visites || []).map(v => ({
+      id:               v.id,
+      label:            v.label ?? 'Visite 1',
+      dateVisite:       v.dateVisite ?? null,
+      participants:     v.participants ?? [],
+      tableauRecap:     v.tableauRecap ?? [],
+      photosParLigne:   v.photosParLigne ?? 2,
+      plansEnFin:       v.plansEnFin ?? false,
+      rapportPageBreaks: v.rapportPageBreaks ?? [],
+    }));
+
+    const firstVisit = p.visites?.[0];
     const { error: ce } = await sb.from('chantiers').upsert({
-      id:             p.id,
-      nom:            p.nom ?? '',
-      statut:         p.statut ?? 'en_cours',
-      adresse:        p.adresse ?? '',
-      date_visite:    p.dateVisite ?? null,
-      maitre_ouvrage: p.maitreOuvrage ?? '',
-      photo:          p.photo ?? null,
-      photos_par_ligne: p.photosParLigne ?? 2,
-      participants:   p.participants ?? [],
-      tableau_recap:  p.tableauRecap ?? [],
-      updated_at:     now,
+      id:              p.id,
+      nom:             p.nom ?? '',
+      statut:          p.statut ?? 'en_cours',
+      adresse:         p.adresse ?? '',
+      maitre_ouvrage:  p.maitreOuvrage ?? '',
+      photo:           p.photo ?? null,
+      // colonnes legacy (rétrocompatibilité) — prises de la première visite
+      date_visite:     firstVisit?.dateVisite ?? null,
+      photos_par_ligne: firstVisit?.photosParLigne ?? 2,
+      participants:    firstVisit?.participants ?? [],
+      tableau_recap:   firstVisit?.tableauRecap ?? [],
+      visites:         visitesMetadata,
+      updated_at:      now,
     }, { onConflict: 'id' });
     if (ce) { errors.push(ce); continue; }
 
-    // Plans : supprimer tous puis réinsérer (gère suppressions + réordonnancement)
+    // Plans
     await sb.from('chantier_plans').delete().eq('chantier_id', p.id);
     const planRows = (p.planLibrary || []).map((pl, i) => ({
-      id:          pl.id || crypto.randomUUID(),
-      chantier_id: p.id,
-      nom:         pl.nom ?? '',
-      bg:          pl.bg ?? null,
-      data:        pl.data ?? null,
-      sort_order:  i,
+      id: pl.id || crypto.randomUUID(), chantier_id: p.id,
+      nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null, sort_order: i,
     }));
     if (planRows.length > 0) {
       const { error } = await sb.from('chantier_plans').insert(planRows);
       if (error) errors.push(error);
     }
 
-    const locs = p.localisations || [];
+    // Toutes les localisations de toutes les visites
+    const allLocsFlat = (p.visites || []).flatMap(v =>
+      (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
+    );
 
-    // Pour les items dont les photos n'ont pas encore été hydratées ET dont l'état local
-    // ne contient aucune photo avec data (= pas de modification utilisateur), il faut
-    // récupérer les photos existantes dans Supabase avant le CASCADE delete,
-    // sinon elles seraient perdues.
+    // Pré-fetch photos pour items non hydratés
     const unloadedItemIds = [];
-    locs.forEach(l => {
+    allLocsFlat.forEach(l => {
       (l.items || []).forEach(item => {
-        const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
-        if (!item._photosHydrated && !hasLocalPhotos && item.id) {
-          unloadedItemIds.push(item.id);
-        }
+        const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
+        if (!item._photosHydrated && !hasLocal && item.id) unloadedItemIds.push(item.id);
       });
     });
     const fetchedPhotosByItem = {};
@@ -272,88 +350,55 @@ async function saveRemote(ps) {
       const { data: pData, error: pErr } = await sb.from('item_photos')
         .select('id,item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
       if (pErr) {
-        // Pré-fetch échoué (ex: timeout) : risqué de faire le CASCADE delete
-        // → on saute la sync localisations/items/photos pour ce projet pour ne pas perdre les photos.
-        console.warn('Photo pre-fetch failed, skipping localisation sync for safety:', pErr);
+        console.warn('Photo pre-fetch failed, skipping sync:', pErr);
         errors.push(pErr);
         continue;
       }
       Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
     }
 
-    // Localisations : supprimer toutes (CASCADE → items + photos), puis réinsérer
+    // Supprimer + réinsérer localisations (CASCADE → items + photos)
     await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
-    const locRows = locs.map((l, i) => ({
-      id:              l.id || crypto.randomUUID(),
-      chantier_id:     p.id,
-      nom:             l.nom ?? '',
-      plan_bg:         l.planBg ?? null,
-      plan_data:       l.planData ?? null,
+    const locRows = allLocsFlat.map((l, i) => ({
+      id:               l.id || crypto.randomUUID(),
+      chantier_id:      p.id,
+      nom:              l.nom ?? '',
+      plan_bg:          l.planBg ?? null,
+      plan_data:        l.planData ?? null,
       plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
-      sort_order:      i,
+      sort_order:       i,
+      visite_id:        l._visiteId,
     }));
     if (locRows.length > 0) {
       const { error: le } = await sb.from('chantier_localisations').insert(locRows);
       if (le) { errors.push(le); continue; }
     }
 
-    // Items et photos (les localisations viennent d'être réinsérées)
+    // Items + photos
     const allItems  = [];
     const allPhotos = [];
-    for (let li = 0; li < locs.length; li++) {
-      const l = locs[li];
+    for (let li = 0; li < allLocsFlat.length; li++) {
+      const l     = allLocsFlat[li];
       const locId = locRows[li]?.id;
       if (!locId) continue;
       for (let ii = 0; ii < (l.items || []).length; ii++) {
-        const item = l.items[ii];
+        const item   = l.items[ii];
         const itemId = item.id || crypto.randomUUID();
         allItems.push({
-          id:              itemId,
-          localisation_id: locId,
-          titre:           item.titre ?? '',
-          suivi:           item.suivi ?? 'rien',
-          urgence:         item.urgence ?? 'basse',
-          commentaire:     item.commentaire ?? '',
+          id: itemId, localisation_id: locId,
+          titre: item.titre ?? '', suivi: item.suivi ?? 'rien',
+          urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
           plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
-          sort_order:      ii,
+          sort_order: ii,
         });
-        // Photos : utiliser les données Supabase pré-fetchées pour les items non hydratés,
-        // les données locales pour les items hydratés (y compris photos supprimées = [])
-        const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
-        const rawPhotos = (!item._photosHydrated && !hasLocalPhotos)
-          ? (fetchedPhotosByItem[item.id] ?? [])
-          : (item.photos || []);
-        for (let pi = 0; pi < rawPhotos.length; pi++) {
-          const ph = rawPhotos[pi];
-          let storageUrl = ph.storage_url ?? null;
-          if (storageUrl) {
-            // Already in Storage (pre-fetched migrated photo or previously saved URL) — reuse as-is
-          } else if (ph.data?.startsWith('data:')) {
-            // New base64 photo (just taken) — upload to Storage
-            storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
-            if (!storageUrl) continue;
-          } else if (ph.data?.startsWith('http')) {
-            // data field contains the URL directly (older interim format)
-            storageUrl = ph.data;
-          } else {
-            // Legacy photo: base64 is in the DB `data` column — fetch by PK and migrate to Storage
-            const legacyId = ph._id || ph.id;
-            if (!legacyId) continue;
-            const { data: legRow } = await sb.from('item_photos')
-              .select('data').eq('id', legacyId).maybeSingle();
-            if (!legRow?.data) continue;
-            storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, legRow.data);
-            if (!storageUrl) continue;
-            await sb.from('item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
-          }
-          allPhotos.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
-        }
+        const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem);
+        allPhotos.push(...photos);
       }
     }
 
     if (allItems.length > 0) {
       const { error } = await sb.from('localisation_items').insert(allItems);
-      if (error) { errors.push(error); continue; } // si items échouent, photos aussi (FK) → skip
+      if (error) { errors.push(error); continue; }
     }
     for (const photo of allPhotos) {
       const { error } = await sb.from('item_photos').insert([photo]);

@@ -31,7 +31,7 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
-@media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ── Modals : bottom-sheet mobile → fenêtre centrée desktop ── */
 .modal-overlay {

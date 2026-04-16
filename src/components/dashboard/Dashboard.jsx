@@ -11,21 +11,6 @@ const STEPS = [
   { n:4, icon:'fil',  t:'Générez le rapport PDF', d:'Onglet Rapport → Exporter' },
 ];
 
-function countItems(ps) {
-  return ps.reduce((s,p) => s + (p.localisations||[]).reduce((ss,l) => {
-    const n = l.sections?.length
-      ? l.sections.reduce((sss,sec) => sss + (sec.items||[]).length, 0)
-      : (l.items||[]).length;
-    return ss + n;
-  }, 0), 0);
-}
-function countUrgent(ps) {
-  return ps.reduce((s,p) => s + (p.localisations||[]).reduce((ss,l) => {
-    const items = l.sections?.length ? l.sections.flatMap(sec=>sec.items||[]) : (l.items||[]);
-    return ss + items.filter(i => i.urgence === 'haute').length;
-  }, 0), 0);
-}
-
 export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
@@ -34,10 +19,8 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
   const actifs   = projets.filter(p => p.statut !== 'archive').sort(byName);
   const archives = projets.filter(p => p.statut === 'archive').sort(byName);
   const stats = [
-    { l:'Projets actifs',  v:actifs.length },
-    { l:'Observations',    v:countItems(projets) },
-    { l:'Archivés',        v:archives.length },
-    { l:'Urgentes',        v:countUrgent(projets), red:true },
+    { l:'Projets actifs', v:actifs.length },
+    { l:'Archivés',       v:archives.length },
   ];
 
   return (

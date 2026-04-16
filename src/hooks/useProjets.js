@@ -9,12 +9,8 @@ export function useProjets(onSyncStatus) {
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
 
-  // Garde projetsRef à jour pour les handlers flush
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
-  // Chargement en deux phases :
-  // 1. Cache local → affichage instantané
-  // 2. Supabase en arrière-plan → mise à jour si l'utilisateur n'a pas encore modifié
   useEffect(() => {
     loadLocalData()
       .then((d) => { if (d.length) setProjets(d); })
@@ -24,18 +20,13 @@ export function useProjets(onSyncStatus) {
     loadData()
       .then((remotePs) => {
         if (!remotePs.length) return;
-        if (userModified.current) return; // l'utilisateur édite déjà, on ne touche pas
+        if (userModified.current) return;
 
-        const localPs = projetsRef.current;
+        const localPs  = projetsRef.current;
         const localById = new Map(localPs.map(p => [p.id, p]));
         const remoteIds = new Set(remotePs.map(p => p.id));
+        const unsynced  = localPs.filter(p => !remoteIds.has(p.id));
 
-        // Projets locaux absents de Supabase (jamais synchronisés)
-        const unsynced = localPs.filter(p => !remoteIds.has(p.id));
-
-        // Pour chaque projet remote, préférer la version locale si elle est plus récente
-        // ET préserver les photos déjà hydratées (évite que loadData n'écrase l'état
-        // après que hydratePhotos() a déjà chargé les photos — race condition classique)
         let keptLocal = false;
         const merged = remotePs.map(rp => {
           const lp = localById.get(rp.id);
@@ -43,22 +34,28 @@ export function useProjets(onSyncStatus) {
             keptLocal = true;
             return lp;
           }
-          // Même si on prend la version remote, on préserve les photos déjà hydratées
+          // Préserver les photos déjà hydratées (évite la race condition loadData ↔ hydratePhotos)
           if (!lp) return rp;
           return {
             ...rp,
-            localisations: (rp.localisations || []).map(loc => {
-              const localLoc = lp.localisations?.find(l => l.id === loc.id);
-              if (!localLoc) return loc;
+            visites: (rp.visites || []).map(rv => {
+              const lv = lp.visites?.find(v => v.id === rv.id);
+              if (!lv) return rv;
               return {
-                ...loc,
-                items: (loc.items || []).map(item => {
-                  const localItem = localLoc.items?.find(i => i.id === item.id);
-                  if (localItem?._photosHydrated) {
-                    // Garder les photos déjà chargées — ne pas les écraser avec []
-                    return { ...item, photos: localItem.photos, _photosHydrated: true };
-                  }
-                  return item;
+                ...rv,
+                localisations: (rv.localisations || []).map(loc => {
+                  const localLoc = lv.localisations?.find(l => l.id === loc.id);
+                  if (!localLoc) return loc;
+                  return {
+                    ...loc,
+                    items: (loc.items || []).map(item => {
+                      const localItem = localLoc.items?.find(i => i.id === item.id);
+                      if (localItem?._photosHydrated) {
+                        return { ...item, photos: localItem.photos, _photosHydrated: true };
+                      }
+                      return item;
+                    }),
+                  };
                 }),
               };
             }),
@@ -71,7 +68,6 @@ export function useProjets(onSyncStatus) {
         setProjets(allMerged);
         saveLocalCache(allMerged);
 
-        // Pousser vers Supabase uniquement si on a réellement des données locales plus récentes
         const hasLocalChanges = unsynced.length > 0 || keptLocal;
         if (hasLocalChanges) userModified.current = true;
       })
@@ -79,10 +75,9 @@ export function useProjets(onSyncStatus) {
       .finally(() => setRemoteLoaded(true));
   }, []);
 
-  // Sauvegarde avec debounce 2s — uniquement si l'utilisateur a modifié quelque chose
   useEffect(() => {
     if (!hydrated) return;
-    if (!userModified.current) return; // pas de sauvegarde Supabase sur le chargement initial
+    if (!userModified.current) return;
     onSyncStatus?.('saving');
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -91,11 +86,9 @@ export function useProjets(onSyncStatus) {
     return () => clearTimeout(debounceRef.current);
   }, [hydrated, projets]);
 
-  // Flush immédiat avant fermeture/reload de l'onglet
-  // pagehide est plus fiable que beforeunload sur iOS/mobile
   useEffect(() => {
     const flush = () => {
-      if (!userModified.current) return; // rien à sauvegarder
+      if (!userModified.current) return;
       clearTimeout(debounceRef.current);
       saveData(projetsRef.current, onSyncStatus);
     };
@@ -119,54 +112,64 @@ export function useProjets(onSyncStatus) {
 
   const addProjet = (data) => {
     userModified.current = true;
+    const visitId = crypto.randomUUID();
     const projet = {
       id: crypto.randomUUID(),
       nom: data.nom,
       adresse: data.adresse ?? '',
-      dateVisite: null,
       maitreOuvrage: data.maitreOuvrage ?? '',
       photo: data.photo ?? null,
-      participants: [],
       statut: 'en_cours',
-      tableauRecap: [],
       planLibrary: [],
-      localisations: [],
       updatedAt: new Date().toISOString(),
+      visites: [{
+        id: visitId,
+        label: 'Visite 1',
+        dateVisite: null,
+        participants: [],
+        tableauRecap: [],
+        photosParLigne: 2,
+        plansEnFin: false,
+        rapportPageBreaks: [],
+        localisations: [],
+      }],
     };
     setProjets((ps) => [...ps, projet]);
     return projet;
   };
 
-  // Charge les photos complètes pour un projet sans déclencher de sauvegarde.
-  // Positionne _photosHydrated:true sur tous les items (même ceux sans photos).
+  // Charge les photos pour un projet (cherche dans toutes les visites)
   const hydratePhotos = async (projectId) => {
     const projet = projetsRef.current.find(p => p.id === projectId);
     if (!projet) return;
-    const itemIds = (projet.localisations || []).flatMap(l => (l.items || []).map(i => i.id));
-    // Fetch même si certains items ont déjà des photos (cas rechargement).
-    // null = erreur réseau/timeout → on ne touche pas l'état (évite d'écraser des photos valides)
+
+    const itemIds = (projet.visites || []).flatMap(v =>
+      (v.localisations || []).flatMap(l => (l.items || []).map(i => i.id))
+    );
     const photosMap = itemIds.length ? await loadProjectPhotos(itemIds) : {};
     if (photosMap === null) return;
-    // Met à jour les photos dans le state SANS marquer userModified → pas de sauvegarde déclenchée
-    // Inclut _id et _legacy pour la migration background ; ils seront strippés par toSlim() lors de la sauvegarde.
+
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
         ...p,
-        localisations: (p.localisations || []).map(loc => ({
-          ...loc,
-          items: (loc.items || []).map(item => ({
-            ...item,
-            _photosHydrated: true,
-            photos: photosMap[item.id]
-              ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false }))
-              : [],
+        visites: (p.visites || []).map(v => ({
+          ...v,
+          localisations: (v.localisations || []).map(loc => ({
+            ...loc,
+            items: (loc.items || []).map(item => ({
+              ...item,
+              _photosHydrated: true,
+              photos: photosMap[item.id]
+                ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false }))
+                : [],
+            })),
           })),
         })),
       };
     }));
 
-    // Migration background : photos legacy (base64 en DB) → Supabase Storage, une à la fois
+    // Migration background : legacy base64 → Storage
     const legacyPhotoIds = [];
     Object.values(photosMap).forEach(photos => {
       photos.forEach(ph => { if (ph._legacy && ph.id) legacyPhotoIds.push(ph.id); });
@@ -174,19 +177,21 @@ export function useProjets(onSyncStatus) {
     if (legacyPhotoIds.length > 0) {
       migratePhotosToStorage(legacyPhotoIds).then(migrated => {
         if (!Object.keys(migrated).length) return;
-        // Mettre à jour le state : remplacer null data par les URLs migrées
         setProjets(ps => ps.map(p => {
           if (p.id !== projectId) return p;
           return {
             ...p,
-            localisations: (p.localisations || []).map(loc => ({
-              ...loc,
-              items: (loc.items || []).map(item => ({
-                ...item,
-                photos: (item.photos || []).map(ph => ({
-                  ...ph,
-                  data: (ph._id && migrated[ph._id]) ? migrated[ph._id] : ph.data,
-                  _legacy: (ph._id && migrated[ph._id]) ? false : ph._legacy,
+            visites: (p.visites || []).map(v => ({
+              ...v,
+              localisations: (v.localisations || []).map(loc => ({
+                ...loc,
+                items: (loc.items || []).map(item => ({
+                  ...item,
+                  photos: (item.photos || []).map(ph => ({
+                    ...ph,
+                    data: (ph._id && migrated[ph._id]) ? migrated[ph._id] : ph.data,
+                    _legacy: (ph._id && migrated[ph._id]) ? false : ph._legacy,
+                  })),
                 })),
               })),
             })),
