@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { SYMBOLS, drawAnnotationPaths } from './Annotator.jsx';
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
 const S   = 3;
@@ -134,8 +135,34 @@ function ItemBlock({ item, ppl }) {
 }
 
 function PlanBlock({ loc }) {
-  const planImg = loc.planAnnotations?.exported || loc.planBg;
-  if (!planImg) return null;
+  const exported = loc.planAnnotations?.exported;
+  const paths    = loc.planAnnotations?.paths;
+  const planBg   = loc.planBg;
+  const [renderedImg, setRenderedImg] = useState(() => exported || null);
+
+  useEffect(() => {
+    if (exported) { setRenderedImg(exported); return; }
+    if (!planBg)  { setRenderedImg(null); return; }
+    if (!paths?.length) { setRenderedImg(planBg); return; }
+    const el = new window.Image();
+    el.onload = () => {
+      const cv  = document.createElement('canvas');
+      cv.width  = el.naturalWidth;
+      cv.height = el.naturalHeight;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(el, 0, 0, cv.width, cv.height);
+      drawAnnotationPaths(ctx, paths);
+      setRenderedImg(cv.toDataURL('image/png'));
+    };
+    el.onerror = () => setRenderedImg(planBg);
+    el.src = planBg;
+  }, [exported, paths, planBg]);
+
+  // Légende des symboles utilisés
+  const usedIds  = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy = SYMBOLS.filter(s => usedIds.has(s.id));
+
+  if (!renderedImg && !planBg) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       <div style={{ background:DA.black, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
@@ -143,9 +170,29 @@ function PlanBlock({ loc }) {
         <span style={{ fontSize:9, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>
           Plan — {loc.nom}
         </span>
+        {paths?.length > 0 && (
+          <span style={{ marginLeft:'auto', fontSize:8, color:'rgba(255,255,255,0.5)' }}>
+            {paths.length} annotation{paths.length > 1 ? 's' : ''}
+          </span>
+        )}
       </div>
-      <img src={planImg} alt={`Plan ${loc.nom}`}
-        style={{ width:'100%', display:'block', objectFit:'contain' }}/>
+      {renderedImg && (
+        <img src={renderedImg} alt={`Plan ${loc.nom}`}
+          style={{ width:'100%', display:'block', objectFit:'contain' }}/>
+      )}
+      {legendSy.length > 0 && (
+        <div style={{ padding:'4px 9px 6px', background:'#fafafa', borderTop:`1px solid ${DA.border}` }}>
+          <div style={{ fontSize:7, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:4 }}>Légende</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 12px' }}>
+            {legendSy.map(s => (
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:DA.gray }}>
+                <div style={{ width:8, height:8, background:DA.red, borderRadius:1, flexShrink:0 }}/>
+                {s.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

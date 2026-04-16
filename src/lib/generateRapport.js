@@ -1,6 +1,56 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
-import { SYMBOLS } from '../components/vue/Annotator.jsx';
+import { SYMBOLS, drawAnnotationPaths } from '../components/vue/Annotator.jsx';
+
+/** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG. */
+async function renderPlanImage(planBg, planAnnotations) {
+  const exported = planAnnotations?.exported;
+  const paths    = planAnnotations?.paths;
+  if (exported) return exported;
+  if (!planBg)  return null;
+  if (!paths?.length) return planBg;
+  return new Promise(resolve => {
+    const img = new window.Image();
+    img.onload = () => {
+      const cv  = document.createElement('canvas');
+      cv.width  = img.naturalWidth;
+      cv.height = img.naturalHeight;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      drawAnnotationPaths(ctx, paths);
+      resolve(cv.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(planBg);
+    img.src = planBg;
+  });
+}
+
+/** Ajoute la légende des symboles utilisés dans le plan ; retourne le nouveau y. */
+function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR) {
+  const paths = annot?.paths;
+  if (!paths?.length) return y;
+  const usedIds  = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy = SYMBOLS.filter(s => usedIds.has(s.id));
+  if (!legendSy.length) return y;
+
+  y += 2;
+  doc.setFillColor(245, 245, 245); doc.roundedRect(ML, y, CW, 8, 1, 1, 'F');
+  doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, y, CW, 8, 1, 1, 'S');
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
+  doc.text('LÉGENDE', ML + 4, y + 5.5);
+  doc.setTextColor(0, 0, 0); y += 10;
+
+  let lx = ML, ly = y;
+  legendSy.forEach(s => {
+    const tw = doc.getTextWidth(s.label) + 16;
+    if (lx + tw > W - MR) { lx = ML; ly += 9; }
+    doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
+    doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(s.label, lx + 9, ly + 0.2);
+    lx += tw;
+  });
+  return ly + 6;
+}
 
 /**
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
@@ -31,6 +81,13 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   const BK = [34, 34, 34], RD = [227, 5, 19];
   const GR = [105, 114, 125], LG = [249, 249, 249], WH = [255, 255, 255];
   const AM = [217, 119, 6], GN = [22, 163, 74];
+
+  // Pré-rendu des plans annotés (une seule passe async avant la génération PDF)
+  const planImages = {};
+  for (const loc of localisations) {
+    const img = await renderPlanImage(loc.planBg, loc.planAnnotations);
+    if (img) planImages[loc.id] = img;
+  }
 
   const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
@@ -304,10 +361,11 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
 
     // Plan inline (si !plansEnFin et plan disponible)
     if (!plansEnFin) {
-      const planImg = loc.planAnnotations?.exported || loc.planBg;
+      const planImg = planImages[loc.id];
       if (planImg) {
-        const ih = CW * 0.58;
-        pb(22 + ih + 6);
+        const ih      = CW * 0.58;
+        const hasLeg  = (loc.planAnnotations?.paths || []).some(p => p.type === 'symbol');
+        pb(22 + ih + (hasLeg ? 20 : 6));
         doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
         doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
         doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
@@ -316,8 +374,10 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
         try {
           const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
-          y += ih + 4;
+          y += ih + 2;
         } catch {}
+        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR);
+        y += 2;
       }
     }
 
@@ -389,7 +449,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────
 
   if (plansEnFin) {
-    const planLocs = localisations.filter(l => l.planAnnotations?.exported || l.planBg);
+    const planLocs = localisations.filter(l => planImages[l.id]);
     planLocs.forEach(loc => {
       doc.addPage(); hdr();
       let ay = 18;
@@ -398,35 +458,14 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
       doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
       doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 6, ay + 7);
       doc.setTextColor(0, 0, 0); ay += 14;
-      const planImg = loc.planAnnotations?.exported || loc.planBg;
+      const planImg = planImages[loc.id];
       try {
-        const ih = CW * 0.58;
+        const ih  = CW * 0.58;
         const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         doc.addImage(planImg, ext, ML, ay, CW, ih, undefined, 'FAST');
-        ay += ih + 8;
+        ay += ih + 4;
       } catch { ay += 6; }
-
-      // Légende des symboles utilisés (uniquement si plan annoté)
-      if (loc.planAnnotations?.exported) {
-        const usedSymbols = new Set((loc.planAnnotations?.paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
-        const EXCL = ['fleche', 'arrow', 'trait', 'texte', 'text'];
-        const legendSyms = SYMBOLS.filter(s => usedSymbols.has(s.id) && !EXCL.some(x => s.id.toLowerCase().includes(x)));
-        if (legendSyms.length > 0) {
-          doc.setFillColor(250, 250, 250); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'F');
-          doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, ay, CW, 8, 1, 1, 'S');
-          doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-          doc.text('LÉGENDE', ML + 4, ay + 5.5);
-          doc.setTextColor(0, 0, 0); ay += 10;
-          let lx = ML, ly = ay;
-          legendSyms.forEach(s => {
-            if (lx + 60 > W - MR) { lx = ML; ly += 9; }
-            doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
-            doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-            doc.text(s.label, lx + 9, ly + 0.2);
-            lx += Math.max(60, doc.getTextWidth(s.label) + 14);
-          });
-        }
-      }
+      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR);
     });
   }
 

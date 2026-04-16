@@ -4,6 +4,36 @@ import { Ic } from '../ui/Icons.jsx';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
+// Dessine un tableau de paths annotateur sur un contexte canvas existant.
+// Utilisé pour la prévisualisation et la génération PDF.
+export function drawAnnotationPaths(ctx, paths) {
+  (paths || []).forEach(p => {
+    if (p.type === 'symbol') {
+      const sm = SYMBOLS.find(x => x.id === p.symbolId);
+      if (sm) { ctx.save(); sm.draw(ctx, p.x, p.y, p.size, p.color); ctx.restore(); }
+    } else if (p.type === 'text') {
+      ctx.save();
+      ctx.font = `bold ${12 + p.size * 2}px Arial`;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.strokeText(p.text, p.x, p.y);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.restore();
+    } else if (p.points?.length) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.tool === 'eraser' ? p.size * 6 : p.size;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = p.tool === 'eraser' ? 'destination-out' : 'source-over';
+      ctx.moveTo(p.points[0].x, p.points[0].y);
+      p.points.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+}
+
 export const SYMBOLS = [
   { id:'fissure_plafond', label:'Fissure plafond', short:'↑PL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('↑PL',x-8,y+15); ctx.fillText('↑PL',x-8,y+15); ctx.restore(); } },
   { id:'fissure_mur', label:'Fissure mur', short:'MUR', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-8,y-15); ctx.lineTo(x-3,y-6); ctx.lineTo(x+4,y-10); ctx.lineTo(x+7,y+3); ctx.lineTo(x+10,y+15); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('MUR',x-10,y+27); ctx.fillText('MUR',x-10,y+27); ctx.restore(); } },
