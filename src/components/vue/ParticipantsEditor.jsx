@@ -4,23 +4,23 @@ import { Ic } from '../ui/Icons.jsx';
 import { loadGlobalContacts, saveGlobalContact } from '../../lib/contacts.js';
 
 export const ASSEMBLAGE_TEAM = [
-  { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net',     tel: '' },
+  { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net',     tel: '07 86 51 55 48' },
   { nom: 'Clément Davy',              poste: 'Ingénieur Associé',            email: 'clement@assemblage.net',    tel: '' },
   { nom: 'Thomas Cassetari-Moureaux', poste: 'Ingénieur Structure',          email: 'thomas@assemblage.net',     tel: '06 61 68 68 08' },
   { nom: 'Thibaud Cravatte',          poste: 'Ingénieur Structure',          email: 'thibaud@assemblage.net',    tel: '07 61 41 36 17' },
   { nom: 'Stanislav Varvarici',       poste: 'Ingénieur Structure',          email: 'stanislav@assemblage.net',  tel: '' },
   { nom: 'Maël Bhoyroo',             poste: 'Ingénieur Structure',          email: 'mael@assemblage.net',       tel: '06 32 55 82 81' },
-  { nom: 'Malo Babinet',              poste: 'Ingénieur Structure & Amb.',   email: 'malo@assemblage.net',       tel: '+33 7 68 84 08 94' },
-  { nom: 'Gabriel Piens',             poste: 'Ingénieur Structure',          email: 'gabriel@assemblage.net',    tel: '+33 6 43 74 37 77' },
+  { nom: 'Malo Babinet',              poste: 'Ingénieur Structure & Amb.',   email: 'malo@assemblage.net',       tel: '06 99 34 88 60' },
+  { nom: 'Gabriel Piens',             poste: 'Ingénieur Structure',          email: 'gabriel@assemblage.net',    tel: '06 67 50 77 06' },
   { nom: 'Alexandra Ekima N Demba',   poste: 'Dessinatrice-Projeteuse',      email: 'alexandra@assemblage.net',  tel: '07 61 76 34 06' },
   { nom: 'Aliénor Faucher',          poste: 'Co-resp. Développement',       email: 'alienor@assemblage.net',    tel: '06 98 46 30 66' },
-  { nom: 'Amaury Monnier',            poste: "Chargé d'étude",               email: 'amaury@assemblage.net',     tel: '' },
-  { nom: 'Chaïma Sghaier',           poste: 'Assistante MOA',               email: 'chaima@assemblage.net',     tel: '' },
+  { nom: 'Amaury Monnier',            poste: "Chargé d'étude",               email: 'amaury@assemblage.net',     tel: '06 69 08 68 94' },
+  { nom: 'Chaïma Sghaier',           poste: 'Assistante MOA',               email: 'chaima@assemblage.net',     tel: '06 98 41 97 29' },
   { nom: 'Lou Vincent de Lestrade',   poste: 'Chargée de projet AMO',        email: 'lou@assemblage.net',        tel: '07 84 45 61 63' },
   { nom: 'Louis Jault',               poste: 'Chargé de projet AMO',         email: 'louis@assemblage.net',      tel: '' },
   { nom: 'Margot Vast',               poste: "Chargée d'études",             email: 'margot@assemblage.net',     tel: '06 62 95 67 93' },
-  { nom: 'Guillaume Boudry',          poste: 'Ingénieur Structure',          email: 'guillaume@assemblage.net',  tel: '' },
-  { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net',    tel: '' },
+  { nom: 'Guillaume Boudry',          poste: 'Ingénieur Structure',          email: 'guillaume@assemblage.net',  tel: '06 61 39 94 56' },
+  { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net',    tel: '07 65 62 30 87' },
 ];
 
 const EMPTY = { nom: '', poste: '', email: '', tel: '' };
@@ -67,8 +67,8 @@ function ParticipantRow({ p, onRemove, onToggle }) {
 // ── Composant principal ────────────────────────────────────────────────────────
 export default function ParticipantsEditor({ participants = [], onChange }) {
   const [showPicker, setShowPicker] = useState(false);
-  const [showExt,    setShowExt]    = useState(false);
-  const [showForm,   setShowForm]   = useState(false);
+  const [showExt,    setShowExt]    = useState(() => loadGlobalContacts().length > 0);
+  const [showForm,   setShowForm]   = useState(() => loadGlobalContacts().length === 0);
   const [form,       setForm]       = useState(EMPTY);
   const [search,     setSearch]     = useState('');
   const [extSearch,  setExtSearch]  = useState('');
@@ -242,14 +242,14 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           Assemblage
         </button>
         <button
-          onClick={() => { setShowExt(!showExt); setShowPicker(false); if (!showExt) { setExtSearch(''); setShowForm(false); setSaved(loadGlobalContacts()); } }}
+          onClick={() => { setShowExt(!showExt); setShowPicker(false); if (!showExt) { setExtSearch(''); setSaved(loadGlobalContacts()); } }}
           style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 4px', borderRadius:8,
             border:`1.5px solid ${showExt ? DA.red : DA.border}`,
             background: showExt ? DA.redL : 'white',
             color: showExt ? DA.red : DA.gray, cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
           <Ic n="usr" s={10}/>
-          Externe
+          Externe {saved.length > 0 && <span style={{ fontSize:9, background: showExt ? DA.red : DA.border, color: showExt ? 'white' : DA.gray, borderRadius:10, padding:'0 5px', marginLeft:2 }}>{saved.length}</span>}
         </button>
       </div>
     </div>
