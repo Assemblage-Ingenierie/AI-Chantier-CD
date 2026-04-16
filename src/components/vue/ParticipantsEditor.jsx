@@ -1,47 +1,105 @@
 import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { loadGlobalContacts, saveGlobalContact } from '../../lib/contacts.js';
 
 export const ASSEMBLAGE_TEAM = [
-  { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net' },
-  { nom: 'Clément Davy',              poste: 'Ingénieur Associé',            email: 'clement@assemblage.net' },
-  { nom: 'Thomas Cassetari-Moureaux', poste: 'Ingénieur Structure',          email: 'thomas@assemblage.net' },
-  { nom: 'Thibaud Cravatte',          poste: 'Ingénieur Structure',          email: 'thibaud@assemblage.net' },
-  { nom: 'Stanislav Varvarici',       poste: 'Ingénieur Structure',          email: 'stanislav@assemblage.net' },
-  { nom: 'Maël Bhoyroo',             poste: 'Ingénieur Structure',          email: 'mael@assemblage.net' },
-  { nom: 'Malo Babinet',              poste: 'Ingénieur Structure & Amb.',   email: 'malo@assemblage.net' },
-  { nom: 'Gabriel Piens',             poste: 'Ingénieur Structure',          email: 'gabriel@assemblage.net' },
-  { nom: 'Alexandra Ekima N Demba',   poste: 'Dessinatrice-Projeteuse',      email: 'alexandra@assemblage.net' },
-  { nom: 'Aliénor Faucher',          poste: 'Co-resp. Développement',       email: 'alienor@assemblage.net' },
-  { nom: 'Amaury Monnier',            poste: "Chargé d'étude",               email: 'amaury@assemblage.net' },
-  { nom: 'Chaïma Sghaier',           poste: 'Assistante MOA',               email: 'chaima@assemblage.net' },
-  { nom: 'Lou Vincent de Lestrade',   poste: 'Chargée de projet AMO',        email: 'lou@assemblage.net' },
-  { nom: 'Louis Jault',               poste: 'Chargé de projet AMO',         email: 'louis@assemblage.net' },
-  { nom: 'Margot Vast',               poste: "Chargée d'études",             email: 'margot@assemblage.net' },
-  { nom: 'Guillaume Boudry',          poste: 'Ingénieur Structure',          email: 'guillaume@assemblage.net' },
-  { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net' },
+  { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net',     tel: '' },
+  { nom: 'Clément Davy',              poste: 'Ingénieur Associé',            email: 'clement@assemblage.net',    tel: '' },
+  { nom: 'Thomas Cassetari-Moureaux', poste: 'Ingénieur Structure',          email: 'thomas@assemblage.net',     tel: '06 61 68 68 08' },
+  { nom: 'Thibaud Cravatte',          poste: 'Ingénieur Structure',          email: 'thibaud@assemblage.net',    tel: '07 61 41 36 17' },
+  { nom: 'Stanislav Varvarici',       poste: 'Ingénieur Structure',          email: 'stanislav@assemblage.net',  tel: '' },
+  { nom: 'Maël Bhoyroo',             poste: 'Ingénieur Structure',          email: 'mael@assemblage.net',       tel: '06 32 55 82 81' },
+  { nom: 'Malo Babinet',              poste: 'Ingénieur Structure & Amb.',   email: 'malo@assemblage.net',       tel: '+33 7 68 84 08 94' },
+  { nom: 'Gabriel Piens',             poste: 'Ingénieur Structure',          email: 'gabriel@assemblage.net',    tel: '+33 6 43 74 37 77' },
+  { nom: 'Alexandra Ekima N Demba',   poste: 'Dessinatrice-Projeteuse',      email: 'alexandra@assemblage.net',  tel: '07 61 76 34 06' },
+  { nom: 'Aliénor Faucher',          poste: 'Co-resp. Développement',       email: 'alienor@assemblage.net',    tel: '06 98 46 30 66' },
+  { nom: 'Amaury Monnier',            poste: "Chargé d'étude",               email: 'amaury@assemblage.net',     tel: '' },
+  { nom: 'Chaïma Sghaier',           poste: 'Assistante MOA',               email: 'chaima@assemblage.net',     tel: '' },
+  { nom: 'Lou Vincent de Lestrade',   poste: 'Chargée de projet AMO',        email: 'lou@assemblage.net',        tel: '07 84 45 61 63' },
+  { nom: 'Louis Jault',               poste: 'Chargé de projet AMO',         email: 'louis@assemblage.net',      tel: '' },
+  { nom: 'Margot Vast',               poste: "Chargée d'études",             email: 'margot@assemblage.net',     tel: '06 62 95 67 93' },
+  { nom: 'Guillaume Boudry',          poste: 'Ingénieur Structure',          email: 'guillaume@assemblage.net',  tel: '' },
+  { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net',    tel: '' },
 ];
 
 const EMPTY = { nom: '', poste: '', email: '', tel: '' };
+const BADGE_W = 24; // largeur colonne badge, fixe pour tous
 
+// ── Ligne participant ──────────────────────────────────────────────────────────
+function ParticipantRow({ p, onRemove, onToggle }) {
+  const isPresent = !p.presence || p.presence === 'present';
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:0, background:DA.grayXL, borderRadius:8,
+      border:`1px solid ${DA.border}`, padding:'5px 8px 5px 0' }}>
+      {/* Badge – largeur fixe, aligné pour tous */}
+      <div style={{ width:BADGE_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {p.isAssemblage
+          ? <span style={{ fontSize:7, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', lineHeight:1.3 }}>A!</span>
+          : <div style={{ width:6, height:6, borderRadius:'50%', background:'#bbb' }}/>
+        }
+      </div>
+      {/* Nom + infos */}
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
+        {(p.poste || p.email) && (
+          <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            {[p.poste, p.email].filter(Boolean).join(' · ')}
+          </div>
+        )}
+      </div>
+      {/* Toggle présence */}
+      <button onClick={onToggle}
+        title={isPresent ? 'Marquer absent' : 'Marquer présent'}
+        style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:6, border:'none', cursor:'pointer', flexShrink:0, marginLeft:6,
+          background: isPresent ? '#DCFCE7' : '#FEE2E2',
+          color: isPresent ? '#16A34A' : DA.red }}>
+        {isPresent ? '✓ Présent' : '✗ Absent'}
+      </button>
+      {/* Supprimer */}
+      <button onClick={onRemove} style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px', marginLeft:4 }}>
+        <Ic n="x" s={12}/>
+      </button>
+    </div>
+  );
+}
+
+// ── Composant principal ────────────────────────────────────────────────────────
 export default function ParticipantsEditor({ participants = [], onChange }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [showExt,    setShowExt]    = useState(false);
   const [showForm,   setShowForm]   = useState(false);
   const [form,       setForm]       = useState(EMPTY);
   const [search,     setSearch]     = useState('');
+  const [extSearch,  setExtSearch]  = useState('');
+  const [saved,      setSaved]      = useState(() => loadGlobalContacts());
 
-  const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID() }]);
+  const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'present' }]);
   const remove = (id) => onChange(participants.filter(p => p.id !== id));
+  const toggle = (id) => onChange(participants.map(p =>
+    p.id === id ? { ...p, presence: p.presence === 'absent' ? 'present' : 'absent' } : p
+  ));
 
-  const added = new Set(participants.map(p => p.email));
+  const addedEmails = new Set(participants.map(p => p.email).filter(Boolean));
 
-  const filtered = ASSEMBLAGE_TEAM.filter(t =>
-    !search || t.nom.toLowerCase().includes(search.toLowerCase()) || t.poste.toLowerCase().includes(search.toLowerCase())
+  const filteredTeam = ASSEMBLAGE_TEAM.filter(t =>
+    !search || t.nom.toLowerCase().includes(search.toLowerCase()) ||
+    t.poste.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredSaved = saved.filter(c =>
+    !extSearch || c.nom.toLowerCase().includes(extSearch.toLowerCase()) ||
+    (c.poste || '').toLowerCase().includes(extSearch.toLowerCase()) ||
+    (c.email || '').toLowerCase().includes(extSearch.toLowerCase())
   );
 
   const addExternal = () => {
     if (!form.nom.trim()) return;
-    add({ ...form, isAssemblage: false });
+    const contact = { ...form, isAssemblage: false, id: crypto.randomUUID() };
+    saveGlobalContact(contact);
+    const updated = loadGlobalContacts();
+    setSaved(updated);
+    onChange([...participants, { ...contact, presence: 'present' }]);
     setForm(EMPTY);
     setShowForm(false);
   };
@@ -56,114 +114,139 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
       {participants.length > 0 && (
         <div style={{ display:'flex', flexDirection:'column', gap:3, marginBottom:8 }}>
           {participants.map(p => (
-            <div key={p.id} style={{ display:'flex', alignItems:'center', gap:6, background:DA.grayXL, borderRadius:8, padding:'6px 8px', border:`1px solid ${DA.border}` }}>
-              {p.isAssemblage
-                ? <span style={{ fontSize:8, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:4, padding:'2px 5px', flexShrink:0, letterSpacing:0.3 }}>A</span>
-                : <Ic n="usr" s={12}/>
-              }
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:11, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
-                <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {[p.poste, p.email].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-              <button onClick={() => remove(p.id)} style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:2 }}>
-                <Ic n="x" s={12}/>
-              </button>
-            </div>
+            <ParticipantRow key={p.id} p={p} onRemove={() => remove(p.id)} onToggle={() => toggle(p.id)}/>
           ))}
         </div>
       )}
 
-      {/* Picker Assemblage */}
+      {/* ── Picker Assemblage ── */}
       {showPicker && (
-        <div style={{ background:'white', border:`1px solid ${DA.border}`, borderRadius:8, marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.1)' }}>
+        <div style={{ background:'white', border:`1px solid ${DA.border}`, borderRadius:8, marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.12)' }}>
           <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
-            <input
-              autoFocus
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Rechercher…"
-              style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}
-            />
+              style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
           </div>
-          <div style={{ maxHeight:180, overflowY:'auto' }}>
-            {filtered.map(t => {
-              const isAdded = added.has(t.email);
+          <div style={{ maxHeight:200, overflowY:'auto' }}>
+            {filteredTeam.map(t => {
+              const isAdded = addedEmails.has(t.email);
               const initials = t.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('');
               return (
                 <div key={t.email}
-                  onClick={() => { if (!isAdded) { add({ ...t, isAssemblage: true }); } }}
+                  onClick={() => { if (!isAdded) add({ ...t, isAssemblage: true }); }}
                   style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', cursor: isAdded ? 'default' : 'pointer',
-                    opacity: isAdded ? 0.4 : 1, borderBottom:`1px solid ${DA.border}`,
-                    background:'white', transition:'background 0.1s' }}
+                    opacity: isAdded ? 0.4 : 1, borderBottom:`1px solid ${DA.border}`, background:'white', transition:'background 0.1s' }}
                   onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
-                  <div style={{ width:24, height:24, borderRadius:'50%', background:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', background:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{t.nom}</div>
-                    <div style={{ fontSize:9, color:DA.gray }}>{t.poste}</div>
+                    <div style={{ fontSize:9, color:DA.gray }}>{t.poste}{t.tel ? ` · ${t.tel}` : ''}</div>
                   </div>
                   {isAdded && <span style={{ fontSize:9, color:DA.grayL }}>✓</span>}
                 </div>
               );
             })}
-            {filtered.length === 0 && (
-              <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>
+            {filteredTeam.length === 0 && <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Section Externe ── */}
+      {showExt && (
+        <div style={{ background:'white', border:`1px solid ${DA.border}`, borderRadius:8, marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.12)' }}>
+
+          {/* Contacts enregistrés */}
+          {filteredSaved.length > 0 || extSearch ? (
+            <>
+              <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
+                <input value={extSearch} onChange={e => setExtSearch(e.target.value)}
+                  placeholder="Rechercher dans les contacts enregistrés…"
+                  style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
+              </div>
+              <div style={{ maxHeight:160, overflowY:'auto' }}>
+                {filteredSaved.map(c => {
+                  const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
+                  const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
+                  return (
+                    <div key={c.id}
+                      onClick={() => { if (!isAdded) add({ ...c, isAssemblage: false }); }}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', cursor: isAdded ? 'default' : 'pointer',
+                        opacity: isAdded ? 0.4 : 1, borderBottom:`1px solid ${DA.border}`, background:'white', transition:'background 0.1s' }}
+                      onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
+                      <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
+                        <div style={{ fontSize:9, color:DA.gray }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      {isAdded && <span style={{ fontSize:9, color:DA.grayL }}>✓</span>}
+                    </div>
+                  );
+                })}
+                {filteredSaved.length === 0 && <div style={{ padding:10, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>}
+              </div>
+            </>
+          ) : null}
+
+          {/* Formulaire nouveau contact */}
+          <div style={{ padding:10, borderTop: saved.length > 0 ? `1px solid ${DA.border}` : 'none' }}>
+            {!showForm ? (
+              <button onClick={() => setShowForm(true)}
+                style={{ width:'100%', fontSize:11, fontWeight:600, padding:'6px 0', borderRadius:8,
+                  border:`1px dashed ${DA.border}`, background:DA.grayXL, color:DA.gray, cursor:'pointer' }}>
+                + Nouveau contact
+              </button>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                <div style={{ fontSize:10, fontWeight:700, color:DA.gray, marginBottom:2 }}>Nouveau contact (enregistré automatiquement)</div>
+                {[['nom','Nom *'],['poste','Poste / Société'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
+                  <input key={k} value={form[k]}
+                    onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                    placeholder={lbl}
+                    style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6,
+                      padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}/>
+                ))}
+                <div style={{ display:'flex', gap:6, marginTop:2 }}>
+                  <button onClick={addExternal} disabled={!form.nom.trim()}
+                    style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:11, fontWeight:700, border:'none',
+                      background: form.nom.trim() ? DA.black : DA.grayL,
+                      color:'white', cursor: form.nom.trim() ? 'pointer' : 'not-allowed' }}>
+                    Ajouter
+                  </button>
+                  <button onClick={() => { setShowForm(false); setForm(EMPTY); }}
+                    style={{ padding:'6px 10px', borderRadius:8, fontSize:11, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
+                    Annuler
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Formulaire contact externe */}
-      {showForm && (
-        <div style={{ background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:8, padding:10, marginBottom:8 }}>
-          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-            {[['nom','Nom *'],['poste','Poste / Société'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
-              <input key={k}
-                value={form[k]}
-                onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
-                onKeyDown={e => e.key === 'Enter' && k === 'tel' && addExternal()}
-                placeholder={lbl}
-                style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}
-              />
-            ))}
-          </div>
-          <div style={{ display:'flex', gap:6, marginTop:8 }}>
-            <button onClick={addExternal} disabled={!form.nom.trim()}
-              style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:11, fontWeight:700, border:'none',
-                background: form.nom.trim() ? DA.black : DA.grayL,
-                color:'white', cursor: form.nom.trim() ? 'pointer' : 'not-allowed' }}>
-              Ajouter
-            </button>
-            <button onClick={() => { setShowForm(false); setForm(EMPTY); }}
-              style={{ padding:'6px 10px', borderRadius:8, fontSize:11, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
-              Annuler
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Boutons d'ajout */}
+      {/* ── Boutons d'ajout ── */}
       <div style={{ display:'flex', gap:6 }}>
         <button
-          onClick={() => { setShowPicker(!showPicker); setShowForm(false); if (!showPicker) setSearch(''); }}
+          onClick={() => { setShowPicker(!showPicker); setShowExt(false); if (!showPicker) setSearch(''); }}
           style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 4px', borderRadius:8,
             border:`1.5px solid ${showPicker ? DA.red : DA.border}`,
             background: showPicker ? DA.redL : 'white',
             color: showPicker ? DA.red : DA.gray, cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-          <span style={{ fontSize:9, fontWeight:900, color: showPicker ? DA.red : DA.gray }}>A!</span>
+          <span style={{ fontSize:9, fontWeight:900 }}>A!</span>
           Assemblage
         </button>
         <button
-          onClick={() => { setShowForm(!showForm); setShowPicker(false); }}
+          onClick={() => { setShowExt(!showExt); setShowPicker(false); if (!showExt) { setExtSearch(''); setShowForm(false); setSaved(loadGlobalContacts()); } }}
           style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 4px', borderRadius:8,
-            border:`1.5px solid ${showForm ? DA.red : DA.border}`,
-            background: showForm ? DA.redL : 'white',
-            color: showForm ? DA.red : DA.gray, cursor:'pointer',
+            border:`1.5px solid ${showExt ? DA.red : DA.border}`,
+            background: showExt ? DA.redL : 'white',
+            color: showExt ? DA.red : DA.gray, cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
           <Ic n="usr" s={10}/>
           Externe

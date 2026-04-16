@@ -109,40 +109,116 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
     });
   doc.setTextColor(0, 0, 0);
 
-  // Participants / Intervenants
+  // Intervenants — liste compacte sur la couverture
   const participants = projet.participants || [];
   if (participants.length > 0) {
     let py = iy + 28;
     doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
     doc.text('INTERVENANTS', ML, py);
     doc.setLineWidth(0.25); doc.setDrawColor(...RD); doc.line(ML, py + 1, ML + 24, py + 1);
-    py += 7;
+    py += 6;
     participants.forEach((pt) => {
-      if (py > H - 20) return;
-      const rowH = 7;
-      doc.setFillColor(...LG); doc.rect(ML, py - 3, CW, rowH, 'F');
-      // Badge Assemblage
+      if (py > H - 16) return;
+      const isPresent = !pt.presence || pt.presence === 'present';
+      doc.setFillColor(...LG); doc.rect(ML, py - 2.5, CW, 7, 'F');
+      // Badge fixe (même largeur pour tous)
       if (pt.isAssemblage) {
-        doc.setFillColor(...RD); doc.roundedRect(ML + 1, py - 2, 6, 5, 0.8, 0.8, 'F');
-        doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
+        doc.setFillColor(...RD); doc.roundedRect(ML + 1, py - 1.5, 6, 4.5, 0.8, 0.8, 'F');
+        doc.setFontSize(4.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
         doc.text('A!', ML + 4, py + 1.5, { align: 'center' });
+      }
+      const nameX = ML + 9;
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text(pt.nom, nameX, py + 1);
+      if (pt.poste) {
+        const nw = doc.getTextWidth(pt.nom);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
+        doc.text('— ' + pt.poste, nameX + nw + 2, py + 1);
+      }
+      doc.setFontSize(6); doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...(isPresent ? GN : RD));
+      doc.text(isPresent ? 'Present' : 'Absent', W - MR, py + 1, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      py += 8;
+    });
+  }
+
+  // ── PAGE DÉDIÉE INTERVENANTS ─────────────────────────────────────────────────
+
+  if (participants.length > 0) {
+    doc.addPage(); let py = 18; hdr();
+
+    // Titre "Présentation du projet"
+    doc.setFillColor(...BK); doc.roundedRect(ML, py, CW, 10, 2, 2, 'F');
+    doc.setFillColor(...RD); doc.rect(ML, py, 3, 10, 'F');
+    doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+    doc.text('PRESENTATION DU PROJET', ML + 6, py + 7);
+    doc.setTextColor(0, 0, 0); py += 14;
+
+    // Infos projet
+    const infoRows = [
+      projet.adresse      && ['Adresse',         projet.adresse],
+      projet.dateVisite   && ['Date de visite',   today],
+      projet.maitreOuvrage && ["Maitre d'ouvrage", projet.maitreOuvrage],
+    ].filter(Boolean);
+    infoRows.forEach(([k, v]) => {
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR);
+      doc.text(k, ML + 2, py + 4);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
+      doc.text(v, ML + 40, py + 4);
+      py += 7;
+    });
+    py += 6;
+
+    // Titre "Intervenants"
+    doc.setFillColor(...BK); doc.roundedRect(ML, py, CW, 10, 2, 2, 'F');
+    doc.setFillColor(...RD); doc.rect(ML, py, 3, 10, 'F');
+    doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+    doc.text('INTERVENANTS', ML + 6, py + 7);
+    doc.setTextColor(0, 0, 0); py += 12;
+
+    // En-tête tableau
+    doc.setFillColor(50, 50, 50); doc.rect(ML, py, CW, 7, 'F');
+    doc.setTextColor(...WH); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
+    const c1 = ML + 10, c2 = ML + CW * 0.38, c3 = ML + CW * 0.66;
+    doc.text('NOM / POSTE', c1, py + 5);
+    doc.text('EMAIL / TEL', c2, py + 5);
+    doc.text('PRESENCE', W - MR - 1, py + 5, { align: 'right' });
+    doc.setTextColor(0, 0, 0); py += 8;
+
+    participants.forEach((pt, i) => {
+      const isPresent = !pt.presence || pt.presence === 'present';
+      const hasContact = pt.email || pt.tel;
+      const rowH = (pt.poste || hasContact) ? 13 : 8;
+      const bg = i % 2 === 0 ? 249 : 255;
+      doc.setFillColor(bg, bg, bg); doc.rect(ML, py, CW, rowH, 'F');
+      doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, py, CW, rowH);
+
+      // Badge A!
+      if (pt.isAssemblage) {
+        doc.setFillColor(...RD); doc.roundedRect(ML + 2, py + rowH / 2 - 2.5, 6, 5, 0.8, 0.8, 'F');
+        doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
+        doc.text('A!', ML + 5, py + rowH / 2 + 0.5, { align: 'center' });
         doc.setTextColor(0, 0, 0);
       }
-      const nameX = pt.isAssemblage ? ML + 9 : ML + 3;
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-      doc.text(pt.nom, nameX, py + 1);
-      const nameW = doc.getTextWidth(pt.nom);
+      const topY = pt.poste ? py + 5 : py + rowH / 2 + 2;
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text(pt.nom, c1, topY);
       if (pt.poste) {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
-        doc.text('· ' + pt.poste, nameX + nameW + 2, py + 1);
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+        doc.text(pt.poste, c1, py + 9.5);
       }
       if (pt.email) {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
-        doc.text(pt.email, W - MR, py + 1, { align: 'right' });
-      } else if (pt.tel) {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
-        doc.text(pt.tel, W - MR, py + 1, { align: 'right' });
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+        doc.text(pt.email, c2, pt.tel ? py + 5 : py + rowH / 2 + 2);
       }
+      if (pt.tel) {
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+        doc.text(pt.tel, c2, pt.email ? py + 9.5 : py + rowH / 2 + 2);
+      }
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...(isPresent ? GN : RD));
+      doc.text(isPresent ? 'Present' : 'Absent', W - MR - 1, py + rowH / 2 + 2, { align: 'right' });
       doc.setTextColor(0, 0, 0);
       py += rowH + 1;
     });
