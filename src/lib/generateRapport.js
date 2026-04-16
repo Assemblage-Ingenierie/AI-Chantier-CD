@@ -109,30 +109,42 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
     });
   doc.setTextColor(0, 0, 0);
 
-  // Participants
+  // Participants / Intervenants
   const participants = projet.participants || [];
   if (participants.length > 0) {
     let py = iy + 28;
-    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-    doc.text('PARTICIPANTS', ML, py);
-    doc.setLineWidth(0.25); doc.setDrawColor(...RD); doc.line(ML, py + 1, ML + 22, py + 1);
-    participants.forEach((pt, i) => {
-      const yp = py + 8 + i * 8;
-      if (yp > H - 30) return;
-      doc.setFillColor(...LG); doc.rect(ML, yp - 3.5, CW, 7, 'F');
-      const pc = pt.presence === 'absent' ? RD : GN;
-      doc.setFillColor(...pc); doc.circle(ML + 4, yp, 2, 'F');
-      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-      doc.text(pt.nom, ML + 9, yp + 1);
-      const extra = [pt.role, pt.tel].filter(Boolean).join(' · ');
-      if (extra) {
-        const nameW = doc.getTextWidth(pt.nom);
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GR);
-        doc.text(doc.splitTextToSize(extra, CW - nameW - 18)[0], ML + 9 + nameW + 3, yp + 1);
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
+    doc.text('INTERVENANTS', ML, py);
+    doc.setLineWidth(0.25); doc.setDrawColor(...RD); doc.line(ML, py + 1, ML + 24, py + 1);
+    py += 7;
+    participants.forEach((pt) => {
+      if (py > H - 20) return;
+      const rowH = 7;
+      doc.setFillColor(...LG); doc.rect(ML, py - 3, CW, rowH, 'F');
+      // Badge Assemblage
+      if (pt.isAssemblage) {
+        doc.setFillColor(...RD); doc.roundedRect(ML + 1, py - 2, 6, 5, 0.8, 0.8, 'F');
+        doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
+        doc.text('A!', ML + 4, py + 1.5, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
       }
-      doc.setFontSize(6.5); doc.setTextColor(...pc);
-      doc.text(pt.presence === 'absent' ? 'Absent' : 'Présent', W - MR, yp + 1, { align: 'right' });
+      const nameX = pt.isAssemblage ? ML + 9 : ML + 3;
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text(pt.nom, nameX, py + 1);
+      const nameW = doc.getTextWidth(pt.nom);
+      if (pt.poste) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GR);
+        doc.text('· ' + pt.poste, nameX + nameW + 2, py + 1);
+      }
+      if (pt.email) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
+        doc.text(pt.email, W - MR, py + 1, { align: 'right' });
+      } else if (pt.tel) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR);
+        doc.text(pt.tel, W - MR, py + 1, { align: 'right' });
+      }
       doc.setTextColor(0, 0, 0);
+      py += rowH + 1;
     });
   }
 

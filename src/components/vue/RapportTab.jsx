@@ -3,6 +3,7 @@ import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import TableauRecap from './TableauRecap.jsx';
 import RapportPreview from './RapportPreview.jsx';
+import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 
 export default function RapportTab({ projet, onUpdate }) {
@@ -58,6 +59,12 @@ export default function RapportTab({ projet, onUpdate }) {
               })}
             </div>
           </div>
+
+          {/* Intervenants */}
+          <ParticipantsEditor
+            participants={projet.participants || []}
+            onChange={ps => onUpdate({ participants: ps })}
+          />
 
           {/* Maître d'ouvrage */}
           <div>

@@ -256,6 +256,27 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
               </div>
             ))}
           </div>
+
+          {/* Intervenants sur la page de garde */}
+          {(projet.participants || []).length > 0 && (
+            <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ fontSize:6, fontWeight:700, color:'rgba(255,255,255,0.35)', letterSpacing:1, textTransform:'uppercase', marginBottom:5 }}>
+                Intervenants
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                {(projet.participants || []).map(pt => (
+                  <div key={pt.id} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    {pt.isAssemblage && (
+                      <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'rgba(227,5,19,0.2)', borderRadius:3, padding:'1px 3px', flexShrink:0 }}>A!</span>
+                    )}
+                    <span style={{ fontSize:8, fontWeight:700, color:'white' }}>{pt.nom}</span>
+                    {pt.poste && <span style={{ fontSize:7, color:'rgba(255,255,255,0.4)' }}>— {pt.poste}</span>}
+                    {pt.email && <span style={{ fontSize:7, color:'rgba(255,255,255,0.3)', marginLeft:'auto' }}>{pt.email}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
