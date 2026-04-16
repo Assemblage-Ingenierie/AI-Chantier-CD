@@ -428,16 +428,60 @@ export async function saveData(ps, onStatus) {
 
 function showSyncWarning(firstError) {
   const id = '__sync_warn__';
-  if (document.getElementById(id)) return;
+  const existing = document.getElementById(id);
+  if (existing) existing.remove(); // refresh message si nouvelle erreur
   const el = document.createElement('div');
   el.id = id;
-  el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99999;background:#7f1d1d;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-family:inherit;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:90vw;text-align:center;';
-  const errMsg = firstError?.message ? ` — ${firstError.message.slice(0, 100)}` : '';
-  el.textContent = `Sync échoué${errMsg}`;
-  const btn = document.createElement('button');
-  btn.textContent = '×';
-  btn.style.cssText = 'margin-left:12px;background:none;border:none;color:#fff;font-size:16px;cursor:pointer;vertical-align:middle;';
-  btn.onclick = () => el.remove();
-  el.appendChild(btn);
+  el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:99999;background:#7f1d1d;color:#fff;padding:12px 18px;border-radius:10px;font-size:12px;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,.4);max-width:92vw;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;';
+
+  const code = firstError?.code ?? '';
+  const msg  = firstError?.message ?? 'erreur inconnue';
+
+  let hint = '';
+  if (code === '42501' || msg.includes('row-level security') || msg.includes('violates row-level')) {
+    hint = 'Vérifier les politiques RLS Supabase (table item_photos ou storage.objects).';
+  } else if (code === '23503') {
+    hint = 'Erreur de clé étrangère — rechargez la page.';
+  } else if (msg.includes('timeout') || msg.includes('57014')) {
+    hint = 'Timeout Supabase — connexion lente ou table trop volumineuse.';
+  }
+
+  const line1 = document.createElement('div');
+  line1.style.cssText = 'font-weight:700;font-size:13px;';
+  line1.textContent = `⚠ Sync échoué${code ? ` (${code})` : ''}`;
+
+  const line2 = document.createElement('div');
+  line2.style.cssText = 'opacity:0.8;font-size:11px;max-width:400px;';
+  line2.textContent = msg.slice(0, 120);
+
+  el.appendChild(line1);
+  el.appendChild(line2);
+
+  if (hint) {
+    const line3 = document.createElement('div');
+    line3.style.cssText = 'opacity:0.7;font-size:10px;font-style:italic;max-width:400px;';
+    line3.textContent = hint;
+    el.appendChild(line3);
+  }
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:8px;margin-top:2px;';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×  Fermer';
+  closeBtn.style.cssText = 'background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;';
+  closeBtn.onclick = () => el.remove();
+
+  const consoleBtn = document.createElement('button');
+  consoleBtn.textContent = 'Détails console';
+  consoleBtn.style.cssText = 'background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;';
+  consoleBtn.onclick = () => { console.error('Sync error details:', firstError); el.remove(); };
+
+  btns.appendChild(closeBtn);
+  btns.appendChild(consoleBtn);
+  el.appendChild(btns);
   document.body.appendChild(el);
+
+  // Auto-dismiss après 15s
+  setTimeout(() => { if (document.getElementById(id)) el.remove(); }, 15000);
 }

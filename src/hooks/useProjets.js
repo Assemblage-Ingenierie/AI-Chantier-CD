@@ -34,7 +34,8 @@ export function useProjets(onSyncStatus) {
         const unsynced = localPs.filter(p => !remoteIds.has(p.id));
 
         // Pour chaque projet remote, préférer la version locale si elle est plus récente
-        // (cas typique : save Supabase avait échoué, le local est plus à jour)
+        // ET préserver les photos déjà hydratées (évite que loadData n'écrase l'état
+        // après que hydratePhotos() a déjà chargé les photos — race condition classique)
         let keptLocal = false;
         const merged = remotePs.map(rp => {
           const lp = localById.get(rp.id);
@@ -42,7 +43,26 @@ export function useProjets(onSyncStatus) {
             keptLocal = true;
             return lp;
           }
-          return rp;
+          // Même si on prend la version remote, on préserve les photos déjà hydratées
+          if (!lp) return rp;
+          return {
+            ...rp,
+            localisations: (rp.localisations || []).map(loc => {
+              const localLoc = lp.localisations?.find(l => l.id === loc.id);
+              if (!localLoc) return loc;
+              return {
+                ...loc,
+                items: (loc.items || []).map(item => {
+                  const localItem = localLoc.items?.find(i => i.id === item.id);
+                  if (localItem?._photosHydrated) {
+                    // Garder les photos déjà chargées — ne pas les écraser avec []
+                    return { ...item, photos: localItem.photos, _photosHydrated: true };
+                  }
+                  return item;
+                }),
+              };
+            }),
+          };
         });
 
         const allMerged = [...merged, ...unsynced]
