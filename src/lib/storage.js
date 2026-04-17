@@ -338,34 +338,29 @@ async function saveRemote(ps) {
       (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
     );
 
-    // Pré-fetch photos pour items non hydratés
-    const unloadedItemIds = [];
-    allLocsFlat.forEach(l => {
-      (l.items || []).forEach(item => {
-        const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
-        if (!item._photosHydrated && !hasLocal && item.id) unloadedItemIds.push(item.id);
-      });
-    });
-    const fetchedPhotosByItem = {};
-    if (unloadedItemIds.length > 0) {
-      const { data: pData, error: pErr } = await sb.from('item_photos')
-        .select('id,item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
-      if (pErr) {
-        console.warn('Photo pre-fetch failed, skipping sync:', pErr);
-        errors.push(pErr);
-        continue;
-      }
-      Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
+    // ── LOCALISATIONS : UPSERT + DELETE ciblé ──────────────────────────────────
+
+    // Lire les IDs existants en DB (une requête)
+    const { data: dbLocsData } = await sb.from('chantier_localisations')
+      .select('id').eq('chantier_id', p.id);
+    const dbLocIds   = new Set((dbLocsData || []).map(l => l.id));
+    const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
+
+    // Garde de sécurité : refuser d'effacer si l'état local est vide alors que la DB ne l'est pas.
+    // Évite la perte totale en cas de bug d'état ou race condition.
+    if (allLocsFlat.length === 0 && dbLocIds.size > 0) {
+      errors.push({ message: 'Sync interrompu : état local vide alors que la DB contient des données. Rechargez la page.', code: 'SAFETY_EMPTY' });
+      continue;
     }
 
-    // Supprimer + réinsérer localisations (suppression explicite pour ne pas dépendre du CASCADE seul)
-    const { data: existingLocs } = await sb.from('chantier_localisations')
-      .select('id').eq('chantier_id', p.id);
-    if (existingLocs?.length > 0) {
-      const existingLocIds = existingLocs.map(l => l.id);
-      await sb.from('localisation_items').delete().in('localisation_id', existingLocIds);
+    // Supprimer uniquement les locs retirées explicitement par l'utilisateur
+    const removedLocIds = [...dbLocIds].filter(id => !currLocIds.has(id));
+    if (removedLocIds.length > 0) {
+      await sb.from('localisation_items').delete().in('localisation_id', removedLocIds);
+      await sb.from('chantier_localisations').delete().in('id', removedLocIds);
     }
-    await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
+
+    // UPSERT des locs courantes (insert si nouvelle, update si existante)
     const locRows = allLocsFlat.map((l, i) => ({
       id:               l.id || crypto.randomUUID(),
       chantier_id:      p.id,
@@ -377,17 +372,55 @@ async function saveRemote(ps) {
       visite_id:        l._visiteId,
     }));
     if (locRows.length > 0) {
-      const { error: le } = await sb.from('chantier_localisations').insert(locRows);
+      const { error: le } = await sb.from('chantier_localisations')
+        .upsert(locRows, { onConflict: 'id' });
       if (le) { errors.push(le); continue; }
     }
 
-    // Items + photos
-    const allItems  = [];
-    const allPhotos = [];
+    // ── ITEMS : UPSERT + DELETE ciblé ─────────────────────────────────────────
+
+    // Lire les items existants pour toutes les locs du projet (une seule requête)
+    const locIdsToFetch = locRows.map(l => l.id).filter(Boolean);
+    const { data: dbItemsData } = locIdsToFetch.length > 0
+      ? await sb.from('localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
+      : { data: [] };
+    const dbItemsByLoc = groupBy(dbItemsData || [], 'localisation_id');
+
+    // Pré-fetch des photos pour items non-hydratés (utile pour les anciennes photos Storage)
+    const unloadedItemIds = [];
+    allLocsFlat.forEach(l => {
+      (l.items || []).forEach(item => {
+        const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
+        if (!item._photosHydrated && !hasLocal && item.id) unloadedItemIds.push(item.id);
+      });
+    });
+    const fetchedPhotosByItem = {};
+    if (unloadedItemIds.length > 0) {
+      const { data: pData, error: pErr } = await sb.from('item_photos')
+        .select('id,item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
+      if (!pErr) Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
+    }
+
+    // Construire les items à upsert + savoir lesquels ont des photos locales
+    const allItems = [];
+    const itemRecords = []; // { itemId, item } pour le traitement photos
+    const itemsWithLocalPhotos = new Set();
+
     for (let li = 0; li < allLocsFlat.length; li++) {
-      const l     = allLocsFlat[li];
+      const l   = allLocsFlat[li];
       const locId = locRows[li]?.id;
       if (!locId) continue;
+
+      const dbLocItemIds  = new Set((dbItemsByLoc[locId] || []).map(i => i.id));
+      const currItemIds   = new Set((l.items || []).map(i => i.id).filter(Boolean));
+
+      // Supprimer uniquement les items retirés par l'utilisateur
+      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id));
+      if (removedItemIds.length > 0) {
+        await sb.from('item_photos').delete().in('item_id', removedItemIds);
+        await sb.from('localisation_items').delete().in('id', removedItemIds);
+      }
+
       for (let ii = 0; ii < (l.items || []).length; ii++) {
         const item   = l.items[ii];
         const itemId = item.id || crypto.randomUUID();
@@ -398,18 +431,33 @@ async function saveRemote(ps) {
           plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
           sort_order: ii,
         });
-        const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem);
-        allPhotos.push(...photos);
+        const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
+        if (item._photosHydrated || hasLocal) itemsWithLocalPhotos.add(itemId);
+        itemRecords.push({ itemId, item });
       }
     }
 
+    // UPSERT des items
     if (allItems.length > 0) {
-      const { error } = await sb.from('localisation_items').insert(allItems);
-      if (error) { errors.push(error); continue; }
+      const { error } = await sb.from('localisation_items').upsert(allItems, { onConflict: 'id' });
+      if (error) { errors.push(error); }
     }
-    for (const photo of allPhotos) {
-      const { error } = await sb.from('item_photos').insert([photo]);
-      if (error) errors.push(error);
+
+    // ── PHOTOS : delete + re-insert uniquement pour items avec données locales ──
+
+    // Supprimer les anciennes photos des items à resynchroniser
+    if (itemsWithLocalPhotos.size > 0) {
+      await sb.from('item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
+    }
+
+    // Re-insérer les photos pour ces items
+    for (const { itemId, item } of itemRecords) {
+      if (!itemsWithLocalPhotos.has(itemId)) continue; // garder les photos DB existantes
+      const photos = await processPhotosForItem(sb, item, itemId, {});
+      for (const photo of photos) {
+        const { error } = await sb.from('item_photos').insert([photo]);
+        if (error) errors.push(error);
+      }
     }
   }
 
