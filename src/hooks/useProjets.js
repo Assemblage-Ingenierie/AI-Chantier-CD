@@ -32,7 +32,29 @@ export function useProjets(onSyncStatus) {
           const lp = localById.get(rp.id);
           if (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt) {
             keptLocal = true;
-            return lp;
+            // Conserver les éditions locales mais restaurer les blobs (planBg, planLibrary.bg)
+            // depuis le remote — slimLoc les strip toujours dans localStorage.
+            const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
+            return {
+              ...lp,
+              planLibrary: (lp.planLibrary || []).map(pl => {
+                const rpl = remotePlanById.get(pl.id);
+                return rpl ? { ...pl, bg: rpl.bg ?? pl.bg, data: rpl.data ?? pl.data } : pl;
+              }),
+              visites: (lp.visites || []).map(lv => {
+                const rv = (rp.visites || []).find(v => v.id === lv.id);
+                if (!rv) return lv;
+                const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
+                return {
+                  ...lv,
+                  localisations: (lv.localisations || []).map(ll => {
+                    const rl = remoteLocById.get(ll.id);
+                    if (!rl) return ll;
+                    return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
+                  }),
+                };
+              }),
+            };
           }
           // Préserver les photos déjà hydratées (évite la race condition loadData ↔ hydratePhotos)
           if (!lp) return rp;
