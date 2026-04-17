@@ -1,6 +1,17 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { SYMBOLS, drawAnnotationPaths } from './Annotator.jsx';
+
+function SymbolIcon({ sym, size = 14 }) {
+  const ref = useRef();
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, size, size);
+    try { sym.draw(ctx, size / 2, size / 2, size * 0.38, DA.red); } catch {}
+  }, [sym, size]);
+  return <canvas ref={ref} width={size} height={size} style={{ display:'block', flexShrink:0 }}/>;
+}
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
 const S   = 3;
@@ -186,7 +197,7 @@ function PlanBlock({ loc }) {
           <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 12px' }}>
             {legendSy.map(s => (
               <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:DA.gray }}>
-                <div style={{ width:8, height:8, background:DA.red, borderRadius:1, flexShrink:0 }}/>
+                <SymbolIcon sym={s} size={13}/>
                 {s.label}
               </div>
             ))}
@@ -359,8 +370,64 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
   );
 }
 
+// ── Tableau récapitulatif auto-généré ──────────────────────────────────────
+function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
+  const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+  const rows = localisations.flatMap(loc =>
+    (loc.items || []).filter(i => i.suivi !== 'fait').map(i => ({
+      locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi,
+    }))
+  ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
+
+  const dateStr = projet.dateVisite
+    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
+    : null;
+
+  return (
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+      <HdrBar projet={projet} dateStr={dateStr}/>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+          <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Tableau récapitulatif</span>
+          <span style={{ fontSize:8, color:DA.grayL }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
+        </div>
+        {/* Header */}
+        <div style={{ display:'grid', gridTemplateColumns:'5px 1fr 60px 60px', background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:8 }}>
+          <div/>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre / Zone</span>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Urgence</span>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Suivi</span>
+        </div>
+        {rows.map((row, i) => {
+          const u = URGENCE[row.urgence] || URGENCE.basse;
+          const sv = row.suivi && row.suivi !== 'rien' ? SUIVI[row.suivi] : null;
+          return (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'5px 1fr 60px 60px', gap:8, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'center' }}>
+              <div style={{ width:5, height:'100%', background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
+              <div>
+                <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
+                <div style={{ fontSize:7, color:DA.grayL, marginTop:1 }}>{row.locNom}</div>
+              </div>
+              <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap' }}>{u.label}</span>
+              <span style={{ fontSize:7, color: sv ? sv.text : DA.grayL, background: sv ? sv.bg : 'transparent', border: sv ? `1px solid ${sv.border}` : 'none', borderRadius:4, padding: sv ? '1px 5px' : 0, whiteSpace:'nowrap' }}>
+                {sv ? sv.label : '—'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
+        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
+        <span style={{ flex:1 }}/>
+        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -371,7 +438,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
   const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
 
-  const hasTableau      = (projet.tableauRecap || []).length > 0;
+  const recapItems      = localisations.flatMap(l => (l.items || []).filter(i => i.suivi !== 'fait'));
+  const hasTableau      = includeTableauRecap && recapItems.length > 0;
   const hasParticipants = (projet.participants || []).length > 0;
   const pOff            = hasParticipants ? 1 : 0;
   const totalPages      = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + planLocs.length;
@@ -399,12 +467,9 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
         )}
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
-        {/* Logo Assemblage Ingénierie — coin supérieur droit */}
-        <div style={{ position:'absolute', top:MX, right:MX,
-          background:'white', borderRadius:6, padding:'6px 10px', boxShadow:'0 2px 8px rgba(0,0,0,0.3)' }}>
-          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
-            style={{ height:22, objectFit:'contain', display:'block' }}/>
-        </div>
+        {/* Logo Assemblage Ingénierie — coin supérieur droit, sans cadre */}
+        <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
+          style={{ position:'absolute', top:MX, right:MX, height:24, objectFit:'contain', display:'block' }}/>
         <div style={{ position:'relative' }}>
           <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
             Compte-rendu de visite
@@ -478,20 +543,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       {hasTableau && (
         <>
           <PageSepBanner pageNum={1 + pOff + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-            <HdrBar projet={projet} dateStr={null}/>
-            <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
-              <ZoneHeader loc={{ nom:'Tableau récapitulatif' }}/>
-              <div style={{ fontSize:10, color:DA.gray, marginTop:4 }}>
-                {(projet.tableauRecap||[]).length} ligne{(projet.tableauRecap||[]).length > 1 ? 's' : ''}
-              </div>
-            </div>
-            <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-              <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
-              <span style={{ flex:1 }}/>
-              <span style={{ fontSize:6, color:DA.grayL }}>{totalPages} / {totalPages}</span>
-            </div>
-          </div>
+          <TableauRecapPage localisations={localisations} projet={projet} pageNum={1 + pOff + pages.length + 1} totalPages={totalPages}/>
         </>
       )}
 

@@ -25,8 +25,24 @@ async function renderPlanImage(planBg, planAnnotations) {
   });
 }
 
+/** Pré-rend chaque symbole dans un mini-canvas et retourne { [symbolId]: dataURL }. */
+async function preRenderSymbolIcons(symbolIds) {
+  const icons = {};
+  for (const sym of SYMBOLS) {
+    if (!symbolIds.has(sym.id)) continue;
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = 28; cv.height = 28;
+      const ctx = cv.getContext('2d');
+      sym.draw(ctx, 14, 14, 10, '#E30513');
+      icons[sym.id] = cv.toDataURL('image/png');
+    } catch {}
+  }
+  return icons;
+}
+
 /** Ajoute la légende des symboles utilisés dans le plan ; retourne le nouveau y. */
-function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR) {
+function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}) {
   const paths = annot?.paths;
   if (!paths?.length) return y;
   const usedIds  = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
@@ -42,11 +58,16 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR) {
 
   let lx = ML, ly = y;
   legendSy.forEach(s => {
-    const tw = doc.getTextWidth(s.label) + 16;
-    if (lx + tw > W - MR) { lx = ML; ly += 9; }
-    doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
+    const tw = doc.getTextWidth(s.label) + 20;
+    if (lx + tw > W - MR) { lx = ML; ly += 10; }
+    const iconUrl = symbolIcons[s.id];
+    if (iconUrl) {
+      try { doc.addImage(iconUrl, 'PNG', lx, ly - 5.5, 7, 7, undefined, 'FAST'); } catch {}
+    } else {
+      doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
+    }
     doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.text(s.label, lx + 9, ly + 0.2);
+    doc.text(s.label, lx + 10, ly + 0.2);
     lx += tw;
   });
   return ly + 6;
@@ -56,7 +77,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR) {
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, tableauRecap, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false }) {
+export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -88,6 +109,13 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
     const img = await renderPlanImage(loc.planBg, loc.planAnnotations);
     if (img) planImages[loc.id] = img;
   }
+
+  // Pré-rendu des icônes de symboles pour les légendes
+  const allSymbolIds = new Set();
+  localisations.forEach(loc =>
+    (loc.planAnnotations?.paths || []).filter(p => p.type === 'symbol').forEach(p => allSymbolIds.add(p.symbolId))
+  );
+  const symbolIcons = await preRenderSymbolIcons(allSymbolIds);
 
   const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
@@ -143,20 +171,14 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
   }
   doc.setFillColor(...RD); doc.rect(0, 0, 4, H * 0.52, 'F');
 
-  // Logo Assemblage Ingénierie — coin supérieur droit de la page de garde
-  try {
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(W - MR - 54, 8, 54, 20, 2, 2, 'F');
-    if (logoDataUrl) {
-      doc.addImage(logoDataUrl, 'PNG', W - MR - 52, 10.5, 48, 14, undefined, 'FAST');
-    } else {
-      doc.setTextColor(227, 5, 19); doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(8);
-      doc.text('Assembl!age', W - MR - 52, 18);
-      doc.setFontSize(7); doc.setTextColor(100, 100, 100);
-      doc.text('ingénierie', W - MR - 52, 24);
-      doc.setTextColor(0, 0, 0);
-    }
-  } catch {}
+  // Logo Assemblage Ingénierie — coin supérieur droit, sans cadre blanc
+  if (logoDataUrl) {
+    try { doc.addImage(logoDataUrl, 'PNG', W - MR - 50, 10, 46, 13, undefined, 'FAST'); } catch {}
+  } else {
+    doc.setTextColor(227, 5, 19); doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(8);
+    doc.text('Assemblage Ingénierie', W - MR, 18, { align: 'right' });
+    doc.setTextColor(0, 0, 0);
+  }
 
   // Titre projet
   doc.setTextColor(...WH); doc.setFontSize(7); doc.setFont('helvetica', 'normal');
@@ -376,7 +398,7 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           y += ih + 2;
         } catch {}
-        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR);
+        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR, symbolIcons);
         y += 2;
       }
     }
@@ -384,66 +406,75 @@ export async function exportPdf({ projet, localisations, tableauRecap, photosPar
     y += 5;
   });
 
-  // ── TABLEAU RÉCAPITULATIF ─────────────────────────────────────────────────────
+  // ── TABLEAU RÉCAPITULATIF (auto-généré) ──────────────────────────────────────
 
-  if (tableauRecap?.length) {
-    doc.addPage(); y = 18; hdr(); pb(18);
-    doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-    doc.text('TABLEAU RÉCAPITULATIF', ML + 6, y + 7);
-    doc.setTextColor(0, 0, 0); y += 14;
+  if (includeTableauRecap) {
+    const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+    const recapRows = localisations.flatMap(loc =>
+      (loc.items || [])
+        .filter(i => i.suivi !== 'fait')
+        .map(i => ({ locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi }))
+    ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
-    const colW = [6, CW * 0.35, CW * 0.35, 28];
-    const colX = [ML, ML + colW[0], ML + colW[0] + colW[1], ML + colW[0] + colW[1] + colW[2]];
+    if (recapRows.length > 0) {
+      doc.addPage(); y = 18; hdr();
+      doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
+      doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.text('TABLEAU RÉCAPITULATIF', ML + 6, y + 7);
+      doc.setTextColor(0, 0, 0); y += 14;
 
-    doc.setFillColor(50, 50, 50); doc.rect(ML, y, CW, 8, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
-    ['NIV.', 'DÉSORDRE CONSTATÉ', 'TRAVAUX PRÉCONISÉS', 'SUIVI'].forEach((t, i) => {
-      doc.text(t, colX[i] + 2, y + 5.5);
-    });
-    doc.setTextColor(0, 0, 0); y += 9;
+      const colW = [6, CW * 0.42, CW * 0.33, 28];
+      const colX = [ML, ML + colW[0], ML + colW[0] + colW[1], ML + colW[0] + colW[1] + colW[2]];
 
-    tableauRecap.forEach((row, i) => {
-      const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
-      const dLines = row.desordre ? doc.splitTextToSize(row.desordre, colW[1] - 4) : ['—'];
-      const tLines = row.travaux ? doc.splitTextToSize(row.travaux, colW[2] - 4) : ['À définir'];
-      const suiviLabel = row.suivi && row.suivi !== 'rien' ? SUIVI[row.suivi]?.label || '' : '—';
-      const rowH = Math.max(dLines.length, tLines.length) * 5 + 7;
-      pb(rowH + 2);
+      doc.setFillColor(50, 50, 50); doc.rect(ML, y, CW, 8, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
+      ['', 'DÉSORDRE / ZONE', 'URGENCE', 'SUIVI'].forEach((t, i) => {
+        if (t) doc.text(t, colX[i] + 2, y + 5.5);
+      });
+      doc.setTextColor(0, 0, 0); y += 9;
 
-      const bg = i % 2 === 0 ? 249 : 255;
-      doc.setFillColor(bg, bg, bg); doc.rect(ML, y, CW, rowH, 'F');
-      doc.setFillColor(...urgColor); doc.rect(colX[0], y, colW[0], rowH, 'F');
-      doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, y, CW, rowH);
+      recapRows.forEach((row, i) => {
+        const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
+        const urgLabel = URGENCE[row.urgence]?.label ?? row.urgence;
+        const suiviLabel = row.suivi && row.suivi !== 'rien' ? SUIVI[row.suivi]?.label || '—' : '—';
+        const titreLines = doc.splitTextToSize(row.titre || '—', colW[1] - 4);
+        const rowH = titreLines.length * 5 + 7;
+        pb(rowH + 2);
 
-      doc.setTextColor(...WH); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold');
-      doc.text(row.urgence === 'haute' ? 'URG' : row.urgence === 'moyenne' ? 'MOY' : 'MIN',
-        colX[0] + colW[0] / 2, y + rowH / 2 + 1.5, { align: 'center' });
-      if (row.locNom) {
-        doc.setFontSize(4.5);
-        doc.text(row.locNom.slice(0, 6), colX[0] + colW[0] / 2, y + rowH / 2 + 5, { align: 'center' });
-      }
+        const bg = i % 2 === 0 ? 249 : 255;
+        doc.setFillColor(bg, bg, bg); doc.rect(ML, y, CW, rowH, 'F');
+        doc.setFillColor(...urgColor); doc.rect(colX[0], y, colW[0], rowH, 'F');
+        doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, y, CW, rowH);
 
-      doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-      doc.text(dLines, colX[1] + 2, y + 5);
-      doc.setTextColor(50, 50, 80); doc.text(tLines, colX[2] + 2, y + 5);
-
-      if (suiviLabel !== '—') {
-        const sv = SUIVI[row.suivi || 'rien'];
-        if (sv) {
-          const sc = sv.dot;
-          doc.setFillColor(parseInt(sc.slice(1,3),16), parseInt(sc.slice(3,5),16), parseInt(sc.slice(5,7),16));
-          doc.circle(colX[3] + 4, y + rowH / 2, 2, 'F');
+        // Zone label (petite taille dans la bande colorée)
+        if (row.locNom) {
+          doc.setTextColor(...WH); doc.setFontSize(4.5); doc.setFont('helvetica', 'bold');
+          doc.text(row.locNom.slice(0, 5), colX[0] + colW[0] / 2, y + rowH / 2 + 1.5, { align: 'center' });
         }
-        doc.setTextColor(0, 0, 0); doc.setFontSize(6.5);
-        doc.text(suiviLabel, colX[3] + 8, y + rowH / 2 + 2);
-      } else {
-        doc.setTextColor(180, 180, 180); doc.setFontSize(7);
-        doc.text('—', colX[3] + colW[3] / 2, y + rowH / 2 + 2, { align: 'center' });
-      }
-      doc.setTextColor(0, 0, 0); y += rowH + 1;
-    });
+
+        // Titre + zone
+        doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+        doc.text(titreLines, colX[1] + 2, y + 5);
+        if (row.locNom) {
+          doc.setFontSize(5.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+          doc.text(row.locNom, colX[1] + 2, y + rowH - 2.5);
+        }
+
+        // Urgence badge
+        const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
+        doc.setFillColor(...(row.urgence === 'haute' ? [254,226,226] : row.urgence === 'moyenne' ? [255,251,235] : [240,253,244]));
+        doc.roundedRect(colX[2] + 2, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
+        doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
+        doc.text(urgLabel, colX[2] + 5, y + rowH/2 + 1, { align: 'left' });
+
+        // Suivi
+        doc.setTextColor(suiviLabel !== '—' ? 80 : 180); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+        doc.text(suiviLabel, colX[3] + 2, y + rowH/2 + 1);
+
+        doc.setTextColor(0, 0, 0); y += rowH + 1;
+      });
+    }
   }
 
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────

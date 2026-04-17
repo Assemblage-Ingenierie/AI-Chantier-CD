@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import TableauRecap from './TableauRecap.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
@@ -23,10 +22,10 @@ export default function RapportTab({ projet, onUpdate }) {
       await exportPdf({
         projet,
         localisations,
-        tableauRecap:    projet.tableauRecap || [],
-        photosParLigne:  projet.photosParLigne ?? 2,
-        rapportPageBreaks: projet.rapportPageBreaks || [],
-        plansEnFin:      projet.plansEnFin ?? false,
+        photosParLigne:       projet.photosParLigne ?? 2,
+        rapportPageBreaks:    projet.rapportPageBreaks || [],
+        plansEnFin:           projet.plansEnFin ?? false,
+        includeTableauRecap:  projet.includeTableauRecap !== false,
       });
     } catch (e) {
       console.error('Export PDF:', e);
@@ -141,11 +140,20 @@ export default function RapportTab({ projet, onUpdate }) {
           )}
 
           {/* Tableau récapitulatif */}
-          <TableauRecap
-            localisations={localisations}
-            tableauData={projet.tableauRecap}
-            onUpdate={rows => onUpdate({ tableauRecap: rows })}
-          />
+          <div>
+            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+              <input
+                type="checkbox"
+                checked={projet.includeTableauRecap !== false}
+                onChange={e => onUpdate({ includeTableauRecap: e.target.checked })}
+                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
+              />
+              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Tableau récapitulatif en fin</span>
+            </label>
+            <p style={{ fontSize:10, color:DA.gray, margin:'3px 0 0 22px' }}>
+              Auto-généré depuis les observations non terminées
+            </p>
+          </div>
         </div>
 
         {/* Bouton Export */}
@@ -172,6 +180,7 @@ export default function RapportTab({ projet, onUpdate }) {
         pageBreaks={pageBreaks}
         onTogglePageBreak={togglePageBreak}
         plansEnFin={projet.plansEnFin ?? false}
+        includeTableauRecap={projet.includeTableauRecap !== false}
       />
     </div>
   );

@@ -13,7 +13,7 @@ import Annotator from '../vue/Annotator.jsx';
 // Champs qui appartiennent à une visite (pas au projet)
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
-  'photosParLigne','plansEnFin','rapportPageBreaks',
+  'photosParLigne','plansEnFin','rapportPageBreaks','includeTableauRecap',
 ]);
 
 export default function VueProjet({ projet, onBack, onUpdate }) {
