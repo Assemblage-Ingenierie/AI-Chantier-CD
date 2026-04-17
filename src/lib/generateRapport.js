@@ -25,16 +25,17 @@ async function renderPlanImage(planBg, planAnnotations) {
   });
 }
 
-/** Pré-rend chaque symbole dans un mini-canvas et retourne { [symbolId]: dataURL }. */
+/** Pré-rend chaque symbole dans un canvas 80×80 (assez grand pour les textes sous le symbole). */
 async function preRenderSymbolIcons(symbolIds) {
   const icons = {};
   for (const sym of SYMBOLS) {
     if (!symbolIds.has(sym.id)) continue;
     try {
       const cv = document.createElement('canvas');
-      cv.width = 28; cv.height = 28;
+      cv.width = 80; cv.height = 80;
       const ctx = cv.getContext('2d');
-      sym.draw(ctx, 14, 14, 10, '#E30513');
+      // Centre décalé vers le haut pour laisser de la place au texte en-dessous
+      sym.draw(ctx, 40, 28, 2, '#E30513');
       icons[sym.id] = cv.toDataURL('image/png');
     } catch {}
   }

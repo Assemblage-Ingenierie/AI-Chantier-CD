@@ -7,10 +7,11 @@ function SymbolIcon({ sym, size = 14 }) {
   useEffect(() => {
     const ctx = ref.current?.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, size, size);
-    try { sym.draw(ctx, size / 2, size / 2, size * 0.38, DA.red); } catch {}
-  }, [sym, size]);
-  return <canvas ref={ref} width={size} height={size} style={{ display:'block', flexShrink:0 }}/>;
+    ctx.clearRect(0, 0, 80, 80);
+    try { sym.draw(ctx, 40, 28, 2, DA.red); } catch {}
+  }, [sym]);
+  return <canvas ref={ref} width={80} height={80}
+    style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
 }
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
