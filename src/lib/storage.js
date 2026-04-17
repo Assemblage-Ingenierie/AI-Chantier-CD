@@ -292,137 +292,109 @@ async function saveRemote(ps) {
   _lastRemoteIds = new Set(ps.map(p => p.id));
 
   for (const p of ps) {
-    // Métadonnées visites (sans localisations)
     const visitesMetadata = (p.visites || []).map(v => ({
-      id:               v.id,
-      label:            v.label ?? 'Visite 1',
-      dateVisite:       v.dateVisite ?? null,
-      participants:     v.participants ?? [],
-      tableauRecap:     v.tableauRecap ?? [],
-      photosParLigne:   v.photosParLigne ?? 2,
-      plansEnFin:       v.plansEnFin ?? false,
+      id: v.id, label: v.label ?? 'Visite 1', dateVisite: v.dateVisite ?? null,
+      participants: v.participants ?? [], tableauRecap: v.tableauRecap ?? [],
+      photosParLigne: v.photosParLigne ?? 2, plansEnFin: v.plansEnFin ?? false,
       rapportPageBreaks: v.rapportPageBreaks ?? [],
     }));
 
     const firstVisit = p.visites?.[0];
-    const { error: ce } = await sb.from('chantiers').upsert({
-      id:              p.id,
-      nom:             p.nom ?? '',
-      statut:          p.statut ?? 'en_cours',
-      adresse:         p.adresse ?? '',
-      maitre_ouvrage:  p.maitreOuvrage ?? '',
-      photo:           p.photo ?? null,
-      // colonnes legacy (rétrocompatibilité) — prises de la première visite
-      date_visite:     firstVisit?.dateVisite ?? null,
-      photos_par_ligne: firstVisit?.photosParLigne ?? 2,
-      participants:    firstVisit?.participants ?? [],
-      tableau_recap:   firstVisit?.tableauRecap ?? [],
-      visites:         visitesMetadata,
-      updated_at:      now,
-    }, { onConflict: 'id' });
-    if (ce) { errors.push(ce); continue; }
-
-    // Plans
-    await sb.from('chantier_plans').delete().eq('chantier_id', p.id);
-    const planRows = (p.planLibrary || []).map((pl, i) => ({
-      id: pl.id || crypto.randomUUID(), chantier_id: p.id,
-      nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null, sort_order: i,
-    }));
-    if (planRows.length > 0) {
-      const { error } = await sb.from('chantier_plans').insert(planRows);
-      if (error) errors.push(error);
-    }
-
-    // Toutes les localisations de toutes les visites
     const allLocsFlat = (p.visites || []).flatMap(v =>
       (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
     );
 
-    // ── LOCALISATIONS : UPSERT + DELETE ciblé ──────────────────────────────────
+    // ── Parallèle : upsert chantier + lecture IDs existants ──────────────────
+    const [chantierRes, dbLocsRes] = await Promise.all([
+      sb.from('chantiers').upsert({
+        id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
+        adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
+        photo: p.photo ?? null, date_visite: firstVisit?.dateVisite ?? null,
+        photos_par_ligne: firstVisit?.photosParLigne ?? 2,
+        participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
+        visites: visitesMetadata, updated_at: now,
+      }, { onConflict: 'id' }),
+      sb.from('chantier_localisations').select('id').eq('chantier_id', p.id),
+    ]);
+    if (chantierRes.error) { errors.push(chantierRes.error); continue; }
 
-    // Lire les IDs existants en DB (une requête)
-    const { data: dbLocsData } = await sb.from('chantier_localisations')
-      .select('id').eq('chantier_id', p.id);
-    const dbLocIds   = new Set((dbLocsData || []).map(l => l.id));
+    const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
 
-    // Garde de sécurité : refuser d'effacer si l'état local est vide alors que la DB ne l'est pas.
-    // Évite la perte totale en cas de bug d'état ou race condition.
+    // Garde de sécurité : jamais effacer si l'état local est vide
     if (allLocsFlat.length === 0 && dbLocIds.size > 0) {
       errors.push({ message: 'Sync interrompu : état local vide alors que la DB contient des données. Rechargez la page.', code: 'SAFETY_EMPTY' });
       continue;
     }
 
-    // Supprimer uniquement les locs retirées explicitement par l'utilisateur
-    const removedLocIds = [...dbLocIds].filter(id => !currLocIds.has(id));
-    if (removedLocIds.length > 0) {
-      await sb.from('localisation_items').delete().in('localisation_id', removedLocIds);
-      await sb.from('chantier_localisations').delete().in('id', removedLocIds);
-    }
+    // Loc rows — plan_bg/plan_data exclus quand null (évite d'écraser les blobs DB + timeout)
+    const locRows = allLocsFlat.map((l, i) => {
+      const row = {
+        id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
+        plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
+        sort_order: i, visite_id: l._visiteId,
+      };
+      if (l.planBg  != null) row.plan_bg   = l.planBg;
+      if (l.planData != null) row.plan_data = l.planData;
+      return row;
+    });
 
-    // UPSERT des locs courantes (insert si nouvelle, update si existante)
-    const locRows = allLocsFlat.map((l, i) => ({
-      id:               l.id || crypto.randomUUID(),
-      chantier_id:      p.id,
-      nom:              l.nom ?? '',
-      plan_bg:          l.planBg ?? null,
-      plan_data:        l.planData ?? null,
-      plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
-      sort_order:       i,
-      visite_id:        l._visiteId,
-    }));
+    const removedLocIds  = [...dbLocIds].filter(id => !currLocIds.has(id));
+    const locIdsToFetch  = locRows.map(l => l.id).filter(Boolean);
+
+    // ── Parallèle : suppr locs retirées + lecture items existants ────────────
+    const [, dbItemsRes] = await Promise.all([
+      removedLocIds.length > 0
+        ? (async () => {
+            await sb.from('localisation_items').delete().in('localisation_id', removedLocIds);
+            await sb.from('chantier_localisations').delete().in('id', removedLocIds);
+          })()
+        : Promise.resolve(),
+      locIdsToFetch.length > 0
+        ? sb.from('localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    // UPSERT locs (sans blobs null — PostgREST ne met à jour que les colonnes envoyées)
     if (locRows.length > 0) {
-      const { error: le } = await sb.from('chantier_localisations')
-        .upsert(locRows, { onConflict: 'id' });
+      const { error: le } = await sb.from('chantier_localisations').upsert(locRows, { onConflict: 'id' });
       if (le) { errors.push(le); continue; }
     }
 
-    // ── ITEMS : UPSERT + DELETE ciblé ─────────────────────────────────────────
+    // Plans (fire-and-forget par rapport au chemin critique)
+    const plansPromise = (async () => {
+      await sb.from('chantier_plans').delete().eq('chantier_id', p.id);
+      const planRows = (p.planLibrary || []).map((pl, i) => ({
+        id: pl.id || crypto.randomUUID(), chantier_id: p.id,
+        nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null, sort_order: i,
+      }));
+      if (planRows.length > 0) {
+        const { error } = await sb.from('chantier_plans').insert(planRows);
+        if (error) errors.push(error);
+      }
+    })();
 
-    // Lire les items existants pour toutes les locs du projet (une seule requête)
-    const locIdsToFetch = locRows.map(l => l.id).filter(Boolean);
-    const { data: dbItemsData } = locIdsToFetch.length > 0
-      ? await sb.from('localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
-      : { data: [] };
-    const dbItemsByLoc = groupBy(dbItemsData || [], 'localisation_id');
+    const dbItemsByLoc = groupBy(dbItemsRes?.data || [], 'localisation_id');
 
-    // Pré-fetch des photos pour items non-hydratés (utile pour les anciennes photos Storage)
-    const unloadedItemIds = [];
-    allLocsFlat.forEach(l => {
-      (l.items || []).forEach(item => {
-        const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
-        if (!item._photosHydrated && !hasLocal && item.id) unloadedItemIds.push(item.id);
-      });
-    });
-    const fetchedPhotosByItem = {};
-    if (unloadedItemIds.length > 0) {
-      const { data: pData, error: pErr } = await sb.from('item_photos')
-        .select('id,item_id,name,storage_url,sort_order').in('item_id', unloadedItemIds).order('sort_order');
-      if (!pErr) Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
-    }
-
-    // Construire les items à upsert + savoir lesquels ont des photos locales
+    // Construire items + collecter tous les IDs supprimés en une passe
     const allItems = [];
-    const itemRecords = []; // { itemId, item } pour le traitement photos
+    const itemRecords = [];
     const itemsWithLocalPhotos = new Set();
+    const allRemovedItemIds = [];
+    const unloadedItemIds = [];
 
     for (let li = 0; li < allLocsFlat.length; li++) {
-      const l   = allLocsFlat[li];
+      const l = allLocsFlat[li];
       const locId = locRows[li]?.id;
       if (!locId) continue;
 
-      const dbLocItemIds  = new Set((dbItemsByLoc[locId] || []).map(i => i.id));
-      const currItemIds   = new Set((l.items || []).map(i => i.id).filter(Boolean));
-
-      // Supprimer uniquement les items retirés par l'utilisateur
+      const dbLocItemIds = new Set((dbItemsByLoc[locId] || []).map(i => i.id));
+      const currItemIds  = new Set((l.items || []).map(i => i.id).filter(Boolean));
       const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id));
-      if (removedItemIds.length > 0) {
-        await sb.from('item_photos').delete().in('item_id', removedItemIds);
-        await sb.from('localisation_items').delete().in('id', removedItemIds);
-      }
+      allRemovedItemIds.push(...removedItemIds);
 
       for (let ii = 0; ii < (l.items || []).length; ii++) {
-        const item   = l.items[ii];
+        const item = l.items[ii];
         const itemId = item.id || crypto.randomUUID();
         allItems.push({
           id: itemId, localisation_id: locId,
@@ -433,32 +405,47 @@ async function saveRemote(ps) {
         });
         const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
         if (item._photosHydrated || hasLocal) itemsWithLocalPhotos.add(itemId);
+        else if (item.id) unloadedItemIds.push(item.id);
         itemRecords.push({ itemId, item });
       }
     }
 
-    // UPSERT des items
-    if (allItems.length > 0) {
-      const { error } = await sb.from('localisation_items').upsert(allItems, { onConflict: 'id' });
-      if (error) { errors.push(error); }
-    }
+    // ── Parallèle : suppr items retirés (batch) + upsert items + prefetch photos
+    const deleteRemovedItemsPromise = allRemovedItemIds.length > 0
+      ? (async () => {
+          await sb.from('item_photos').delete().in('item_id', allRemovedItemIds);
+          await sb.from('localisation_items').delete().in('id', allRemovedItemIds);
+        })()
+      : Promise.resolve();
 
-    // ── PHOTOS : delete + re-insert uniquement pour items avec données locales ──
+    const [, upsertItemsRes, photosRes] = await Promise.all([
+      deleteRemovedItemsPromise,
+      allItems.length > 0
+        ? sb.from('localisation_items').upsert(allItems, { onConflict: 'id' })
+        : Promise.resolve({ error: null }),
+      unloadedItemIds.length > 0
+        ? sb.from('item_photos').select('id,item_id,name,storage_url,sort_order')
+            .in('item_id', unloadedItemIds).order('sort_order')
+        : Promise.resolve({ data: [] }),
+    ]);
+    if (upsertItemsRes?.error) errors.push(upsertItemsRes.error);
 
-    // Supprimer les anciennes photos des items à resynchroniser
+    const fetchedPhotosByItem = groupBy(photosRes?.data || [], 'item_id');
+
+    // Photos : delete + re-insert uniquement pour items avec données locales
     if (itemsWithLocalPhotos.size > 0) {
       await sb.from('item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
     }
-
-    // Re-insérer les photos pour ces items
     for (const { itemId, item } of itemRecords) {
-      if (!itemsWithLocalPhotos.has(itemId)) continue; // garder les photos DB existantes
-      const photos = await processPhotosForItem(sb, item, itemId, {});
+      if (!itemsWithLocalPhotos.has(itemId)) continue;
+      const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem);
       for (const photo of photos) {
         const { error } = await sb.from('item_photos').insert([photo]);
         if (error) errors.push(error);
       }
     }
+
+    await plansPromise;
   }
 
   if (errors.length > 0) {
