@@ -8,6 +8,7 @@ export function useProjets(onSyncStatus) {
   const debounceRef = useRef(null);
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
+  const savingRef = useRef(false);
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
@@ -102,8 +103,11 @@ export function useProjets(onSyncStatus) {
     if (!userModified.current) return;
     onSyncStatus?.('saving');
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      saveData(projets, onSyncStatus);
+    debounceRef.current = setTimeout(async () => {
+      if (savingRef.current) return;
+      savingRef.current = true;
+      await saveData(projets, onSyncStatus);
+      savingRef.current = false;
     }, 2000);
     return () => clearTimeout(debounceRef.current);
   }, [hydrated, projets]);
@@ -112,7 +116,7 @@ export function useProjets(onSyncStatus) {
     const flush = () => {
       if (!userModified.current) return;
       clearTimeout(debounceRef.current);
-      saveData(projetsRef.current, onSyncStatus);
+      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus);
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);

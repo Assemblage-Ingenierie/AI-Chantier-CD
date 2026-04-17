@@ -279,6 +279,8 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
 async function saveRemote(ps) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
+  const { data: { user } } = await sb.auth.getUser();
+  const uid = user?.id ?? null;
   const errors = [];
 
   const memIds = new Set(ps.map(p => p.id));
@@ -313,6 +315,7 @@ async function saveRemote(ps) {
         photos_par_ligne: firstVisit?.photosParLigne ?? 2,
         participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
         visites: visitesMetadata, updated_at: now,
+        ...(uid ? { owner_id: uid } : {}),
       }, { onConflict: 'id' }),
       sb.from('chantier_localisations').select('id').eq('chantier_id', p.id),
     ]);
@@ -361,17 +364,22 @@ async function saveRemote(ps) {
       if (le) { errors.push(le); continue; }
     }
 
-    // Plans (fire-and-forget par rapport au chemin critique)
+    // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
-      await sb.from('chantier_plans').delete().eq('chantier_id', p.id);
-      const planRows = (p.planLibrary || []).map((pl, i) => ({
-        id: pl.id || crypto.randomUUID(), chantier_id: p.id,
-        nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null, sort_order: i,
-      }));
-      if (planRows.length > 0) {
-        const { error } = await sb.from('chantier_plans').insert(planRows);
-        if (error) errors.push(error);
-      }
+      const dbPlansRes = await sb.from('chantier_plans').select('id').eq('chantier_id', p.id);
+      const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
+      const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
+      const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
+      const planRows = (p.planLibrary || []).map((pl, i) => {
+        const row = { id: pl.id || crypto.randomUUID(), chantier_id: p.id, nom: pl.nom ?? '', sort_order: i };
+        if (pl.bg   != null) row.bg   = pl.bg;
+        if (pl.data != null) row.data = pl.data;
+        return row;
+      });
+      await Promise.all([
+        removedPlanIds.length ? sb.from('chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
+        planRows.length       ? sb.from('chantier_plans').upsert(planRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
+      ]);
     })();
 
     const dbItemsByLoc = groupBy(dbItemsRes?.data || [], 'localisation_id');
@@ -432,17 +440,19 @@ async function saveRemote(ps) {
 
     const fetchedPhotosByItem = groupBy(photosRes?.data || [], 'item_id');
 
-    // Photos : delete + re-insert uniquement pour items avec données locales
+    // Photos : delete + re-insert batch (une seule requête insert au lieu de N)
     if (itemsWithLocalPhotos.size > 0) {
       await sb.from('item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
     }
+    const allPhotoRows = [];
     for (const { itemId, item } of itemRecords) {
       if (!itemsWithLocalPhotos.has(itemId)) continue;
       const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem);
-      for (const photo of photos) {
-        const { error } = await sb.from('item_photos').insert([photo]);
-        if (error) errors.push(error);
-      }
+      allPhotoRows.push(...photos);
+    }
+    if (allPhotoRows.length > 0) {
+      const { error } = await sb.from('item_photos').insert(allPhotoRows);
+      if (error) errors.push(error);
     }
 
     await plansPromise;
