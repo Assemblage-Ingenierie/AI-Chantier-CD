@@ -40,41 +40,31 @@ function itemMm(item, ppl) {
 const PLAN_MM = 120; // hauteur estimée d'un bloc plan (header 12 + image ~104 + gap 4)
 
 // ── Pagination ─────────────────────────────────────────────────────────────
-// Retourne un tableau de pages ; chaque page = tableau de blocs
+// Retourne un tableau de pages divisées UNIQUEMENT aux sauts explicites.
 // bloc = { type:'zone'|'item'|'plan', id, loc?, item? }
 function buildPages(locs, ppl, breaks, plansEnFin) {
   const pages = [];
-  let blocks = [], yMm = 0;
-  const flush = () => { if (blocks.length) { pages.push(blocks); blocks = []; yMm = 0; } };
+  let blocks = [];
+  const flush = () => { if (blocks.length) { pages.push(blocks); blocks = []; } };
 
   for (const loc of locs) {
     const items = (loc.items || []).filter(i => i.titre);
     if (!items.length) continue;
 
-    if (breaks.has(loc.id))          flush();
-    else if (yMm + 14 > USABLE_MM && blocks.length) flush();
+    if (breaks.has(loc.id)) flush();
     blocks.push({ type: 'zone', id: loc.id, loc });
-    yMm += 14;
 
     for (const item of items) {
-      const h = itemMm(item, ppl);
-      if (breaks.has(item.id))             flush();
-      else if (yMm + h > USABLE_MM && blocks.length) flush();
+      if (breaks.has(item.id)) flush();
       blocks.push({ type: 'item', id: item.id, item });
-      yMm += h;
     }
 
-    // Plan inline (si !plansEnFin et plan disponible pour cette zone)
     if (!plansEnFin) {
       const hasPlan = loc.planAnnotations?.exported || loc.planBg;
       if (hasPlan) {
-        if (yMm + PLAN_MM > USABLE_MM && blocks.length) flush();
         blocks.push({ type: 'plan', id: `plan-${loc.id}`, loc });
-        yMm += PLAN_MM;
       }
     }
-
-    yMm += 5;
   }
   flush();
   return pages;
@@ -378,17 +368,6 @@ function PageFtr({ pageNum, totalPages }) {
   );
 }
 
-// ── Pied de page société (page de garde) ──────────────────────────────────
-function CompanyFooter() {
-  return (
-    <div style={{ borderTop:'1px solid #ececec', padding:'9px 14px 11px', background:'white' }}>
-      <div style={{ fontSize:7, fontWeight:700, color:DA.red, lineHeight:1.7 }}>Assemblage Ingénierie</div>
-      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris</div>
-      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100</div>
-      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87</div>
-    </div>
-  );
-}
 
 // ── Page conclusion ────────────────────────────────────────────────────────
 function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
@@ -539,7 +518,6 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
         </div>
       </div>
-      <CompanyFooter/>
 
       {/* ── PAGE INTERVENANTS (dédiée) ── */}
       {hasParticipants && (

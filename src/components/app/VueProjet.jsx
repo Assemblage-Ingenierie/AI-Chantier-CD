@@ -316,11 +316,11 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                       <div key={loc.id} style={{ background:DA.white, borderBottom:`1px solid ${DA.border}` }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
                           {/* ▲▼ ordre zone */}
-                          <div style={{ display:'flex', flexDirection:'column', flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                          <div style={{ display:'flex', flexDirection:'column', gap:2, flexShrink:0 }} onClick={e => e.stopPropagation()}>
                             <button onClick={() => moveZone(locIdx, -1)} disabled={locIdx === 0}
-                              style={{ border:'none', background:'none', padding:'1px 3px', cursor:locIdx===0?'default':'pointer', color:locIdx===0?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▲</button>
+                              style={{ border:'none', borderRadius:5, padding:'5px 7px', cursor:locIdx===0?'default':'pointer', background:locIdx===0?'#f5f5f5':'#eee', color:locIdx===0?'#ccc':'#666', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▲</button>
                             <button onClick={() => moveZone(locIdx, 1)} disabled={locIdx === total-1}
-                              style={{ border:'none', background:'none', padding:'1px 3px', cursor:locIdx===total-1?'default':'pointer', color:locIdx===total-1?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▼</button>
+                              style={{ border:'none', borderRadius:5, padding:'5px 7px', cursor:locIdx===total-1?'default':'pointer', background:locIdx===total-1?'#f5f5f5':'#eee', color:locIdx===total-1?'#ccc':'#666', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▼</button>
                           </div>
                           <button onClick={() => toggleLoc(loc.id)}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>

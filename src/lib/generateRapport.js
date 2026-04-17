@@ -215,17 +215,6 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     });
   doc.setTextColor(0, 0, 0);
 
-  // Pied de page société — bas de la page de garde
-  const cfY = H - 28;
-  doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2); doc.line(ML, cfY - 4, W - MR, cfY - 4);
-  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-  doc.text('Assemblage Ingénierie', ML, cfY);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(170, 170, 170);
-  doc.text("S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris", ML, cfY + 5);
-  doc.text('NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100', ML, cfY + 10);
-  doc.text('contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87', ML, cfY + 15);
-  doc.setTextColor(0, 0, 0);
-
   const participants = projet.participants || [];
 
   // ── PAGE PRÉSENTATION & INTERVENANTS ─────────────────────────────────────────

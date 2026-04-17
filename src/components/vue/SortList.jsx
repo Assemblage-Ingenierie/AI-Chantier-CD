@@ -5,8 +5,8 @@ import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 export default function SortList({ items, onReorder, onEdit, onDelete }) {
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
-  const [sortMode, setSortMode] = useState(false);
   const [confirmDelId, setConfirmDelId] = useState(null);
+  const [lightbox, setLightbox] = useState(null); // { photos:[...], idx:0 }
 
   const moveItem = (idx, delta) => {
     const n = [...items];
@@ -15,7 +15,6 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
     [n[idx], n[ni]] = [n[ni], n[idx]];
     onReorder(n);
   };
-  const [lightbox, setLightbox] = useState(null); // { photos:[...], idx:0 }
 
   const onDE = () => {
     if (drag !== null && over !== null && drag !== over) {
@@ -57,29 +56,24 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
         </div>
       )}
 
-      {sortMode && (
-        <div style={{ padding:'6px 16px',background:DA.redL,fontSize:11,color:DA.red,fontWeight:600 }}>
-          Mode tri actif — glissez pour réordonner
-        </div>
-      )}
-
       {items.map((item, i) => (
         <div key={item.id}
-          draggable={sortMode}
+          draggable
           onDragStart={() => setDrag(i)}
           onDragEnter={() => setOver(i)}
           onDragEnd={onDE}
           onDragOver={e => e.preventDefault()}
-          onClick={() => !sortMode && onEdit(item)}
-          style={{ display:'flex',alignItems:'flex-start',gap:10,padding:'12px 16px',borderBottom:`1px solid ${DA.border}`,transition:'all 0.1s',cursor:sortMode?'grab':'pointer',background:over===i&&drag!==i?DA.redL:'white',borderTop:over===i&&drag!==i?`2px solid ${DA.red}`:'none' }}>
+          onClick={() => onEdit(item)}
+          style={{ display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px 10px 8px',borderBottom:`1px solid ${DA.border}`,transition:'background 0.1s',cursor:'pointer',background:over===i&&drag!==i?DA.redL:'white',borderTop:over===i&&drag!==i?`2px solid ${DA.red}`:'none' }}>
 
-          <div style={{ display:'flex', flexDirection:'column', flexShrink:0, alignSelf:'center' }} onClick={e => e.stopPropagation()}>
+          {/* Boutons ▲▼ + poignée drag */}
+          <div style={{ display:'flex', flexDirection:'column', gap:2, flexShrink:0, alignSelf:'center' }} onClick={e => e.stopPropagation()}>
             <button onClick={() => moveItem(i, -1)} disabled={i===0}
-              style={{ border:'none', background:'none', padding:'1px 3px', cursor:i===0?'default':'pointer', color:i===0?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▲</button>
+              style={{ border:'none', borderRadius:5, padding:'5px 6px', cursor:i===0?'default':'pointer', background:i===0?'#f5f5f5':'#eee', color:i===0?'#ccc':'#555', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▲</button>
             <button onClick={() => moveItem(i, 1)} disabled={i===items.length-1}
-              style={{ border:'none', background:'none', padding:'1px 3px', cursor:i===items.length-1?'default':'pointer', color:i===items.length-1?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▼</button>
+              style={{ border:'none', borderRadius:5, padding:'5px 6px', cursor:i===items.length-1?'default':'pointer', background:i===items.length-1?'#f5f5f5':'#eee', color:i===items.length-1?'#ccc':'#555', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▼</button>
           </div>
-          {!sortMode && <span style={{ marginTop:6,width:8,height:8,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>}
+          <span style={{ marginTop:7,width:8,height:8,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>
 
           <div style={{ flex:1,minWidth:0 }}>
             <p style={{ fontSize:13,fontWeight:600,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{item.titre}</p>
@@ -127,14 +121,9 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
       ))}
 
       <div style={{ display:'flex',borderTop:`1px solid ${DA.border}` }}>
-        <button onClick={() => !sortMode && onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:10,fontSize:13,fontWeight:600,color:DA.red,background:'none',border:'none',cursor:'pointer' }}>
+        <button onClick={() => onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:10,fontSize:13,fontWeight:600,color:DA.red,background:'none',border:'none',cursor:'pointer' }}>
           <Ic n="plus" s={14}/> Ajouter
         </button>
-        {items.length > 1 && (
-          <button onClick={() => setSortMode(v => !v)} style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:'10px 14px',fontSize:12,color:sortMode?DA.red:DA.gray,background:sortMode?DA.redL:'none',border:'none',borderLeft:`1px solid ${DA.border}`,cursor:'pointer' }}>
-            <Ic n="srt" s={14}/>{sortMode ? 'Terminer' : 'Trier'}
-          </button>
-        )}
       </div>
     </div>
     </>
