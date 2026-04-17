@@ -358,7 +358,13 @@ async function saveRemote(ps) {
       Object.assign(fetchedPhotosByItem, groupBy(pData ?? [], 'item_id'));
     }
 
-    // Supprimer + réinsérer localisations (CASCADE → items + photos)
+    // Supprimer + réinsérer localisations (suppression explicite pour ne pas dépendre du CASCADE seul)
+    const { data: existingLocs } = await sb.from('chantier_localisations')
+      .select('id').eq('chantier_id', p.id);
+    if (existingLocs?.length > 0) {
+      const existingLocIds = existingLocs.map(l => l.id);
+      await sb.from('localisation_items').delete().in('localisation_id', existingLocIds);
+    }
     await sb.from('chantier_localisations').delete().eq('chantier_id', p.id);
     const locRows = allLocsFlat.map((l, i) => ({
       id:               l.id || crypto.randomUUID(),
