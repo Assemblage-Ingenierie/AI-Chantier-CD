@@ -107,7 +107,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
             })()}
           </div>
 
-          {!sortMode && (confirmDelId === item.id
+          {(confirmDelId === item.id
             ? <div style={{ display:'flex',alignItems:'center',gap:4,flexShrink:0 }} onClick={e => e.stopPropagation()}>
                 <span style={{ fontSize:10,fontWeight:700,color:'#B91C1C',whiteSpace:'nowrap' }}>Supprimer ?</span>
                 <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'3px 7px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer' }}>Oui</button>
