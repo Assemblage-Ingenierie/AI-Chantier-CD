@@ -5,7 +5,7 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 if (typeof document !== 'undefined' && !document.getElementById('ic-spin')) {
   const st = document.createElement('style');
   st.id = 'ic-spin';
-  st.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+  st.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}';
   document.head.appendChild(st);
 }
 

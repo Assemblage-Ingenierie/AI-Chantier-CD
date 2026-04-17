@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
@@ -16,10 +16,16 @@ export default function ChantierAI({ profile, onLogout }) {
   const [ouvert, setOuvert] = useState(null);
 
   const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos } = useProjets(setSyncStatus);
+  const [splashTimedOut, setSplashTimedOut] = useState(false);
 
-  // Écran de chargement : toujours attendre que Supabase ait répondu
-  // Empêche toute interaction (création, suppression) avant que les données soient stables
-  const showSplash = !remoteLoaded;
+  // Après 6s sans réponse Supabase, afficher le cache local avec bandeau "sync en cours"
+  useEffect(() => {
+    if (remoteLoaded) return;
+    const t = setTimeout(() => setSplashTimedOut(true), 6000);
+    return () => clearTimeout(t);
+  }, [remoteLoaded]);
+
+  const showSplash = !remoteLoaded && !splashTimedOut;
 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
@@ -52,12 +58,20 @@ export default function ChantierAI({ profile, onLogout }) {
           {onLogout && (
             <button onClick={onLogout} style={{ background:'none',border:'1px solid rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.5)',fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
           )}
-          <div style={{ display:'flex',alignItems:'center',gap:5 }}>
-            <div style={{ width:5,height:5,borderRadius:'50%',background:dotColor,transition:'background 0.3s' }}/>
-            <span style={{ color:'rgba(255,255,255,0.3)',fontSize:10 }}>{dotLabel}</span>
+          <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?'rgba(227,5,19,0.18)':syncStatus==='saving'?'rgba(217,119,6,0.15)':'rgba(255,255,255,0.06)',transition:'background 0.3s' }}>
+            {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor,transition:'background 0.3s' }}/>}
+            <span style={{ color:syncStatus==='error'?'#FCA5A5':syncStatus==='saving'?'#FCD34D':'rgba(255,255,255,0.4)',fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>
           </div>
         </div>
       </div>
+
+      {/* Bandeau connexion lente */}
+      {!remoteLoaded && splashTimedOut && (
+        <div style={{ background:'#78350F', padding:'6px 16px', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          <Ic n="spn" s={12}/>
+          <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:600 }}>Synchronisation en cours — données du cache affichées</span>
+        </div>
+      )}
 
       {/* Corps */}
       <div style={{ flex:1,overflow:'hidden' }}>

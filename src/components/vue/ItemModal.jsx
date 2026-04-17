@@ -6,6 +6,7 @@ import IASug from './IASug.jsx';
 export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
   const [form, setForm] = useState(item ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
   const [showPlan, setShowPlan] = useState(false);
+  const [compressing, setCompressing] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
 
@@ -37,8 +38,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       return true;
     });
     if (!filtered.length) return;
+    setCompressing(true);
     Promise.all(filtered.map(compressPhoto))
-      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done] })));
+      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done] })))
+      .finally(() => setCompressing(false));
   };
 
   if (showPlan) return (
@@ -180,8 +183,15 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             )}
           </button>
 
-          <button onClick={() => { onSave(form); onClose(); }} disabled={!form.titre}
-            style={{ width:'100%',background:form.titre?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:form.titre?'pointer':'not-allowed',transition:'background 0.15s' }}>
+          {compressing && (
+            <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8,marginBottom:12 }}>
+              <Ic n="spn" s={13}/>
+              <span style={{ fontSize:12,color:'#15803D',fontWeight:600 }}>Traitement des photos…</span>
+            </div>
+          )}
+
+          <button onClick={() => { onSave(form); onClose(); }} disabled={!form.titre || compressing}
+            style={{ width:'100%',background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed',transition:'background 0.15s' }}>
             Enregistrer l'observation
           </button>
         </div>

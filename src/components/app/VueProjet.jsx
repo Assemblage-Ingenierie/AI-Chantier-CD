@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
@@ -121,12 +121,21 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
+  const showUndo = useCallback((label, onUndo) => {
+    clearTimeout(undoTimerRef.current);
+    setUndoToast({ label, onUndo });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 4000);
+  }, []);
+
   const deleteItem = useCallback((locId, itemId) => {
-    const locs = visitProjet.localisations.map(l =>
+    const prevLocs = visitProjet.localisations;
+    const item = prevLocs.find(l => l.id === locId)?.items?.find(i => i.id === itemId);
+    const locs = prevLocs.map(l =>
       l.id !== locId ? l : { ...l, items: (l.items || []).filter(i => i.id !== itemId) }
     );
     onUpdateVisit({ localisations: locs });
-  }, [visitProjet.localisations, onUpdateVisit]);
+    showUndo(`"${item?.titre || 'Observation'}" supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
+  }, [visitProjet.localisations, onUpdateVisit, showUndo]);
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouvelle zone', items: [], planBg: null, planData: null, planAnnotations: null };
@@ -151,6 +160,10 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     if (form._quickSuivi) { patchItem(locId, form); return; }
     patchItem(locId, { ...form, id: form.id || crypto.randomUUID() });
   };
+
+  const [search, setSearch] = useState('');
+  const [undoToast, setUndoToast] = useState(null); // { label, onUndo }
+  const undoTimerRef = useRef(null);
 
   const formatDate = (d) => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
@@ -293,6 +306,24 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                 );
               })()}
 
+              {/* Barre de recherche */}
+              {totalItems > 0 && (
+                <div style={{ padding:'8px 14px', borderBottom:`1px solid ${DA.border}`, background:'white', display:'flex', alignItems:'center', gap:8 }}>
+                  <Ic n="txt" s={14}/>
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Rechercher une observation…"
+                    style={{ flex:1, border:'none', outline:'none', fontSize:13, color:DA.black, background:'transparent', fontFamily:'inherit' }}
+                  />
+                  {search && (
+                    <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex', alignItems:'center' }}>
+                      <Ic n="x" s={14}/>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -308,8 +339,13 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
               ) : (
                 <>
                   {visitProjet.localisations.map((loc, locIdx) => {
-                    const isOpen      = openLocIds.has(loc.id);
-                    const items       = loc.items || [];
+                    const q = search.trim().toLowerCase();
+                    const rawItems = loc.items || [];
+                    const items = q
+                      ? rawItems.filter(i => (i.titre||'').toLowerCase().includes(q) || (i.commentaire||'').toLowerCase().includes(q))
+                      : rawItems;
+                    if (q && items.length === 0) return null;
+                    const isOpen      = q ? true : openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const total       = visitProjet.localisations.length;
                     return (
@@ -382,6 +418,18 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           )}
         </div>
       </div>
+
+      {/* ── Toast Undo ── */}
+      {undoToast && (
+        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
+          <span>{undoToast.label}</span>
+          <button onClick={() => { undoToast.onUndo(); setUndoToast(null); clearTimeout(undoTimerRef.current); }}
+            style={{ background:DA.red, color:'white', border:'none', borderRadius:7, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            Annuler
+          </button>
+          <button onClick={() => setUndoToast(null)} style={{ background:'rgba(255,255,255,0.1)', border:'none', color:'rgba(255,255,255,0.6)', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontSize:11 }}>×</button>
+        </div>
+      )}
 
       {/* ── Modals ── */}
       {modal?.t === 'item' && (() => {

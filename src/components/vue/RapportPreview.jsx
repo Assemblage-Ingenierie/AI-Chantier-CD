@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { SYMBOLS, drawAnnotationPaths } from './Annotator.jsx';
 
@@ -23,21 +23,6 @@ const MB  = 13  * S;  // 39px marge basse
 const HDR = 10  * S;  // 30px hauteur header
 const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
-const USABLE_MM = 266; // hauteur utile par page en mm (297 - 18 - 13)
-
-// ── Estimation hauteur item en mm (miroir de generateRapport.js) ──────────
-function itemMm(item, ppl) {
-  let h = 12; // bandeau titre + petit gap
-  if (item.suivi && item.suivi !== 'rien') h += 7;
-  if (item.commentaire) {
-    h += Math.max(1, Math.ceil(item.commentaire.length / 65)) * 4.5 + 4;
-  }
-  const np = (item.photos || []).filter(p => p.data).length;
-  if (np > 0) h += Math.ceil(Math.min(np, 6) / Math.max(1, Math.min(ppl, 3))) * 30 + 4;
-  return h + 4;
-}
-
-const PLAN_MM = 120; // hauteur estimée d'un bloc plan (header 12 + image ~104 + gap 4)
 
 // ── Pagination ─────────────────────────────────────────────────────────────
 // Retourne un tableau de pages divisées UNIQUEMENT aux sauts explicites.
@@ -451,6 +436,24 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
   );
 }
 
+// ── Hook scale adaptatif ───────────────────────────────────────────────────
+function usePreviewScale(containerRef) {
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const update = () => {
+      if (!containerRef.current) return;
+      const available = containerRef.current.clientWidth - 32; // 16px padding each side
+      const ratio = available / PW;
+      setScale(ratio < 1 ? ratio : 1);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [containerRef]);
+  return scale;
+}
+
 // ── Composant principal ────────────────────────────────────────────────────
 export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, includeConclusion = false, conclusion = '' }) {
   const ppl    = photosParLigne ?? 2;
@@ -462,6 +465,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   );
 
   const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
+  const containerRef = useRef();
+  const scale = usePreviewScale(containerRef);
 
   const recapItems      = localisations.flatMap(l => (l.items || []).filter(i => i.suivi !== 'fait'));
   const hasTableau      = includeTableauRecap && recapItems.length > 0;
@@ -482,7 +487,9 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   }
 
   return (
-    <div style={{ flex:1, overflowY:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+    <div ref={containerRef} style={{ flex:1, overflowY:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+      {/* Conteneur scalé pour mobile */}
+      <div style={{ width: PW * scale, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', ...(scale < 1 ? { transform:`scale(${scale})`, marginBottom: -(PW * (1 - scale) * 0.5) } : {}) }}>
 
       {/* ── PAGE DE GARDE ── */}
       <div style={{ width:PW, minHeight:Math.round(PW * 0.5), background:DA.black, boxShadow:'0 2px 20px rgba(0,0,0,0.35)',
@@ -595,6 +602,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       })}
 
       <div style={{ height:24 }}/>
+      </div>{/* fin conteneur scalé */}
     </div>
   );
 }

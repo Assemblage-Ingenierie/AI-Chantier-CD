@@ -3,8 +3,6 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 
 export default function SortList({ items, onReorder, onEdit, onDelete }) {
-  const [drag, setDrag] = useState(null);
-  const [over, setOver] = useState(null);
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [lightbox, setLightbox] = useState(null); // { photos:[...], idx:0 }
 
@@ -14,16 +12,6 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
     if (ni < 0 || ni >= n.length) return;
     [n[idx], n[ni]] = [n[ni], n[idx]];
     onReorder(n);
-  };
-
-  const onDE = () => {
-    if (drag !== null && over !== null && drag !== over) {
-      const n = [...items];
-      const [m] = n.splice(drag, 1);
-      n.splice(over, 0, m);
-      onReorder(n);
-    }
-    setDrag(null); setOver(null);
   };
 
   return (
@@ -58,13 +46,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
 
       {items.map((item, i) => (
         <div key={item.id}
-          draggable
-          onDragStart={() => setDrag(i)}
-          onDragEnter={() => setOver(i)}
-          onDragEnd={onDE}
-          onDragOver={e => e.preventDefault()}
           onClick={() => onEdit(item)}
-          style={{ display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px 10px 8px',borderBottom:`1px solid ${DA.border}`,transition:'background 0.1s',cursor:'pointer',background:over===i&&drag!==i?DA.redL:'white',borderTop:over===i&&drag!==i?`2px solid ${DA.red}`:'none' }}>
+          style={{ display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px 10px 8px',borderBottom:`1px solid ${DA.border}`,cursor:'pointer',background:'white' }}>
 
           {/* Boutons ▲▼ + poignée drag */}
           <div style={{ display:'flex', flexDirection:'column', gap:2, flexShrink:0, alignSelf:'center' }} onClick={e => e.stopPropagation()}>
@@ -94,16 +77,23 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
             </div>
             {(() => {
               const validPhotos = (item.photos || []).filter(ph => ph.data);
-              if (!validPhotos.length) return null;
-              return (
+              if (validPhotos.length) return (
                 <div style={{ display:'flex',gap:4,marginTop:8,flexWrap:'wrap' }}>
                   {validPhotos.map((ph, pi) => (
                     <img key={pi} src={ph.data} alt=""
                       onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                      style={{ width:'clamp(72px, 10vw, 200px)',height:'clamp(72px, 10vw, 200px)',objectFit:'cover',borderRadius:8,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
+                      style={{ width:'clamp(64px, 10vw, 120px)',height:'clamp(64px, 10vw, 120px)',objectFit:'cover',borderRadius:8,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
                   ))}
                 </div>
               );
+              if (!item._photosHydrated && (item.photos||[]).length > 0) return (
+                <div style={{ display:'flex',gap:4,marginTop:8 }}>
+                  {(item.photos||[]).slice(0,3).map((_,pi) => (
+                    <div key={pi} style={{ width:64,height:64,borderRadius:8,background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)',backgroundSize:'200% 100%',animation:'shimmer 1.2s infinite',flexShrink:0 }}/>
+                  ))}
+                </div>
+              );
+              return null;
             })()}
           </div>
 
