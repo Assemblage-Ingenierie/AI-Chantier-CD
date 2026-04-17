@@ -50,13 +50,10 @@ function tryParseJson(val) {
 
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
 function slimLoc(l) {
-  // On garde planAnnotations.paths (léger) mais on retire exported (image PNG = lourd).
-  const annot = l.planAnnotations;
   return {
     ...l,
     planBg: null,
     planData: null,
-    planAnnotations: annot ? { paths: annot.paths ?? [] } : null,
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,
@@ -369,10 +366,7 @@ async function saveRemote(ps) {
       nom:              l.nom ?? '',
       plan_bg:          l.planBg ?? null,
       plan_data:        l.planData ?? null,
-      // On ne stocke que les paths (pas exported) pour éviter les colonnes surdimensionnées.
-      plan_annotations: l.planAnnotations?.paths?.length
-        ? JSON.stringify({ paths: l.planAnnotations.paths })
-        : null,
+      plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
       sort_order:       i,
       visite_id:        l._visiteId,
     }));
