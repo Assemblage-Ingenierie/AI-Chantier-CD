@@ -87,14 +87,25 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     onUpdate({ visites: newVisites });
   };
 
-  // --- Réordonnancement zones ▲▼ ---
-  const moveZone = useCallback((idx, delta) => {
+  // --- Réordonnancement zones par drag -----------------------------------------------
+  const [zoneDragIdx, setZoneDragIdx] = useState(null);
+  const [zoneOverIdx, setZoneOverIdx] = useState(null);
+  const zoneDragDidMove = useRef(false);
+
+  const moveZone = useCallback((fromIdx, toIdx) => {
+    if (fromIdx === toIdx || toIdx < 0 || toIdx >= visitProjet.localisations.length) return;
     const locs = [...visitProjet.localisations];
-    const ni = idx + delta;
-    if (ni < 0 || ni >= locs.length) return;
-    [locs[idx], locs[ni]] = [locs[ni], locs[idx]];
+    const [moved] = locs.splice(fromIdx, 1);
+    locs.splice(toIdx, 0, moved);
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
+
+  const onZoneDragEnd = useCallback(() => {
+    if (zoneDragDidMove.current && zoneDragIdx !== null && zoneOverIdx !== null) {
+      moveZone(zoneDragIdx, zoneOverIdx);
+    }
+    setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
+  }, [zoneDragIdx, zoneOverIdx, moveZone]);
 
   // --- Open zones quand on change de visite ---
   const [openLocIds, setOpenLocIds] = useState(
@@ -349,16 +360,26 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const total       = visitProjet.localisations.length;
                     return (
-                      <div key={loc.id} style={{ background:DA.white, borderBottom:`1px solid ${DA.border}` }}>
+                      <div key={loc.id}
+                        draggable
+                        onDragStart={() => { setZoneDragIdx(locIdx); zoneDragDidMove.current = false; }}
+                        onDragEnter={() => { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; }}
+                        onDragEnd={onZoneDragEnd}
+                        onDragOver={e => e.preventDefault()}
+                        style={{
+                          background: zoneDragIdx===locIdx ? '#f0f0f0' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : DA.white,
+                          borderBottom:`1px solid ${DA.border}`,
+                          borderTop: zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? `2px solid ${DA.red}` : 'none',
+                          opacity: zoneDragIdx===locIdx ? 0.45 : 1,
+                          transition:'background 0.08s,opacity 0.08s',
+                        }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
-                          {/* ▲▼ ordre zone */}
-                          <div style={{ display:'flex', flexDirection:'column', gap:2, flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                            <button onClick={() => moveZone(locIdx, -1)} disabled={locIdx === 0}
-                              style={{ border:'none', borderRadius:5, padding:'5px 7px', cursor:locIdx===0?'default':'pointer', background:locIdx===0?'#f5f5f5':'#eee', color:locIdx===0?'#ccc':'#666', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▲</button>
-                            <button onClick={() => moveZone(locIdx, 1)} disabled={locIdx === total-1}
-                              style={{ border:'none', borderRadius:5, padding:'5px 7px', cursor:locIdx===total-1?'default':'pointer', background:locIdx===total-1?'#f5f5f5':'#eee', color:locIdx===total-1?'#ccc':'#666', fontSize:10, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>▼</button>
+                          {/* Poignée drag zone */}
+                          <div onClick={e => e.stopPropagation()}
+                            style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
+                            <Ic n="grp" s={16}/>
                           </div>
-                          <button onClick={() => toggleLoc(loc.id)}
+                          <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={14}/>
                           </button>
