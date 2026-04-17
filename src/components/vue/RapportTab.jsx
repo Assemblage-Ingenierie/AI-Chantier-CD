@@ -26,6 +26,8 @@ export default function RapportTab({ projet, onUpdate }) {
         rapportPageBreaks:    projet.rapportPageBreaks || [],
         plansEnFin:           projet.plansEnFin ?? false,
         includeTableauRecap:  projet.includeTableauRecap !== false,
+        includeConclusion:    projet.includeConclusion ?? false,
+        conclusion:           projet.conclusion ?? '',
       });
     } catch (e) {
       console.error('Export PDF:', e);
@@ -154,6 +156,28 @@ export default function RapportTab({ projet, onUpdate }) {
               Auto-généré depuis les observations non terminées
             </p>
           </div>
+
+          {/* Conclusion */}
+          <div>
+            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+              <input
+                type="checkbox"
+                checked={projet.includeConclusion ?? false}
+                onChange={e => onUpdate({ includeConclusion: e.target.checked })}
+                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
+              />
+              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Ajouter une conclusion</span>
+            </label>
+            {(projet.includeConclusion ?? false) && (
+              <textarea
+                value={projet.conclusion ?? ''}
+                onChange={e => onUpdate({ conclusion: e.target.value })}
+                placeholder="Saisissez votre conclusion…"
+                rows={5}
+                style={{ marginTop:8, width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:8, padding:'8px 10px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', color:DA.black, lineHeight:1.5 }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Bouton Export */}
@@ -181,6 +205,8 @@ export default function RapportTab({ projet, onUpdate }) {
         onTogglePageBreak={togglePageBreak}
         plansEnFin={projet.plansEnFin ?? false}
         includeTableauRecap={projet.includeTableauRecap !== false}
+        includeConclusion={projet.includeConclusion ?? false}
+        conclusion={projet.conclusion ?? ''}
       />
     </div>
   );

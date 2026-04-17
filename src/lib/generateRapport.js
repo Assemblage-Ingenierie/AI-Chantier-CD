@@ -78,7 +78,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}) {
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true }) {
+export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, includeConclusion = false, conclusion = '' }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -210,6 +210,17 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
       doc.text(sc.l, x, iy + 17.5, { align: 'center' });
     });
+  doc.setTextColor(0, 0, 0);
+
+  // Pied de page société — bas de la page de garde
+  const cfY = H - 28;
+  doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2); doc.line(ML, cfY - 4, W - MR, cfY - 4);
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
+  doc.text('Assemblage Ingénierie', ML, cfY);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(170, 170, 170);
+  doc.text("S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris", ML, cfY + 5);
+  doc.text('NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100', ML, cfY + 10);
+  doc.text('contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87', ML, cfY + 15);
   doc.setTextColor(0, 0, 0);
 
   const participants = projet.participants || [];
@@ -476,6 +487,24 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setTextColor(0, 0, 0); y += rowH + 1;
       });
     }
+  }
+
+  // ── CONCLUSION ───────────────────────────────────────────────────────────────
+
+  if (includeConclusion && conclusion?.trim()) {
+    doc.addPage(); hdr(); let cy = 18;
+    doc.setFillColor(...RD); doc.rect(ML, cy, 3, 14, 'F');
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+    doc.text('CONCLUSION', ML + 7, cy + 6);
+    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+    doc.text(today, ML + 7, cy + 12);
+    doc.setTextColor(0, 0, 0); cy += 18;
+    doc.setFillColor(...LG); doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
+    const lines = doc.splitTextToSize(conclusion.trim(), CW - 10);
+    const boxH = lines.length * 5 + 10;
+    doc.roundedRect(ML, cy, CW, boxH, 2, 2, 'FD');
+    doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
+    doc.text(lines, ML + 5, cy + 7);
   }
 
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────

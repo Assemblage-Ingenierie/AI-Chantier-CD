@@ -371,6 +371,52 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
   );
 }
 
+// ── Pied de page société (page de garde) ──────────────────────────────────
+const COMPANY_FOOTER = [
+  { bold: true, red: true, text: 'Assemblage Ingénierie' },
+  { text: "S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris" },
+  { text: 'NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100' },
+  { text: 'contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87' },
+];
+
+function CompanyFooter() {
+  return (
+    <div style={{ borderTop:'1px solid #e8e8e8', padding:'10px 14px 12px', background:'white' }}>
+      {COMPANY_FOOTER.map((l, i) => (
+        <div key={i} style={{ fontSize: l.bold ? 7 : 6, fontWeight: l.bold ? 700 : 400, color: l.red ? DA.red : '#aaa', lineHeight:1.7, fontFamily:'inherit' }}>
+          {l.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Page conclusion ────────────────────────────────────────────────────────
+function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
+  const dateStr = projet.dateVisite
+    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
+    : null;
+  return (
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+      <HdrBar projet={projet} dateStr={dateStr}/>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+          <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Conclusion</span>
+        </div>
+        <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60 }}>
+          {conclusion || <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
+        </div>
+      </div>
+      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
+        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
+        <span style={{ flex:1 }}/>
+        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Tableau récapitulatif auto-généré ──────────────────────────────────────
 function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
@@ -428,7 +474,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, includeConclusion = false, conclusion = '' }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -441,9 +487,10 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
   const recapItems      = localisations.flatMap(l => (l.items || []).filter(i => i.suivi !== 'fait'));
   const hasTableau      = includeTableauRecap && recapItems.length > 0;
+  const hasConclusion   = includeConclusion;
   const hasParticipants = (projet.participants || []).length > 0;
   const pOff            = hasParticipants ? 1 : 0;
-  const totalPages      = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + planLocs.length;
+  const totalPages      = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
   const allItems        = localisations.flatMap(l => l.items || []);
 
   if (!pages.length) {
@@ -493,6 +540,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
         </div>
       </div>
+      <CompanyFooter/>
 
       {/* ── PAGE INTERVENANTS (dédiée) ── */}
       {hasParticipants && (
@@ -548,9 +596,17 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
         </>
       )}
 
+      {/* ── PAGE CONCLUSION ── */}
+      {hasConclusion && (
+        <>
+          <PageSepBanner pageNum={1 + pOff + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+          <ConclusionPage conclusion={conclusion} projet={projet} pageNum={1 + pOff + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages}/>
+        </>
+      )}
+
       {/* ── PLANS EN FIN DE RAPPORT ── */}
       {planLocs.map((loc, pi) => {
-        const pageNum = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + pi + 1;
+        const pageNum = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
         return (
           <React.Fragment key={`plan-end-${loc.id}`}>
             <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>

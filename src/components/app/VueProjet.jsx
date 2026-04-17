@@ -14,6 +14,7 @@ import Annotator from '../vue/Annotator.jsx';
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
   'photosParLigne','plansEnFin','rapportPageBreaks','includeTableauRecap',
+  'includeConclusion','conclusion',
 ]);
 
 export default function VueProjet({ projet, onBack, onUpdate }) {
@@ -37,13 +38,15 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
   // Objet "projet fusionné" passé aux enfants — ils ne voient pas la structure visites
   const visitProjet = useMemo(() => ({
     ...projet,
-    localisations:    selectedVisite?.localisations    ?? [],
-    dateVisite:       selectedVisite?.dateVisite        ?? null,
-    participants:     selectedVisite?.participants      ?? [],
-    tableauRecap:     selectedVisite?.tableauRecap      ?? [],
-    photosParLigne:   selectedVisite?.photosParLigne    ?? 2,
-    plansEnFin:       selectedVisite?.plansEnFin        ?? false,
-    rapportPageBreaks: selectedVisite?.rapportPageBreaks ?? [],
+    localisations:     selectedVisite?.localisations     ?? [],
+    dateVisite:        selectedVisite?.dateVisite         ?? null,
+    participants:      selectedVisite?.participants       ?? [],
+    tableauRecap:      selectedVisite?.tableauRecap       ?? [],
+    photosParLigne:    selectedVisite?.photosParLigne     ?? 2,
+    plansEnFin:        selectedVisite?.plansEnFin         ?? false,
+    rapportPageBreaks: selectedVisite?.rapportPageBreaks  ?? [],
+    includeConclusion: selectedVisite?.includeConclusion  ?? false,
+    conclusion:        selectedVisite?.conclusion         ?? '',
   }), [projet, selectedVisite]);
 
   // Route les mises à jour : champs visite → visites[], champs projet → projet
@@ -83,6 +86,19 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     const newVisites = visites.map(v => v.id === visiteId ? { ...v, ...patch } : v);
     onUpdate({ visites: newVisites });
   };
+
+  // --- Drag & drop zones ---
+  const [dragZone, setDragZone] = useState(null);
+  const [overZone, setOverZone] = useState(null);
+  const onZoneDragEnd = useCallback(() => {
+    if (dragZone !== null && overZone !== null && dragZone !== overZone) {
+      const locs = [...visitProjet.localisations];
+      const [m] = locs.splice(dragZone, 1);
+      locs.splice(overZone, 0, m);
+      onUpdateVisit({ localisations: locs });
+    }
+    setDragZone(null); setOverZone(null);
+  }, [dragZone, overZone, visitProjet.localisations, onUpdateVisit]);
 
   // --- Open zones quand on change de visite ---
   const [openLocIds, setOpenLocIds] = useState(
@@ -295,13 +311,23 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                 </div>
               ) : (
                 <>
-                  {visitProjet.localisations.map(loc => {
+                  {visitProjet.localisations.map((loc, locIdx) => {
                     const isOpen      = openLocIds.has(loc.id);
                     const items       = loc.items || [];
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
+                    const isDragOver  = overZone === locIdx && dragZone !== locIdx;
                     return (
-                      <div key={loc.id} style={{ background:DA.white, borderBottom:`1px solid ${DA.border}` }}>
+                      <div key={loc.id}
+                        draggable
+                        onDragStart={() => setDragZone(locIdx)}
+                        onDragEnter={() => setOverZone(locIdx)}
+                        onDragEnd={onZoneDragEnd}
+                        onDragOver={e => e.preventDefault()}
+                        style={{ background:DA.white, borderBottom:`1px solid ${DA.border}`, borderTop: isDragOver ? `2px solid ${DA.red}` : undefined, opacity: dragZone === locIdx ? 0.4 : 1 }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
+                          <span title="Glisser pour réordonner" style={{ cursor:'grab', color:DA.grayL, flexShrink:0, display:'flex', alignItems:'center', padding:'2px 0' }}>
+                            <Ic n="grp" s={14}/>
+                          </span>
                           <button onClick={() => toggleLoc(loc.id)}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={14}/>
