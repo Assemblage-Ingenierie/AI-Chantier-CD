@@ -21,6 +21,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
   const [modal, setModal] = useState(null);
+  const [editingVisiteLabel, setEditingVisiteLabel] = useState(null);
+  const [visitLabelVal, setVisitLabelVal] = useState('');
 
   // Si le projet change (chargement async), synchro la visite sélectionnée
   useEffect(() => {
@@ -65,15 +67,21 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
   const addVisite = () => {
     const newId = crypto.randomUUID();
     const n     = visites.length + 1;
+    const today = new Date().toISOString().slice(0, 10);
     const newVisite = {
       id: newId, label: `Visite ${n}`,
-      dateVisite: null, participants: [], tableauRecap: [],
+      dateVisite: today, participants: [], tableauRecap: [],
       photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
       localisations: [],
     };
     onUpdate({ visites: [...visites, newVisite] });
     setSelectedVisiteId(newId);
     setTab('visite');
+  };
+
+  const updateVisite = (visiteId, patch) => {
+    const newVisites = visites.map(v => v.id === visiteId ? { ...v, ...patch } : v);
+    onUpdate({ visites: newVisites });
   };
 
   // --- Open zones quand on change de visite ---
@@ -184,15 +192,47 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
         <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:10, overflowX:'auto', paddingBottom:2 }}>
           {visites.map(v => {
             const isSelected = v.id === selectedVisiteId;
-            const dateLabel  = formatDate(v.dateVisite);
+            const isEditLabel = editingVisiteLabel === v.id;
+            if (isSelected) return (
+              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:6, padding:'4px 10px 4px 13px', borderRadius:20, background:DA.red }}>
+                {isEditLabel ? (
+                  <input
+                    autoFocus
+                    value={visitLabelVal}
+                    onChange={e => setVisitLabelVal(e.target.value)}
+                    onBlur={() => {
+                      const t = visitLabelVal.trim();
+                      if (t) updateVisite(v.id, { label: t });
+                      setEditingVisiteLabel(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setEditingVisiteLabel(null);
+                    }}
+                    style={{ background:'rgba(255,255,255,0.2)', border:'none', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'1px 6px', width: Math.max(60, visitLabelVal.length * 7.5) + 'px' }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
+                    title="Cliquer pour renommer"
+                    style={{ color:'white', fontSize:11, fontWeight:700, cursor:'text', userSelect:'none' }}>
+                    {v.label ?? 'Visite'}
+                  </span>
+                )}
+                <input
+                  type="date"
+                  value={v.dateVisite || ''}
+                  onChange={e => updateVisite(v.id, { dateVisite: e.target.value || null })}
+                  style={{ background:'rgba(255,255,255,0.18)', border:'none', color:'rgba(255,255,255,0.9)', fontSize:10, fontWeight:600, borderRadius:8, padding:'2px 6px', cursor:'pointer', outline:'none', colorScheme:'dark' }}
+                />
+              </div>
+            );
             return (
               <button key={v.id}
                 onClick={() => { setSelectedVisiteId(v.id); setTab('visite'); }}
-                style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:20, fontSize:11, fontWeight:700, cursor:'pointer', border:'none', transition:'all 0.12s',
-                  background: isSelected ? DA.red : 'rgba(255,255,255,0.1)',
-                  color: isSelected ? 'white' : 'rgba(255,255,255,0.55)' }}>
+                style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:20, fontSize:11, fontWeight:700, cursor:'pointer', border:'none', background:'rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.55)' }}>
                 {v.label ?? 'Visite'}
-                {dateLabel && <span style={{ fontSize:10, opacity:0.8 }}>· {dateLabel}</span>}
+                {v.dateVisite && <span style={{ fontSize:10, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
               </button>
             );
           })}
@@ -261,7 +301,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     return (
                       <div key={loc.id} style={{ background:DA.white, borderBottom:`1px solid ${DA.border}` }}>
-                        <div style={{ display:'flex', alignItems:'center', padding:'10px 12px', gap:8 }}>
+                        <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
                           <button onClick={() => toggleLoc(loc.id)}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={14}/>
@@ -269,20 +309,25 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                           <EditTitle
                             value={loc.nom}
                             onSave={nom => patchLoc(loc.id, { nom })}
-                            onDelete={() => deleteLoc(loc.id, loc.nom)}
                             style={{ fontSize:14, fontWeight:700, color:DA.black }}
                             inputStyle={{ fontSize:14, fontWeight:700 }}
                           />
-                          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
                             {urgentCount > 0 && (
                               <span style={{ fontSize:10, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'1px 7px', lineHeight:1.6 }}>
                                 {urgentCount} ⚠
                               </span>
                             )}
-                            <span style={{ fontSize:11, color:DA.grayL, minWidth:12, textAlign:'center' }}>{items.length}</span>
+                            <span style={{ fontSize:11, color:DA.grayL, minWidth:14, textAlign:'center' }}>{items.length}</span>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
                               style={{ padding:'5px 7px', border:`1px solid ${loc.planBg ? DA.red : DA.border}`, background:loc.planBg ? DA.redL : 'white', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', color:loc.planBg ? DA.red : DA.grayL }}>
                               <Ic n="map" s={13}/>
+                            </button>
+                            <button onClick={() => deleteLoc(loc.id, loc.nom)}
+                              style={{ padding:'5px 6px', border:'none', background:'none', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
+                              onMouseEnter={e => e.currentTarget.style.color = DA.red}
+                              onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
+                              <Ic n="del" s={14}/>
                             </button>
                           </div>
                         </div>
