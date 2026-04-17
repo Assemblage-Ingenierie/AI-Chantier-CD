@@ -231,12 +231,7 @@ function A4Card({ children, projet, pageNum, totalPages }) {
       <HdrBar projet={projet} dateStr={dateStr}/>
       {/* Contenu */}
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>{children}</div>
-      {/* Footer */}
-      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
-      </div>
+      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
     </div>
   );
 }
@@ -361,32 +356,36 @@ function IntervenantsPage({ projet, pageNum, totalPages }) {
         })}
       </div>
 
-      {/* Footer */}
-      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
+      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+    </div>
+  );
+}
+
+// ── Pied de page commun (toutes les pages) ────────────────────────────────
+function PageFtr({ pageNum, totalPages }) {
+  return (
+    <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, flexShrink:0, display:'flex', alignItems:'center', padding:`0 ${MX}px`, gap:6 }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:1.5, minWidth:0 }}>
+        <span style={{ fontSize:5, color:'#c8c8c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          Assemblage Ingénierie · S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris · contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87
+        </span>
+        <span style={{ fontSize:5, color:'#c8c8c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100
+        </span>
       </div>
+      <span style={{ fontSize:6, color:DA.grayL, flexShrink:0 }}>{pageNum} / {totalPages}</span>
     </div>
   );
 }
 
 // ── Pied de page société (page de garde) ──────────────────────────────────
-const COMPANY_FOOTER = [
-  { bold: true, red: true, text: 'Assemblage Ingénierie' },
-  { text: "S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris" },
-  { text: 'NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100' },
-  { text: 'contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87' },
-];
-
 function CompanyFooter() {
   return (
-    <div style={{ borderTop:'1px solid #e8e8e8', padding:'10px 14px 12px', background:'white' }}>
-      {COMPANY_FOOTER.map((l, i) => (
-        <div key={i} style={{ fontSize: l.bold ? 7 : 6, fontWeight: l.bold ? 700 : 400, color: l.red ? DA.red : '#aaa', lineHeight:1.7, fontFamily:'inherit' }}>
-          {l.text}
-        </div>
-      ))}
+    <div style={{ borderTop:'1px solid #ececec', padding:'9px 14px 11px', background:'white' }}>
+      <div style={{ fontSize:7, fontWeight:700, color:DA.red, lineHeight:1.7 }}>Assemblage Ingénierie</div>
+      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris</div>
+      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100</div>
+      <div style={{ fontSize:6, color:'#aaa', lineHeight:1.7 }}>contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87</div>
     </div>
   );
 }

@@ -141,8 +141,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   const ftr = (n, t) => {
     doc.setFillColor(...LG); doc.rect(0, H - 8, W, 8, 'F');
-    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-    doc.text('aichantier.app', ML, H - 2.5);
+    doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.line(0, H - 8, W, H - 8);
+    doc.setFontSize(5); doc.setFont('helvetica', 'normal'); doc.setTextColor(195, 195, 195);
+    doc.text("Assemblage Ingénierie · S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris · contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87", W / 2, H - 5, { align: 'center' });
+    doc.text('NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100', W / 2, H - 1.8, { align: 'center' });
+    doc.setFontSize(6.5); doc.setTextColor(...GR);
     doc.text(`${n} / ${t}`, W - MR, H - 2.5, { align: 'right' });
     doc.setTextColor(0, 0, 0);
   };

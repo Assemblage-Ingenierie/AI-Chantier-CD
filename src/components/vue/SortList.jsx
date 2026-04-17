@@ -7,6 +7,14 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
   const [over, setOver] = useState(null);
   const [sortMode, setSortMode] = useState(false);
   const [confirmDelId, setConfirmDelId] = useState(null);
+
+  const moveItem = (idx, delta) => {
+    const n = [...items];
+    const ni = idx + delta;
+    if (ni < 0 || ni >= n.length) return;
+    [n[idx], n[ni]] = [n[ni], n[idx]];
+    onReorder(n);
+  };
   const [lightbox, setLightbox] = useState(null); // { photos:[...], idx:0 }
 
   const onDE = () => {
@@ -65,10 +73,13 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
           onClick={() => !sortMode && onEdit(item)}
           style={{ display:'flex',alignItems:'flex-start',gap:10,padding:'12px 16px',borderBottom:`1px solid ${DA.border}`,transition:'all 0.1s',cursor:sortMode?'grab':'pointer',background:over===i&&drag!==i?DA.redL:'white',borderTop:over===i&&drag!==i?`2px solid ${DA.red}`:'none' }}>
 
-          {sortMode
-            ? <span style={{ marginTop:2,color:DA.grayL,flexShrink:0 }}><Ic n="grp" s={16}/></span>
-            : <span style={{ marginTop:6,width:8,height:8,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>
-          }
+          <div style={{ display:'flex', flexDirection:'column', flexShrink:0, alignSelf:'center' }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => moveItem(i, -1)} disabled={i===0}
+              style={{ border:'none', background:'none', padding:'1px 3px', cursor:i===0?'default':'pointer', color:i===0?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▲</button>
+            <button onClick={() => moveItem(i, 1)} disabled={i===items.length-1}
+              style={{ border:'none', background:'none', padding:'1px 3px', cursor:i===items.length-1?'default':'pointer', color:i===items.length-1?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▼</button>
+          </div>
+          {!sortMode && <span style={{ marginTop:6,width:8,height:8,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>}
 
           <div style={{ flex:1,minWidth:0 }}>
             <p style={{ fontSize:13,fontWeight:600,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{item.titre}</p>

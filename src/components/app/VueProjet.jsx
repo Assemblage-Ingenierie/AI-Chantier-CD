@@ -87,18 +87,14 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     onUpdate({ visites: newVisites });
   };
 
-  // --- Drag & drop zones ---
-  const [dragZone, setDragZone] = useState(null);
-  const [overZone, setOverZone] = useState(null);
-  const onZoneDragEnd = useCallback(() => {
-    if (dragZone !== null && overZone !== null && dragZone !== overZone) {
-      const locs = [...visitProjet.localisations];
-      const [m] = locs.splice(dragZone, 1);
-      locs.splice(overZone, 0, m);
-      onUpdateVisit({ localisations: locs });
-    }
-    setDragZone(null); setOverZone(null);
-  }, [dragZone, overZone, visitProjet.localisations, onUpdateVisit]);
+  // --- Réordonnancement zones ▲▼ ---
+  const moveZone = useCallback((idx, delta) => {
+    const locs = [...visitProjet.localisations];
+    const ni = idx + delta;
+    if (ni < 0 || ni >= locs.length) return;
+    [locs[idx], locs[ni]] = [locs[ni], locs[idx]];
+    onUpdateVisit({ localisations: locs });
+  }, [visitProjet.localisations, onUpdateVisit]);
 
   // --- Open zones quand on change de visite ---
   const [openLocIds, setOpenLocIds] = useState(
@@ -315,19 +311,17 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                     const isOpen      = openLocIds.has(loc.id);
                     const items       = loc.items || [];
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
-                    const isDragOver  = overZone === locIdx && dragZone !== locIdx;
+                    const total       = visitProjet.localisations.length;
                     return (
-                      <div key={loc.id}
-                        draggable
-                        onDragStart={() => setDragZone(locIdx)}
-                        onDragEnter={() => setOverZone(locIdx)}
-                        onDragEnd={onZoneDragEnd}
-                        onDragOver={e => e.preventDefault()}
-                        style={{ background:DA.white, borderBottom:`1px solid ${DA.border}`, borderTop: isDragOver ? `2px solid ${DA.red}` : undefined, opacity: dragZone === locIdx ? 0.4 : 1 }}>
+                      <div key={loc.id} style={{ background:DA.white, borderBottom:`1px solid ${DA.border}` }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
-                          <span title="Glisser pour réordonner" style={{ cursor:'grab', color:DA.grayL, flexShrink:0, display:'flex', alignItems:'center', padding:'2px 0' }}>
-                            <Ic n="grp" s={14}/>
-                          </span>
+                          {/* ▲▼ ordre zone */}
+                          <div style={{ display:'flex', flexDirection:'column', flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                            <button onClick={() => moveZone(locIdx, -1)} disabled={locIdx === 0}
+                              style={{ border:'none', background:'none', padding:'1px 3px', cursor:locIdx===0?'default':'pointer', color:locIdx===0?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▲</button>
+                            <button onClick={() => moveZone(locIdx, 1)} disabled={locIdx === total-1}
+                              style={{ border:'none', background:'none', padding:'1px 3px', cursor:locIdx===total-1?'default':'pointer', color:locIdx===total-1?'#e0e0e0':DA.grayL, fontSize:8, lineHeight:1 }}>▼</button>
+                          </div>
                           <button onClick={() => toggleLoc(loc.id)}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={14}/>
