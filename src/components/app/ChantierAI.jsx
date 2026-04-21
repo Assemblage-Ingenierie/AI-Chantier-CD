@@ -85,6 +85,7 @@ export default function ChantierAI({ profile, onLogout }) {
           <div style={{ height:'100%',overflowY:'auto' }}>
             <Dashboard
               projets={projets}
+              remoteLoaded={remoteLoaded}
               onSelect={(p) => { setOuvert(p); hydratePhotos(p.id); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}

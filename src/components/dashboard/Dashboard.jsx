@@ -11,7 +11,7 @@ const STEPS = [
   { n:4, icon:'fil',  t:'Générez le rapport PDF', d:'Onglet Rapport → Exporter' },
 ];
 
-export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
+export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
@@ -58,7 +58,20 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
           <span style={{ fontSize:11,background:DA.redL,color:DA.red,padding:'2px 8px',borderRadius:10,fontWeight:700 }}>{actifs.length}</span>
         </div>
 
-        {actifs.length === 0 ? (
+        {actifs.length === 0 && !remoteLoaded ? (
+          /* Skeleton de chargement — évite le flash de la carte onboarding */
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 }}>
+            {[1,2,3,4].map(i => (
+              <div key={i} style={{ borderRadius:12, overflow:'hidden', border:`1px solid ${DA.border}`, background:DA.white }}>
+                <div style={{ width:'100%', aspectRatio:'1/1', background:'#EBEBEB' }}/>
+                <div style={{ padding:'10px 12px', display:'flex', flexDirection:'column', gap:6 }}>
+                  <div style={{ height:11, borderRadius:4, background:'#EBEBEB', width:'70%' }}/>
+                  <div style={{ height:9, borderRadius:4, background:'#F3F3F3', width:'45%' }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : actifs.length === 0 ? (
           <div style={{ borderRadius:14,overflow:'hidden',border:`1.5px solid ${DA.border}`,background:DA.white }}>
             <div style={{ background:'linear-gradient(135deg,#1a1a1a,#333)',padding:'20px 18px 16px',borderBottom:`3px solid ${DA.red}` }}>
               <p style={{ color:'white',fontWeight:800,fontSize:15,margin:'0 0 4px' }}>Bienvenue sur <span style={{ color:DA.red }}>AI</span> chantier</p>
