@@ -199,6 +199,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
       <Annotator
         bgImage={loc?.planBg}
         savedPaths={modal.form.planAnnotations?.paths || []}
+        photos={(modal.form.photos || []).filter(ph => ph.data)}
         onSave={(paths, exported) => {
           setModal({ t:'item', locId:modal.locId, item:modal.form, savedForm:{ ...modal.form, planAnnotations:{ paths, exported } } });
         }}
@@ -505,6 +506,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
         return (
           <PlanLocModal
             loc={loc}
+            items={loc?.items || []}
             planLibrary={projet.planLibrary || []}
             onClose={() => setModal(null)}
             onSave={({ planBg, planData, planAnnotations }) => {

@@ -5,7 +5,7 @@ import { renderPdfPage } from '../../lib/pdfUtils.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items }) {
   const [planBg, setPlanBg] = useState(loc.planBg || null);
   const [planData, setPlanData] = useState(loc.planData || null);
   const [annot, setAnnot] = useState(loc.planAnnotations || null);
@@ -18,8 +18,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const [editingNom, setEditingNom] = useState('');
   const [confirmDelId, setConfirmDelId] = useState(null);
 
+  const zonePhotos = (items || []).flatMap(it => (it.photos || []).filter(ph => ph.data));
+
   if (showAnnot) return (
     <Annotator bgImage={planBg} savedPaths={annot?.paths || []}
+      photos={zonePhotos}
       onSave={(p, e) => { setAnnot({ paths: p, exported: e }); setShowAnnot(false); }}
       onClose={() => setShowAnnot(false)}/>
   );

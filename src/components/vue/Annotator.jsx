@@ -4,11 +4,52 @@ import { Ic } from '../ui/Icons.jsx';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
+// ── Viewpoint (œil + cône de vue) ────────────────────────────────────────────
+function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E30513' }) {
+  const r  = 10 + size;
+  const L  = 40 + size * 4;
+  const sp = 0.62; // demi-angle du cône (~35°)
+  ctx.save();
+  // Cône rempli semi-transparent
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(angle - sp) * L, y + Math.sin(angle - sp) * L);
+  ctx.arc(x, y, L, angle - sp, angle + sp);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.globalAlpha = 0.15; ctx.fill();
+  // Contour cône
+  ctx.globalAlpha = 0.75;
+  ctx.strokeStyle = color; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle - sp) * L, y + Math.sin(angle - sp) * L);
+  ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle + sp) * L, y + Math.sin(angle + sp) * L);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, L, angle - sp, angle + sp); ctx.stroke();
+  // Cercle œil
+  ctx.globalAlpha = 1;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = color; ctx.fill();
+  // Pupille
+  ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  // Étiquette
+  if (label) {
+    ctx.font = `bold ${8 + size}px Arial`;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+    ctx.strokeText(label, x + r + 3, y - r + 4);
+    ctx.fillStyle = color;
+    ctx.fillText(label, x + r + 3, y - r + 4);
+  }
+  ctx.restore();
+}
+
 // Dessine un tableau de paths annotateur sur un contexte canvas existant.
 // Utilisé pour la prévisualisation et la génération PDF.
 export function drawAnnotationPaths(ctx, paths) {
   (paths || []).forEach(p => {
-    if (p.type === 'symbol') {
+    if (p.type === 'viewpoint') {
+      drawVP(ctx, p);
+    } else if (p.type === 'symbol') {
       const sm = SYMBOLS.find(x => x.id === p.symbolId);
       if (sm) { ctx.save(); sm.draw(ctx, p.x, p.y, p.size, p.color); ctx.restore(); }
     } else if (p.type === 'text') {
@@ -46,20 +87,26 @@ export const SYMBOLS = [
   { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
 ];
 
-export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
-  const cvRef = useRef();
-  const bgRef = useRef(null);
-  const [tool, setTool] = useState('pen');
-  const [color, setColor] = useState(DA.red);
-  const [size, setSize] = useState(3);
-  const [sym, setSym] = useState(SYMBOLS[0]);
-  const [paths, setPaths] = useState(savedPaths || []);
-  const [cur, setCur] = useState([]);
-  const [drawing, setDrawing] = useState(false);
-  const [bgOk, setBgOk] = useState(false);
-  const [showSyms, setShowSyms] = useState(false);
-  const [textPt, setTextPt] = useState(null);
-  const [textV, setTextV] = useState('');
+export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos }) {
+  const cvRef    = useRef();
+  const bgRef    = useRef(null);
+  const vpStart  = useRef(null);
+
+  const [tool,      setTool]      = useState('pen');
+  const [color,     setColor]     = useState(DA.red);
+  const [size,      setSize]      = useState(3);
+  const [sym,       setSym]       = useState(SYMBOLS[0]);
+  const [paths,     setPaths]     = useState(savedPaths || []);
+  const [cur,       setCur]       = useState([]);
+  const [drawing,   setDrawing]   = useState(false);
+  const [bgOk,      setBgOk]      = useState(false);
+  const [showSyms,  setShowSyms]  = useState(false);
+  const [textPt,    setTextPt]    = useState(null);
+  const [textV,     setTextV]     = useState('');
+  const [activePh,  setActivePh]  = useState(null); // { label, src } photo sélectionnée
+  const [pendingVP, setPendingVP] = useState(null); // { x, y, angle } vue en cours de tracé
+
+  const vpCount = paths.filter(p => p.type === 'viewpoint').length;
 
   const redraw = useCallback(() => {
     const cv = cvRef.current;
@@ -69,6 +116,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
     all.forEach(p => {
+      if (p.type === 'viewpoint') { ctx.save(); drawVP(ctx, p); ctx.restore(); return; }
       if (p.type === 'symbol') {
         ctx.save();
         const sm = SYMBOLS.find(x => x.id === p.symbolId);
@@ -98,7 +146,11 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
       ctx.stroke();
       ctx.restore();
     });
-  }, [paths, cur, color, size, tool, bgOk]);
+    // Vue en cours de tracé
+    if (pendingVP) {
+      drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
+    }
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -125,31 +177,89 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
   const onStart = e => {
     e.preventDefault();
     const pos = getXY(e, cvRef.current);
+    if (tool === 'viewpoint') {
+      vpStart.current = pos;
+      setPendingVP({ x: pos.x, y: pos.y, angle: 0 });
+      setDrawing(true);
+      return;
+    }
     if (tool === 'symbol') { setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]); return; }
     if (tool === 'text') { setTextPt(pos); setTextV(''); return; }
     setDrawing(true); setCur([pos]);
   };
-  const onMove = e => { e.preventDefault(); if (!drawing) return; setCur(prev => [...prev, getXY(e, cvRef.current)]); };
+
+  const onMove = e => {
+    e.preventDefault();
+    if (!drawing) return;
+    if (tool === 'viewpoint' && vpStart.current) {
+      const pos = getXY(e, cvRef.current);
+      const dx = pos.x - vpStart.current.x;
+      const dy = pos.y - vpStart.current.y;
+      setPendingVP({ x: vpStart.current.x, y: vpStart.current.y, angle: Math.atan2(dy, dx) });
+      return;
+    }
+    setCur(prev => [...prev, getXY(e, cvRef.current)]);
+  };
+
   const onEnd = e => {
     e.preventDefault();
     if (!drawing) return;
+    if (tool === 'viewpoint' && vpStart.current) {
+      const label = activePh?.label || `V${vpCount + 1}`;
+      setPaths(prev => [...prev, {
+        type: 'viewpoint',
+        x: pendingVP?.x ?? vpStart.current.x,
+        y: pendingVP?.y ?? vpStart.current.y,
+        angle: pendingVP?.angle ?? 0,
+        label, color, size,
+      }]);
+      setPendingVP(null);
+      vpStart.current = null;
+      setDrawing(false);
+      setActivePh(null);
+      return;
+    }
     if (cur.length >= 2) setPaths(prev => [...prev, { type:'stroke', tool, points:cur, color, size }]);
     setCur([]); setDrawing(false);
   };
+
   const addText = () => {
     if (!textV.trim() || !textPt) { setTextPt(null); return; }
     setPaths(prev => [...prev, { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size }]);
     setTextPt(null); setTextV('');
   };
 
+  const validPhotos = (photos || []).filter(ph => ph.data).slice(0, 12);
+
+  const selectPhoto = (ph, i) => {
+    const label = `V${i + 1}`;
+    const isActive = activePh?.label === label;
+    setActivePh(isActive ? null : { label, src: ph.data });
+    setTool('viewpoint');
+    setShowSyms(false);
+  };
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
-      {/* Toolbar */}
+
+      {/* ── Toolbar ── */}
       <div style={{ background:DA.black,padding:'8px 12px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,flexShrink:0 }}>
         <button onClick={onClose} style={{ color:DA.grayL }}><Ic n="x" s={18}/></button>
         <div style={{ display:'flex',gap:4,background:'#333',padding:4,borderRadius:8 }}>
-          {[{k:'pen',n:'pen'},{k:'eraser',n:'eras'},{k:'text',n:'txt'},{k:'symbol',n:'sym'}].map(t => (
-            <button key={t.k} onClick={() => { setTool(t.k); if(t.k==='symbol') setShowSyms(v=>!v); else setShowSyms(false); }}
+          {[
+            { k:'pen', n:'pen' },
+            { k:'eraser', n:'eras' },
+            { k:'text', n:'txt' },
+            { k:'symbol', n:'sym' },
+            { k:'viewpoint', n:'eye' },
+          ].map(t => (
+            <button key={t.k}
+              onClick={() => {
+                setTool(t.k);
+                if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
+                if (t.k !== 'viewpoint') setActivePh(null);
+              }}
+              title={t.k === 'viewpoint' ? 'Vue photo — cliquer-glisser pour placer et orienter' : undefined}
               style={{ padding:6,borderRadius:6,background:tool===t.k?DA.red:'transparent',color:tool===t.k?'white':'#aaa',transition:'all 0.15s' }}>
               <Ic n={t.n} s={14}/>
             </button>
@@ -176,7 +286,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
         </div>
       </div>
 
-      {/* Symbol picker */}
+      {/* ── Symbol picker ── */}
       {showSyms && tool === 'symbol' && (
         <div style={{ background:'#1a1a1a',padding:'8px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333' }}>
           {SYMBOLS.map(sm => (
@@ -188,12 +298,24 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
         </div>
       )}
 
-      {/* Canvas area */}
+      {/* ── Aide viewpoint ── */}
+      {tool === 'viewpoint' && (
+        <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
+          <Ic n="eye" s={12}/>
+          <span style={{ fontSize:11,color:'#888' }}>
+            {activePh
+              ? <><span style={{ color:DA.red,fontWeight:700 }}>{activePh.label}</span> sélectionnée — cliquer-glisser sur le plan pour placer et orienter</>
+              : 'Cliquer-glisser sur le plan pour placer un œil de vue. Sélectionnez une photo en bas pour la numéroter.'}
+          </span>
+        </div>
+      )}
+
+      {/* ── Canvas ── */}
       <div style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':'crosshair' }}
+              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='viewpoint'?'crosshair':'crosshair' }}
               onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}/>
             {textPt && (
@@ -213,6 +335,29 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
           </div>
         )}
       </div>
+
+      {/* ── Bande de photos ── */}
+      {validPhotos.length > 0 && (
+        <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
+          <span style={{ color:'#666',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,flexShrink:0 }}>Vues :</span>
+          {validPhotos.map((ph, i) => {
+            const label = `V${i + 1}`;
+            const isActive = activePh?.label === label;
+            return (
+              <button key={i} onClick={() => selectPhoto(ph, i)}
+                title={ph.name || `Photo ${i + 1}`}
+                style={{ flexShrink:0,padding:0,background:'none',border:`2.5px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s' }}>
+                <div style={{ position:'relative' }}>
+                  <img src={ph.data} alt="" style={{ width:48,height:48,objectFit:'cover',display:'block' }}/>
+                  <div style={{ position:'absolute',bottom:0,left:0,right:0,background:isActive?DA.red:'rgba(0,0,0,0.65)',color:'white',fontSize:9,fontWeight:800,textAlign:'center',padding:'2px 0',transition:'background 0.15s' }}>
+                    {label}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
