@@ -189,11 +189,11 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose }) {
       )}
 
       {/* Canvas area */}
-      <div style={{ flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',background:'#1a1a1a',padding:8 }}>
+      <div style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
         {bgImage ? (
-          <div style={{ position:'relative' }}>
+          <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':'crosshair' }}
+              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':'crosshair' }}
               onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}/>
             {textPt && (
