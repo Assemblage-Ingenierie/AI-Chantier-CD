@@ -88,6 +88,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
   const [search,     setSearch]     = useState('');
   const [extSearch,  setExtSearch]  = useState('');
   const [saved,      setSaved]      = useState(() => loadGlobalContacts());
+  const [quickSearch, setQuickSearch] = useState('');
 
   const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'present' }]);
   const remove = (id) => onChange(participants.filter(p => p.id !== id));
@@ -110,6 +111,17 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
   };
 
   const addedEmails = new Set(participants.map(p => p.email).filter(Boolean));
+
+  const q = quickSearch.trim().toLowerCase();
+  const quickTeam = q ? ASSEMBLAGE_TEAM.filter(t =>
+    t.nom.toLowerCase().includes(q) || t.poste.toLowerCase().includes(q)
+  ) : [];
+  const quickSaved = q ? saved.filter(c =>
+    c.nom.toLowerCase().includes(q) ||
+    (c.poste || '').toLowerCase().includes(q) ||
+    (c.email || '').toLowerCase().includes(q)
+  ) : [];
+  const hasQuickResults = quickTeam.length > 0 || quickSaved.length > 0;
 
   const filteredTeam = ASSEMBLAGE_TEAM.filter(t =>
     !search || t.nom.toLowerCase().includes(search.toLowerCase()) ||
@@ -272,6 +284,80 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           </div>
         </div>
       )}
+
+      {/* ── Recherche rapide unifiée ── */}
+      <div style={{ position:'relative', marginBottom:6 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, border:`1px solid ${quickSearch ? DA.red : DA.border}`, borderRadius:8, padding:'6px 10px', background:'white', transition:'border-color 0.15s' }}>
+          <Ic n="txt" s={13}/>
+          <input
+            value={quickSearch}
+            onChange={e => setQuickSearch(e.target.value)}
+            placeholder="Rechercher un intervenant…"
+            style={{ flex:1, border:'none', outline:'none', fontSize:12, fontFamily:'inherit', background:'transparent', color:DA.black }}
+          />
+          {quickSearch && (
+            <button onClick={() => setQuickSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex', alignItems:'center', padding:0 }}>
+              <Ic n="x" s={13}/>
+            </button>
+          )}
+        </div>
+
+        {q && (
+          <div style={{ position:'absolute', left:0, right:0, top:'100%', marginTop:3, background:'white', border:`1px solid ${DA.border}`, borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:20, maxHeight:240, overflowY:'auto' }}>
+            {!hasQuickResults && (
+              <div style={{ padding:'12px 10px', fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat pour « {quickSearch} »</div>
+            )}
+            {quickTeam.length > 0 && (
+              <>
+                <div style={{ padding:'5px 10px 3px', fontSize:9, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.5 }}>Assemblage</div>
+                {quickTeam.map(t => {
+                  const isAdded = addedEmails.has(t.email);
+                  const initials = t.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
+                  return (
+                    <div key={t.email} onClick={() => { if (!isAdded) { add({ ...t, isAssemblage: true }); setQuickSearch(''); } }}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', cursor: isAdded ? 'default' : 'pointer', opacity: isAdded ? 0.45 : 1, borderBottom:`1px solid ${DA.border}` }}
+                      onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
+                      <div style={{ width:26, height:26, borderRadius:'50%', background:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:DA.black }}>{t.nom}</div>
+                        <div style={{ fontSize:10, color:DA.gray }}>{t.poste}</div>
+                      </div>
+                      {isAdded && <span style={{ fontSize:10, color:DA.grayL }}>✓</span>}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {quickSaved.length > 0 && (
+              <>
+                <div style={{ padding:'5px 10px 3px', fontSize:9, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.5 }}>Contacts externes</div>
+                {quickSaved.map(c => {
+                  const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
+                  const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
+                  return (
+                    <div key={c.id} onClick={() => { if (!isAdded) { add({ ...c, isAssemblage: false }); setQuickSearch(''); } }}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', cursor: isAdded ? 'default' : 'pointer', opacity: isAdded ? 0.45 : 1, borderBottom:`1px solid ${DA.border}` }}
+                      onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
+                      <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:700, color:DA.black }}>{c.nom}</div>
+                        <div style={{ fontSize:10, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      {isAdded && <span style={{ fontSize:10, color:DA.grayL }}>✓</span>}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Boutons d'ajout ── */}
       <div style={{ display:'flex', gap:6 }}>
