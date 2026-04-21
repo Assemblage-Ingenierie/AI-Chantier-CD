@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
@@ -15,8 +15,26 @@ export default function ChantierAI({ profile, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos, undo, canUndo } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
+  const [undoToast, setUndoToast] = useState(null);
+  const undoToastRef = useRef(null);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        if (canUndo()) {
+          undo();
+          setUndoToast('Modification annulée');
+          clearTimeout(undoToastRef.current);
+          undoToastRef.current = setTimeout(() => setUndoToast(null), 2500);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo]);
 
   // Après 6s sans réponse Supabase, afficher le cache local avec bandeau "sync en cours"
   useEffect(() => {
@@ -101,6 +119,13 @@ export default function ChantierAI({ profile, onLogout }) {
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
       {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)}/>}
+
+      {undoToast && (
+        <div style={{ position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:'rgba(30,30,30,0.92)',color:'#fff',padding:'10px 20px',borderRadius:10,fontSize:13,fontWeight:600,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',zIndex:9999,pointerEvents:'none',display:'flex',alignItems:'center',gap:8 }}>
+          <Ic n="und" s={15}/>
+          {undoToast}
+        </div>
+      )}
     </div>
   );
 }

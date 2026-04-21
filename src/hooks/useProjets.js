@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage } from '../lib/storage.js';
+
+const MAX_HISTORY = 20;
 
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
@@ -9,6 +11,7 @@ export function useProjets(onSyncStatus) {
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
   const savingRef = useRef(false);
+  const historyRef = useRef([]);
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
@@ -126,17 +129,24 @@ export function useProjets(onSyncStatus) {
     };
   }, []);
 
+  const pushHistory = () => {
+    historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), projetsRef.current];
+  };
+
   const updateProjet = (id, upd) => {
+    pushHistory();
     userModified.current = true;
     setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd, updatedAt: new Date().toISOString() } : p));
   };
 
   const deleteProjet = (id) => {
+    pushHistory();
     userModified.current = true;
     setProjets((ps) => ps.filter((p) => p.id !== id));
   };
 
   const addProjet = (data) => {
+    pushHistory();
     userModified.current = true;
     const visitId = crypto.randomUUID();
     const projet = {
@@ -227,5 +237,16 @@ export function useProjets(onSyncStatus) {
     }
   };
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos };
+  const undo = useCallback(() => {
+    if (!historyRef.current.length) return false;
+    const prev = historyRef.current[historyRef.current.length - 1];
+    historyRef.current = historyRef.current.slice(0, -1);
+    userModified.current = true;
+    setProjets(prev);
+    return true;
+  }, []);
+
+  const canUndo = () => historyRef.current.length > 0;
+
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos, undo, canUndo };
 }
