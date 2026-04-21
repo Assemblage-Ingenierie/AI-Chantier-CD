@@ -1,16 +1,51 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 
+const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
+
 export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
-  const [form, setForm] = useState(item ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
+  const [form, setForm] = useState(() => {
+    const base = item
+      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' }
+      : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' };
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY(item?.id));
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (draft.titre || draft.commentaire) return { ...base, ...draft, photos: base.photos };
+      }
+    } catch {}
+    return base;
+  });
+  const [draftRestored, setDraftRestored] = useState(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY(item?.id));
+      if (saved) { const d = JSON.parse(saved); return !!(d.titre || d.commentaire); }
+    } catch {}
+    return false;
+  });
   const [showPlan, setShowPlan] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [recording, setRecording] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
   const recogRef = useRef(null);
+
+  // Auto-save brouillon à chaque changement de form
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi })); } catch {}
+    }, 600);
+    return () => clearTimeout(t);
+  }, [form.titre, form.commentaire, form.urgence, form.suivi]);
+
+  const handleSave = () => {
+    try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
+    onSave(form);
+    onClose();
+  };
 
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -97,12 +132,21 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     <div className="modal-overlay" style={{ zIndex:40 }}>
       <div className="modal-sheet">
         <div style={{ padding:20 }}>
-          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16 }}>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:draftRestored ? 8 : 16 }}>
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
             <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
+          {draftRestored && (
+            <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginBottom:14 }}>
+              <span style={{ fontSize:11,color:'#92400E',fontWeight:600 }}>📝 Brouillon restauré</span>
+              <button onClick={() => { setDraftRestored(false); try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} setForm(item ? { ...item, photos:(item.photos||[]).filter(ph=>ph.data), suivi:item.suivi||'rien' } : { titre:'',commentaire:'',urgence:'moyenne',photos:[],suivi:'rien' }); }}
+                style={{ marginLeft:'auto',fontSize:10,color:'#92400E',background:'none',border:'1px solid #FCD34D',borderRadius:5,padding:'2px 7px',cursor:'pointer',fontWeight:600 }}>
+                Ignorer
+              </button>
+            </div>
+          )}
 
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
@@ -225,7 +269,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
           )}
 
-          <button onClick={() => { onSave(form); onClose(); }} disabled={!form.titre || compressing}
+          <button onClick={handleSave} disabled={!form.titre || compressing}
             style={{ width:'100%',background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed',transition:'background 0.15s' }}>
             Enregistrer l'observation
           </button>
