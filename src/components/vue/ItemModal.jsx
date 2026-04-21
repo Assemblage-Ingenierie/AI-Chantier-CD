@@ -53,15 +53,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     onClose();
   };
 
-  const toggleDictaphone = () => {
-    if (recording) {
-      recogRef.current?.stop();
-      recogRef.current = null;
-      setRecording(false);
-      return;
-    }
+  const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
+    if (recogRef.current) return;
     const r = new SR();
     r.lang = 'fr-FR';
     r.continuous = true;
@@ -82,6 +77,19 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.start();
     recogRef.current = r;
     setRecording(true);
+  };
+
+  const stopDictaphone = () => {
+    recogRef.current?.stop();
+    recogRef.current = null;
+    setRecording(false);
+  };
+
+  const onMicMouseDown = (e) => {
+    e.preventDefault();
+    startDictaphone();
+    const onUp = () => { stopDictaphone(); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mouseup', onUp);
   };
 
   const fixSpelling = async () => {
@@ -218,10 +226,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6 }}>
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
               <div style={{ display:'flex',gap:5 }}>
-                <button onClick={toggleDictaphone}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700 }}>
+                <button
+                  onMouseDown={onMicMouseDown}
+                  onTouchStart={e => { e.preventDefault(); startDictaphone(); }}
+                  onTouchEnd={stopDictaphone}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none' }}>
                   {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                  {recording ? 'Stop' : 'Dicter'}
+                  {recording ? 'Écoute…' : 'Dicter'}
                 </button>
                 <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
                   style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
