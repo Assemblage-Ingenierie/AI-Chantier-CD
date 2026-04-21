@@ -24,7 +24,7 @@ export default function Dashboard({ projets, onSelect, onNew, onUpd, onArchive, 
   ];
 
   return (
-    <div style={{ padding:16,display:'flex',flexDirection:'column',gap:18 }} onClick={() => menuOpen && setMenuOpen(null)}>
+    <div className="dashboard-inner" style={{ padding:16,display:'flex',flexDirection:'column',gap:18 }} onClick={() => menuOpen && setMenuOpen(null)}>
 
       {/* En-tête */}
       <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between' }}>

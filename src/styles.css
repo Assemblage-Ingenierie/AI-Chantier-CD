@@ -18,12 +18,14 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .proj-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
-@media (min-width: 640px)  { .proj-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; } }
-@media (min-width: 1024px) { .proj-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; } }
-@media (min-width: 1280px) { .proj-grid { grid-template-columns: repeat(5, 1fr); gap: 12px; } }
-@media (min-width: 1600px) { .proj-grid { grid-template-columns: repeat(6, 1fr); gap: 14px; } }
+@media (min-width: 640px)  { .proj-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; } }
+@media (min-width: 1024px) { .proj-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; } }
+@media (min-width: 1440px) { .proj-grid { grid-template-columns: repeat(5, 1fr); gap: 14px; } }
+
+/* ── Dashboard max-width centré sur grand écran ── */
+.dashboard-inner { max-width: 1400px; margin: 0 auto; }
 
 /* ── Stats responsive ── */
 .stats-grid {
