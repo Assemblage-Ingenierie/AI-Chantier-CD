@@ -80,8 +80,8 @@ function buildLocFromRow(loc, itemsByLoc) {
   return {
     id:              loc.id,
     nom:             loc.nom ?? '',
-    planBg:          loc.plan_bg ?? null,
-    planData:        loc.plan_data ?? null,
+    planBg:          null,
+    planData:        null,
     planAnnotations: tryParseJson(loc.plan_annotations),
     items: (itemsByLoc[loc.id] ?? []).map(item => ({
       id:              item.id,
@@ -104,7 +104,7 @@ async function loadRemote() {
       .select('id,chantier_id,nom,bg,data,sort_order')
       .order('sort_order'),
     sb.from('chantier_localisations')
-      .select('id,chantier_id,nom,plan_bg,plan_data,plan_annotations,sort_order,visite_id')
+      .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
       .order('sort_order'),
     sb.from('localisation_items')
       .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
@@ -197,6 +197,22 @@ export async function loadProjectPhotos(itemIds) {
     }));
     return groupBy(mapped, 'item_id');
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
+}
+
+// Charge plan_bg/plan_data pour un projet donné — appelé paresseusement à l'ouverture du projet
+// pour éviter que loadRemote() ne transmette de gros blobs pour tous les projets d'un coup.
+export async function hydratePlans(projectId) {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('chantier_localisations')
+      .select('id,plan_bg,plan_data').eq('chantier_id', projectId);
+    if (error) { console.warn('hydratePlans error:', error); return null; }
+    const map = {};
+    for (const row of (data ?? [])) {
+      if (row.plan_bg || row.plan_data) map[row.id] = { planBg: row.plan_bg ?? null, planData: row.plan_data ?? null };
+    }
+    return map; // { locId: { planBg, planData } }
+  } catch (e) { console.warn('hydratePlans error:', e); return null; }
 }
 
 // Migre les photos legacy (base64 en DB) vers Supabase Storage — une à la fois pour éviter les timeouts.
