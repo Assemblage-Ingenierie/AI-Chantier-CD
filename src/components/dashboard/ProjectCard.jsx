@@ -19,12 +19,14 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
 
   return (
     <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column',height:'100%' }}>
-      {/* Photo */}
-      <div style={{ position:'relative',width:'100%',aspectRatio:'1/1',background:DA.grayXL,cursor:'pointer',flexShrink:0 }} onClick={() => !arc && onSelect(p)}>
-        {p.photo
-          ? <img src={p.photo} alt={p.nom} style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
-          : <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
-        }
+      {/* Photo — paddingTop:100% = carré garanti */}
+      <div style={{ position:'relative',width:'100%',paddingTop:'100%',background:DA.grayXL,cursor:'pointer',flexShrink:0,overflow:'hidden' }} onClick={() => !arc && onSelect(p)}>
+        <div style={{ position:'absolute',inset:0 }}>
+          {p.photo
+            ? <img src={p.photo} alt={p.nom} style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
+            : <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
+          }
+        </div>
         <button onClick={(e) => { e.stopPropagation(); setPhotoTgt(p); }} style={{ position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.5)',border:'none',borderRadius:8,padding:6,cursor:'pointer',color:'white',display:'flex' }}>
           <Ic n="cam" s={12}/>
         </button>
