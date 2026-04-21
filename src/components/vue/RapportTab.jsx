@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
@@ -7,8 +7,15 @@ import { exportPdf } from '../../lib/generateRapport.js';
 
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
+
+  useEffect(() => {
+    const onResize = () => setPanelOpen(w => window.innerWidth >= 640 ? true : w);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const pageBreaks = projet.rapportPageBreaks || [];
   const togglePageBreak = (id) => {
@@ -36,11 +43,36 @@ export default function RapportTab({ projet, onUpdate }) {
     setExporting(false);
   };
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   return (
-    <div style={{ display:'flex', height:'100%', overflow:'hidden' }}>
+    <div style={{ display:'flex', height:'100%', overflow:'hidden', position:'relative' }}>
 
       {/* ── Panneau gauche : paramètres ── */}
-      <div style={{ width:272, borderRight:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white }}>
+      {panelOpen && (
+      <div style={{ width: isMobile ? '100%' : 272, borderRight:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
+
+        {/* Bouton Export en haut — toujours visible */}
+        <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', gap:8 }}>
+          <button
+            onClick={handleExport}
+            disabled={exporting || allItems.length === 0}
+            style={{ flex:1, padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
+              cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
+              background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
+              color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
+            {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
+            {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
+          </button>
+          {isMobile && (
+            <button onClick={() => setPanelOpen(false)}
+              style={{ padding:'11px 12px', borderRadius:10, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:12, fontWeight:600 }}>
+              <Ic n="eye" s={14}/> Aperçu
+            </button>
+          )}
+        </div>
+
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
 
           {/* Résumé */}
@@ -180,21 +212,16 @@ export default function RapportTab({ projet, onUpdate }) {
           </div>
         </div>
 
-        {/* Bouton Export */}
-        <div style={{ padding:'10px 12px', borderTop:`1px solid ${DA.border}`, flexShrink:0 }}>
-          <button
-            onClick={handleExport}
-            disabled={exporting || allItems.length === 0}
-            style={{ width:'100%', padding:'12px 0', borderRadius:12, fontSize:13, fontWeight:800, border:'none',
-              cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
-              background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
-              color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-              boxShadow: allItems.length > 0 ? '0 4px 12px rgba(227,5,19,0.3)' : 'none' }}>
-            {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
-            {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
-          </button>
-        </div>
       </div>
+      )}
+
+      {/* Bouton flottant pour rouvrir les paramètres sur mobile */}
+      {isMobile && !panelOpen && (
+        <button onClick={() => setPanelOpen(true)}
+          style={{ position:'absolute', top:10, left:10, zIndex:20, display:'flex', alignItems:'center', gap:6, padding:'8px 12px', borderRadius:10, background:DA.black, color:'white', border:'none', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 12px rgba(0,0,0,0.35)' }}>
+          <Ic n="fil" s={13}/> Paramètres & Export
+        </button>
+      )}
 
       {/* ── Panneau droit : aperçu A4 ── */}
       <RapportPreview
