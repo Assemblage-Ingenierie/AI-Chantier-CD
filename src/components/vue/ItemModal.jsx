@@ -7,8 +7,34 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [form, setForm] = useState(item ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' } : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' });
   const [showPlan, setShowPlan] = useState(false);
   const [compressing, setCompressing] = useState(false);
+  const [recording, setRecording] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
+  const recogRef = useRef(null);
+
+  const startDictaphone = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
+    const r = new SR();
+    r.lang = 'fr-FR';
+    r.continuous = true;
+    r.interimResults = false;
+    r.onresult = (e) => {
+      const text = Array.from(e.results).map(res => res[0].transcript).join(' ');
+      setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + text }));
+    };
+    r.onerror = () => setRecording(false);
+    r.onend   = () => setRecording(false);
+    r.start();
+    recogRef.current = r;
+    setRecording(true);
+  };
+
+  const stopDictaphone = () => {
+    recogRef.current?.stop();
+    recogRef.current = null;
+    setRecording(false);
+  };
 
   const compressPhoto = (file) => new Promise(res => {
     const r = new FileReader();
@@ -75,7 +101,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
-            <button onClick={onClose} style={{ color:DA.grayL,cursor:'pointer' }}><Ic n="x" s={20}/></button>
+            <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
 
           {/* Titre */}
@@ -115,11 +141,20 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
           {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
+            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6 }}>
+              <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
+              <button
+                onMouseDown={startDictaphone} onMouseUp={stopDictaphone} onMouseLeave={stopDictaphone}
+                onTouchStart={e => { e.preventDefault(); startDictaphone(); }} onTouchEnd={stopDictaphone}
+                style={{ display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none' }}>
+                {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
+                {recording ? 'Écoute…' : 'Dicter'}
+              </button>
+            </div>
             <textarea value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée…" rows={4}
-              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit' }}
-              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
+              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
+              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
             <IASug
               content={form.titre}
               onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
