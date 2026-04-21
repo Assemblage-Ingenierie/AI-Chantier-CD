@@ -18,9 +18,9 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
   const urg = urgCount(p);
 
   return (
-    <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative' }}>
+    <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column',height:'100%' }}>
       {/* Photo */}
-      <div style={{ position:'relative',width:'100%',aspectRatio:'3/2',background:DA.grayXL,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
+      <div style={{ position:'relative',width:'100%',aspectRatio:'3/2',background:DA.grayXL,cursor:'pointer',flexShrink:0 }} onClick={() => !arc && onSelect(p)}>
         {p.photo
           ? <img src={p.photo} alt={p.nom} style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
           : <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
@@ -33,7 +33,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
       </div>
 
       {/* Infos */}
-      <div style={{ padding:'10px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8 }}>
+      <div style={{ padding:'10px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flex:1 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           <p style={{ fontWeight:800,fontSize:13,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
           {p.maitreOuvrage && <p style={{ fontSize:11,color:DA.red,margin:'2px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>MO : {p.maitreOuvrage}</p>}
