@@ -12,6 +12,7 @@ export function useProjets(onSyncStatus) {
   const userModified = useRef(false);
   const savingRef = useRef(false);
   const historyRef = useRef([]);
+  const dirtyIds = useRef(new Set());
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
@@ -109,7 +110,10 @@ export function useProjets(onSyncStatus) {
     debounceRef.current = setTimeout(async () => {
       if (savingRef.current) return;
       savingRef.current = true;
-      await saveData(projets, onSyncStatus);
+      const ids = new Set(dirtyIds.current);
+      dirtyIds.current.clear();
+      const ok = await saveData(projets, onSyncStatus, ids);
+      if (!ok) dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
       savingRef.current = false;
     }, 2000);
     return () => clearTimeout(debounceRef.current);
@@ -119,7 +123,7 @@ export function useProjets(onSyncStatus) {
     const flush = () => {
       if (!userModified.current) return;
       clearTimeout(debounceRef.current);
-      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus);
+      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -135,12 +139,14 @@ export function useProjets(onSyncStatus) {
 
   const updateProjet = (id, upd) => {
     pushHistory();
+    dirtyIds.current.add(id);
     userModified.current = true;
     setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd, updatedAt: new Date().toISOString() } : p));
   };
 
   const deleteProjet = (id) => {
     pushHistory();
+    // Pas de dirtyIds ici — la suppression est gérée par le diff _lastRemoteIds
     userModified.current = true;
     setProjets((ps) => ps.filter((p) => p.id !== id));
   };
@@ -170,6 +176,7 @@ export function useProjets(onSyncStatus) {
         localisations: [],
       }],
     };
+    dirtyIds.current.add(projet.id);
     setProjets((ps) => [...ps, projet]);
     return projet;
   };
@@ -242,6 +249,12 @@ export function useProjets(onSyncStatus) {
     const prev = historyRef.current[historyRef.current.length - 1];
     historyRef.current = historyRef.current.slice(0, -1);
     userModified.current = true;
+    // Marquer dirty les projets qui diffèrent entre l'état actuel et l'état restauré
+    const currMap = new Map(projetsRef.current.map(p => [p.id, p]));
+    for (const p of prev) {
+      const curr = currMap.get(p.id);
+      if (!curr || curr.updatedAt !== p.updatedAt) dirtyIds.current.add(p.id);
+    }
     setProjets(prev);
     return true;
   }, []);

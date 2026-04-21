@@ -276,7 +276,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
   return result;
 }
 
-async function saveRemote(ps) {
+async function saveRemote(ps, dirtyIds = null) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
   const { data: { user } } = await sb.auth.getUser();
@@ -293,7 +293,10 @@ async function saveRemote(ps) {
   }
   _lastRemoteIds = new Set(ps.map(p => p.id));
 
-  for (const p of ps) {
+  // Sauvegarder uniquement les projets modifiés (évite timeout sur gros volumes)
+  const toSave = dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps;
+
+  for (const p of toSave) {
     const visitesMetadata = (p.visites || []).map(v => ({
       id: v.id, label: v.label ?? 'Visite 1', dateVisite: v.dateVisite ?? null,
       participants: v.participants ?? [], tableauRecap: v.tableauRecap ?? [],
@@ -508,17 +511,19 @@ export function saveLocalCache(ps) {
   } catch {}
 }
 
-export async function saveData(ps, onStatus) {
+export async function saveData(ps, onStatus, dirtyIds = null) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
-    const errors = await saveRemote(ps);
+    const errors = await saveRemote(ps, dirtyIds);
     const ok = errors.length === 0;
     onStatus?.(ok ? 'ok' : 'error');
     if (!ok) showSyncWarning(errors[0]);
+    return ok;
   } catch (e) {
     console.warn('Save error:', e);
     onStatus?.('error');
+    return false;
   }
 }
 
