@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DA, URGENCE } from '../../lib/constants.js';
+import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
@@ -120,24 +120,6 @@ export default function RapportTab({ projet, onUpdate }) {
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
-
-          {/* Résumé */}
-          <div style={{ background:DA.grayXL, borderRadius:10, padding:12, border:`1px solid ${DA.border}` }}>
-            <p style={{ fontWeight:700, fontSize:12, color:DA.black, margin:'0 0 5px' }}>Résumé</p>
-            <p style={{ fontSize:12, color:DA.gray, margin:'0 0 6px' }}>
-              {allItems.length} obs. · {localisations.length} zone{localisations.length !== 1 ? 's' : ''}
-            </p>
-            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-              {Object.entries(URGENCE).map(([k, u]) => {
-                const n = allItems.filter(i => i.urgence === k).length;
-                return n > 0 ? (
-                  <span key={k} style={{ fontSize:10, padding:'1px 6px', borderRadius:4, background:u.bg, color:u.text, border:`1px solid ${u.border}` }}>
-                    {n} {u.label.toLowerCase()}
-                  </span>
-                ) : null;
-              })}
-            </div>
-          </div>
 
           {/* Intervenants */}
           <ParticipantsEditor

@@ -325,8 +325,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
       </div>
 
       {/* ── Corps scrollable ── */}
-      <div style={{ flex:1, overflowY:'auto' }}>
-        <div>
+      <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto' }}>
+        <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {/* ════ TAB VISITE ════ */}
           {tab === 'visite' && (
