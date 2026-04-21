@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
+import { callAIProxy } from '../../lib/aiProxy.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -29,9 +30,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [showPlan, setShowPlan] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
   const recogRef = useRef(null);
+  const lastResultIdx = useRef(0);
 
   // Auto-save brouillon à chaque changement de form
   useEffect(() => {
@@ -41,34 +44,61 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
 
+  // Stop dictaphone si la modale se ferme
+  useEffect(() => () => { recogRef.current?.stop(); }, []);
+
   const handleSave = () => {
     try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
     onSave(form);
     onClose();
   };
 
-  const startDictaphone = () => {
+  const toggleDictaphone = () => {
+    if (recording) {
+      recogRef.current?.stop();
+      recogRef.current = null;
+      setRecording(false);
+      return;
+    }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
     const r = new SR();
     r.lang = 'fr-FR';
     r.continuous = true;
     r.interimResults = false;
+    lastResultIdx.current = 0;
     r.onresult = (e) => {
-      const text = Array.from(e.results).map(res => res[0].transcript).join(' ');
-      setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + text }));
+      let newText = '';
+      for (let i = lastResultIdx.current; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          newText += (newText ? ' ' : '') + e.results[i][0].transcript.trim();
+          lastResultIdx.current = i + 1;
+        }
+      }
+      if (newText) setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + newText }));
     };
-    r.onerror = () => setRecording(false);
-    r.onend   = () => setRecording(false);
+    r.onerror = () => { recogRef.current = null; setRecording(false); };
+    r.onend   = () => { recogRef.current = null; setRecording(false); };
     r.start();
     recogRef.current = r;
     setRecording(true);
   };
 
-  const stopDictaphone = () => {
-    recogRef.current?.stop();
-    recogRef.current = null;
-    setRecording(false);
+  const fixSpelling = async () => {
+    if (!form.commentaire?.trim() || correcting) return;
+    setCorrecting(true);
+    try {
+      const d = await callAIProxy({
+        feature: 'spell-correction',
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        system: 'Correcteur orthographe et grammaire français. Corrige UNIQUEMENT les fautes sans reformuler. Garde le vocabulaire technique de chantier. Réponds UNIQUEMENT avec le texte corrigé, sans guillemets ni explication.',
+        messages: [{ role: 'user', content: form.commentaire }],
+      });
+      const corrected = d.content?.[0]?.text?.trim();
+      if (corrected) setForm(f => ({ ...f, commentaire: corrected }));
+    } catch (e) { console.error('Spell check:', e); }
+    setCorrecting(false);
   };
 
   const compressPhoto = (file) => new Promise(res => {
@@ -187,13 +217,18 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           <div style={{ marginBottom:14 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6 }}>
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
-              <button
-                onMouseDown={startDictaphone} onMouseUp={stopDictaphone} onMouseLeave={stopDictaphone}
-                onTouchStart={e => { e.preventDefault(); startDictaphone(); }} onTouchEnd={stopDictaphone}
-                style={{ display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none' }}>
-                {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                {recording ? 'Écoute…' : 'Dicter'}
-              </button>
+              <div style={{ display:'flex',gap:5 }}>
+                <button onClick={toggleDictaphone}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700 }}>
+                  {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
+                  {recording ? 'Stop' : 'Dicter'}
+                </button>
+                <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
+                  {correcting ? <Ic n="spn" s={11}/> : <Ic n="chk" s={11}/>}
+                  {correcting ? '…' : 'Corriger'}
+                </button>
+              </div>
             </div>
             <textarea value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée…" rows={4}
