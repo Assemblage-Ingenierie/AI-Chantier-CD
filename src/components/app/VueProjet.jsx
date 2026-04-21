@@ -67,6 +67,18 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     }
   }, [projet.visites, selectedVisiteId, onUpdate]);
 
+  const deleteVisite = (visiteId) => {
+    const v = visites.find(v => v.id === visiteId);
+    const obsCount = (v?.localisations || []).flatMap(l => l.items || []).length;
+    const msg = obsCount > 0
+      ? `Supprimer "${v?.label || 'cette visite'}" et ses ${obsCount} observation${obsCount > 1 ? 's' : ''} ?`
+      : `Supprimer "${v?.label || 'cette visite'}" ?`;
+    if (!window.confirm(msg)) return;
+    const newVisites = visites.filter(vv => vv.id !== visiteId);
+    onUpdate({ visites: newVisites });
+    if (selectedVisiteId === visiteId) setSelectedVisiteId(newVisites[0]?.id ?? null);
+  };
+
   const addVisite = () => {
     const newId = crypto.randomUUID();
     const n     = visites.length + 1;
@@ -229,8 +241,9 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           {visites.map(v => {
             const isSelected = v.id === selectedVisiteId;
             const isEditLabel = editingVisiteLabel === v.id;
+            const canDelete = visites.length > 1;
             if (isSelected) return (
-              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:6, padding:'4px 10px 4px 13px', borderRadius:20, background:DA.red }}>
+              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:6, padding:'4px 6px 4px 13px', borderRadius:20, background:DA.red }}>
                 {isEditLabel ? (
                   <input
                     autoFocus
@@ -261,15 +274,33 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                   onChange={e => updateVisite(v.id, { dateVisite: e.target.value || null })}
                   style={{ background:'rgba(255,255,255,0.18)', border:'none', color:'rgba(255,255,255,0.9)', fontSize:10, fontWeight:600, borderRadius:8, padding:'2px 6px', cursor:'pointer', outline:'none', colorScheme:'dark' }}
                 />
+                {canDelete && (
+                  <button onClick={() => deleteVisite(v.id)}
+                    title="Supprimer cette visite"
+                    style={{ background:'rgba(0,0,0,0.2)', border:'none', borderRadius:6, padding:'3px 5px', cursor:'pointer', color:'rgba(255,255,255,0.7)', display:'flex', alignItems:'center', flexShrink:0 }}>
+                    <Ic n="del" s={11}/>
+                  </button>
+                )}
               </div>
             );
             return (
-              <button key={v.id}
-                onClick={() => { setSelectedVisiteId(v.id); setTab('visite'); }}
-                style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, padding:'5px 11px', borderRadius:20, fontSize:11, fontWeight:700, cursor:'pointer', border:'none', background:'rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.55)' }}>
-                {v.label ?? 'Visite'}
-                {v.dateVisite && <span style={{ fontSize:10, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
-              </button>
+              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'5px 8px 5px 11px', borderRadius:20, background:'rgba(255,255,255,0.1)' }}>
+                <span
+                  onClick={() => { setSelectedVisiteId(v.id); setTab('visite'); }}
+                  style={{ fontSize:11, fontWeight:700, cursor:'pointer', color:'rgba(255,255,255,0.55)', display:'flex', alignItems:'center', gap:4 }}>
+                  {v.label ?? 'Visite'}
+                  {v.dateVisite && <span style={{ fontSize:10, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
+                </span>
+                {canDelete && (
+                  <button onClick={() => deleteVisite(v.id)}
+                    title="Supprimer cette visite"
+                    style={{ background:'none', border:'none', padding:'2px 3px', cursor:'pointer', color:'rgba(255,255,255,0.3)', display:'flex', alignItems:'center', flexShrink:0 }}
+                    onMouseEnter={e => e.currentTarget.style.color='rgba(255,255,255,0.7)'}
+                    onMouseLeave={e => e.currentTarget.style.color='rgba(255,255,255,0.3)'}>
+                    <Ic n="x" s={10}/>
+                  </button>
+                )}
+              </div>
             );
           })}
           <button onClick={addVisite}
