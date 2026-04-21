@@ -315,7 +315,6 @@ async function saveRemote(ps) {
         photos_par_ligne: firstVisit?.photosParLigne ?? 2,
         participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
         visites: visitesMetadata, updated_at: now,
-        ...(uid ? { owner_id: uid } : {}),
       }, { onConflict: 'id' }),
       sb.from('chantier_localisations').select('id').eq('chantier_id', p.id),
     ]);
