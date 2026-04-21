@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
@@ -8,6 +8,8 @@ import { exportPdf } from '../../lib/generateRapport.js';
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
+  const [btnPos, setBtnPos] = useState({ x: 16, y: 16 });
+  const btnDragRef = useRef(null);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
 
@@ -16,6 +18,39 @@ export default function RapportTab({ projet, onUpdate }) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  const onBtnMouseDown = (e) => {
+    e.preventDefault();
+    btnDragRef.current = { startX: e.clientX - btnPos.x, startY: e.clientY - btnPos.y, moved: false };
+    const onMove = (ev) => {
+      btnDragRef.current.moved = true;
+      setBtnPos({ x: ev.clientX - btnDragRef.current.startX, y: ev.clientY - btnDragRef.current.startY });
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!btnDragRef.current?.moved) setPanelOpen(true);
+      btnDragRef.current = null;
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const onBtnTouchStart = (e) => {
+    const t = e.touches[0];
+    btnDragRef.current = { startX: t.clientX - btnPos.x, startY: t.clientY - btnPos.y, moved: false };
+  };
+  const onBtnTouchMove = (e) => {
+    if (!btnDragRef.current) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    btnDragRef.current.moved = true;
+    setBtnPos({ x: t.clientX - btnDragRef.current.startX, y: t.clientY - btnDragRef.current.startY });
+  };
+  const onBtnTouchEnd = () => {
+    if (btnDragRef.current && !btnDragRef.current.moved) setPanelOpen(true);
+    btnDragRef.current = null;
+  };
 
   const pageBreaks = projet.rapportPageBreaks || [];
   const togglePageBreak = (id) => {
@@ -215,12 +250,21 @@ export default function RapportTab({ projet, onUpdate }) {
       </div>
       )}
 
-      {/* Bouton flottant pour rouvrir les paramètres sur mobile */}
+      {/* Bouton flottant draggable pour rouvrir les paramètres sur mobile */}
       {isMobile && !panelOpen && (
-        <button onClick={() => setPanelOpen(true)}
-          style={{ position:'absolute', top:10, left:10, zIndex:20, display:'flex', alignItems:'center', gap:6, padding:'8px 12px', borderRadius:10, background:DA.black, color:'white', border:'none', fontSize:12, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 12px rgba(0,0,0,0.35)' }}>
-          <Ic n="fil" s={13}/> Paramètres & Export
-        </button>
+        <div
+          onMouseDown={onBtnMouseDown}
+          onTouchStart={onBtnTouchStart}
+          onTouchMove={onBtnTouchMove}
+          onTouchEnd={onBtnTouchEnd}
+          style={{ position:'fixed', left:btnPos.x, top:btnPos.y, zIndex:30,
+            width:44, height:44, borderRadius:'50%',
+            background:DA.black, color:'white',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            cursor:'grab', touchAction:'none', userSelect:'none',
+            boxShadow:'0 3px 14px rgba(0,0,0,0.4)' }}>
+          <Ic n="grp" s={18}/>
+        </div>
       )}
 
       {/* ── Panneau droit : aperçu A4 ── */}
