@@ -52,6 +52,17 @@ export default function RapportTab({ projet, onUpdate }) {
     btnDragRef.current = null;
   };
 
+  const onUpdateItem = (locId, itemId, updatedItem) => {
+    onUpdate({
+      localisations: localisations.map(l =>
+        l.id !== locId ? l : {
+          ...l,
+          items: (l.items || []).map(i => i.id !== itemId ? i : { ...i, ...updatedItem }),
+        }
+      ),
+    });
+  };
+
   const pageBreaks = projet.rapportPageBreaks || [];
   const togglePageBreak = (id) => {
     const curr = projet.rapportPageBreaks || [];
@@ -278,6 +289,7 @@ export default function RapportTab({ projet, onUpdate }) {
         includeTableauRecap={projet.includeTableauRecap !== false}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
+        onUpdateItem={onUpdateItem}
       />
     </div>
   );

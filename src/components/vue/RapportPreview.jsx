@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { SYMBOLS, drawAnnotationPaths } from './Annotator.jsx';
+import { Ic } from '../ui/Icons.jsx';
+import ItemModal from './ItemModal.jsx';
 
 function SymbolIcon({ sym, size = 14 }) {
   const ref = useRef();
@@ -41,7 +43,7 @@ function buildPages(locs, ppl, breaks, plansEnFin) {
 
     for (const item of items) {
       if (breaks.has(item.id)) flush();
-      blocks.push({ type: 'item', id: item.id, item });
+      blocks.push({ type: 'item', id: item.id, item, locId: loc.id });
     }
 
     if (!plansEnFin) {
@@ -84,7 +86,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl }) {
+function ItemBlock({ item, ppl, onEdit }) {
   const photos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -95,6 +97,13 @@ function ItemBlock({ item, ppl }) {
         <span style={{ width:7, height:7, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
         <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
         <span style={{ fontSize:9, color:urg.text, fontWeight:600, flexShrink:0 }}>{urg.label}</span>
+        {onEdit && (
+          <button onClick={onEdit}
+            style={{ marginLeft:4, background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
+            title="Modifier">
+            <Ic n="pen" s={10}/>
+          </button>
+        )}
       </div>
       {/* Suivi */}
       {suivi && (
@@ -455,10 +464,11 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, includeConclusion = false, conclusion = '' }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, includeConclusion = false, conclusion = '', onUpdateItem }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+  const [editingItem, setEditingItem] = useState(null); // { item, locId }
   const planLocs = useMemo(
     () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg) : [],
     [localisations, plansEnFin]
@@ -563,7 +573,9 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                     ? <ZoneHeader loc={block.loc} />
                     : block.type === 'plan'
                     ? <PlanBlock loc={block.loc} />
-                    : <ItemBlock item={block.item} ppl={ppl} />
+                    : <ItemBlock item={block.item} ppl={ppl}
+                        onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
+                      />
                   }
                 </div>
               ))}
@@ -603,6 +615,23 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
       <div style={{ height:24 }}/>
       </div>{/* fin conteneur scalé */}
+
+      {editingItem && (() => {
+        const editingLoc = localisations.find(l => l.id === editingItem.locId);
+        return (
+          <ItemModal
+            item={editingItem.item}
+            planBg={editingLoc?.planBg}
+            planAnnotations={editingLoc?.planAnnotations}
+            onClose={() => setEditingItem(null)}
+            onSave={(form) => {
+              onUpdateItem(editingItem.locId, editingItem.item.id, form);
+              setEditingItem(null);
+            }}
+            onOpenAnnot={() => setEditingItem(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
