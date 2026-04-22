@@ -15,7 +15,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos, hydratePlans, undo, canUndo } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, undo, canUndo } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [undoToast, setUndoToast] = useState(null);
   const undoToastRef = useRef(null);
@@ -96,6 +96,25 @@ export default function ChantierAI({ profile, onLogout }) {
         <div style={{ background:'#78350F', padding:'6px 16px', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
           <Ic n="spn" s={12}/>
           <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:600 }}>Synchronisation en cours — données du cache affichées</span>
+        </div>
+      )}
+
+      {/* Bandeau erreur de chargement */}
+      {loadError && projets.length === 0 && (
+        <div style={{ background:'#7f1d1d', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <Ic n="x" s={14} color="#FCA5A5"/>
+            <div>
+              <span style={{ fontSize:12, color:'#FEF2F2', fontWeight:700 }}>Impossible de charger les projets</span>
+              <span style={{ fontSize:10, color:'rgba(252,161,161,0.8)', marginLeft:8 }}>{loadError}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', color:'#fff', fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:6, cursor:'pointer', flexShrink:0 }}
+          >
+            Réessayer
+          </button>
         </div>
       )}
 

@@ -7,6 +7,7 @@ export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
   const [hydrated, setHydrated] = useState(false);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const debounceRef = useRef(null);
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
@@ -24,6 +25,7 @@ export function useProjets(onSyncStatus) {
 
     loadData()
       .then((remotePs) => {
+        setLoadError(null);
         if (!remotePs.length) return;
         if (userModified.current) return;
 
@@ -105,7 +107,10 @@ export function useProjets(onSyncStatus) {
         const hasLocalChanges = unsynced.length > 0 || keptLocal;
         if (hasLocalChanges) userModified.current = true;
       })
-      .catch(() => {})
+      .catch((e) => {
+        console.error('Erreur chargement projets:', e);
+        setLoadError(e?.message || 'Erreur de connexion à Supabase');
+      })
       .finally(() => setRemoteLoaded(true));
   }, []);
 
@@ -287,5 +292,5 @@ export function useProjets(onSyncStatus) {
 
   const canUndo = () => historyRef.current.length > 0;
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, hydratePhotos, hydratePlans, undo, canUndo };
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, undo, canUndo };
 }

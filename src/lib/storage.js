@@ -522,10 +522,13 @@ export async function loadData() {
     // Fallback sur le cache local (version allégée, sans blobs)
     try {
       const raw = await stor.get(SK);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached.length) return cached; // Cache disponible — pas d'erreur affichée
+      }
+    } catch {}
+    // Ni Supabase ni cache — on propage l'erreur pour que l'UI puisse réagir
+    throw e;
   }
 }
 
