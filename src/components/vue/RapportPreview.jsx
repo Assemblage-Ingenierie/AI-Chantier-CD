@@ -143,7 +143,7 @@ function ItemBlock({ item, ppl, onEdit }) {
   );
 }
 
-function PlanBlock({ loc }) {
+function PlanBlock({ loc, annotScale = 1 }) {
   const exported = loc.planAnnotations?.exported;
   const paths    = loc.planAnnotations?.paths;
   const planBg   = loc.planBg;
@@ -159,13 +159,13 @@ function PlanBlock({ loc }) {
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      const sizeScale = Math.max(1, cv.width / 700);
+      const sizeScale = Math.max(1, cv.width / 700) * annotScale;
       drawAnnotationPaths(ctx, paths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
     el.onerror = () => setRenderedImg(exported || planBg);
     el.src = planBg;
-  }, [exported, paths, planBg]);
+  }, [exported, paths, planBg, annotScale]);
 
   // Légende : symboles + viewpoints
   const usedIds       = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
@@ -430,7 +430,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : null;
 
-  const cols = '5px 1fr 1.5fr 65px';
+  const cols = '5px 70px 1fr 1.5fr 65px';
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
@@ -441,21 +441,20 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
           <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Tableau récapitulatif</span>
           <span style={{ fontSize:8, color:DA.grayL }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:cols, background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns:cols, background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:6 }}>
           <div/>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre / Zone</span>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Zone</span>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Solution</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Urgence</span>
         </div>
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:cols, gap:8, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:cols, gap:6, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
               <div style={{ width:5, background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
-              <div>
-                <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
-                <div style={{ fontSize:7, color:DA.grayL, marginTop:1 }}>{row.locNom}</div>
-              </div>
+              <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4 }}>{row.locNom || '—'}</div>
+              <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
               <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
               <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap', alignSelf:'start' }}>{u.label}</span>
             </div>
@@ -490,7 +489,7 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', onUpdateItem }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onUpdateItem }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -611,7 +610,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                       {block.type === 'zone'
                         ? <ZoneHeader loc={block.loc} />
                         : block.type === 'plan'
-                        ? <PlanBlock loc={block.loc} />
+                        ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
                         : <ItemBlock item={block.item} ppl={ppl}
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                           />
@@ -661,7 +660,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={loc} />
+                  <PlanBlock loc={loc} annotScale={annotScale}/>
                 </A4Card>
               </div>
             </React.Fragment>

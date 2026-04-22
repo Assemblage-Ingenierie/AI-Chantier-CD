@@ -74,6 +74,16 @@ export default function RapportTab({ projet, onUpdate }) {
     });
   };
 
+  const [annotScale, setAnnotScale] = useState(() => {
+    const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
+    return isNaN(v) ? 1 : v;
+  });
+
+  const handleAnnotScale = (v) => {
+    setAnnotScale(v);
+    localStorage.setItem('chantierai_annot_scale', String(v));
+  };
+
   const pageBreaks = projet.rapportPageBreaks || [];
 
   const recapRows = useMemo(() => {
@@ -112,6 +122,7 @@ export default function RapportTab({ projet, onUpdate }) {
         plansEnFin:           projet.plansEnFin ?? false,
         includeTableauRecap:  projet.includeTableauRecap !== false,
         tableauRecap:         projet.tableauRecap || [],
+        annotScale,
         includeConclusion:    projet.includeConclusion ?? false,
         conclusion:           projet.conclusion ?? '',
       });
@@ -218,6 +229,26 @@ export default function RapportTab({ projet, onUpdate }) {
             </label>
             <p style={{ fontSize:10, color:DA.gray, margin:'3px 0 0 22px' }}>
               Décoché = plans affichés après chaque zone
+            </p>
+          </div>
+
+          {/* Taille des annotations sur plans */}
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
+              Taille des légendes sur plans
+            </label>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
+                onChange={e => handleAnnotScale(parseFloat(e.target.value))}
+                style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
+              <span style={{ fontSize:11, fontWeight:700, color:DA.black, minWidth:32, textAlign:'right' }}>{annotScale.toFixed(1)}×</span>
+              {annotScale !== 1 && (
+                <button onClick={() => handleAnnotScale(1)}
+                  style={{ fontSize:10, color:DA.gray, background:'none', border:`1px solid ${DA.border}`, borderRadius:5, padding:'2px 7px', cursor:'pointer' }}>↺</button>
+              )}
+            </div>
+            <p style={{ fontSize:9.5, color:DA.grayL, margin:'3px 0 0', fontStyle:'italic' }}>
+              Affecte l'aperçu, le PDF et l'annotateur
             </p>
           </div>
 
@@ -334,6 +365,7 @@ export default function RapportTab({ projet, onUpdate }) {
         plansEnFin={projet.plansEnFin ?? false}
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
+        annotScale={annotScale}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         onUpdateItem={onUpdateItem}

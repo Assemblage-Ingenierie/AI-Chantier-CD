@@ -5,7 +5,7 @@ import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotato
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
-async function renderPlanImage(planBg, planAnnotations) {
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1) {
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
   if (!planBg) return exported ?? null;
@@ -18,8 +18,7 @@ async function renderPlanImage(planBg, planAnnotations) {
       cv.height = img.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      // Agrandir les annotations proportionnellement à la résolution de l'image
-      const sizeScale = Math.max(1, cv.width / 700);
+      const sizeScale = Math.max(1, cv.width / 700) * annotScale;
       drawAnnotationPaths(ctx, paths, sizeScale);
       resolve(cv.toDataURL('image/png'));
     };
@@ -117,7 +116,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '' }) {
+export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1 }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -146,7 +145,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // Pré-rendu des plans annotés (une seule passe async avant la génération PDF)
   const planImages = {};
   for (const loc of localisations) {
-    const img = await renderPlanImage(loc.planBg, loc.planAnnotations);
+    const img = await renderPlanImage(loc.planBg, loc.planAnnotations, annotScale);
     if (img) planImages[loc.id] = img;
   }
 
@@ -436,13 +435,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       doc.text('TABLEAU RÉCAPITULATIF', ML + 6, y + 7);
       doc.setTextColor(0, 0, 0); y += 14;
 
-      // colonnes : bande couleur | désordre+zone | solution | urgence
-      const colW = [6, 55, 81, 32];
-      const colX = [ML, ML + 6, ML + 61, ML + 142];
+      // colonnes : bande | zone | désordre | solution | urgence
+      const colW = [6, 28, 48, 64, 28];
+      const colX = [ML, ML+6, ML+34, ML+82, ML+146];
 
       doc.setFillColor(50, 50, 50); doc.rect(ML, y, CW, 8, 'F');
       doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
-      [null, 'DÉSORDRE / ZONE', 'SOLUTION / ACTION CORRECTIVE', 'URGENCE'].forEach((t, i) => {
+      [null, 'ZONE', 'DÉSORDRE', 'SOLUTION / ACTION CORRECTIVE', 'URGENCE'].forEach((t, i) => {
         if (t) doc.text(t, colX[i] + 2, y + 5.5);
       });
       doc.setTextColor(0, 0, 0); y += 9;
@@ -450,9 +449,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       recapRows.forEach((row, i) => {
         const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
         const urgLabel = URGENCE[row.urgence]?.label ?? row.urgence;
-        const titreLines = doc.splitTextToSize(row.titre || '—', colW[1] - 4);
-        const solLines   = doc.splitTextToSize(row.solution || '—', colW[2] - 4);
-        const rowH = Math.max(titreLines.length, solLines.length) * 4.5 + 8;
+        const zoneLines  = doc.splitTextToSize(row.locNom || '—', colW[1] - 3);
+        const titreLines = doc.splitTextToSize(row.titre   || '—', colW[2] - 3);
+        const solLines   = doc.splitTextToSize(row.solution || '—', colW[3] - 3);
+        const rowH = Math.max(zoneLines.length, titreLines.length, solLines.length) * 4.5 + 8;
         pb(rowH + 2);
 
         const bg = i % 2 === 0 ? 249 : 255;
@@ -460,30 +460,24 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setFillColor(...urgColor); doc.rect(colX[0], y, colW[0], rowH, 'F');
         doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, y, CW, rowH);
 
-        // Bande colorée : nom zone en minuscule
-        if (row.locNom) {
-          doc.setTextColor(...WH); doc.setFontSize(4.5); doc.setFont('helvetica', 'bold');
-          doc.text(row.locNom.slice(0, 5), colX[0] + colW[0] / 2, y + rowH / 2 + 1.5, { align: 'center' });
-        }
+        // Zone
+        doc.setTextColor(50, 50, 50); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(zoneLines, colX[1] + 2, y + 5);
 
-        // Titre + zone
+        // Désordre
         doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-        doc.text(titreLines, colX[1] + 2, y + 5);
-        if (row.locNom) {
-          doc.setFontSize(5.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-          doc.text(row.locNom, colX[1] + 2, y + rowH - 2.5);
-        }
+        doc.text(titreLines, colX[2] + 2, y + 5);
 
         // Solution
         doc.setTextColor(50, 50, 50); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(solLines, colX[2] + 2, y + 5);
+        doc.text(solLines, colX[3] + 2, y + 5);
 
         // Urgence badge
         const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
         doc.setFillColor(...(row.urgence === 'haute' ? [254,226,226] : row.urgence === 'moyenne' ? [255,251,235] : [240,253,244]));
-        doc.roundedRect(colX[3] + 2, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
+        doc.roundedRect(colX[4] + 1, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
         doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-        doc.text(urgLabel, colX[3] + 5, y + rowH/2 + 1);
+        doc.text(urgLabel, colX[4] + 4, y + rowH/2 + 1);
 
         doc.setTextColor(0, 0, 0); y += rowH + 1;
       });
