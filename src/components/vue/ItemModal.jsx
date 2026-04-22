@@ -38,6 +38,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const recordingRef   = useRef(false);
   const lastFinalIdx   = useRef(0);
   const sessionFirst   = useRef(true);
+  const lastCommitted  = useRef('');
   const restartTimer   = useRef(null);
 
   // Stop dictaphone si la modale se ferme
@@ -84,13 +85,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       setInterimText(interim);
       if (finals.length) {
         const txt = finals.filter(Boolean).join(' ');
-        if (txt) {
+        if (txt && txt !== lastCommitted.current) {
+          lastCommitted.current = txt;
           const first = sessionFirst.current;
           sessionFirst.current = false;
           setForm(f => ({
             ...f,
-            // \n seulement à la première phrase de la session (sépare des dictées précédentes)
-            // espace entre les phrases de la même session
             commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
           }));
         }
@@ -131,6 +131,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     recordingRef.current = true;
     lastFinalIdx.current = 0;
     sessionFirst.current = true;
+    lastCommitted.current = '';
     setInterimText('');
     setRecording(true);
     doRecognize();
