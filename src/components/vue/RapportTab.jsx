@@ -4,6 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
+import JSZip from 'jszip';
 
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
@@ -139,6 +140,55 @@ export default function RapportTab({ projet, onUpdate }) {
     setExporting(false);
   };
 
+  const [zipping, setZipping] = useState(false);
+
+  const handleExportPhotos = async () => {
+    const allPhotos = localisations.flatMap(loc =>
+      (loc.items || []).flatMap(item =>
+        (item.photos || []).filter(ph => ph.data).map((ph, idx) => ({
+          data: ph.data,
+          name: ph.name || `photo_${idx + 1}.jpg`,
+          locNom: loc.nom || 'Sans zone',
+          itemTitre: item.titre || 'Sans titre',
+        }))
+      )
+    );
+    if (allPhotos.length === 0) { alert('Aucune photo disponible.'); return; }
+
+    setZipping(true);
+    try {
+      const zip = new JSZip();
+      const sanitize = s => s.replace(/[^a-zA-Z0-9À-ÿ _-]/g, '_').trim().slice(0, 60);
+      const counts = {};
+      for (const ph of allPhotos) {
+        const folder = sanitize(ph.locNom);
+        const base   = sanitize(ph.itemTitre);
+        const key    = `${folder}/${base}`;
+        counts[key]  = (counts[key] || 0) + 1;
+        const ext    = ph.name.includes('.') ? ph.name.split('.').pop() : 'jpg';
+        const fname  = `${base}_${counts[key]}.${ext}`;
+        const b64    = ph.data.includes(',') ? ph.data.split(',')[1] : ph.data;
+        zip.folder(folder).file(fname, b64, { base64: true });
+      }
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const nomProjet = projet.nom ? sanitize(projet.nom) : 'rapport';
+      a.href     = url;
+      a.download = `${nomProjet}_photos.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      console.error('ZIP photos:', e);
+      alert('Erreur lors de la création du ZIP : ' + (e.message || e));
+    }
+    setZipping(false);
+  };
+
+  const totalPhotos = useMemo(() =>
+    localisations.flatMap(l => l.items || []).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
+  [localisations]);
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
@@ -148,24 +198,44 @@ export default function RapportTab({ projet, onUpdate }) {
       {panelOpen && (
       <div style={{ width: isMobile ? '100%' : 272, borderRight:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
 
-        {/* Bouton Export en haut — toujours visible */}
-        <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', gap:8 }}>
-          <button
-            onClick={handleExport}
-            disabled={exporting || allItems.length === 0}
-            style={{ flex:1, padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
-              cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
-              background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
-              color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-              boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
-            {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
-            {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
-          </button>
-          {isMobile && (
-            <button onClick={() => setPanelOpen(false)}
-              style={{ padding:'11px 12px', borderRadius:10, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:12, fontWeight:600 }}>
-              <Ic n="eye" s={14}/> Aperçu
+        {/* Boutons Export en haut — toujours visibles */}
+        <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:6 }}>
+          <div style={{ display:'flex', gap:8 }}>
+            <button
+              onClick={handleExport}
+              disabled={exporting || allItems.length === 0}
+              style={{ flex:1, padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
+                cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
+                background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
+                color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
+              {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
+              {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
             </button>
+            {isMobile && (
+              <button onClick={() => setPanelOpen(false)}
+                style={{ padding:'11px 12px', borderRadius:10, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:12, fontWeight:600 }}>
+                <Ic n="eye" s={14}/> Aperçu
+              </button>
+            )}
+          </div>
+
+          {/* ZIP photos */}
+          <button
+            onClick={handleExportPhotos}
+            disabled={zipping || totalPhotos === 0}
+            style={{ width:'100%', padding:'9px 0', borderRadius:10, fontSize:12, fontWeight:700, border:'none',
+              cursor: zipping || totalPhotos === 0 ? 'not-allowed' : 'pointer',
+              background: zipping || totalPhotos === 0 ? DA.grayXL : '#1D4ED8',
+              color: totalPhotos === 0 ? DA.grayL : 'white',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            {zipping ? <Ic n="spn" s={13}/> : <Ic n="dl" s={13}/>}
+            {zipping ? 'Compression…' : totalPhotos === 0 ? 'Aucune photo' : `Télécharger photos ZIP (${totalPhotos})`}
+          </button>
+          {totalPhotos > 0 && (
+            <p style={{ fontSize:9, color:DA.grayL, margin:0, textAlign:'center', fontStyle:'italic' }}>
+              Organisé par zone / observation — prêt pour Drive
+            </p>
           )}
         </div>
 
