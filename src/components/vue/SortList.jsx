@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 
@@ -28,6 +28,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
   // ── Touch drag (mobile) ────────────────────────────────────────────────────
   const touchDragRef    = useRef(null); // { idx, startY, curOverIdx }
   const ghostRef        = useRef(null);
+
+  useEffect(() => () => { ghostRef.current?.remove(); }, []);
 
   const onGripTouchStart = (e, idx) => {
     e.preventDefault(); // empêche le scroll pendant le drag

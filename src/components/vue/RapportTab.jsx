@@ -10,6 +10,7 @@ export default function RapportTab({ projet, onUpdate }) {
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [btnPos, setBtnPos] = useState({ x: 16, y: 16 });
   const btnDragRef = useRef(null);
+  const mouseListenersRef = useRef(null);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
 
@@ -17,6 +18,14 @@ export default function RapportTab({ projet, onUpdate }) {
     const onResize = () => setPanelOpen(w => window.innerWidth >= 640 ? true : w);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => () => {
+    if (mouseListenersRef.current) {
+      document.removeEventListener('mousemove', mouseListenersRef.current.onMove);
+      document.removeEventListener('mouseup', mouseListenersRef.current.onUp);
+      mouseListenersRef.current = null;
+    }
   }, []);
 
   const onBtnMouseDown = (e) => {
@@ -29,9 +38,11 @@ export default function RapportTab({ projet, onUpdate }) {
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      mouseListenersRef.current = null;
       if (!btnDragRef.current?.moved) setPanelOpen(true);
       btnDragRef.current = null;
     };
+    mouseListenersRef.current = { onMove, onUp };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   };

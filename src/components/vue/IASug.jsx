@@ -33,6 +33,8 @@ export default function IASug({ content, onApply }) {
   useEffect(() => {
     if (!loading) return;
     const t = setTimeout(() => {
+      abortRef.current?.abort();
+      abortRef.current = null;
       setLoading(false);
       setError('Délai dépassé — vérifie ta connexion et réessaie');
     }, 35000);

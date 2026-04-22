@@ -200,8 +200,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
   const compressPhoto = (file) => new Promise(res => {
     const r = new FileReader();
+    r.onerror = () => res(null);
     r.onload = ev => {
       const img = new Image();
+      img.onerror = () => res(null);
       img.onload = () => {
         const MAX = 1920;
         let { width, height } = img;
@@ -228,7 +230,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     if (!filtered.length) return;
     setCompressing(true);
     Promise.all(filtered.map(compressPhoto))
-      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done] })))
+      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done.filter(Boolean)] })))
       .finally(() => setCompressing(false));
   };
 

@@ -48,15 +48,25 @@ function tryParseJson(val) {
   try { return JSON.parse(val); } catch { return null; }
 }
 
+// Supprime le PNG exporté des annotations (régénéré à la demande, peut faire ~15 MB)
+function slimAnnot(ann) {
+  if (!ann) return ann;
+  // eslint-disable-next-line no-unused-vars
+  const { exported, ...rest } = ann;
+  return rest;
+}
+
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
 function slimLoc(l) {
   return {
     ...l,
     planBg: null,
     planData: null,
+    planAnnotations: slimAnnot(l.planAnnotations),
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,
+      planAnnotations: slimAnnot(item.planAnnotations),
       // eslint-disable-next-line no-unused-vars
       photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
     })),

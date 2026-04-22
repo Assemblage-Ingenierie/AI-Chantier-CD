@@ -12,6 +12,7 @@ export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
+    let pdfRef = null;
     (async () => {
       try {
         await ensurePdfJs();
@@ -19,6 +20,7 @@ export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
         const pdf = await window.pdfjsLib.getDocument({
           data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
         }).promise;
+        pdfRef = pdf;
         const count = pdf.numPages;
         const allSel = new Set(Array.from({ length: count }, (_, i) => i + 1));
         if (!cancelled) setSelected(allSel);
@@ -40,7 +42,7 @@ export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
         if (!cancelled) { setError(e.message); setLoading(false); }
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; pdfRef?.destroy(); };
   }, [pdfData]);
 
   const toggle = (num) => setSelected(s => {
