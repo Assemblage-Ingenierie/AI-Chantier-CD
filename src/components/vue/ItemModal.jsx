@@ -39,6 +39,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const lastFinalIdx   = useRef(0);
   const sessionFirst   = useRef(true);
   const lastCommitted  = useRef('');
+  const sessionText    = useRef('');
   const restartTimer   = useRef(null);
 
   // Stop dictaphone si la modale se ferme
@@ -89,24 +90,41 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       }
       setInterimText(interim);
       if (finals.length) {
-        const txt = finals.filter(Boolean).join(' ');
-        const norm = txt.toLowerCase().replace(/[.,!?;:]+$/g, '').trim();
-        const lastNorm = lastCommitted.current.toLowerCase().replace(/[.,!?;:]+$/g, '').trim();
-        if (txt && norm !== lastNorm && !lastNorm.endsWith(norm)) {
-          lastCommitted.current = txt;
-          const first = sessionFirst.current;
-          sessionFirst.current = false;
-          setForm(f => ({
-            ...f,
-            commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
-          }));
+        let txt = finals.filter(Boolean).join(' ');
+        if (!txt) return;
+
+        // iOS after restart sometimes resends the full accumulated transcript
+        // (e.g. previous "bonjour" + new "comment" = "bonjour comment").
+        // Strip words already committed this session by comparing word-by-word.
+        if (sessionText.current) {
+          const rawWords = txt.toLowerCase().split(/\s+/).filter(Boolean);
+          const sesWords = sessionText.current.toLowerCase().split(/\s+/).filter(Boolean);
+          let matched = 0;
+          for (let i = 0; i < Math.min(rawWords.length, sesWords.length); i++) {
+            if (rawWords[i] === sesWords[i]) matched++;
+            else break;
+          }
+          if (matched === rawWords.length) return; // entirely duplicate
+          if (matched === sesWords.length && matched > 0) {
+            txt = txt.split(/\s+/).slice(matched).join(' ').trim();
+          }
         }
+
+        if (!txt || txt === lastCommitted.current) return;
+        lastCommitted.current = txt;
+        sessionText.current = sessionText.current ? sessionText.current + ' ' + txt : txt;
+
+        const first = sessionFirst.current;
+        sessionFirst.current = false;
+        setForm(f => ({
+          ...f,
+          commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
+        }));
       }
     };
 
     r.onerror = (ev) => {
-      if (ev.error === 'no-speech' || ev.error === 'aborted' || ev.error === 'network') return;
-      // not-allowed = mic permission denied
+      // not-allowed = fatal permission error, stop entirely
       if (ev.error === 'not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
@@ -115,12 +133,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         setRecording(false);
         return;
       }
-      // Pour les autres erreurs, tenter un redémarrage si on tient encore le bouton
-      recogRef.current = null;
-      if (recordingRef.current) {
-        lastFinalIdx.current = 0;
-        restartTimer.current = setTimeout(doRecognize, 300);
-      }
+      // All other errors (no-speech, aborted, network, audio-capture…) are non-fatal.
+      // onend always fires after onerror — let onend handle any restart to avoid
+      // starting two concurrent recognition sessions (the "8x repeat" bug).
     };
 
     r.onend = () => {
@@ -152,6 +167,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     lastFinalIdx.current = 0;
     sessionFirst.current = true;
     lastCommitted.current = '';
+    sessionText.current = '';
     setInterimText('');
     setRecording(true);
     doRecognize();

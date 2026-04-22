@@ -9,6 +9,7 @@ export function useProjets(onSyncStatus) {
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const debounceRef = useRef(null);
+  const retryRef = useRef(null);
   const projetsRef = useRef(projets);
   const userModified = useRef(false);
   const savingRef = useRef(false);
@@ -138,7 +139,20 @@ export function useProjets(onSyncStatus) {
       const ids = new Set(dirtyIds.current);
       dirtyIds.current.clear();
       const ok = await saveData(projets, onSyncStatus, ids);
-      if (!ok) dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
+      if (!ok) {
+        dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
+        // Auto-retry after 15s — covers brief mobile network drops without user action
+        clearTimeout(retryRef.current);
+        retryRef.current = setTimeout(async () => {
+          if (savingRef.current || !dirtyIds.current.size) return;
+          savingRef.current = true;
+          const retryIds = new Set(dirtyIds.current);
+          dirtyIds.current.clear();
+          const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds);
+          if (!retryOk) dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
+          savingRef.current = false;
+        }, 15000);
+      }
       savingRef.current = false;
     }, 2000);
     return () => clearTimeout(debounceRef.current);
@@ -150,11 +164,18 @@ export function useProjets(onSyncStatus) {
       clearTimeout(debounceRef.current);
       if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
     };
+    // visibilitychange is more reliable than beforeunload/pagehide on iOS Safari
+    // (fires when app is backgrounded, giving the save a chance to complete)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('beforeunload', flush);
       window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 
