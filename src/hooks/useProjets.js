@@ -21,12 +21,20 @@ function mergeWithLocal(remotePs, localPs, dirtyIds) {
       if (!lp) return rp;
       // Restore blobs (planBg, planLibrary.bg) stripped by slimLoc in localStorage
       const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
-      return {
-        ...lp,
-        planLibrary: (lp.planLibrary || []).map(pl => {
+      // Union strategy: keep local plans + add any remote plans not yet in local.
+      // Prevents stale local cache (planLibrary:[]) from accidentally wiping DB plans.
+      const localPlanIds = new Set((lp.planLibrary || []).map(pl => pl.id));
+      const newRemotePlans = (rp.planLibrary || []).filter(rpl => !localPlanIds.has(rpl.id));
+      const mergedPlanLibrary = [
+        ...(lp.planLibrary || []).map(pl => {
           const rpl = remotePlanById.get(pl.id);
           return rpl ? { ...pl, bg: rpl.bg ?? pl.bg, data: rpl.data ?? pl.data } : pl;
         }),
+        ...newRemotePlans,
+      ];
+      return {
+        ...lp,
+        planLibrary: mergedPlanLibrary,
         visites: (lp.visites || []).map(lv => {
           const rv = (rp.visites || []).find(v => v.id === lv.id);
           if (!rv) return lv;
@@ -47,9 +55,17 @@ function mergeWithLocal(remotePs, localPs, dirtyIds) {
     const photo = lp.photo ?? rp.photo ?? null;
     if (rp.statut === 'archive') return { ...rp, photo, visites: lp.visites ?? rp.visites };
 
+    // Preserve plan library blobs hydrated locally (remote always returns bg:null/data:null)
+    const localPlanById = new Map((lp.planLibrary || []).map(pl => [pl.id, pl]));
+
     return {
       ...rp,
       photo,
+      planLibrary: (rp.planLibrary || []).map(rpl => {
+        const lpl = localPlanById.get(rpl.id);
+        if (!lpl) return rpl;
+        return { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data };
+      }),
       visites: (rp.visites || []).map(rv => {
         const lv = lp.visites?.find(v => v.id === rv.id);
         if (!lv) return rv;
@@ -60,6 +76,9 @@ function mergeWithLocal(remotePs, localPs, dirtyIds) {
             if (!localLoc) return loc;
             return {
               ...loc,
+              // Preserve locally-hydrated plan blobs (remote returns null for these)
+              planBg: localLoc.planBg ?? loc.planBg,
+              planData: localLoc.planData ?? loc.planData,
               items: (loc.items || []).map(item => {
                 const localItem = localLoc.items?.find(i => i.id === item.id);
                 if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };

@@ -450,6 +450,9 @@ async function saveRemote(ps, dirtyIds = null) {
         if (pl.data != null) row.data = pl.data;
         return row;
       });
+      // Safety guard: if local plan list is empty but DB has plans, skip deletion.
+      // Local can be empty because plans weren't hydrated yet (bg/data loaded lazily).
+      if (planRows.length === 0 && dbPlanIds.size > 0) return;
       await Promise.all([
         removedPlanIds.length ? sb.from('chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
         planRows.length       ? sb.from('chantier_plans').upsert(planRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
