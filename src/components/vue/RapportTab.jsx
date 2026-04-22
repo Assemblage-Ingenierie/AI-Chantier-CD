@@ -89,21 +89,27 @@ export default function RapportTab({ projet, onUpdate }) {
   const recapRows = useMemo(() => {
     if (projet.includeTableauRecap === false) return [];
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
-    const overrides = new Map((projet.tableauRecap || []).map(r => [r.itemId, r.solution]));
+    const ovMap = new Map((projet.tableauRecap || []).map(r => [r.itemId, r]));
     return localisations.flatMap(loc =>
-      (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => ({
-        itemId: i.id, locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
-        solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
-      }))
+      (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
+        const ov = ovMap.get(i.id) || {};
+        return {
+          itemId: i.id,
+          locNom:  'zone'     in ov ? ov.zone     : (loc.nom          || ''),
+          titre:   'titre'    in ov ? ov.titre    : (i.titre           || ''),
+          urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence        || 'basse'),
+          solution:'solution' in ov ? ov.solution : (i.commentaire    || ''),
+        };
+      })
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
   }, [localisations, projet.includeTableauRecap, projet.tableauRecap]);
 
-  const updateSolution = useCallback((itemId, sol) => {
+  const updateRecapField = useCallback((itemId, field, value) => {
     const curr = projet.tableauRecap || [];
     const has = curr.some(r => r.itemId === itemId);
     onUpdate({ tableauRecap: has
-      ? curr.map(r => r.itemId === itemId ? { ...r, solution: sol } : r)
-      : [...curr, { itemId, solution: sol }]
+      ? curr.map(r => r.itemId === itemId ? { ...r, [field]: value } : r)
+      : [...curr, { itemId, [field]: value }]
     });
   }, [projet.tableauRecap, onUpdate]);
   const togglePageBreak = (id) => {
@@ -290,19 +296,57 @@ export default function RapportTab({ projet, onUpdate }) {
                     return (
                       <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < recapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
                         <div style={{ background:u.dot }}/>
-                        <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:3 }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:11, fontWeight:700, color:DA.black, flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.titre}</span>
-                            <span style={{ fontSize:9, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap', flexShrink:0 }}>{u.label}</span>
+                        <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:5 }}>
+                          {/* Zone */}
+                          <div>
+                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Zone</label>
+                            <input
+                              value={row.locNom}
+                              onChange={e => updateRecapField(row.itemId, 'zone', e.target.value)}
+                              placeholder="Zone / localisation…"
+                              style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}
+                            />
                           </div>
-                          <span style={{ fontSize:9, color:DA.grayL }}>{row.locNom}</span>
-                          <textarea
-                            value={row.solution}
-                            onChange={e => updateSolution(row.itemId, e.target.value)}
-                            placeholder="Solution / action corrective…"
-                            rows={2}
-                            style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}
-                          />
+                          {/* Désordre */}
+                          <div>
+                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Désordre</label>
+                            <input
+                              value={row.titre}
+                              onChange={e => updateRecapField(row.itemId, 'titre', e.target.value)}
+                              placeholder="Désordre…"
+                              style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}
+                            />
+                          </div>
+                          {/* Urgence */}
+                          <div>
+                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Urgence</label>
+                            <div style={{ display:'flex', gap:4 }}>
+                              {['haute','moyenne','basse'].map(lvl => {
+                                const uu = URGENCE[lvl];
+                                const active = row.urgence === lvl;
+                                return (
+                                  <button key={lvl} onClick={() => updateRecapField(row.itemId, 'urgence', lvl)}
+                                    style={{ flex:1, padding:'3px 0', borderRadius:5, fontSize:9, fontWeight:700, cursor:'pointer',
+                                      border:`1.5px solid ${active ? uu.border : DA.border}`,
+                                      background: active ? uu.bg : 'white',
+                                      color: active ? uu.text : DA.grayL }}>
+                                    {uu.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {/* Solution */}
+                          <div>
+                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Solution</label>
+                            <textarea
+                              value={row.solution}
+                              onChange={e => updateRecapField(row.itemId, 'solution', e.target.value)}
+                              placeholder="Solution / action corrective…"
+                              rows={2}
+                              style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}
+                            />
+                          </div>
                         </div>
                       </div>
                     );
@@ -366,6 +410,7 @@ export default function RapportTab({ projet, onUpdate }) {
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
         annotScale={annotScale}
+        onAnnotScaleChange={handleAnnotScale}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         onUpdateItem={onUpdateItem}

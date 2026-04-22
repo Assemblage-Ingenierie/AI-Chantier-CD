@@ -417,14 +417,19 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   if (includeTableauRecap) {
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
-    const overrides = new Map((tableauRecap || []).map(r => [r.itemId, r.solution]));
+    const ovMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
     const recapRows = localisations.flatMap(loc =>
       (loc.items || [])
         .filter(i => i.titre && i.suivi !== 'fait')
-        .map(i => ({
-          locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
-          solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
-        }))
+        .map(i => {
+          const ov = ovMap.get(i.id) || {};
+          return {
+            locNom:  'zone'     in ov ? ov.zone     : (loc.nom       || ''),
+            titre:   'titre'    in ov ? ov.titre    : (i.titre        || ''),
+            urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence     || 'basse'),
+            solution:'solution' in ov ? ov.solution : (i.commentaire || ''),
+          };
+        })
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
     if (recapRows.length > 0) {

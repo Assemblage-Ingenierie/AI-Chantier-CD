@@ -143,7 +143,7 @@ function ItemBlock({ item, ppl, onEdit }) {
   );
 }
 
-function PlanBlock({ loc, annotScale = 1 }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
   const exported = loc.planAnnotations?.exported;
   const paths    = loc.planAnnotations?.paths;
   const planBg   = loc.planBg;
@@ -181,11 +181,22 @@ function PlanBlock({ loc, annotScale = 1 }) {
         <span style={{ fontSize:9, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>
           Plan — {loc.nom}
         </span>
-        {paths?.length > 0 && (
-          <span style={{ marginLeft:'auto', fontSize:8, color:'rgba(255,255,255,0.5)' }}>
-            {paths.length} annotation{paths.length > 1 ? 's' : ''}
-          </span>
-        )}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
+          {onAnnotScaleChange && paths?.length > 0 && (
+            <>
+              <span style={{ fontSize:8, color:'rgba(255,255,255,0.45)', whiteSpace:'nowrap' }}>Légendes</span>
+              <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
+                onChange={e => onAnnotScaleChange(parseFloat(e.target.value))}
+                style={{ width:64, accentColor:DA.red, cursor:'pointer' }}/>
+              <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.8)', minWidth:28 }}>{annotScale.toFixed(1)}×</span>
+            </>
+          )}
+          {paths?.length > 0 && (
+            <span style={{ fontSize:8, color:'rgba(255,255,255,0.5)' }}>
+              {paths.length} annotation{paths.length > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </div>
       {renderedImg && (
         <img src={renderedImg} alt={`Plan ${loc.nom}`}
@@ -418,12 +429,17 @@ function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
 // ── Tableau récapitulatif ──────────────────────────────────────────────────
 function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
-  const overrides = new Map((tableauRecap || []).map(r => [r.itemId, r.solution]));
+  const ovMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
   const rows = localisations.flatMap(loc =>
-    (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => ({
-      locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
-      solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
-    }))
+    (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
+      const ov = ovMap.get(i.id) || {};
+      return {
+        locNom:  'zone'     in ov ? ov.zone     : (loc.nom       || ''),
+        titre:   'titre'    in ov ? ov.titre    : (i.titre        || ''),
+        urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence     || 'basse'),
+        solution:'solution' in ov ? ov.solution : (i.commentaire || ''),
+      };
+    })
   ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
   const dateStr = projet.dateVisite
@@ -489,7 +505,7 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onUpdateItem }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onAnnotScaleChange, onUpdateItem }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -610,7 +626,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                       {block.type === 'zone'
                         ? <ZoneHeader loc={block.loc} />
                         : block.type === 'plan'
-                        ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
+                        ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
                         : <ItemBlock item={block.item} ppl={ppl}
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                           />
@@ -660,7 +676,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={loc} annotScale={annotScale}/>
+                  <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
                 </A4Card>
               </div>
             </React.Fragment>
