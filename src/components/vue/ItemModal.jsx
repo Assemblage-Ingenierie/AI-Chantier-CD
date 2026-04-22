@@ -30,12 +30,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [showPlan, setShowPlan] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
   const recogRef     = useRef(null);
   const recordingRef = useRef(false);
-  const lastIdxRef   = useRef(0);
+  const lastFinalIdx = useRef(0);
   const restartTimer = useRef(null);
 
   // Stop dictaphone si la modale se ferme
@@ -65,37 +66,43 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     const r = new SR();
     r.lang = 'fr-FR';
     r.continuous = true;
-    r.interimResults = false;
+    r.interimResults = true;  // nécessaire pour que onresult fire sur Chrome PC
     r.maxAlternatives = 1;
 
     r.onresult = (e) => {
-      const newResults = Array.from(e.results).slice(lastIdxRef.current);
-      lastIdxRef.current = e.results.length;
-      const txt = newResults
-        .filter(res => res.isFinal)
-        .map(res => res[0].transcript.trim())
-        .filter(Boolean)
-        .join('\n');
-      if (txt) setForm(f => ({
-        ...f,
-        commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
-      }));
+      let interim = '';
+      const newFinals = [];
+      for (let i = lastFinalIdx.current; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          newFinals.push(e.results[i][0].transcript.trim());
+          lastFinalIdx.current = i + 1;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      setInterimText(interim);
+      if (newFinals.length) {
+        const txt = newFinals.filter(Boolean).join('\n');
+        if (txt) setForm(f => ({
+          ...f,
+          commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
+        }));
+      }
     };
 
     r.onerror = (ev) => {
       if (ev.error === 'no-speech') return;
       if (ev.error === 'aborted') return;
-      // Erreur visible pour diagnostiquer (not-allowed, network, audio-capture…)
       alert(`Erreur dictée: ${ev.error}`);
       recordingRef.current = false;
       recogRef.current = null;
+      setInterimText('');
       setRecording(false);
     };
 
-    // onend = reconnaissance arrêtée (silence long, iOS, ou stop manuel)
-    // → reset le bouton; l'utilisateur peut rappuyer pour continuer
     r.onend = () => {
       recogRef.current = null;
+      setInterimText('');
       if (recordingRef.current) {
         recordingRef.current = false;
         setRecording(false);
@@ -106,7 +113,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       r.start();
       recogRef.current = r;
       recordingRef.current = true;
-      lastIdxRef.current = 0;
+      lastFinalIdx.current = 0;
+      setInterimText('');
       setRecording(true);
     } catch (e) {
       alert(`Impossible de démarrer le microphone: ${e.message}`);
@@ -118,6 +126,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     clearTimeout(restartTimer.current);
     recogRef.current?.stop();
     recogRef.current = null;
+    setInterimText('');
     setRecording(false);
   };
 
@@ -272,6 +281,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               placeholder="Description détaillée…" rows={4}
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
+            {recording && interimText && (
+              <p style={{ fontSize:11,color:DA.grayL,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4 }}>
+                {interimText}…
+              </p>
+            )}
             <IASug
               content={form.titre}
               onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
