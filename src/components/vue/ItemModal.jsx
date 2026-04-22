@@ -65,31 +65,35 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     if (!SR) return;
     const r = new SR();
     r.lang = 'fr-FR';
-    r.continuous = false;    // plus fiable sur Chrome PC que continuous=true
+    r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 1;
 
     r.onresult = (e) => {
       let interim = '';
       const finals = [];
-      for (let i = 0; i < e.results.length; i++) {
-        if (e.results[i].isFinal) finals.push(e.results[i][0].transcript.trim());
-        else interim += e.results[i][0].transcript;
+      for (let i = lastFinalIdx.current; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finals.push(e.results[i][0].transcript.trim());
+          lastFinalIdx.current = i + 1;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
       }
       setInterimText(interim);
       if (finals.length) {
-        const txt = finals.filter(Boolean).join(' ');
+        const txt = finals.filter(Boolean).join('\n');
         if (txt) setForm(f => ({
           ...f,
           commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
         }));
-        setInterimText('');
       }
     };
 
     r.onerror = (ev) => {
-      if (ev.error === 'no-speech' || ev.error === 'aborted') return;
-      alert(`Erreur dictée: ${ev.error}`);
+      // network / no-speech / aborted = non-fatals, on ignore
+      if (ev.error === 'no-speech' || ev.error === 'aborted' || ev.error === 'network') return;
+      alert(`Erreur microphone: ${ev.error}`);
       recordingRef.current = false;
       recogRef.current = null;
       setInterimText('');
@@ -99,24 +103,20 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
-      if (!recordingRef.current) { setRecording(false); return; }
-      // Encore en train de tenir — relancer pour la phrase suivante
-      clearTimeout(restartTimer.current);
-      restartTimer.current = setTimeout(() => {
-        if (recordingRef.current) doRecognize();
-      }, 120);
+      if (recordingRef.current) {
+        // Reconnaissance arrêtée pendant qu'on tient (iOS / timeout) → reset
+        recordingRef.current = false;
+        setRecording(false);
+      }
     };
 
     try {
       r.start();
       recogRef.current = r;
     } catch (e) {
-      // Sur iOS, r.start() hors geste utilisateur lève NotAllowedError → on arrête
-      if (e.name === 'NotAllowedError' || !recordingRef.current) {
+      if (recordingRef.current) {
         recordingRef.current = false;
         setRecording(false);
-      } else {
-        restartTimer.current = setTimeout(() => { if (recordingRef.current) doRecognize(); }, 250);
       }
     }
   }, []);
@@ -275,10 +275,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
               <div style={{ display:'flex',gap:5 }}>
                 <button
-                  onClick={() => recording ? stopDictaphone() : startDictaphone()}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none' }}>
-                  {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                  {recording ? '■ Stop' : 'Dicter'}
+                  onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
+                  onPointerUp={() => { if (recording) stopDictaphone(); }}
+                  onPointerCancel={() => { if (recording) stopDictaphone(); }}
+                  style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:20,border:`2px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:12,fontWeight:700,userSelect:'none',touchAction:'none',WebkitUserSelect:'none',minWidth:80,justifyContent:'center' }}>
+                  {recording ? <Ic n="spn" s={13}/> : <Ic n="mic" s={14}/>}
+                  {recording ? 'Relâcher' : 'Dicter'}
                 </button>
                 <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
                   style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
