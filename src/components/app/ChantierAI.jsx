@@ -43,7 +43,11 @@ export default function ChantierAI({ profile, onLogout }) {
     return () => clearTimeout(t);
   }, [remoteLoaded]);
 
-  const showSplash = !remoteLoaded && !splashTimedOut;
+  // Garder le splash jusqu'à avoir quelque chose à afficher :
+  // - timeout déclenché ET cache local non vide → dashboard + bandeau jaune
+  // - cache local vide → splash jusqu'au chargement Supabase (évite les tuiles vides)
+  const hasDataToShow = hydrated && projets.length > 0;
+  const showSplash = !remoteLoaded && (!splashTimedOut || !hasDataToShow);
 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
@@ -84,7 +88,7 @@ export default function ChantierAI({ profile, onLogout }) {
       </div>
 
       {/* Bandeau connexion lente */}
-      {!remoteLoaded && splashTimedOut && (
+      {!remoteLoaded && splashTimedOut && hasDataToShow && (
         <div style={{ background:'#78350F', padding:'6px 16px', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
           <Ic n="spn" s={12}/>
           <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:600 }}>Synchronisation en cours — données du cache affichées</span>
