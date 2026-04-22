@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
