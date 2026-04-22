@@ -121,6 +121,13 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
   const [textV,     setTextV]     = useState('');
   const [activePh,  setActivePh]  = useState(null); // { label, src } photo sélectionnée
   const [pendingVP, setPendingVP] = useState(null); // { x, y, angle } vue en cours de tracé
+  const [vt,        setVt]        = useState({ z: 1, px: 0, py: 0 }); // pinch zoom/pan
+  const vtRef     = useRef({ z: 1, px: 0, py: 0 });
+  const gestureRef = useRef(null); // active pinch gesture state
+
+  useEffect(() => { vtRef.current = vt; }, [vt]);
+  // Reset zoom/pan when a new plan is loaded
+  useEffect(() => { setVt({ z: 1, px: 0, py: 0 }); vtRef.current = { z: 1, px: 0, py: 0 }; }, [bgImage]);
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
 
@@ -177,6 +184,24 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   const onStart = e => {
     e.preventDefault();
+    // Two-finger pinch/pan gesture
+    if (e.touches?.length >= 2) {
+      if (drawing) { setCur([]); setDrawing(false); }
+      const [t1, t2] = e.touches;
+      const cur = vtRef.current;
+      const r = cvRef.current?.getBoundingClientRect();
+      gestureRef.current = {
+        startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+        startZ: cur.z, startPx: cur.px, startPy: cur.py,
+        midX: (t1.clientX + t2.clientX) / 2,
+        midY: (t1.clientY + t2.clientY) / 2,
+        // Natural center = visual canvas center minus the pan offset
+        ncX: r ? r.left + r.width / 2 - cur.px : 0,
+        ncY: r ? r.top + r.height / 2 - cur.py : 0,
+      };
+      return;
+    }
+    if (gestureRef.current) return; // gesture in progress — ignore stray single touch
     const pos = getXY(e, cvRef.current);
     if (tool === 'viewpoint') {
       vpStart.current = pos;
@@ -191,6 +216,24 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   const onMove = e => {
     e.preventDefault();
+    if (e.touches?.length >= 2 && gestureRef.current) {
+      const [t1, t2] = e.touches;
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+      const g = gestureRef.current;
+      const newZ = Math.min(6, Math.max(1, g.startZ * dist / g.startDist));
+      const ratio = newZ / g.startZ;
+      // Zoom around initial pinch midpoint + follow midpoint translation
+      const newPx = midX - g.ncX - (g.midX - g.ncX - g.startPx) * ratio;
+      const newPy = midY - g.ncY - (g.midY - g.ncY - g.startPy) * ratio;
+      // Clamp so canvas never leaves the viewport entirely
+      const cv = cvRef.current;
+      const maxPx = cv ? cv.clientWidth  * (newZ - 1) / 2 : 9999;
+      const maxPy = cv ? cv.clientHeight * (newZ - 1) / 2 : 9999;
+      setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
+      return;
+    }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
       const pos = getXY(e, cvRef.current);
@@ -204,6 +247,10 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   const onEnd = e => {
     e.preventDefault();
+    if (gestureRef.current) {
+      if (e.touches.length < 2) gestureRef.current = null;
+      return;
+    }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
       const label = activePh?.label || `V${vpCount + 1}`;
@@ -316,9 +363,17 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='viewpoint'?'crosshair':'crosshair' }}
+              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}/>
+            {vt.z > 1.05 && (
+              <button
+                onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}
+                onClick={() => setVt({ z:1, px:0, py:0 })}
+                style={{ position:'absolute',top:8,right:8,background:'rgba(0,0,0,0.72)',border:'none',color:'white',borderRadius:8,padding:'5px 11px',fontSize:11,fontWeight:700,cursor:'pointer',zIndex:5,letterSpacing:0.3 }}>
+                ×{vt.z.toFixed(1)} ↺
+              </button>
+            )}
             {textPt && (
               <div style={{ position:'absolute',top:0,left:0,transform:`translate(${textPt.x*(cvRef.current?.clientWidth/cvRef.current?.width||1)}px,${textPt.y*(cvRef.current?.clientHeight/cvRef.current?.height||1)}px)`,zIndex:10 }}>
                 <div style={{ background:'white',borderRadius:8,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',padding:8,display:'flex',gap:6,minWidth:200 }}>
