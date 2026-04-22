@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
@@ -14,13 +14,29 @@ function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter
 
 export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  const [menuPos, setMenuPos] = useState(null);
   const obs = obsCount(p);
   const urg = urgCount(p);
 
+  const toggleMenu = (e) => {
+    if (menuOpen === p.id) { setMenuOpen(null); setMenuPos(null); return; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setMenuOpen(p.id);
+  };
+
+  // Close menu when user scrolls
+  useEffect(() => {
+    if (menuOpen !== p.id) return;
+    const close = () => setMenuOpen(null);
+    window.addEventListener('scroll', close, { passive: true, once: true });
+    return () => window.removeEventListener('scroll', close);
+  }, [menuOpen, p.id, setMenuOpen]);
+
   return (
-    <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column',height:'100%' }}>
+    <div style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column' }}>
       {/* Photo — paddingTop:100% works on all iOS versions (aspect-ratio not supported on iOS<15) */}
-      <div style={{ position:'relative',width:'100%',paddingTop:'100%',background:DA.grayXL,cursor:'pointer',flexShrink:0,overflow:'hidden',borderRadius:'11px 11px 0 0' }} onClick={() => !arc && onSelect(p)}>
+      <div style={{ position:'relative',width:'100%',paddingTop:'100%',background:DA.grayXL,cursor:'pointer',flexShrink:0 }} onClick={() => !arc && onSelect(p)}>
         {p.photo
           ? <img src={p.photo} alt={p.nom} style={{ position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>
           : <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
@@ -56,13 +72,13 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
           )}
         </div>
 
-        {/* Menu */}
-        <div style={{ position:'relative',flexShrink:0 }}>
-          <button onClick={() => setMenuOpen(menuOpen === p.id ? null : p.id)} style={{ padding:6,background:'none',border:'none',cursor:'pointer',color:DA.grayL,borderRadius:8 }}>
+        {/* Menu — dropdown uses position:fixed to escape overflow:hidden on the card */}
+        <div style={{ flexShrink:0 }}>
+          <button onClick={toggleMenu} style={{ padding:6,background:'none',border:'none',cursor:'pointer',color:DA.grayL,borderRadius:8 }}>
             <Ic n="dts" s={16}/>
           </button>
-          {menuOpen === p.id && (
-            <div style={{ position:'absolute',right:0,top:32,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:200,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>
+          {menuOpen === p.id && menuPos && (
+            <div style={{ position:'fixed',top:menuPos.top,right:menuPos.right,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:9999,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>
               <button onClick={() => { onEdit(p); setMenuOpen(null); }} style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}><Ic n="edt" s={15}/> Modifier</button>
               <div style={{ borderTop:`1px solid ${DA.border}` }}/>
               {!arc
