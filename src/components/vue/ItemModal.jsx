@@ -265,10 +265,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
               <div style={{ display:'flex',gap:5 }}>
                 <button
-                  onClick={() => recording ? stopDictaphone() : startDictaphone()}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none' }}>
+                  onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); startDictaphone(); }}
+                  onPointerUp={stopDictaphone}
+                  onPointerCancel={stopDictaphone}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none',WebkitUserSelect:'none' }}>
                   {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                  {recording ? '■ Stop' : 'Dicter'}
+                  {recording ? 'Relâcher…' : 'Dicter'}
                 </button>
                 <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
                   style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
