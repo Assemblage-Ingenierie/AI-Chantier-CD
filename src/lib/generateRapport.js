@@ -121,8 +121,6 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
   const today = dvPdf.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  const allItems = localisations.flatMap(l => l.items || []);
-
   // ── Fonctions utilitaires ────────────────────────────────────────────────────
 
   const hdr = () => {
@@ -156,26 +154,27 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     return false;
   };
 
-  // ── PAGE DE GARDE ────────────────────────────────────────────────────────────
+  // ── PAGE DE GARDE (photo/titre + présentation + intervenants) ───────────────
 
-  doc.setFillColor(...BK); doc.rect(0, 0, W, H * 0.52, 'F');
-  doc.setFillColor(...RD); doc.rect(0, 0, 4, H * 0.52, 'F');
+  const DARK_H = 85; // mm — hauteur de la partie sombre
+
+  doc.setFillColor(...BK); doc.rect(0, 0, W, DARK_H, 'F');
+  doc.setFillColor(...RD); doc.rect(0, 0, 4, DARK_H, 'F');
 
   if (projet.photo) {
     try {
       const ext = projet.photo.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-      doc.addImage(projet.photo, ext, 0, 0, W, H * 0.52, undefined, 'FAST');
+      doc.addImage(projet.photo, ext, 0, 0, W, DARK_H, undefined, 'FAST');
       try {
         doc.setFillColor(...BK);
         doc.setGState(doc.GState({ opacity: 0.55 }));
-        doc.rect(0, 0, W, H * 0.52, 'F');
+        doc.rect(0, 0, W, DARK_H, 'F');
         doc.setGState(doc.GState({ opacity: 1 }));
       } catch {}
     } catch {}
   }
-  doc.setFillColor(...RD); doc.rect(0, 0, 4, H * 0.52, 'F');
+  doc.setFillColor(...RD); doc.rect(0, 0, 4, DARK_H, 'F');
 
-  // Logo Assemblage Ingénierie — coin supérieur droit, sans cadre blanc
   if (logoDataUrl) {
     try { doc.addImage(logoDataUrl, 'PNG', W - MR - 50, 10, 46, 13, undefined, 'FAST'); } catch {}
   } else {
@@ -184,72 +183,48 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.setTextColor(0, 0, 0);
   }
 
-  // Titre projet
-  doc.setTextColor(...WH); doc.setFontSize(7); doc.setFont('helvetica', 'normal');
-  const top = 20;
-  doc.text('AI CHANTIER · COMPTE-RENDU DE VISITE', ML + 6, top);
-  doc.setFontSize(6); doc.setTextColor(200, 200, 200);
-  doc.text('COMPTE-RENDU DE VISITE', ML + 6, top + 7);
-  doc.setFontSize(22); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
+  doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
+  doc.text('COMPTE-RENDU DE VISITE', ML + 6, 22);
+  doc.setFontSize(22); doc.setFont('helvetica', 'bold');
   const tlines = doc.splitTextToSize(projet.nom, W - ML - 30);
-  doc.text(tlines, ML + 6, top + 16);
-  const afterT = top + 16 + tlines.length * 10;
-  doc.setFillColor(...RD); doc.rect(ML + 6, afterT + 4, 28, 1.5, 'F');
+  doc.text(tlines, ML + 6, 34);
+  const afterT = 34 + tlines.length * 10;
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(180, 180, 180);
-  doc.text(`Date : ${today}`, ML + 6, afterT + 12);
-  if (projet.maitreOuvrage) doc.text(`Maître d'ouvrage : ${projet.maitreOuvrage}`, ML + 6, afterT + 19);
-  if (projet.adresse) doc.text(projet.adresse, ML + 6, afterT + 26);
-
-  // Stats
-  const iy = H * 0.52 + 12;
-  const urgC = allItems.filter(i => i.urgence === 'haute').length;
-  doc.setFillColor(240, 240, 240); doc.roundedRect(ML, iy, CW, 20, 2, 2, 'F');
-  doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, iy, CW, 20, 2, 2, 'S');
-  [{ v: allItems.length, l: 'Observations', c: BK }, { v: urgC, l: 'Urgentes', c: RD }, { v: localisations.length, l: 'Zones', c: BK }]
-    .forEach((sc, i) => {
-      const x = ML + i * (CW / 3) + CW / 6;
-      doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(...sc.c);
-      doc.text(String(sc.v), x, iy + 12, { align: 'center' });
-      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-      doc.text(sc.l, x, iy + 17.5, { align: 'center' });
-    });
+  if (projet.adresse) doc.text(projet.adresse, ML + 6, afterT + 4);
   doc.setTextColor(0, 0, 0);
 
-  const participants = projet.participants || [];
+  // ── Partie blanche : présentation + intervenants ─────────────────────────
 
-  // ── PAGE PRÉSENTATION & INTERVENANTS ─────────────────────────────────────────
+  const participants = projet.participants || [];
+  const infoRows = [
+    projet.adresse       && ['Adresse',         projet.adresse],
+    projet.dateVisite    && ['Date de visite',   today],
+    projet.maitreOuvrage && ["Maître d'ouvrage", projet.maitreOuvrage],
+  ].filter(Boolean);
+
+  let py = DARK_H + 10;
+
+  if (infoRows.length > 0) {
+    doc.setFillColor(...RD); doc.rect(ML, py, 3, 14, 'F');
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+    doc.text('PRÉSENTATION DU PROJET', ML + 7, py + 6);
+    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+    doc.text(`${infoRows.length} info${infoRows.length > 1 ? 's' : ''}`, ML + 7, py + 12);
+    doc.setTextColor(0, 0, 0); py += 18;
+
+    doc.setFillColor(...LG); doc.setDrawColor(...BK); doc.setLineWidth(0.15);
+    doc.roundedRect(ML, py, CW, infoRows.length * 8 + 4, 2, 2, 'FD');
+    infoRows.forEach(([k, v], ri) => {
+      const ry = py + 6 + ri * 8;
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR);
+      doc.text(k, ML + 4, ry);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
+      doc.text(doc.splitTextToSize(v, CW - 50)[0], ML + 42, ry);
+    });
+    py += infoRows.length * 8 + 12;
+  }
 
   if (participants.length > 0) {
-    doc.addPage(); let py = 18; hdr();
-
-    // Section "Présentation du projet"
-    const infoRows = [
-      projet.adresse       && ['Adresse',          projet.adresse],
-      projet.dateVisite    && ['Date de visite',    today],
-      projet.maitreOuvrage && ["Maitre d'ouvrage",  projet.maitreOuvrage],
-    ].filter(Boolean);
-
-    if (infoRows.length > 0) {
-      doc.setFillColor(...RD); doc.rect(ML, py, 3, 14, 'F');
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-      doc.text('PRESENTATION DU PROJET', ML + 7, py + 6);
-      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-      doc.text(`${infoRows.length} info${infoRows.length > 1 ? 's' : ''}`, ML + 7, py + 12);
-      doc.setTextColor(0, 0, 0); py += 18;
-
-      doc.setFillColor(...LG); doc.setDrawColor(...BK); doc.setLineWidth(0.15);
-      doc.roundedRect(ML, py, CW, infoRows.length * 8 + 4, 2, 2, 'FD');
-      infoRows.forEach(([k, v], ri) => {
-        const ry = py + 6 + ri * 8;
-        doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR);
-        doc.text(k, ML + 4, ry);
-        doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
-        doc.text(doc.splitTextToSize(v, CW - 50)[0], ML + 42, ry);
-      });
-      py += infoRows.length * 8 + 10;
-    }
-
-    // Section "Intervenants"
     doc.setFillColor(...RD); doc.rect(ML, py, 3, 14, 'F');
     doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
     doc.text('INTERVENANTS', ML + 7, py + 6);
@@ -257,7 +232,6 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.text(`${participants.length} intervenant${participants.length > 1 ? 's' : ''}`, ML + 7, py + 12);
     doc.setTextColor(0, 0, 0); py += 18;
 
-    // En-tête colonnes
     const cNom = ML + 10, cTel = ML + CW * 0.40, cEmail = ML + CW * 0.58, presX = W - MR;
     doc.setFillColor(...BK); doc.roundedRect(ML, py, CW, 7, 1.5, 1.5, 'F');
     doc.setFontSize(6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
@@ -273,16 +247,12 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const bg = i % 2 === 0 ? 249 : 255;
       doc.setFillColor(bg, bg, bg); doc.rect(ML, py, CW, rowH, 'F');
       doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, py, CW, rowH);
-
-      // Badge A! — colonne fixe 10mm
       if (pt.isAssemblage) {
         doc.setFillColor(...RD); doc.roundedRect(ML + 1.5, py + rowH / 2 - 2.5, 7, 5, 1, 1, 'F');
         doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
         doc.text('A!', ML + 5, py + rowH / 2 + 0.5, { align: 'center' });
         doc.setTextColor(0, 0, 0);
       }
-
-      // Nom
       const nameY = pt.poste ? py + 5 : py + rowH / 2 + 2;
       doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
       doc.text(doc.splitTextToSize(pt.nom, cTel - cNom - 2)[0], cNom, nameY);
@@ -290,16 +260,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
         doc.text(doc.splitTextToSize(pt.poste, cTel - cNom - 2)[0], cNom, py + 9.5);
       }
-
-      // Téléphone
       doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
       doc.text(pt.tel || '—', cTel, py + rowH / 2 + 2);
-
-      // Email
       doc.setFontSize(6.5); doc.setTextColor(...GR);
-      doc.text(doc.splitTextToSize(pt.email || '—', cEmail - cTel - 2 + (presX - cEmail - 20))[0], cEmail, py + rowH / 2 + 2);
-
-      // Présence — badge coloré
+      doc.text(doc.splitTextToSize(pt.email || '—', presX - cEmail - 4)[0], cEmail, py + rowH / 2 + 2);
       const presLabel = isPresent ? 'Present' : 'Absent';
       const presColor = isPresent ? GN : RD;
       const presW = doc.getTextWidth(presLabel) + 6;

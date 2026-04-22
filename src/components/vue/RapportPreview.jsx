@@ -18,6 +18,7 @@ function SymbolIcon({ sym, size = 14 }) {
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
 const S   = 3;
+const PH  = 297 * S;  // 891px
 const PW  = 210 * S;  // 630px
 const MX  = 18  * S;  // 54px marges gauche/droite
 const MT  = 18  * S;  // 54px marge haute
@@ -242,102 +243,109 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
   );
 }
 
-// ── Page Présentation & Intervenants ──────────────────────────────────────────
-function IntervenantsPage({ projet, pageNum, totalPages }) {
+// ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────
+function CoverPage({ projet, pageNum, totalPages }) {
   const participants = projet.participants || [];
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : null;
   const infoRows = [
-    projet.adresse       && ['Adresse',          projet.adresse],
-    dateStr              && ['Date de visite',    dateStr],
-    projet.maitreOuvrage && ["Maître d'ouvrage",  projet.maitreOuvrage],
+    projet.adresse       && ['Adresse',         projet.adresse],
+    dateStr              && ['Date de visite',   dateStr],
+    projet.maitreOuvrage && ["Maître d'ouvrage", projet.maitreOuvrage],
   ].filter(Boolean);
 
+  const DARK_H = Math.round(PH * 0.30);
+
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
-      <HdrBar projet={projet} dateStr={dateStr}/>
+    <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+      {/* ── Partie sombre : photo + titre ── */}
+      <div style={{ height:DARK_H, background:DA.black, position:'relative', overflow:'hidden', flexShrink:0 }}>
+        {projet.photo && (
+          <img src={projet.photo} alt=""
+            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
+        )}
+        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
+        <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
+          style={{ position:'absolute', top:MX, right:MX, height:24, objectFit:'contain' }}/>
+        <div style={{ position:'absolute', bottom:MX, left:MX+4 }}>
+          <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
+            Compte-rendu de visite
+          </div>
+          <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2 }}>{projet.nom}</div>
+        </div>
+      </div>
 
-        {/* ── Présentation du projet ── */}
+      {/* ── Partie blanche : présentation + intervenants ── */}
+      <div style={{ flex:1, padding:`18px ${MX}px 8px`, display:'flex', flexDirection:'column', gap:16, minHeight:0, overflow:'hidden' }}>
+
         {infoRows.length > 0 && (
-          <>
+          <div>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
               <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
               <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Présentation du projet</span>
             </div>
-            <div style={{ background:DA.grayXL, borderRadius:6, padding:'8px 10px', marginBottom:14, display:'flex', flexDirection:'column', gap:5, border:`1px solid ${DA.border}` }}>
+            <div style={{ background:DA.grayXL, borderRadius:6, padding:'8px 10px', border:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', gap:5 }}>
               {infoRows.map(([k, v]) => (
-                <div key={k} style={{ display:'flex', gap:0, fontSize:9 }}>
+                <div key={k} style={{ display:'flex', fontSize:9 }}>
                   <span style={{ color:DA.gray, fontWeight:700, width:90, flexShrink:0 }}>{k}</span>
                   <span style={{ color:DA.black }}>{v}</span>
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
 
-        {/* ── Intervenants ── */}
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-          <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>
-            Intervenants ({participants.length})
-          </span>
-        </div>
-
-        {/* En-tête tableau — badge fixe 24px + colonnes dans flex:1 pour éviter overflow */}
-        <div style={{ display:'flex', alignItems:'center', background:DA.black, borderRadius:'4px 4px 0 0', padding:'5px 0' }}>
-          <div style={{ width:24, flexShrink:0 }}/>
-          <div style={{ flex:1, display:'flex', minWidth:0 }}>
-            <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
-            <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
-            <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
-            <div style={{ flex:'0 0 14%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
-          </div>
-        </div>
-
-        {/* Lignes */}
-        {participants.map((pt, i) => {
-          const isPresent = !pt.presence || pt.presence === 'present';
-          const bg = i % 2 === 0 ? DA.grayXL : 'white';
-          return (
-            <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', background:bg, borderBottom:`1px solid ${DA.border}` }}>
-              {/* Badge — largeur fixe */}
-              <div style={{ width:24, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {pt.isAssemblage
-                  ? <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', border:`1px solid #FECACA` }}>A!</span>
-                  : <div style={{ width:5, height:5, borderRadius:'50%', background:'#bbb' }}/>
-                }
-              </div>
-              {/* Colonnes dans flex:1 pour respecter le même % que l'en-tête */}
-              <div style={{ flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
-                {/* Nom + poste */}
-                <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
-                  <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
-                  {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
-                </div>
-                {/* Téléphone */}
-                <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {pt.tel || '—'}
-                </div>
-                {/* Email */}
-                <div style={{ flex:'0 0 28%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                  {pt.email || '—'}
-                </div>
-                {/* Présence */}
-                <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
-                  <span style={{ fontSize:7.5, fontWeight:700,
-                    color: isPresent ? '#16A34A' : DA.red,
-                    background: isPresent ? '#DCFCE7' : '#FEE2E2',
-                    borderRadius:4, padding:'1px 5px' }}>
-                    {isPresent ? 'Présent' : 'Absent'}
-                  </span>
-                </div>
+        {participants.length > 0 && (
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+              <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>
+                Intervenants ({participants.length})
+              </span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', background:DA.black, borderRadius:'4px 4px 0 0', padding:'5px 0' }}>
+              <div style={{ width:24, flexShrink:0 }}/>
+              <div style={{ flex:1, display:'flex', minWidth:0 }}>
+                <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
+                <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
+                <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
+                <div style={{ flex:'0 0 14%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
               </div>
             </div>
-          );
-        })}
+            {participants.map((pt, i) => {
+              const isPresent = !pt.presence || pt.presence === 'present';
+              const bg = i % 2 === 0 ? DA.grayXL : 'white';
+              return (
+                <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', background:bg, borderBottom:`1px solid ${DA.border}` }}>
+                  <div style={{ width:24, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {pt.isAssemblage
+                      ? <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', border:`1px solid #FECACA` }}>A!</span>
+                      : <div style={{ width:5, height:5, borderRadius:'50%', background:'#bbb' }}/>
+                    }
+                  </div>
+                  <div style={{ flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
+                    <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
+                      <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                      {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
+                    </div>
+                    <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
+                    <div style={{ flex:'0 0 28%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
+                    <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
+                      <span style={{ fontSize:7.5, fontWeight:700,
+                        color: isPresent ? '#16A34A' : DA.red,
+                        background: isPresent ? '#DCFCE7' : '#FEE2E2',
+                        borderRadius:4, padding:'1px 5px' }}>
+                        {isPresent ? 'Présent' : 'Absent'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <PageFtr pageNum={pageNum} totalPages={totalPages}/>
@@ -481,10 +489,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   const recapItems      = localisations.flatMap(l => (l.items || []).filter(i => i.suivi !== 'fait'));
   const hasTableau      = includeTableauRecap && recapItems.length > 0;
   const hasConclusion   = includeConclusion;
-  const hasParticipants = (projet.participants || []).length > 0;
-  const pOff            = hasParticipants ? 1 : 0;
-  const totalPages      = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
-  const allItems        = localisations.flatMap(l => l.items || []);
+  const totalPages      = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
 
   if (!pages.length) {
     return (
@@ -501,54 +506,16 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       {/* Conteneur scalé pour mobile */}
       <div style={{ width: PW * scale, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', ...(scale < 1 ? { transform:`scale(${scale})`, marginBottom: -(PW * (1 - scale) * 0.5) } : {}) }}>
 
-      {/* ── PAGE DE GARDE ── */}
-      <div style={{ width:PW, minHeight:Math.round(PW * 0.5), background:DA.black, boxShadow:'0 2px 20px rgba(0,0,0,0.35)',
-        position:'relative', overflow:'hidden', display:'flex', flexDirection:'column', justifyContent:'flex-end',
-        padding:`${MX}px`, marginTop:20, flexShrink:0 }}>
-        {projet.photo && (
-          <img src={projet.photo} alt=""
-            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
-        )}
-        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
-        {/* Logo Assemblage Ingénierie — coin supérieur droit, sans cadre */}
-        <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
-          style={{ position:'absolute', top:MX, right:MX, height:24, objectFit:'contain', display:'block' }}/>
-        <div style={{ position:'relative' }}>
-          <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
-            Compte-rendu de visite
-          </div>
-          <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2, marginBottom:8 }}>{projet.nom}</div>
-          {projet.adresse && <div style={{ fontSize:9, color:'rgba(255,255,255,0.45)', marginBottom:3 }}>{projet.adresse}</div>}
-          {projet.maitreOuvrage && <div style={{ fontSize:9, color:'rgba(255,255,255,0.5)' }}>MO : {projet.maitreOuvrage}</div>}
-          <div style={{ display:'flex', gap:32, marginTop:14, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.12)' }}>
-            {[
-              { v: allItems.length, l:'Observations', red:false },
-              { v: allItems.filter(i=>i.urgence==='haute').length, l:'Urgentes', red:true },
-              { v: localisations.length, l:'Zones', red:false },
-            ].map(s => (
-              <div key={s.l}>
-                <div style={{ fontSize:20, fontWeight:800, color: s.red ? DA.red : 'white' }}>{s.v}</div>
-                <div style={{ fontSize:7, color:'rgba(255,255,255,0.35)', marginTop:2 }}>{s.l}</div>
-              </div>
-            ))}
-          </div>
-
-        </div>
+      {/* ── PAGE DE GARDE (photo/titre + présentation + intervenants) ── */}
+      <div style={{ marginTop:20 }}>
+        <CoverPage projet={projet} pageNum={1} totalPages={totalPages}/>
       </div>
-
-      {/* ── PAGE INTERVENANTS (dédiée) ── */}
-      {hasParticipants && (
-        <>
-          <PageSepBanner pageNum={2} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <IntervenantsPage projet={projet} pageNum={2} totalPages={totalPages}/>
-        </>
-      )}
 
       {/* ── PAGES OBSERVATIONS ── */}
       {pages.map((pageBlocks, pi) => {
         const firstId     = pageBlocks[0]?.id;
         const firstForced = breaks.has(firstId);
-        const pageNum     = pi + 2 + pOff;
+        const pageNum     = pi + 2;
         return (
           <React.Fragment key={pi}>
             <PageSepBanner
@@ -587,22 +554,22 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       {/* ── PAGE TABLEAU RÉCAP ── */}
       {hasTableau && (
         <>
-          <PageSepBanner pageNum={1 + pOff + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <TableauRecapPage localisations={localisations} projet={projet} pageNum={1 + pOff + pages.length + 1} totalPages={totalPages}/>
+          <PageSepBanner pageNum={1 + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+          <TableauRecapPage localisations={localisations} projet={projet} pageNum={1 + pages.length + 1} totalPages={totalPages}/>
         </>
       )}
 
       {/* ── PAGE CONCLUSION ── */}
       {hasConclusion && (
         <>
-          <PageSepBanner pageNum={1 + pOff + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <ConclusionPage conclusion={conclusion} projet={projet} pageNum={1 + pOff + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages}/>
+          <PageSepBanner pageNum={1 + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+          <ConclusionPage conclusion={conclusion} projet={projet} pageNum={1 + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages}/>
         </>
       )}
 
       {/* ── PLANS EN FIN DE RAPPORT ── */}
       {planLocs.map((loc, pi) => {
-        const pageNum = 1 + pOff + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
+        const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
         return (
           <React.Fragment key={`plan-end-${loc.id}`}>
             <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
