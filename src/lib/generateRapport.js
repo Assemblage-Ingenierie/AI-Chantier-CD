@@ -50,28 +50,48 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}) {
   const legendSy = SYMBOLS.filter(s => usedIds.has(s.id));
   if (!legendSy.length) return y;
 
-  y += 2;
-  doc.setFillColor(245, 245, 245); doc.roundedRect(ML, y, CW, 8, 1, 1, 'F');
-  doc.setDrawColor(...RD); doc.setLineWidth(0.3); doc.roundedRect(ML, y, CW, 8, 1, 1, 'S');
-  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-  doc.text('LÉGENDE', ML + 4, y + 5.5);
-  doc.setTextColor(0, 0, 0); y += 10;
+  y += 3;
 
-  let lx = ML, ly = y;
-  legendSy.forEach(s => {
-    const tw = doc.getTextWidth(s.label) + 20;
-    if (lx + tw > W - MR) { lx = ML; ly += 10; }
+  // Calcul de la grille : max 4 colonnes, réparties sur la largeur utile
+  const ICON_SZ = 9;
+  const ROW_H   = ICON_SZ + 4;
+  const COLS    = Math.min(legendSy.length, Math.max(1, Math.floor(CW / 52)));
+  const numRows = Math.ceil(legendSy.length / COLS);
+  const HDR_H   = 9;
+  const totalH  = HDR_H + numRows * ROW_H + 5;
+
+  // Boîte extérieure (englobe titre ET items)
+  doc.setFillColor(249, 249, 249);
+  doc.setDrawColor(...RD); doc.setLineWidth(0.4);
+  doc.roundedRect(ML, y, CW, totalH, 2, 2, 'FD');
+
+  // En-tête "LÉGENDE"
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
+  doc.text('LÉGENDE', ML + 4, y + 6);
+  doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15);
+  doc.line(ML + 0.5, y + HDR_H, ML + CW - 0.5, y + HDR_H);
+
+  // Items à l'intérieur de la boîte
+  const colWidth = CW / COLS;
+  legendSy.forEach((s, ix) => {
+    const col = ix % COLS;
+    const row = Math.floor(ix / COLS);
+    const lx  = ML + 3 + col * colWidth;
+    const ly  = y + HDR_H + 3 + row * ROW_H;
+
     const iconUrl = symbolIcons[s.id];
     if (iconUrl) {
-      try { doc.addImage(iconUrl, 'PNG', lx, ly - 5.5, 7, 7, undefined, 'FAST'); } catch {}
+      try { doc.addImage(iconUrl, 'PNG', lx, ly, ICON_SZ, ICON_SZ, undefined, 'FAST'); } catch {}
     } else {
-      doc.setFillColor(...RD); doc.rect(lx, ly - 3.5, 6, 4.5, 'F');
+      doc.setFillColor(...RD); doc.rect(lx, ly + 2, 6, 5, 'F');
     }
-    doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.text(s.label, lx + 10, ly + 0.2);
-    lx += tw;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+    doc.setTextColor(50, 50, 50);
+    doc.text(s.label, lx + ICON_SZ + 2, ly + ICON_SZ / 2 + 1.5);
   });
-  return ly + 6;
+  doc.setTextColor(0, 0, 0);
+
+  return y + totalH + 3;
 }
 
 /**
@@ -380,7 +400,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
     const recapRows = localisations.flatMap(loc =>
       (loc.items || [])
-        .filter(i => i.suivi !== 'fait')
+        .filter(i => i.titre && i.suivi !== 'fait')
         .map(i => ({ locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi }))
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
@@ -482,7 +502,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.addImage(planImg, ext, ML, ay, CW, ih, undefined, 'FAST');
         ay += ih + 4;
       } catch { ay += 6; }
-      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR);
+      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR, symbolIcons);
     });
   }
 

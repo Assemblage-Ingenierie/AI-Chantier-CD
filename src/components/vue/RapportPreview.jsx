@@ -178,12 +178,12 @@ function PlanBlock({ loc }) {
           style={{ width:'100%', display:'block', objectFit:'contain' }}/>
       )}
       {legendSy.length > 0 && (
-        <div style={{ padding:'4px 9px 6px', background:'#fafafa', borderTop:`1px solid ${DA.border}` }}>
-          <div style={{ fontSize:7, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:4 }}>Légende</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 12px' }}>
+        <div style={{ padding:'7px 10px 9px', background:'#fafafa', borderTop:`1px solid ${DA.border}`, border:`1px solid ${DA.red}`, borderRadius:'0 0 4px 4px', borderTop:`2px solid ${DA.red}` }}>
+          <div style={{ fontSize:9, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'5px 18px' }}>
             {legendSy.map(s => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:9, color:DA.gray }}>
-                <SymbolIcon sym={s} size={13}/>
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:DA.gray }}>
+                <SymbolIcon sym={s} size={18}/>
                 {s.label}
               </div>
             ))}
@@ -223,22 +223,20 @@ function A4Card({ children, projet, pageNum, totalPages }) {
 
 function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }) {
   return (
-    <div style={{ width:PW, background:'#3a3a3a', padding:'5px 0', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
-      <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.1)', marginLeft:MX }}/>
-      <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.45)', letterSpacing:1, whiteSpace:'nowrap' }}>
-        PAGE {pageNum} / {totalPages}
+    <div style={{ width:PW, background:'#1e1e1e', padding:'10px 0 8px', display:'flex', flexDirection:'column', alignItems:'center', gap:6, flexShrink:0 }}>
+      <span style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,0.6)', letterSpacing:1.5, textTransform:'uppercase', whiteSpace:'nowrap' }}>
+        — Page {pageNum} / {totalPages} —
       </span>
       {firstBlockId && (
         <div onClick={() => onToggle(firstBlockId)}
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:4, cursor:'pointer',
-            background: isForced ? DA.red : 'rgba(255,255,255,0.08)',
-            border: `1px solid ${isForced ? DA.red : 'rgba(255,255,255,0.15)'}` }}>
-          <span style={{ fontSize:9, fontWeight:700, color: isForced ? 'white' : 'rgba(255,255,255,0.4)', whiteSpace:'nowrap' }}>
-            {isForced ? '× Saut forcé' : '⊕ Forcer ici'}
+          style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 10px', borderRadius:4, cursor:'pointer',
+            background: isForced ? DA.red : 'rgba(255,255,255,0.07)',
+            border: `1px solid ${isForced ? DA.red : 'rgba(255,255,255,0.14)'}` }}>
+          <span style={{ fontSize:9, fontWeight:700, color: isForced ? 'white' : 'rgba(255,255,255,0.45)', whiteSpace:'nowrap' }}>
+            {isForced ? '× Saut forcé' : '⊕ Forcer saut ici'}
           </span>
         </div>
       )}
-      <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.1)', marginRight:MX }}/>
     </div>
   );
 }
@@ -401,7 +399,7 @@ function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
 function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
   const rows = localisations.flatMap(loc =>
-    (loc.items || []).filter(i => i.suivi !== 'fait').map(i => ({
+    (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => ({
       locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi,
     }))
   ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
@@ -476,7 +474,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
-  const [editingItem, setEditingItem] = useState(null); // { item, locId }
+  const [editingItem, setEditingItem] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const planLocs = useMemo(
     () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg) : [],
     [localisations, plansEnFin]
@@ -484,12 +483,41 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
 
   const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
   const containerRef = useRef();
+  const scrollRef    = useRef();
+  const pageRefs     = useRef([]);
   const scale = usePreviewScale(containerRef);
 
-  const recapItems      = localisations.flatMap(l => (l.items || []).filter(i => i.suivi !== 'fait'));
-  const hasTableau      = includeTableauRecap && recapItems.length > 0;
-  const hasConclusion   = includeConclusion;
-  const totalPages      = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
+  const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
+  const hasTableau    = includeTableauRecap && recapItems.length > 0;
+  const hasConclusion = includeConclusion;
+  const totalPages    = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
+
+  // Suivi de la page courante via scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handler = () => {
+      const ctop = el.getBoundingClientRect().top;
+      let bestPage = 1, bestDist = Infinity;
+      pageRefs.current.forEach((ref, i) => {
+        if (!ref) return;
+        const dist = Math.abs(ref.getBoundingClientRect().top - ctop - 30);
+        if (dist < bestDist) { bestDist = dist; bestPage = i + 1; }
+      });
+      setCurrentPage(bestPage);
+    };
+    el.addEventListener('scroll', handler, { passive: true });
+    return () => el.removeEventListener('scroll', handler);
+  }, [totalPages]);
+
+  const scrollToPage = useCallback((n) => {
+    const idx = Math.max(0, Math.min(totalPages - 1, n - 1));
+    const ref = pageRefs.current[idx];
+    if (!ref || !scrollRef.current) return;
+    const elTop = ref.getBoundingClientRect().top;
+    const ctop  = scrollRef.current.getBoundingClientRect().top;
+    scrollRef.current.scrollBy({ top: elTop - ctop - 16, behavior: 'smooth' });
+  }, [totalPages]);
 
   if (!pages.length) {
     return (
@@ -502,103 +530,144 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   }
 
   return (
-    <div ref={containerRef} style={{ flex:1, overflowY:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
-      {/* Conteneur scalé pour mobile */}
-      <div style={{ width: PW * scale, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', ...(scale < 1 ? { transform:`scale(${scale})`, marginBottom: -(PW * (1 - scale) * 0.5) } : {}) }}>
+    <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
-      {/* ── PAGE DE GARDE (photo/titre + présentation + intervenants) ── */}
-      <div style={{ marginTop:20 }}>
-        <CoverPage projet={projet} pageNum={1} totalPages={totalPages}/>
+      {/* ── Barre de navigation pages ── */}
+      <div style={{ background:'#1e1e1e', padding:'7px 14px', display:'flex', alignItems:'center', gap:10, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        <button
+          onClick={() => scrollToPage(currentPage - 1)}
+          disabled={currentPage <= 1}
+          style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 13px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+          ‹
+        </button>
+        <div style={{ flex:1, textAlign:'center' }}>
+          <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5 }}>
+            Page {currentPage} / {totalPages}
+          </span>
+        </div>
+        <button
+          onClick={() => scrollToPage(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 13px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+          ›
+        </button>
       </div>
 
-      {/* ── PAGES OBSERVATIONS ── */}
-      {pages.map((pageBlocks, pi) => {
-        const firstId     = pageBlocks[0]?.id;
-        const firstForced = breaks.has(firstId);
-        const pageNum     = pi + 2;
-        return (
-          <React.Fragment key={pi}>
-            <PageSepBanner
-              pageNum={pageNum}
-              totalPages={totalPages}
-              firstBlockId={firstId}
-              isForced={firstForced}
-              onToggle={onTogglePageBreak}
+      {/* ── Zone défilante ── */}
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+        {/* Conteneur scalé pour mobile */}
+        <div style={{ width: PW * scale, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', ...(scale < 1 ? { transform:`scale(${scale})`, marginBottom: -(PW * (1 - scale) * 0.5) } : {}) }}>
+
+        {/* ── PAGE DE GARDE ── */}
+        <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
+          <CoverPage projet={projet} pageNum={1} totalPages={totalPages}/>
+        </div>
+
+        {/* ── PAGES OBSERVATIONS ── */}
+        {pages.map((pageBlocks, pi) => {
+          const firstId     = pageBlocks[0]?.id;
+          const firstForced = breaks.has(firstId);
+          const pageNum     = pi + 2;
+          return (
+            <React.Fragment key={pi}>
+              <PageSepBanner
+                pageNum={pageNum}
+                totalPages={totalPages}
+                firstBlockId={firstId}
+                isForced={firstForced}
+                onToggle={onTogglePageBreak}
+              />
+              <div ref={el => { pageRefs.current[pi + 1] = el; }}>
+                <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
+                  {pageBlocks.map((block, bi) => (
+                    <div key={block.id}>
+                      {bi > 0 && (
+                        <BreakControl
+                          id={block.id}
+                          active={breaks.has(block.id)}
+                          onToggle={onTogglePageBreak}
+                        />
+                      )}
+                      {block.type === 'zone'
+                        ? <ZoneHeader loc={block.loc} />
+                        : block.type === 'plan'
+                        ? <PlanBlock loc={block.loc} />
+                        : <ItemBlock item={block.item} ppl={ppl}
+                            onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
+                          />
+                      }
+                    </div>
+                  ))}
+                </A4Card>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        {/* ── PAGE TABLEAU RÉCAP ── */}
+        {hasTableau && (() => {
+          const pageNum = 1 + pages.length + 1;
+          const pageIdx = 1 + pages.length;
+          return (
+            <>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <div ref={el => { pageRefs.current[pageIdx] = el; }}>
+                <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ── PAGE CONCLUSION ── */}
+        {hasConclusion && (() => {
+          const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + 1;
+          const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0);
+          return (
+            <>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <div ref={el => { pageRefs.current[pageIdx] = el; }}>
+                <ConclusionPage conclusion={conclusion} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ── PLANS EN FIN DE RAPPORT ── */}
+        {planLocs.map((loc, pi) => {
+          const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
+          const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
+          return (
+            <React.Fragment key={`plan-end-${loc.id}`}>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <div ref={el => { pageRefs.current[pageIdx] = el; }}>
+                <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
+                  <PlanBlock loc={loc} />
+                </A4Card>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        <div style={{ height:24 }}/>
+        </div>{/* fin conteneur scalé */}
+
+        {editingItem && (() => {
+          const editingLoc = localisations.find(l => l.id === editingItem.locId);
+          return (
+            <ItemModal
+              item={editingItem.item}
+              planBg={editingLoc?.planBg}
+              planAnnotations={editingLoc?.planAnnotations}
+              onClose={() => setEditingItem(null)}
+              onSave={(form) => {
+                onUpdateItem(editingItem.locId, editingItem.item.id, form);
+                setEditingItem(null);
+              }}
+              onOpenAnnot={() => setEditingItem(null)}
             />
-            <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-              {pageBlocks.map((block, bi) => (
-                <div key={block.id}>
-                  {/* Contrôle saut entre blocs sur la MÊME page */}
-                  {bi > 0 && (
-                    <BreakControl
-                      id={block.id}
-                      active={breaks.has(block.id)}
-                      onToggle={onTogglePageBreak}
-                    />
-                  )}
-                  {block.type === 'zone'
-                    ? <ZoneHeader loc={block.loc} />
-                    : block.type === 'plan'
-                    ? <PlanBlock loc={block.loc} />
-                    : <ItemBlock item={block.item} ppl={ppl}
-                        onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
-                      />
-                  }
-                </div>
-              ))}
-            </A4Card>
-          </React.Fragment>
-        );
-      })}
-
-      {/* ── PAGE TABLEAU RÉCAP ── */}
-      {hasTableau && (
-        <>
-          <PageSepBanner pageNum={1 + pages.length + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <TableauRecapPage localisations={localisations} projet={projet} pageNum={1 + pages.length + 1} totalPages={totalPages}/>
-        </>
-      )}
-
-      {/* ── PAGE CONCLUSION ── */}
-      {hasConclusion && (
-        <>
-          <PageSepBanner pageNum={1 + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-          <ConclusionPage conclusion={conclusion} projet={projet} pageNum={1 + pages.length + (hasTableau ? 1 : 0) + 1} totalPages={totalPages}/>
-        </>
-      )}
-
-      {/* ── PLANS EN FIN DE RAPPORT ── */}
-      {planLocs.map((loc, pi) => {
-        const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
-        return (
-          <React.Fragment key={`plan-end-${loc.id}`}>
-            <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-            <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-              <PlanBlock loc={loc} />
-            </A4Card>
-          </React.Fragment>
-        );
-      })}
-
-      <div style={{ height:24 }}/>
-      </div>{/* fin conteneur scalé */}
-
-      {editingItem && (() => {
-        const editingLoc = localisations.find(l => l.id === editingItem.locId);
-        return (
-          <ItemModal
-            item={editingItem.item}
-            planBg={editingLoc?.planBg}
-            planAnnotations={editingLoc?.planAnnotations}
-            onClose={() => setEditingItem(null)}
-            onSave={(form) => {
-              onUpdateItem(editingItem.locId, editingItem.item.id, form);
-              setEditingItem(null);
-            }}
-            onOpenAnnot={() => setEditingItem(null)}
-          />
-        );
-      })()}
+          );
+        })()}
+      </div>
     </div>
   );
 }

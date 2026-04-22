@@ -38,15 +38,16 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
   // Objet "projet fusionné" passé aux enfants — ils ne voient pas la structure visites
   const visitProjet = useMemo(() => ({
     ...projet,
-    localisations:     selectedVisite?.localisations     ?? [],
-    dateVisite:        selectedVisite?.dateVisite         ?? null,
-    participants:      selectedVisite?.participants       ?? [],
-    tableauRecap:      selectedVisite?.tableauRecap       ?? [],
-    photosParLigne:    selectedVisite?.photosParLigne     ?? 2,
-    plansEnFin:        selectedVisite?.plansEnFin         ?? false,
-    rapportPageBreaks: selectedVisite?.rapportPageBreaks  ?? [],
-    includeConclusion: selectedVisite?.includeConclusion  ?? false,
-    conclusion:        selectedVisite?.conclusion         ?? '',
+    localisations:       selectedVisite?.localisations       ?? [],
+    dateVisite:          selectedVisite?.dateVisite           ?? null,
+    participants:        selectedVisite?.participants         ?? [],
+    tableauRecap:        selectedVisite?.tableauRecap         ?? [],
+    photosParLigne:      selectedVisite?.photosParLigne       ?? 2,
+    plansEnFin:          selectedVisite?.plansEnFin           ?? false,
+    rapportPageBreaks:   selectedVisite?.rapportPageBreaks    ?? [],
+    includeTableauRecap: selectedVisite?.includeTableauRecap  !== false,
+    includeConclusion:   selectedVisite?.includeConclusion    ?? false,
+    conclusion:          selectedVisite?.conclusion           ?? '',
   }), [projet, selectedVisite]);
 
   // Route les mises à jour : champs visite → visites[], champs projet → projet
@@ -87,6 +88,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
       id: newId, label: `Visite ${n}`,
       dateVisite: today, participants: [], tableauRecap: [],
       photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
+      includeTableauRecap: true, includeConclusion: false, conclusion: '',
       localisations: [],
     };
     onUpdate({ visites: [...visites, newVisite] });
