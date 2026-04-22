@@ -15,7 +15,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, undo, canUndo } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [undoToast, setUndoToast] = useState(null);
   const undoToastRef = useRef(null);
@@ -131,7 +131,7 @@ export default function ChantierAI({ profile, onLogout }) {
             <Dashboard
               projets={projets}
               remoteLoaded={remoteLoaded}
-              onSelect={(p) => { setOuvert(p); hydratePhotos(p.id); hydratePlans(p.id); }}
+              onSelect={(p) => { setOuvert(p); hydratePhotos(p.id); hydratePlans(p.id); hydratePlanLibrary(p.id); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
               onArchive={handleArchive}

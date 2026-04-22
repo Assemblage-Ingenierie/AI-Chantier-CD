@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote } from '../lib/storage.js';
 
 const MAX_HISTORY = 20;
 
@@ -288,6 +288,22 @@ export function useProjets(onSyncStatus) {
     }));
   };
 
+  const hydratePlanLibrary = async (projectId) => {
+    const plansMap = await hydratePlanLibraryRemote(projectId);
+    if (!plansMap || !Object.keys(plansMap).length) return;
+    setProjets(ps => ps.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        planLibrary: (p.planLibrary || []).map(pl => {
+          const fetched = plansMap[pl.id];
+          if (!fetched) return pl;
+          return { ...pl, bg: fetched.bg ?? pl.bg, data: fetched.data ?? pl.data };
+        }),
+      };
+    }));
+  };
+
   const undo = useCallback(() => {
     if (!historyRef.current.length) return false;
     const prev = historyRef.current[historyRef.current.length - 1];
@@ -305,5 +321,5 @@ export function useProjets(onSyncStatus) {
 
   const canUndo = () => historyRef.current.length > 0;
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, undo, canUndo };
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo };
 }

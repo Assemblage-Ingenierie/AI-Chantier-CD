@@ -102,8 +102,9 @@ async function loadRemote() {
     // photo exclu du SELECT — peut être un gros base64 qui cause HTTP 500.
     // Récupéré depuis le cache local lors du merge, ou migré vers Storage à la prochaine save.
     sb.from('chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'),
+    // bg/data exclus — blobs volumineux (images de plans), chargés lazily à l'ouverture du projet
     sb.from('chantier_plans')
-      .select('id,chantier_id,nom,bg,data,sort_order')
+      .select('id,chantier_id,nom,sort_order')
       .order('sort_order'),
     sb.from('chantier_localisations')
       .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
@@ -183,7 +184,7 @@ async function loadRemote() {
       photo:         null, // chargé depuis le cache local (non sélectionné pour éviter HTTP 500)
       updatedAt:     c.updated_at,
       planLibrary:   (plansByChantier[c.id] ?? []).map(pl => ({
-        id: pl.id, nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null,
+        id: pl.id, nom: pl.nom ?? '', bg: null, data: null, // bg/data chargés lazily
       })),
       visites,
     };
@@ -230,6 +231,21 @@ export async function hydrateChantierPhotos(chantierIds) {
     }
     return result;
   } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
+}
+
+// Charge bg/data de la bibliothèque de plans pour un projet — appelé à l'ouverture du projet
+export async function hydratePlanLibrary(projectId) {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('chantier_plans')
+      .select('id,bg,data').eq('chantier_id', projectId);
+    if (error) { console.warn('hydratePlanLibrary error:', error); return null; }
+    const map = {};
+    for (const row of (data ?? [])) {
+      if (row.bg || row.data) map[row.id] = { bg: row.bg ?? null, data: row.data ?? null };
+    }
+    return map; // { planId: { bg, data } }
+  } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }
 }
 
 // Charge plan_bg/plan_data pour un projet donné — appelé paresseusement à l'ouverture du projet
