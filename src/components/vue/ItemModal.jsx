@@ -176,9 +176,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const stopDictaphone = () => {
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
-    // r.stop() déclenche onresult (dernière phrase) puis onend (reset bouton)
-    // Ne pas appeler setRecording(false) ici — onend s'en charge
-    recogRef.current?.stop();
+    setRecording(false);   // feedback immédiat — pas d'attente de onend
+    setInterimText('');
+    recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
   };
 
   const fixSpelling = async () => {
@@ -312,33 +312,36 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
           {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
-            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6 }}>
-              <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
-              <div style={{ display:'flex',gap:5 }}>
-                <button
-                  onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
-                  onPointerUp={() => { if (recording) stopDictaphone(); }}
-                  onPointerCancel={() => { if (recording) stopDictaphone(); }}
-                  style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:20,border:`2px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:12,fontWeight:700,userSelect:'none',touchAction:'none',WebkitUserSelect:'none',minWidth:80,justifyContent:'center' }}>
-                  {recording ? <Ic n="spn" s={13}/> : <Ic n="mic" s={14}/>}
-                  {recording ? 'Relâcher' : 'Dicter'}
-                </button>
-                <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
-                  {correcting ? <Ic n="spn" s={11}/> : <Ic n="chk" s={11}/>}
-                  {correcting ? '…' : 'Corriger'}
-                </button>
-              </div>
-            </div>
+            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
             <textarea value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée…" rows={4}
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
-                {interimText ? interimText + '…' : '🎤 En écoute — parlez maintenant…'}
+                {interimText ? interimText + '…' : 'En écoute — parlez maintenant…'}
               </p>
             )}
+
+            {/* Bouton dictée — grand, rouge, press-and-hold */}
+            <button
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
+              onPointerUp={() => { if (recording) stopDictaphone(); }}
+              onPointerCancel={() => { if (recording) stopDictaphone(); }}
+              style={{ marginTop:8,width:'100%',padding:'13px 16px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s',boxShadow:recording ? 'inset 0 2px 6px rgba(0,0,0,0.25)' : '0 2px 8px rgba(185,28,28,0.35)' }}>
+              <Ic n={recording ? 'spn' : 'mic'} s={17}/>
+              {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
+            </button>
+
+            {/* Bouton corriger — apparaît sous la zone dès qu'il y a du texte */}
+            {form.commentaire?.trim() && (
+              <button onClick={fixSpelling} disabled={correcting}
+                style={{ marginTop:6,width:'100%',padding:'9px 12px',borderRadius:8,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:12,fontWeight:600,cursor:'pointer',opacity: correcting ? 0.6 : 1 }}>
+                {correcting ? <Ic n="spn" s={12}/> : <Ic n="chk" s={12}/>}
+                {correcting ? 'Correction en cours…' : 'Corriger avec l\'IA'}
+              </button>
+            )}
+
             <IASug
               content={form.titre}
               onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
