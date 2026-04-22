@@ -134,7 +134,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     // Scale annotations so they appear at a consistent visual size on screen,
     // regardless of the image's native resolution (photos are often 3000+ px wide
     // but displayed at ~350px on mobile, which makes unscaled annotations invisible).
-    const displayScale = cv.clientWidth > 0 ? cv.width / cv.clientWidth : 1;
+    const displayScale = cv.clientWidth > 0 ? (cv.width / cv.clientWidth) * 0.5 : 1;
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
     drawAnnotationPaths(ctx, all, displayScale);

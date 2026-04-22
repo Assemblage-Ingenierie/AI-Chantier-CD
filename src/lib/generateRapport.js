@@ -73,7 +73,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
   y += 3;
 
   // Grille : jusqu'à 4 colonnes
-  const ICON_SZ = 11;
+  const ICON_SZ = 8;
   const ROW_H   = ICON_SZ + 5;
   const COLS    = Math.min(items.length, Math.max(1, Math.floor(CW / 56)));
   const numRows = Math.ceil(items.length / COLS);
