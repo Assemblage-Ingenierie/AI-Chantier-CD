@@ -61,9 +61,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
-    recordingRef.current = true;
-    lastIdxRef.current = 0;
-    setRecording(true);
 
     const r = new SR();
     r.lang = 'fr-FR';
@@ -86,43 +83,33 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     };
 
     r.onerror = (ev) => {
+      if (ev.error === 'no-speech') return;
       if (ev.error === 'aborted') return;
-      if (ev.error === 'no-speech') return; // continuous mode — ignore
-      // Fatal error
+      // Erreur visible pour diagnostiquer (not-allowed, network, audio-capture…)
+      alert(`Erreur dictée: ${ev.error}`);
       recordingRef.current = false;
       recogRef.current = null;
       setRecording(false);
     };
 
+    // onend = reconnaissance arrêtée (silence long, iOS, ou stop manuel)
+    // → reset le bouton; l'utilisateur peut rappuyer pour continuer
     r.onend = () => {
       recogRef.current = null;
-      if (!recordingRef.current) return;
-      // Chrome stops continuous recognition after ~60s of silence — restart
-      clearTimeout(restartTimer.current);
-      restartTimer.current = setTimeout(() => {
-        if (!recordingRef.current) return;
-        lastIdxRef.current = 0;
-        try {
-          const r2 = new SR();
-          r2.lang = 'fr-FR';
-          r2.continuous = true;
-          r2.interimResults = false;
-          r2.maxAlternatives = 1;
-          r2.onresult = r.onresult;
-          r2.onerror = r.onerror;
-          r2.onend = r.onend;
-          r2.start();
-          recogRef.current = r2;
-        } catch {}
-      }, 300);
+      if (recordingRef.current) {
+        recordingRef.current = false;
+        setRecording(false);
+      }
     };
 
     try {
       r.start();
       recogRef.current = r;
+      recordingRef.current = true;
+      lastIdxRef.current = 0;
+      setRecording(true);
     } catch (e) {
-      recordingRef.current = false;
-      setRecording(false);
+      alert(`Impossible de démarrer le microphone: ${e.message}`);
     }
   };
 
