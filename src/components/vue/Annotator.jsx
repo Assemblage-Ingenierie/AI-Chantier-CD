@@ -130,41 +130,25 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, cv.width, cv.height);
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
+
+    // Scale annotations so they appear at a consistent visual size on screen,
+    // regardless of the image's native resolution (photos are often 3000+ px wide
+    // but displayed at ~350px on mobile, which makes unscaled annotations invisible).
+    const displayScale = cv.clientWidth > 0 ? cv.width / cv.clientWidth : 1;
+
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
-    all.forEach(p => {
-      if (p.type === 'viewpoint') { ctx.save(); drawVP(ctx, p); ctx.restore(); return; }
-      if (p.type === 'symbol') {
-        ctx.save();
-        const sm = SYMBOLS.find(x => x.id === p.symbolId);
-        if (sm) sm.draw(ctx, p.x, p.y, p.size, p.color);
-        ctx.restore();
-        return;
-      }
-      if (p.type === 'text') {
-        ctx.save();
-        ctx.font = `bold ${12 + p.size * 2}px Arial`;
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
-        ctx.strokeText(p.text, p.x, p.y);
-        ctx.fillStyle = p.color;
-        ctx.fillText(p.text, p.x, p.y);
-        ctx.restore();
-        return;
-      }
-      if (!p.points?.length) return;
-      ctx.save();
-      ctx.beginPath();
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = p.tool === 'eraser' ? p.size * 6 : p.size;
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.globalCompositeOperation = p.tool === 'eraser' ? 'destination-out' : 'source-over';
-      ctx.moveTo(p.points[0].x, p.points[0].y);
-      p.points.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
-      ctx.stroke();
-      ctx.restore();
-    });
+    drawAnnotationPaths(ctx, all, displayScale);
+
     // Vue en cours de tracé
     if (pendingVP) {
+      ctx.save();
+      if (displayScale > 1) {
+        ctx.translate(pendingVP.x, pendingVP.y);
+        ctx.scale(displayScale, displayScale);
+        ctx.translate(-pendingVP.x, -pendingVP.y);
+      }
       drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
+      ctx.restore();
     }
   }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount]);
 
