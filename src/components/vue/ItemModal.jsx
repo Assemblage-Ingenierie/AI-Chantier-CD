@@ -33,11 +33,17 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
-  const recogRef    = useRef(null);
+  const recogRef     = useRef(null);
   const recordingRef = useRef(false);
+  const lastIdxRef   = useRef(0);
+  const restartTimer = useRef(null);
 
   // Stop dictaphone si la modale se ferme
-  useEffect(() => () => { recordingRef.current = false; recogRef.current?.abort(); }, []);
+  useEffect(() => () => {
+    recordingRef.current = false;
+    clearTimeout(restartTimer.current);
+    recogRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -52,50 +58,78 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     onClose();
   };
 
-  const doRecognize = () => {
-    if (!recordingRef.current) return;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const r = new SR();
-    r.lang = 'fr-FR';
-    r.continuous = false;
-    r.interimResults = false;
-    r.maxAlternatives = 1;
-    r.onresult = (e) => {
-      const txt = Array.from(e.results)
-        .filter(res => res.isFinal)
-        .map(res => res[0].transcript.trim())
-        .filter(Boolean).join(' ');
-      if (txt) setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + txt }));
-    };
-    r.onerror = (ev) => {
-      recogRef.current = null;
-      if (ev.error === 'no-speech' || ev.error === 'aborted') {
-        if (recordingRef.current) setTimeout(doRecognize, 80);
-        return;
-      }
-      recordingRef.current = false;
-      setRecording(false);
-    };
-    r.onend = () => {
-      recogRef.current = null;
-      // Le moteur s'arrête automatiquement après silence — redémarrer si toujours actif
-      if (recordingRef.current) setTimeout(doRecognize, 80);
-    };
-    r.start();
-    recogRef.current = r;
-  };
-
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
     recordingRef.current = true;
+    lastIdxRef.current = 0;
     setRecording(true);
-    doRecognize();
+
+    const r = new SR();
+    r.lang = 'fr-FR';
+    r.continuous = true;
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+
+    r.onresult = (e) => {
+      const newResults = Array.from(e.results).slice(lastIdxRef.current);
+      lastIdxRef.current = e.results.length;
+      const txt = newResults
+        .filter(res => res.isFinal)
+        .map(res => res[0].transcript.trim())
+        .filter(Boolean)
+        .join('\n');
+      if (txt) setForm(f => ({
+        ...f,
+        commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
+      }));
+    };
+
+    r.onerror = (ev) => {
+      if (ev.error === 'aborted') return;
+      if (ev.error === 'no-speech') return; // continuous mode — ignore
+      // Fatal error
+      recordingRef.current = false;
+      recogRef.current = null;
+      setRecording(false);
+    };
+
+    r.onend = () => {
+      recogRef.current = null;
+      if (!recordingRef.current) return;
+      // Chrome stops continuous recognition after ~60s of silence — restart
+      clearTimeout(restartTimer.current);
+      restartTimer.current = setTimeout(() => {
+        if (!recordingRef.current) return;
+        lastIdxRef.current = 0;
+        try {
+          const r2 = new SR();
+          r2.lang = 'fr-FR';
+          r2.continuous = true;
+          r2.interimResults = false;
+          r2.maxAlternatives = 1;
+          r2.onresult = r.onresult;
+          r2.onerror = r.onerror;
+          r2.onend = r.onend;
+          r2.start();
+          recogRef.current = r2;
+        } catch {}
+      }, 300);
+    };
+
+    try {
+      r.start();
+      recogRef.current = r;
+    } catch (e) {
+      recordingRef.current = false;
+      setRecording(false);
+    }
   };
 
   const stopDictaphone = () => {
     recordingRef.current = false;
-    recogRef.current?.abort();
+    clearTimeout(restartTimer.current);
+    recogRef.current?.stop();
     recogRef.current = null;
     setRecording(false);
   };
