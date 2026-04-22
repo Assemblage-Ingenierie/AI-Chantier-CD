@@ -33,10 +33,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
-  const recogRef = useRef(null);
-  const lastResultIdx = useRef(0);
+  const recogRef    = useRef(null);
+  const recordingRef = useRef(false);
 
-  // Auto-save brouillon à chaque changement de form
+  // Stop dictaphone si la modale se ferme
+  useEffect(() => () => { recordingRef.current = false; recogRef.current?.abort(); }, []);
+
   useEffect(() => {
     const t = setTimeout(() => {
       try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi })); } catch {}
@@ -44,52 +46,58 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
 
-  // Stop dictaphone si la modale se ferme
-  useEffect(() => () => { recogRef.current?.stop(); }, []);
-
   const handleSave = () => {
     try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
     onSave(form);
     onClose();
   };
 
+  const doRecognize = () => {
+    if (!recordingRef.current) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const r = new SR();
+    r.lang = 'fr-FR';
+    r.continuous = false;
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    r.onresult = (e) => {
+      const txt = Array.from(e.results)
+        .filter(res => res.isFinal)
+        .map(res => res[0].transcript.trim())
+        .filter(Boolean).join(' ');
+      if (txt) setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + txt }));
+    };
+    r.onerror = (ev) => {
+      recogRef.current = null;
+      if (ev.error === 'no-speech' || ev.error === 'aborted') {
+        if (recordingRef.current) setTimeout(doRecognize, 80);
+        return;
+      }
+      recordingRef.current = false;
+      setRecording(false);
+    };
+    r.onend = () => {
+      recogRef.current = null;
+      // Le moteur s'arrête automatiquement après silence — redémarrer si toujours actif
+      if (recordingRef.current) setTimeout(doRecognize, 80);
+    };
+    r.start();
+    recogRef.current = r;
+  };
+
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
-    if (recogRef.current) return;
-    const r = new SR();
-    r.lang = 'fr-FR';
-    r.continuous = true;
-    r.interimResults = false;
-    lastResultIdx.current = 0;
-    r.onresult = (e) => {
-      let newText = '';
-      for (let i = lastResultIdx.current; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          newText += (newText ? ' ' : '') + e.results[i][0].transcript.trim();
-          lastResultIdx.current = i + 1;
-        }
-      }
-      if (newText) setForm(f => ({ ...f, commentaire: (f.commentaire ? f.commentaire + ' ' : '') + newText }));
-    };
-    r.onerror = () => { recogRef.current = null; setRecording(false); };
-    r.onend   = () => { recogRef.current = null; setRecording(false); };
-    r.start();
-    recogRef.current = r;
+    recordingRef.current = true;
     setRecording(true);
+    doRecognize();
   };
 
   const stopDictaphone = () => {
-    recogRef.current?.stop();
+    recordingRef.current = false;
+    recogRef.current?.abort();
     recogRef.current = null;
     setRecording(false);
-  };
-
-  const onMicMouseDown = (e) => {
-    e.preventDefault();
-    startDictaphone();
-    const onUp = () => { stopDictaphone(); document.removeEventListener('mouseup', onUp); };
-    document.addEventListener('mouseup', onUp);
   };
 
   const fixSpelling = async () => {
@@ -227,12 +235,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
               <div style={{ display:'flex',gap:5 }}>
                 <button
-                  onMouseDown={onMicMouseDown}
-                  onTouchStart={e => { e.preventDefault(); startDictaphone(); }}
-                  onTouchEnd={stopDictaphone}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none' }}>
+                  onClick={() => recording ? stopDictaphone() : startDictaphone()}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none' }}>
                   {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                  {recording ? 'Écoute…' : 'Dicter'}
+                  {recording ? '■ Stop' : 'Dicter'}
                 </button>
                 <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
                   style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
