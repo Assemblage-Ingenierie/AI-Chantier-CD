@@ -2,12 +2,13 @@ import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 
-/** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG. */
+/** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
+ *  Les annotations sont agrandies proportionnellement à la résolution de l'image
+ *  pour rester lisibles une fois réduites à la taille A4. */
 async function renderPlanImage(planBg, planAnnotations) {
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
-  if (exported) return exported;
-  if (!planBg)  return null;
+  if (!planBg) return exported ?? null;
   if (!paths?.length) return planBg;
   return new Promise(resolve => {
     const img = new window.Image();
@@ -17,10 +18,12 @@ async function renderPlanImage(planBg, planAnnotations) {
       cv.height = img.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      drawAnnotationPaths(ctx, paths);
+      // Agrandir les annotations proportionnellement à la résolution de l'image
+      const sizeScale = Math.max(1, cv.width / 700);
+      drawAnnotationPaths(ctx, paths, sizeScale);
       resolve(cv.toDataURL('image/png'));
     };
-    img.onerror = () => resolve(planBg);
+    img.onerror = () => resolve(exported ?? planBg);
     img.src = planBg;
   });
 }

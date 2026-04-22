@@ -44,16 +44,32 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
 }
 
 // Dessine un tableau de paths annotateur sur un contexte canvas existant.
-// Utilisé pour la prévisualisation et la génération PDF.
-export function drawAnnotationPaths(ctx, paths) {
+// sizeScale > 1 agrandit les annotations proportionnellement (utile pour les rendus PDF/rapport
+// où l'image est réduite par rapport à sa taille naturelle).
+export function drawAnnotationPaths(ctx, paths, sizeScale = 1) {
   (paths || []).forEach(p => {
     if (p.type === 'viewpoint') {
+      ctx.save();
+      if (sizeScale !== 1 && p.x != null) {
+        ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+      }
       drawVP(ctx, p);
+      ctx.restore();
     } else if (p.type === 'symbol') {
       const sm = SYMBOLS.find(x => x.id === p.symbolId);
-      if (sm) { ctx.save(); sm.draw(ctx, p.x, p.y, p.size, p.color); ctx.restore(); }
+      if (sm) {
+        ctx.save();
+        if (sizeScale !== 1 && p.x != null) {
+          ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+        }
+        sm.draw(ctx, p.x, p.y, p.size, p.color);
+        ctx.restore();
+      }
     } else if (p.type === 'text') {
       ctx.save();
+      if (sizeScale !== 1 && p.x != null) {
+        ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+      }
       ctx.font = `bold ${12 + p.size * 2}px Arial`;
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
       ctx.strokeText(p.text, p.x, p.y);
@@ -64,7 +80,7 @@ export function drawAnnotationPaths(ctx, paths) {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = p.color;
-      ctx.lineWidth = p.tool === 'eraser' ? p.size * 6 : p.size;
+      ctx.lineWidth = (p.tool === 'eraser' ? p.size * 6 : p.size) * sizeScale;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.globalCompositeOperation = p.tool === 'eraser' ? 'destination-out' : 'source-over';
       ctx.moveTo(p.points[0].x, p.points[0].y);

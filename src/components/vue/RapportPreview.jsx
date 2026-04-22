@@ -147,11 +147,10 @@ function PlanBlock({ loc }) {
   const exported = loc.planAnnotations?.exported;
   const paths    = loc.planAnnotations?.paths;
   const planBg   = loc.planBg;
-  const [renderedImg, setRenderedImg] = useState(() => exported || null);
+  const [renderedImg, setRenderedImg] = useState(null);
 
   useEffect(() => {
-    if (exported) { setRenderedImg(exported); return; }
-    if (!planBg)  { setRenderedImg(null); return; }
+    if (!planBg) { setRenderedImg(exported || null); return; }
     if (!paths?.length) { setRenderedImg(planBg); return; }
     const el = new window.Image();
     el.onload = () => {
@@ -160,10 +159,11 @@ function PlanBlock({ loc }) {
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      drawAnnotationPaths(ctx, paths);
+      const sizeScale = Math.max(1, cv.width / 700);
+      drawAnnotationPaths(ctx, paths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
-    el.onerror = () => setRenderedImg(planBg);
+    el.onerror = () => setRenderedImg(exported || planBg);
     el.src = planBg;
   }, [exported, paths, planBg]);
 
