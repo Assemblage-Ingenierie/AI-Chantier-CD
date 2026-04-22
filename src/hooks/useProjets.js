@@ -3,6 +3,82 @@ import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, m
 
 const MAX_HISTORY = 20;
 
+// Shared merge helper — called both on initial load and on background polls.
+// Takes remote data and current local state, returns the merged array + updates cache.
+function mergeWithLocal(remotePs, localPs, dirtyIds) {
+  const localById  = new Map(localPs.map(p => [p.id, p]));
+  const remoteIds  = new Set(remotePs.map(p => p.id));
+  const unsynced   = localPs.filter(p => !remoteIds.has(p.id));
+
+  let keptLocal = false;
+  const merged = remotePs.map(rp => {
+    const lp = localById.get(rp.id);
+
+    // Keep local when: unsaved dirty changes OR local timestamp is newer
+    const isDirty = dirtyIds.has(rp.id);
+    if (isDirty || (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt)) {
+      keptLocal = true;
+      if (!lp) return rp;
+      // Restore blobs (planBg, planLibrary.bg) stripped by slimLoc in localStorage
+      const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
+      return {
+        ...lp,
+        planLibrary: (lp.planLibrary || []).map(pl => {
+          const rpl = remotePlanById.get(pl.id);
+          return rpl ? { ...pl, bg: rpl.bg ?? pl.bg, data: rpl.data ?? pl.data } : pl;
+        }),
+        visites: (lp.visites || []).map(lv => {
+          const rv = (rp.visites || []).find(v => v.id === lv.id);
+          if (!rv) return lv;
+          const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
+          return {
+            ...lv,
+            localisations: (lv.localisations || []).map(ll => {
+              const rl = remoteLocById.get(ll.id);
+              if (!rl) return ll;
+              return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
+            }),
+          };
+        }),
+      };
+    }
+
+    if (!lp) return rp;
+    const photo = lp.photo ?? rp.photo ?? null;
+    if (rp.statut === 'archive') return { ...rp, photo, visites: lp.visites ?? rp.visites };
+
+    return {
+      ...rp,
+      photo,
+      visites: (rp.visites || []).map(rv => {
+        const lv = lp.visites?.find(v => v.id === rv.id);
+        if (!lv) return rv;
+        return {
+          ...rv,
+          localisations: (rv.localisations || []).map(loc => {
+            const localLoc = lv.localisations?.find(l => l.id === loc.id);
+            if (!localLoc) return loc;
+            return {
+              ...loc,
+              items: (loc.items || []).map(item => {
+                const localItem = localLoc.items?.find(i => i.id === item.id);
+                if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };
+                return item;
+              }),
+            };
+          }),
+        };
+      }),
+    };
+  });
+
+  const allMerged = [...merged, ...unsynced]
+    .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
+
+  saveLocalCache(allMerged);
+  return { allMerged, keptLocal, unsynced };
+}
+
 export function useProjets(onSyncStatus) {
   const [projets, setProjets] = useState([]);
   const [hydrated, setHydrated] = useState(false);
@@ -30,89 +106,11 @@ export function useProjets(onSyncStatus) {
         if (!remotePs.length) return;
         if (userModified.current) return;
 
-        const localPs  = projetsRef.current;
-        const localById = new Map(localPs.map(p => [p.id, p]));
-        const remoteIds = new Set(remotePs.map(p => p.id));
-        const unsynced  = localPs.filter(p => !remoteIds.has(p.id));
-
-        let keptLocal = false;
-        const merged = remotePs.map(rp => {
-          const lp = localById.get(rp.id);
-          if (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt) {
-            keptLocal = true;
-            // Conserver les éditions locales mais restaurer les blobs (planBg, planLibrary.bg)
-            // depuis le remote — slimLoc les strip toujours dans localStorage.
-            const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
-            return {
-              ...lp,
-              planLibrary: (lp.planLibrary || []).map(pl => {
-                const rpl = remotePlanById.get(pl.id);
-                return rpl ? { ...pl, bg: rpl.bg ?? pl.bg, data: rpl.data ?? pl.data } : pl;
-              }),
-              visites: (lp.visites || []).map(lv => {
-                const rv = (rp.visites || []).find(v => v.id === lv.id);
-                if (!rv) return lv;
-                const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
-                return {
-                  ...lv,
-                  localisations: (lv.localisations || []).map(ll => {
-                    const rl = remoteLocById.get(ll.id);
-                    if (!rl) return ll;
-                    return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
-                  }),
-                };
-              }),
-            };
-          }
-          // Préserver les photos déjà hydratées (évite la race condition loadData ↔ hydratePhotos)
-          if (!lp) return rp;
-
-          // photo non sélectionnée depuis Supabase (évite HTTP 500) → toujours garder la valeur locale
-          const photo = lp.photo ?? rp.photo ?? null;
-
-          // Projets archivés : le remote ne charge plus leurs items (optimisation mémoire).
-          // On préserve donc les localisations/items du cache local.
-          if (rp.statut === 'archive') {
-            return { ...rp, photo, visites: lp.visites ?? rp.visites };
-          }
-
-          return {
-            ...rp,
-            photo,
-            visites: (rp.visites || []).map(rv => {
-              const lv = lp.visites?.find(v => v.id === rv.id);
-              if (!lv) return rv;
-              return {
-                ...rv,
-                localisations: (rv.localisations || []).map(loc => {
-                  const localLoc = lv.localisations?.find(l => l.id === loc.id);
-                  if (!localLoc) return loc;
-                  return {
-                    ...loc,
-                    items: (loc.items || []).map(item => {
-                      const localItem = localLoc.items?.find(i => i.id === item.id);
-                      if (localItem?._photosHydrated) {
-                        return { ...item, photos: localItem.photos, _photosHydrated: true };
-                      }
-                      return item;
-                    }),
-                  };
-                }),
-              };
-            }),
-          };
-        });
-
-        const allMerged = [...merged, ...unsynced]
-          .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
-
+        const { allMerged, keptLocal, unsynced } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current);
         setProjets(allMerged);
-        saveLocalCache(allMerged);
 
-        const hasLocalChanges = unsynced.length > 0 || keptLocal;
-        if (hasLocalChanges) userModified.current = true;
+        if (keptLocal || unsynced.length > 0) userModified.current = true;
 
-        // Charger les photos de couverture manquantes en arrière-plan (non incluses dans SELECT)
         const missingPhotoIds = allMerged.filter(p => !p.photo).map(p => p.id);
         if (missingPhotoIds.length) {
           hydrateChantierPhotos(missingPhotoIds).then(photoMap => {
@@ -158,16 +156,50 @@ export function useProjets(onSyncStatus) {
     return () => clearTimeout(debounceRef.current);
   }, [hydrated, projets]);
 
+  // Background refresh — called by the poll interval and on tab focus restore.
+  // Silently merges remote changes when there are no pending local changes.
+  const pollRemote = useCallback(async () => {
+    if (savingRef.current || dirtyIds.current.size > 0) return;
+    try {
+      const remotePs = await loadData();
+      if (!remotePs.length) return;
+      const { allMerged } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current);
+      // Only re-render if something actually changed
+      const changed = allMerged.some((rp, i) => {
+        const lp = projetsRef.current[i];
+        return !lp || lp.updatedAt !== rp.updatedAt || lp.id !== rp.id;
+      }) || allMerged.length !== projetsRef.current.length;
+      if (changed) setProjets(allMerged);
+    } catch (e) {
+      // Ignore background refresh errors — no banner shown
+    }
+  }, []);
+
+  // Poll every 30s when the page is visible
+  useEffect(() => {
+    if (!remoteLoaded) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') pollRemote();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [remoteLoaded, pollRemote]);
+
   useEffect(() => {
     const flush = () => {
       if (!userModified.current) return;
       clearTimeout(debounceRef.current);
       if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
     };
-    // visibilitychange is more reliable than beforeunload/pagehide on iOS Safari
-    // (fires when app is backgrounded, giving the save a chance to complete)
+    let hiddenAt = null;
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        flush(); // save before backgrounding (iOS reliability)
+      } else if (document.visibilityState === 'visible') {
+        // Refresh from server when coming back after ≥15s away (cross-device sync)
+        if (hiddenAt && Date.now() - hiddenAt >= 15000) pollRemote();
+        hiddenAt = null;
+      }
     };
     window.addEventListener('beforeunload', flush);
     window.addEventListener('pagehide', flush);
@@ -177,7 +209,7 @@ export function useProjets(onSyncStatus) {
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [pollRemote]);
 
   const pushHistory = () => {
     historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), projetsRef.current];
