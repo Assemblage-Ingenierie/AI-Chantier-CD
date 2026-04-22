@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { DA } from '../../lib/constants.js';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
@@ -75,6 +75,27 @@ export default function RapportTab({ projet, onUpdate }) {
   };
 
   const pageBreaks = projet.rapportPageBreaks || [];
+
+  const recapRows = useMemo(() => {
+    if (projet.includeTableauRecap === false) return [];
+    const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+    const overrides = new Map((projet.tableauRecap || []).map(r => [r.itemId, r.solution]));
+    return localisations.flatMap(loc =>
+      (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => ({
+        itemId: i.id, locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
+        solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
+      }))
+    ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
+  }, [localisations, projet.includeTableauRecap, projet.tableauRecap]);
+
+  const updateSolution = useCallback((itemId, sol) => {
+    const curr = projet.tableauRecap || [];
+    const has = curr.some(r => r.itemId === itemId);
+    onUpdate({ tableauRecap: has
+      ? curr.map(r => r.itemId === itemId ? { ...r, solution: sol } : r)
+      : [...curr, { itemId, solution: sol }]
+    });
+  }, [projet.tableauRecap, onUpdate]);
   const togglePageBreak = (id) => {
     const curr = projet.rapportPageBreaks || [];
     onUpdate({ rapportPageBreaks: curr.includes(id) ? curr.filter(x => x !== id) : [...curr, id] });
@@ -90,6 +111,7 @@ export default function RapportTab({ projet, onUpdate }) {
         rapportPageBreaks:    projet.rapportPageBreaks || [],
         plansEnFin:           projet.plansEnFin ?? false,
         includeTableauRecap:  projet.includeTableauRecap !== false,
+        tableauRecap:         projet.tableauRecap || [],
         includeConclusion:    projet.includeConclusion ?? false,
         conclusion:           projet.conclusion ?? '',
       });
@@ -221,11 +243,42 @@ export default function RapportTab({ projet, onUpdate }) {
                 onChange={e => onUpdate({ includeTableauRecap: e.target.checked })}
                 style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
               />
-              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Tableau récapitulatif en fin</span>
+              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Tableau récapitulatif</span>
             </label>
-            <p style={{ fontSize:10, color:DA.gray, margin:'3px 0 0 22px' }}>
-              Auto-généré depuis les observations non terminées
-            </p>
+            {projet.includeTableauRecap !== false && recapRows.length === 0 && (
+              <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0 22px' }}>Aucune observation non terminée</p>
+            )}
+            {projet.includeTableauRecap !== false && recapRows.length > 0 && (
+              <div style={{ marginTop:8 }}>
+                <p style={{ fontSize:9.5, color:DA.gray, margin:'0 0 6px', fontStyle:'italic' }}>
+                  Solution pré-remplie depuis les commentaires — modifiable ici
+                </p>
+                <div style={{ border:`1px solid ${DA.border}`, borderRadius:8, overflow:'hidden' }}>
+                  {recapRows.map((row, i) => {
+                    const u = URGENCE[row.urgence] || URGENCE.basse;
+                    return (
+                      <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < recapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
+                        <div style={{ background:u.dot }}/>
+                        <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:3 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:11, fontWeight:700, color:DA.black, flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.titre}</span>
+                            <span style={{ fontSize:9, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap', flexShrink:0 }}>{u.label}</span>
+                          </div>
+                          <span style={{ fontSize:9, color:DA.grayL }}>{row.locNom}</span>
+                          <textarea
+                            value={row.solution}
+                            onChange={e => updateSolution(row.itemId, e.target.value)}
+                            placeholder="Solution / action corrective…"
+                            rows={2}
+                            style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conclusion */}
@@ -280,6 +333,7 @@ export default function RapportTab({ projet, onUpdate }) {
         onTogglePageBreak={togglePageBreak}
         plansEnFin={projet.plansEnFin ?? false}
         includeTableauRecap={projet.includeTableauRecap !== false}
+        tableauRecap={projet.tableauRecap || []}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         onUpdateItem={onUpdateItem}

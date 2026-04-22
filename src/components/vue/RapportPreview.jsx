@@ -415,18 +415,22 @@ function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
   );
 }
 
-// ── Tableau récapitulatif auto-généré ──────────────────────────────────────
-function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
+// ── Tableau récapitulatif ──────────────────────────────────────────────────
+function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+  const overrides = new Map((tableauRecap || []).map(r => [r.itemId, r.solution]));
   const rows = localisations.flatMap(loc =>
     (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => ({
-      locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi,
+      locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
+      solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
     }))
   ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : null;
+
+  const cols = '5px 1fr 1.5fr 65px';
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
@@ -437,27 +441,23 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages }) {
           <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Tableau récapitulatif</span>
           <span style={{ fontSize:8, color:DA.grayL }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
         </div>
-        {/* Header */}
-        <div style={{ display:'grid', gridTemplateColumns:'5px 1fr 60px 60px', background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns:cols, background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:8 }}>
           <div/>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre / Zone</span>
+          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Solution</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Urgence</span>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Suivi</span>
         </div>
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
-          const sv = row.suivi && row.suivi !== 'rien' ? SUIVI[row.suivi] : null;
           return (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'5px 1fr 60px 60px', gap:8, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'center' }}>
-              <div style={{ width:5, height:'100%', background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
+            <div key={i} style={{ display:'grid', gridTemplateColumns:cols, gap:8, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
+              <div style={{ width:5, background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
               <div>
                 <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
                 <div style={{ fontSize:7, color:DA.grayL, marginTop:1 }}>{row.locNom}</div>
               </div>
-              <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap' }}>{u.label}</span>
-              <span style={{ fontSize:7, color: sv ? sv.text : DA.grayL, background: sv ? sv.bg : 'transparent', border: sv ? `1px solid ${sv.border}` : 'none', borderRadius:4, padding: sv ? '1px 5px' : 0, whiteSpace:'nowrap' }}>
-                {sv ? sv.label : '—'}
-              </span>
+              <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
+              <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap', alignSelf:'start' }}>{u.label}</span>
             </div>
           );
         })}
@@ -490,7 +490,7 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, includeConclusion = false, conclusion = '', onUpdateItem }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', onUpdateItem }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -632,7 +632,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
-                <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
+                <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages} tableauRecap={tableauRecap}/>
               </div>
             </>
           );

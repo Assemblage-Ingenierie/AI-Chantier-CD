@@ -117,7 +117,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, includeConclusion = false, conclusion = '' }) {
+export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '' }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -414,14 +414,18 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     y += 5;
   });
 
-  // ── TABLEAU RÉCAPITULATIF (auto-généré) ──────────────────────────────────────
+  // ── TABLEAU RÉCAPITULATIF ────────────────────────────────────────────────────
 
   if (includeTableauRecap) {
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+    const overrides = new Map((tableauRecap || []).map(r => [r.itemId, r.solution]));
     const recapRows = localisations.flatMap(loc =>
       (loc.items || [])
         .filter(i => i.titre && i.suivi !== 'fait')
-        .map(i => ({ locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse', suivi: i.suivi }))
+        .map(i => ({
+          locNom: loc.nom, titre: i.titre, urgence: i.urgence || 'basse',
+          solution: overrides.has(i.id) ? overrides.get(i.id) : (i.commentaire || ''),
+        }))
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
     if (recapRows.length > 0) {
@@ -432,12 +436,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       doc.text('TABLEAU RÉCAPITULATIF', ML + 6, y + 7);
       doc.setTextColor(0, 0, 0); y += 14;
 
-      const colW = [6, CW * 0.42, CW * 0.33, 28];
-      const colX = [ML, ML + colW[0], ML + colW[0] + colW[1], ML + colW[0] + colW[1] + colW[2]];
+      // colonnes : bande couleur | désordre+zone | solution | urgence
+      const colW = [6, 55, 81, 32];
+      const colX = [ML, ML + 6, ML + 61, ML + 142];
 
       doc.setFillColor(50, 50, 50); doc.rect(ML, y, CW, 8, 'F');
       doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
-      ['', 'DÉSORDRE / ZONE', 'URGENCE', 'SUIVI'].forEach((t, i) => {
+      [null, 'DÉSORDRE / ZONE', 'SOLUTION / ACTION CORRECTIVE', 'URGENCE'].forEach((t, i) => {
         if (t) doc.text(t, colX[i] + 2, y + 5.5);
       });
       doc.setTextColor(0, 0, 0); y += 9;
@@ -445,9 +450,9 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       recapRows.forEach((row, i) => {
         const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
         const urgLabel = URGENCE[row.urgence]?.label ?? row.urgence;
-        const suiviLabel = row.suivi && row.suivi !== 'rien' ? SUIVI[row.suivi]?.label || '—' : '—';
         const titreLines = doc.splitTextToSize(row.titre || '—', colW[1] - 4);
-        const rowH = titreLines.length * 5 + 7;
+        const solLines   = doc.splitTextToSize(row.solution || '—', colW[2] - 4);
+        const rowH = Math.max(titreLines.length, solLines.length) * 4.5 + 8;
         pb(rowH + 2);
 
         const bg = i % 2 === 0 ? 249 : 255;
@@ -455,7 +460,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setFillColor(...urgColor); doc.rect(colX[0], y, colW[0], rowH, 'F');
         doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, y, CW, rowH);
 
-        // Zone label (petite taille dans la bande colorée)
+        // Bande colorée : nom zone en minuscule
         if (row.locNom) {
           doc.setTextColor(...WH); doc.setFontSize(4.5); doc.setFont('helvetica', 'bold');
           doc.text(row.locNom.slice(0, 5), colX[0] + colW[0] / 2, y + rowH / 2 + 1.5, { align: 'center' });
@@ -469,16 +474,16 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           doc.text(row.locNom, colX[1] + 2, y + rowH - 2.5);
         }
 
+        // Solution
+        doc.setTextColor(50, 50, 50); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(solLines, colX[2] + 2, y + 5);
+
         // Urgence badge
         const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
         doc.setFillColor(...(row.urgence === 'haute' ? [254,226,226] : row.urgence === 'moyenne' ? [255,251,235] : [240,253,244]));
-        doc.roundedRect(colX[2] + 2, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
+        doc.roundedRect(colX[3] + 2, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
         doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-        doc.text(urgLabel, colX[2] + 5, y + rowH/2 + 1, { align: 'left' });
-
-        // Suivi
-        doc.setTextColor(suiviLabel !== '—' ? 80 : 180); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
-        doc.text(suiviLabel, colX[3] + 2, y + rowH/2 + 1);
+        doc.text(urgLabel, colX[3] + 5, y + rowH/2 + 1);
 
         doc.setTextColor(0, 0, 0); y += rowH + 1;
       });
