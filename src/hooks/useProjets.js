@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos } from '../lib/storage.js';
 
 const MAX_HISTORY = 20;
 
@@ -110,6 +110,15 @@ export function useProjets(onSyncStatus) {
 
         const hasLocalChanges = unsynced.length > 0 || keptLocal;
         if (hasLocalChanges) userModified.current = true;
+
+        // Charger les photos de couverture manquantes en arrière-plan (non incluses dans SELECT)
+        const missingPhotoIds = allMerged.filter(p => !p.photo).map(p => p.id);
+        if (missingPhotoIds.length) {
+          hydrateChantierPhotos(missingPhotoIds).then(photoMap => {
+            if (!Object.keys(photoMap).length) return;
+            setProjets(ps => ps.map(p => photoMap[p.id] ? { ...p, photo: photoMap[p.id] } : p));
+          });
+        }
       })
       .catch((e) => {
         console.error('Erreur chargement projets:', e);

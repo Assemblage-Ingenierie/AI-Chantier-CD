@@ -213,6 +213,25 @@ export async function loadProjectPhotos(itemIds) {
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
 }
 
+// Charge la photo de couverture pour une liste de projets — séparée du SELECT principal
+// pour éviter le HTTP 500 causé par de gros base64.
+export async function hydrateChantierPhotos(chantierIds) {
+  if (!chantierIds.length) return {};
+  try {
+    const sb = await getSupabase();
+    // Fetch par batch de 5 pour éviter les timeouts sur de gros base64
+    const result = {};
+    for (let i = 0; i < chantierIds.length; i += 5) {
+      const batch = chantierIds.slice(i, i + 5);
+      const { data } = await sb.from('chantiers').select('id,photo').in('id', batch);
+      for (const row of (data ?? [])) {
+        if (row.photo) result[row.id] = row.photo;
+      }
+    }
+    return result;
+  } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
+}
+
 // Charge plan_bg/plan_data pour un projet donné — appelé paresseusement à l'ouverture du projet
 // pour éviter que loadRemote() ne transmette de gros blobs pour tous les projets d'un coup.
 export async function hydratePlans(projectId) {
