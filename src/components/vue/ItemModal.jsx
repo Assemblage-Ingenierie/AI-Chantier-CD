@@ -291,9 +291,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               placeholder="Description détaillée…" rows={4}
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
-            {recording && interimText && (
-              <p style={{ fontSize:11,color:DA.grayL,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4 }}>
-                {interimText}…
+            {recording && (
+              <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
+                {interimText ? interimText + '…' : '🎤 En écoute — parlez maintenant…'}
               </p>
             )}
             <IASug
