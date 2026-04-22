@@ -125,6 +125,12 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
   const vtRef     = useRef({ z: 1, px: 0, py: 0 });
   const gestureRef = useRef(null); // active pinch gesture state
 
+  // Global annotation size multiplier — persisted in localStorage across all plans
+  const [annotScale, setAnnotScale] = useState(() => {
+    const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
+    return isNaN(v) ? 1 : Math.max(0.3, Math.min(2, v));
+  });
+
   useEffect(() => { vtRef.current = vt; }, [vt]);
   // Reset zoom/pan when a new plan is loaded
   useEffect(() => { setVt({ z: 1, px: 0, py: 0 }); vtRef.current = { z: 1, px: 0, py: 0 }; }, [bgImage]);
@@ -141,7 +147,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     // Scale annotations so they appear at a consistent visual size on screen,
     // regardless of the image's native resolution (photos are often 3000+ px wide
     // but displayed at ~350px on mobile, which makes unscaled annotations invisible).
-    const displayScale = cv.clientWidth > 0 ? (cv.width / cv.clientWidth) * 0.5 : 1;
+    const displayScale = cv.clientWidth > 0 ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
     drawAnnotationPaths(ctx, all, displayScale);
@@ -157,7 +163,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
       drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount]);
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount, annotScale]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -332,6 +338,19 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
             <Ic n="chk" s={13}/> Sauvegarder
           </button>
         </div>
+      </div>
+
+      {/* ── Taille globale des logos ── */}
+      <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
+        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>LOGOS</span>
+        <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
+          onChange={e => {
+            const v = parseFloat(e.target.value);
+            setAnnotScale(v);
+            localStorage.setItem('chantierai_annot_scale', String(v));
+          }}
+          style={{ flex:1,accentColor:DA.red,cursor:'pointer' }}/>
+        <span style={{ color:'#ccc',fontSize:11,fontWeight:700,minWidth:30,textAlign:'right' }}>{annotScale.toFixed(1)}×</span>
       </div>
 
       {/* ── Symbol picker ── */}
