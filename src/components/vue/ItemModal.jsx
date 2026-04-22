@@ -154,7 +154,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <Ic n="pen" s={12}/> Annoter
             </button>
           )}
-          <button onClick={() => setShowPlan(false)} style={{ color:DA.grayL }}><Ic n="x" s={20}/></button>
+          <button onClick={() => setShowPlan(false)} style={{ background:'none',border:`1px solid rgba(255,255,255,0.2)`,borderRadius:8,color:DA.grayL,width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}><Ic n="x" s={18}/></button>
         </div>
       </div>
       <div style={{ flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:8,background:'#1a1a1a' }}>
