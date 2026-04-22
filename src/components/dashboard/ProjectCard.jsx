@@ -18,12 +18,12 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
   const urg = urgCount(p);
 
   return (
-    <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column' }}>
-      {/* Photo — aspect-ratio:1/1 garantit des tuiles identiques sur tous les écrans */}
-      <div style={{ position:'relative',width:'100%',aspectRatio:'1/1',background:DA.grayXL,cursor:'pointer',flexShrink:0,overflow:'hidden' }} onClick={() => !arc && onSelect(p)}>
+    <div style={{ background:DA.white,borderRadius:12,overflow:'visible',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column',height:'100%' }}>
+      {/* Photo — paddingTop:100% works on all iOS versions (aspect-ratio not supported on iOS<15) */}
+      <div style={{ position:'relative',width:'100%',paddingTop:'100%',background:DA.grayXL,cursor:'pointer',flexShrink:0,overflow:'hidden',borderRadius:'11px 11px 0 0' }} onClick={() => !arc && onSelect(p)}>
         {p.photo
-          ? <img src={p.photo} alt={p.nom} style={{ width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>
-          : <div style={{ width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
+          ? <img src={p.photo} alt={p.nom} style={{ position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>
+          : <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
         }
         <button onClick={(e) => { e.stopPropagation(); setPhotoTgt(p); }} style={{ position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.5)',border:'none',borderRadius:8,padding:6,cursor:'pointer',color:'white',display:'flex' }}>
           <Ic n="cam" s={12}/>
@@ -33,7 +33,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
       </div>
 
       {/* Infos */}
-      <div style={{ padding:'10px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,minHeight:90 }}>
+      <div style={{ padding:'10px 12px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flex:1 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           <p style={{ fontWeight:800,fontSize:13,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
           {p.maitreOuvrage && <p style={{ fontSize:11,color:DA.red,margin:'2px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>MO : {p.maitreOuvrage}</p>}

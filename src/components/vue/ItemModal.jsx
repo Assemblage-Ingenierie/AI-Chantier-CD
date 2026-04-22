@@ -69,14 +69,19 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.lang = 'fr-FR';
     r.continuous = true;
     r.interimResults = true;
-    r.maxAlternatives = 1;
+    r.maxAlternatives = 3;
 
     r.onresult = (e) => {
       let interim = '';
       const finals = [];
       for (let i = lastFinalIdx.current; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          finals.push(e.results[i][0].transcript.trim());
+          // Pick the alternative with highest confidence
+          let best = e.results[i][0];
+          for (let a = 1; a < e.results[i].length; a++) {
+            if (e.results[i][a].confidence > best.confidence) best = e.results[i][a];
+          }
+          finals.push(best.transcript.trim());
           lastFinalIdx.current = i + 1;
         } else {
           interim += e.results[i][0].transcript;
@@ -85,7 +90,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       setInterimText(interim);
       if (finals.length) {
         const txt = finals.filter(Boolean).join(' ');
-        if (txt && txt !== lastCommitted.current) {
+        const norm = txt.toLowerCase().replace(/[.,!?;:]+$/g, '').trim();
+        const lastNorm = lastCommitted.current.toLowerCase().replace(/[.,!?;:]+$/g, '').trim();
+        if (txt && norm !== lastNorm && !lastNorm.endsWith(norm)) {
           lastCommitted.current = txt;
           const first = sessionFirst.current;
           sessionFirst.current = false;
@@ -98,21 +105,34 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     };
 
     r.onerror = (ev) => {
-      // network / no-speech / aborted = non-fatals, on ignore
       if (ev.error === 'no-speech' || ev.error === 'aborted' || ev.error === 'network') return;
-      alert(`Erreur microphone: ${ev.error}`);
-      recordingRef.current = false;
+      // not-allowed = mic permission denied
+      if (ev.error === 'not-allowed') {
+        alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
+        recordingRef.current = false;
+        recogRef.current = null;
+        setInterimText('');
+        setRecording(false);
+        return;
+      }
+      // Pour les autres erreurs, tenter un redémarrage si on tient encore le bouton
       recogRef.current = null;
-      setInterimText('');
-      setRecording(false);
+      if (recordingRef.current) {
+        lastFinalIdx.current = 0;
+        restartTimer.current = setTimeout(doRecognize, 300);
+      }
     };
 
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
-      // Toujours resetter ici — garantit que la dernière phrase est capturée
-      // avant que le bouton se désamorce (même si stopDictaphone a déjà été appelé)
-      recordingRef.current = false;
+      // iOS/mobile : la reconnaissance s'arrête automatiquement après ~5-10s
+      // Si l'utilisateur tient encore le bouton, on relance immédiatement
+      if (recordingRef.current) {
+        lastFinalIdx.current = 0;
+        restartTimer.current = setTimeout(doRecognize, 150);
+        return;
+      }
       setRecording(false);
     };
 
