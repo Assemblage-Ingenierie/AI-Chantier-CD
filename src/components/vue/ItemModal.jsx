@@ -59,40 +59,36 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     onClose();
   };
 
-  const startDictaphone = () => {
+  const doRecognize = useCallback(() => {
+    if (!recordingRef.current) return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
-
+    if (!SR) return;
     const r = new SR();
     r.lang = 'fr-FR';
-    r.continuous = true;
-    r.interimResults = true;  // nécessaire pour que onresult fire sur Chrome PC
+    r.continuous = false;    // plus fiable sur Chrome PC que continuous=true
+    r.interimResults = true;
     r.maxAlternatives = 1;
 
     r.onresult = (e) => {
       let interim = '';
-      const newFinals = [];
-      for (let i = lastFinalIdx.current; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          newFinals.push(e.results[i][0].transcript.trim());
-          lastFinalIdx.current = i + 1;
-        } else {
-          interim += e.results[i][0].transcript;
-        }
+      const finals = [];
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finals.push(e.results[i][0].transcript.trim());
+        else interim += e.results[i][0].transcript;
       }
       setInterimText(interim);
-      if (newFinals.length) {
-        const txt = newFinals.filter(Boolean).join('\n');
+      if (finals.length) {
+        const txt = finals.filter(Boolean).join(' ');
         if (txt) setForm(f => ({
           ...f,
           commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
         }));
+        setInterimText('');
       }
     };
 
     r.onerror = (ev) => {
-      if (ev.error === 'no-speech') return;
-      if (ev.error === 'aborted') return;
+      if (ev.error === 'no-speech' || ev.error === 'aborted') return;
       alert(`Erreur dictée: ${ev.error}`);
       recordingRef.current = false;
       recogRef.current = null;
@@ -103,22 +99,36 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
-      if (recordingRef.current) {
-        recordingRef.current = false;
-        setRecording(false);
-      }
+      if (!recordingRef.current) { setRecording(false); return; }
+      // Encore en train de tenir — relancer pour la phrase suivante
+      clearTimeout(restartTimer.current);
+      restartTimer.current = setTimeout(() => {
+        if (recordingRef.current) doRecognize();
+      }, 120);
     };
 
     try {
       r.start();
       recogRef.current = r;
-      recordingRef.current = true;
-      lastFinalIdx.current = 0;
-      setInterimText('');
-      setRecording(true);
     } catch (e) {
-      alert(`Impossible de démarrer le microphone: ${e.message}`);
+      // Sur iOS, r.start() hors geste utilisateur lève NotAllowedError → on arrête
+      if (e.name === 'NotAllowedError' || !recordingRef.current) {
+        recordingRef.current = false;
+        setRecording(false);
+      } else {
+        restartTimer.current = setTimeout(() => { if (recordingRef.current) doRecognize(); }, 250);
+      }
     }
+  }, []);
+
+  const startDictaphone = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
+    recordingRef.current = true;
+    lastFinalIdx.current = 0;
+    setInterimText('');
+    setRecording(true);
+    doRecognize();
   };
 
   const stopDictaphone = () => {
@@ -265,12 +275,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
               <div style={{ display:'flex',gap:5 }}>
                 <button
-                  onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); startDictaphone(); }}
-                  onPointerUp={stopDictaphone}
-                  onPointerCancel={stopDictaphone}
-                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none',touchAction:'none',WebkitUserSelect:'none' }}>
+                  onClick={() => recording ? stopDictaphone() : startDictaphone()}
+                  style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${recording ? DA.red : DA.border}`,background:recording ? DA.redL : 'white',color:recording ? DA.red : DA.gray,cursor:'pointer',fontSize:11,fontWeight:700,userSelect:'none' }}>
                   {recording ? <Ic n="spn" s={11}/> : <Ic n="mic" s={12}/>}
-                  {recording ? 'Relâcher…' : 'Dicter'}
+                  {recording ? '■ Stop' : 'Dicter'}
                 </button>
                 <button onClick={fixSpelling} disabled={correcting || !form.commentaire?.trim()}
                   style={{ display:'flex',alignItems:'center',gap:4,padding:'4px 9px',borderRadius:20,border:`1.5px solid ${DA.border}`,background:'white',color:correcting ? DA.gray : DA.black,cursor:form.commentaire?.trim() ? 'pointer' : 'not-allowed',fontSize:11,fontWeight:700,opacity:form.commentaire?.trim() ? 1 : 0.4 }}>
