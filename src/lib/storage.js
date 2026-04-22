@@ -99,7 +99,9 @@ function buildLocFromRow(loc, itemsByLoc) {
 async function loadRemote() {
   const sb = await getSupabase();
   const [r1, r2, r3, r4] = await Promise.all([
-    sb.from('chantiers').select('*'),
+    // photo exclu du SELECT — peut être un gros base64 qui cause HTTP 500.
+    // Récupéré depuis le cache local lors du merge, ou migré vers Storage à la prochaine save.
+    sb.from('chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'),
     sb.from('chantier_plans')
       .select('id,chantier_id,nom,bg,data,sort_order')
       .order('sort_order'),
@@ -178,7 +180,7 @@ async function loadRemote() {
       statut:        c.statut ?? 'en_cours',
       adresse:       c.adresse ?? '',
       maitreOuvrage: c.maitre_ouvrage ?? '',
-      photo:         c.photo ?? null,
+      photo:         null, // chargé depuis le cache local (non sélectionné pour éviter HTTP 500)
       updatedAt:     c.updated_at,
       planLibrary:   (plansByChantier[c.id] ?? []).map(pl => ({
         id: pl.id, nom: pl.nom ?? '', bg: pl.bg ?? null, data: pl.data ?? null,
@@ -337,12 +339,19 @@ async function saveRemote(ps, dirtyIds = null) {
       (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
     );
 
+    // Migrer la photo couverture si c'est encore un base64 → Storage
+    let coverPhotoUrl = p.photo ?? null;
+    if (coverPhotoUrl?.startsWith('data:')) {
+      const uploaded = await uploadPhotoToStorage(sb, `cover_${p.id}`, 0, 'cover.jpg', coverPhotoUrl);
+      if (uploaded) coverPhotoUrl = uploaded;
+    }
+
     // ── Parallèle : upsert chantier + lecture IDs existants ──────────────────
     const [chantierRes, dbLocsRes] = await Promise.all([
       sb.from('chantiers').upsert({
         id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
         adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
-        photo: p.photo ?? null, date_visite: firstVisit?.dateVisite ?? null,
+        photo: coverPhotoUrl, date_visite: firstVisit?.dateVisite ?? null,
         photos_par_ligne: firstVisit?.photosParLigne ?? 2,
         participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
         visites: visitesMetadata, updated_at: now,

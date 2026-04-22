@@ -66,14 +66,18 @@ export function useProjets(onSyncStatus) {
           // Préserver les photos déjà hydratées (évite la race condition loadData ↔ hydratePhotos)
           if (!lp) return rp;
 
+          // photo non sélectionnée depuis Supabase (évite HTTP 500) → toujours garder la valeur locale
+          const photo = lp.photo ?? rp.photo ?? null;
+
           // Projets archivés : le remote ne charge plus leurs items (optimisation mémoire).
           // On préserve donc les localisations/items du cache local.
           if (rp.statut === 'archive') {
-            return { ...rp, visites: lp.visites ?? rp.visites };
+            return { ...rp, photo, visites: lp.visites ?? rp.visites };
           }
 
           return {
             ...rp,
+            photo,
             visites: (rp.visites || []).map(rv => {
               const lv = lp.visites?.find(v => v.id === rv.id);
               if (!lv) return rv;
