@@ -63,6 +63,13 @@ export function useProjets(onSyncStatus) {
           }
           // Préserver les photos déjà hydratées (évite la race condition loadData ↔ hydratePhotos)
           if (!lp) return rp;
+
+          // Projets archivés : le remote ne charge plus leurs items (optimisation mémoire).
+          // On préserve donc les localisations/items du cache local.
+          if (rp.statut === 'archive') {
+            return { ...rp, visites: lp.visites ?? rp.visites };
+          }
+
           return {
             ...rp,
             visites: (rp.visites || []).map(rv => {

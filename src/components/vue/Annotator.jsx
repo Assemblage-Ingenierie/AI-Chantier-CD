@@ -165,6 +165,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
       bgRef.current = img;
       setBgOk(true);
     };
+    img.onerror = () => setBgOk(true);
     img.src = bgImage;
   }, [bgImage]);
 

@@ -118,7 +118,19 @@ async function loadRemote() {
 
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
-  const itemsByLoc      = groupBy(r4.data ?? [], 'localisation_id');
+
+  // Les items des projets archivés viennent du cache local — pas de la DB.
+  // On les exclut de itemsByLoc pour ne pas les stocker en mémoire inutilement.
+  const archivedChantierIds = new Set(
+    (r1.data ?? []).filter(c => c.statut === 'archive').map(c => c.id)
+  );
+  const archivedLocIds = new Set(
+    (r3.data ?? []).filter(l => archivedChantierIds.has(l.chantier_id)).map(l => l.id)
+  );
+  const itemsByLoc = groupBy(
+    (r4.data ?? []).filter(item => !archivedLocIds.has(item.localisation_id)),
+    'localisation_id'
+  );
 
   return (r1.data ?? []).map(c => {
     const allLocs      = locsByChantier[c.id] ?? [];

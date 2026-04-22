@@ -53,7 +53,11 @@ export default function ChantierAI({ profile, onLogout }) {
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
 
   const handleArchive = (id) => { updateProjet(id, { statut: 'archive' }); setOuvert(null); };
-  const handleUnarchive = (id) => updateProjet(id, { statut: 'en_cours' });
+  const handleUnarchive = (id) => {
+    updateProjet(id, { statut: 'en_cours' });
+    hydratePhotos(id);
+    hydratePlans(id);
+  };
 
   if (showSplash) return (
     <div style={{ position:'fixed',inset:0,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:9999 }}>
