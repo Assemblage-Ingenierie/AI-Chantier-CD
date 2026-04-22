@@ -418,7 +418,7 @@ async function saveRemote(ps, dirtyIds = null) {
     const locRows = allLocsFlat.map((l, i) => {
       const row = {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
-        plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
+        plan_annotations: l.planAnnotations ? JSON.stringify(slimAnnot(l.planAnnotations)) : null,
         sort_order: i, visite_id: l._visiteId,
       };
       if (l.planBg  != null) row.plan_bg   = l.planBg;
@@ -495,7 +495,7 @@ async function saveRemote(ps, dirtyIds = null) {
           id: itemId, localisation_id: locId,
           titre: item.titre ?? '', suivi: item.suivi ?? 'rien',
           urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
-          plan_annotations: item.planAnnotations ? JSON.stringify(item.planAnnotations) : null,
+          plan_annotations: item.planAnnotations ? JSON.stringify(slimAnnot(item.planAnnotations)) : null,
           sort_order: ii,
         });
         const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);
