@@ -74,7 +74,7 @@ export default function ChantierAI({ profile, onLogout }) {
 
       {/* Header */}
       <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
-        <div style={{ display:'flex',alignItems:'center' }}>
+        <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
           <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
