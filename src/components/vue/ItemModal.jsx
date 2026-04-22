@@ -34,10 +34,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
-  const recogRef     = useRef(null);
-  const recordingRef = useRef(false);
-  const lastFinalIdx = useRef(0);
-  const restartTimer = useRef(null);
+  const recogRef       = useRef(null);
+  const recordingRef   = useRef(false);
+  const lastFinalIdx   = useRef(0);
+  const sessionFirst   = useRef(true);
+  const restartTimer   = useRef(null);
 
   // Stop dictaphone si la modale se ferme
   useEffect(() => () => {
@@ -82,11 +83,17 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       }
       setInterimText(interim);
       if (finals.length) {
-        const txt = finals.filter(Boolean).join('\n');
-        if (txt) setForm(f => ({
-          ...f,
-          commentaire: f.commentaire ? f.commentaire + '\n' + txt : txt,
-        }));
+        const txt = finals.filter(Boolean).join(' ');
+        if (txt) {
+          const first = sessionFirst.current;
+          sessionFirst.current = false;
+          setForm(f => ({
+            ...f,
+            // \n seulement à la première phrase de la session (sépare des dictées précédentes)
+            // espace entre les phrases de la même session
+            commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
+          }));
+        }
       }
     };
 
@@ -103,21 +110,18 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
-      if (recordingRef.current) {
-        // Reconnaissance arrêtée pendant qu'on tient (iOS / timeout) → reset
-        recordingRef.current = false;
-        setRecording(false);
-      }
+      // Toujours resetter ici — garantit que la dernière phrase est capturée
+      // avant que le bouton se désamorce (même si stopDictaphone a déjà été appelé)
+      recordingRef.current = false;
+      setRecording(false);
     };
 
     try {
       r.start();
       recogRef.current = r;
     } catch (e) {
-      if (recordingRef.current) {
-        recordingRef.current = false;
-        setRecording(false);
-      }
+      recordingRef.current = false;
+      setRecording(false);
     }
   }, []);
 
@@ -126,6 +130,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
     recordingRef.current = true;
     lastFinalIdx.current = 0;
+    sessionFirst.current = true;
     setInterimText('');
     setRecording(true);
     doRecognize();
@@ -134,10 +139,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const stopDictaphone = () => {
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
+    // r.stop() déclenche onresult (dernière phrase) puis onend (reset bouton)
+    // Ne pas appeler setRecording(false) ici — onend s'en charge
     recogRef.current?.stop();
-    recogRef.current = null;
-    setInterimText('');
-    setRecording(false);
   };
 
   const fixSpelling = async () => {
