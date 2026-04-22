@@ -1,6 +1,6 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
-import { SYMBOLS, drawAnnotationPaths } from '../components/vue/Annotator.jsx';
+import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG. */
 async function renderPlanImage(planBg, planAnnotations) {
@@ -25,6 +25,16 @@ async function renderPlanImage(planBg, planAnnotations) {
   });
 }
 
+/** Pré-rend l'icône de viewpoint (œil + cône) pour la légende PDF. */
+async function preRenderViewpointIcon() {
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = 80; cv.height = 80;
+    drawVP(cv.getContext('2d'), { x: 38, y: 55, angle: -Math.PI / 2, label: 'V1', size: 1, color: '#E30513' });
+    return cv.toDataURL('image/png');
+  } catch { return null; }
+}
+
 /** Pré-rend chaque symbole dans un canvas 80×80 (assez grand pour les textes sous le symbole). */
 async function preRenderSymbolIcons(symbolIds) {
   const icons = {};
@@ -42,52 +52,58 @@ async function preRenderSymbolIcons(symbolIds) {
   return icons;
 }
 
-/** Ajoute la légende des symboles utilisés dans le plan ; retourne le nouveau y. */
-function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}) {
+/** Ajoute la légende des symboles et viewpoints utilisés dans le plan ; retourne le nouveau y. */
+function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, vpIconUrl = null) {
   const paths = annot?.paths;
   if (!paths?.length) return y;
-  const usedIds  = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
-  const legendSy = SYMBOLS.filter(s => usedIds.has(s.id));
-  if (!legendSy.length) return y;
+  const usedIds       = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy      = SYMBOLS.filter(s => usedIds.has(s.id));
+  const hasViewpoints = paths.some(p => p.type === 'viewpoint');
+
+  // Construire la liste unifiée symbol + viewpoint
+  const items = [
+    ...legendSy.map(s => ({ label: s.label, iconUrl: symbolIcons[s.id] ?? null })),
+    ...(hasViewpoints ? [{ label: 'Vue photo', iconUrl: vpIconUrl }] : []),
+  ];
+  if (!items.length) return y;
 
   y += 3;
 
-  // Calcul de la grille : max 4 colonnes, réparties sur la largeur utile
-  const ICON_SZ = 9;
-  const ROW_H   = ICON_SZ + 4;
-  const COLS    = Math.min(legendSy.length, Math.max(1, Math.floor(CW / 52)));
-  const numRows = Math.ceil(legendSy.length / COLS);
+  // Grille : jusqu'à 4 colonnes
+  const ICON_SZ = 11;
+  const ROW_H   = ICON_SZ + 5;
+  const COLS    = Math.min(items.length, Math.max(1, Math.floor(CW / 56)));
+  const numRows = Math.ceil(items.length / COLS);
   const HDR_H   = 9;
-  const totalH  = HDR_H + numRows * ROW_H + 5;
+  const totalH  = HDR_H + numRows * ROW_H + 6;
 
-  // Boîte extérieure (englobe titre ET items)
+  // Boîte extérieure
   doc.setFillColor(249, 249, 249);
   doc.setDrawColor(...RD); doc.setLineWidth(0.4);
   doc.roundedRect(ML, y, CW, totalH, 2, 2, 'FD');
 
   // En-tête "LÉGENDE"
   doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...RD);
-  doc.text('LÉGENDE', ML + 4, y + 6);
+  doc.text('LÉGENDE', ML + 4, y + 6.2);
   doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15);
   doc.line(ML + 0.5, y + HDR_H, ML + CW - 0.5, y + HDR_H);
 
-  // Items à l'intérieur de la boîte
+  // Items à l'intérieur
   const colWidth = CW / COLS;
-  legendSy.forEach((s, ix) => {
+  items.forEach(({ label, iconUrl }, ix) => {
     const col = ix % COLS;
     const row = Math.floor(ix / COLS);
     const lx  = ML + 3 + col * colWidth;
     const ly  = y + HDR_H + 3 + row * ROW_H;
 
-    const iconUrl = symbolIcons[s.id];
     if (iconUrl) {
       try { doc.addImage(iconUrl, 'PNG', lx, ly, ICON_SZ, ICON_SZ, undefined, 'FAST'); } catch {}
     } else {
-      doc.setFillColor(...RD); doc.rect(lx, ly + 2, 6, 5, 'F');
+      doc.setFillColor(...RD); doc.rect(lx, ly + 3, 7, 5, 'F');
     }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
     doc.setTextColor(50, 50, 50);
-    doc.text(s.label, lx + ICON_SZ + 2, ly + ICON_SZ / 2 + 1.5);
+    doc.text(label, lx + ICON_SZ + 2, ly + ICON_SZ / 2 + 2);
   });
   doc.setTextColor(0, 0, 0);
 
@@ -131,12 +147,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     if (img) planImages[loc.id] = img;
   }
 
-  // Pré-rendu des icônes de symboles pour les légendes
+  // Pré-rendu des icônes de symboles et viewpoint pour les légendes
   const allSymbolIds = new Set();
   localisations.forEach(loc =>
     (loc.planAnnotations?.paths || []).filter(p => p.type === 'symbol').forEach(p => allSymbolIds.add(p.symbolId))
   );
   const symbolIcons = await preRenderSymbolIcons(allSymbolIds);
+  const vpIconUrl   = await preRenderViewpointIcon();
 
   const pageBreaksSet = new Set(rapportPageBreaks);
   const dvPdf = projet.dateVisite ? new Date(projet.dateVisite) : new Date();
@@ -386,7 +403,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           y += ih + 2;
         } catch {}
-        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR, symbolIcons);
+        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
         y += 2;
       }
     }
@@ -502,7 +519,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.addImage(planImg, ext, ML, ay, CW, ih, undefined, 'FAST');
         ay += ih + 4;
       } catch { ay += 6; }
-      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR, symbolIcons);
+      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
     });
   }
 

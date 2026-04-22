@@ -5,7 +5,7 @@ import { Ic } from '../ui/Icons.jsx';
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
 // ── Viewpoint (œil + cône de vue) ────────────────────────────────────────────
-function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E30513' }) {
+export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E30513' }) {
   const r  = 10 + size;
   const L  = 40 + size * 4;
   const sp = 0.62; // demi-angle du cône (~35°)

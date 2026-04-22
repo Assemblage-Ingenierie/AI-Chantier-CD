@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
-import { SYMBOLS, drawAnnotationPaths } from './Annotator.jsx';
+import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 
@@ -12,6 +12,18 @@ function SymbolIcon({ sym, size = 14 }) {
     ctx.clearRect(0, 0, 80, 80);
     try { sym.draw(ctx, 40, 28, 2, DA.red); } catch {}
   }, [sym]);
+  return <canvas ref={ref} width={80} height={80}
+    style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
+}
+
+function ViewpointIcon({ size = 24 }) {
+  const ref = useRef();
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 80, 80);
+    try { drawVP(ctx, { x: 38, y: 55, angle: -Math.PI / 2, label: 'V1', size: 1, color: DA.red }); } catch {}
+  }, []);
   return <canvas ref={ref} width={80} height={80}
     style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
 }
@@ -155,9 +167,11 @@ function PlanBlock({ loc }) {
     el.src = planBg;
   }, [exported, paths, planBg]);
 
-  // Légende des symboles utilisés
-  const usedIds  = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
-  const legendSy = SYMBOLS.filter(s => usedIds.has(s.id));
+  // Légende : symboles + viewpoints
+  const usedIds       = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy      = SYMBOLS.filter(s => usedIds.has(s.id));
+  const hasViewpoints = (paths || []).some(p => p.type === 'viewpoint');
+  const showLegend    = legendSy.length > 0 || hasViewpoints;
 
   if (!renderedImg && !planBg) return null;
   return (
@@ -177,16 +191,22 @@ function PlanBlock({ loc }) {
         <img src={renderedImg} alt={`Plan ${loc.nom}`}
           style={{ width:'100%', display:'block', objectFit:'contain' }}/>
       )}
-      {legendSy.length > 0 && (
-        <div style={{ padding:'7px 10px 9px', background:'#fafafa', borderTop:`1px solid ${DA.border}`, border:`1px solid ${DA.red}`, borderRadius:'0 0 4px 4px', borderTop:`2px solid ${DA.red}` }}>
-          <div style={{ fontSize:9, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'5px 18px' }}>
+      {showLegend && (
+        <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
+          <div style={{ fontSize:10, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:8 }}>Légende</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px' }}>
             {legendSy.map(s => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:DA.gray }}>
-                <SymbolIcon sym={s} size={18}/>
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:DA.gray }}>
+                <SymbolIcon sym={s} size={24}/>
                 {s.label}
               </div>
             ))}
+            {hasViewpoints && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:DA.gray }}>
+                <ViewpointIcon size={24}/>
+                Vue photo
+              </div>
+            )}
           </div>
         </div>
       )}
