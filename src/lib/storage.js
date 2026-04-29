@@ -56,6 +56,14 @@ function slimAnnot(ann) {
   return rest;
 }
 
+// Extrait le chemin Storage depuis une URL Supabase (formats public, authenticated, sign)
+// ou retourne la valeur telle quelle si c'est déjà un chemin relatif.
+function extractPhotoPath(urlOrPath) {
+  if (!urlOrPath || !urlOrPath.startsWith('http')) return urlOrPath;
+  const match = urlOrPath.match(/\/object\/(?:public|authenticated|sign)\/photos\/([^?]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
 function slimLoc(l) {
   return {
@@ -111,15 +119,15 @@ async function loadRemote() {
   const [r1, r2, r3, r4] = await Promise.all([
     // photo exclu du SELECT — peut être un gros base64 qui cause HTTP 500.
     // Récupéré depuis le cache local lors du merge, ou migré vers Storage à la prochaine save.
-    sb.from('chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'),
+    sb.from('aichantier_chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'),
     // bg/data exclus — blobs volumineux (images de plans), chargés lazily à l'ouverture du projet
-    sb.from('chantier_plans')
+    sb.from('aichantier_chantier_plans')
       .select('id,chantier_id,nom,sort_order')
       .order('sort_order'),
-    sb.from('chantier_localisations')
+    sb.from('aichantier_chantier_localisations')
       .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
       .order('sort_order'),
-    sb.from('localisation_items')
+    sb.from('aichantier_localisation_items')
       .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
       .order('sort_order'),
   ]);
@@ -208,17 +216,32 @@ export async function loadProjectPhotos(itemIds) {
   if (!itemIds.length) return {};
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('item_photos')
+    const { data, error } = await sb.from('aichantier_item_photos')
       .select('id,item_id,name,storage_url,sort_order').in('item_id', itemIds).order('sort_order');
     if (error) { console.warn('loadProjectPhotos error:', error); return null; }
-    // Map storage_url → data field so frontend works unchanged
-    const mapped = (data ?? []).map(ph => ({
+
+    const rows = (data ?? []).map(ph => ({
+      ...ph,
+      _path: ph.storage_url ? extractPhotoPath(ph.storage_url) : null,
+    }));
+
+    // Batch generate signed URLs (1 appel réseau pour toutes les photos)
+    const paths = rows.filter(r => r._path).map(r => r._path);
+    const signedMap = {};
+    if (paths.length > 0) {
+      const { data: signed } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+      for (const s of (signed ?? [])) {
+        if (s.signedUrl) signedMap[s.path] = s.signedUrl;
+      }
+    }
+
+    const mapped = rows.map(ph => ({
       id:         ph.id,
       item_id:    ph.item_id,
       name:       ph.name,
-      data:       ph.storage_url ?? null,  // URL or null (legacy without storage_url)
+      data:       ph._path ? (signedMap[ph._path] ?? null) : null,
       sort_order: ph.sort_order,
-      _legacy:    !ph.storage_url,  // true = old base64 in DB, needs migration
+      _legacy:    !ph.storage_url,
     }));
     return groupBy(mapped, 'item_id');
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
@@ -234,7 +257,7 @@ export async function hydrateChantierPhotos(chantierIds) {
     const result = {};
     for (let i = 0; i < chantierIds.length; i += 5) {
       const batch = chantierIds.slice(i, i + 5);
-      const { data } = await sb.from('chantiers').select('id,photo').in('id', batch);
+      const { data } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
       for (const row of (data ?? [])) {
         if (row.photo) result[row.id] = row.photo;
       }
@@ -247,7 +270,7 @@ export async function hydrateChantierPhotos(chantierIds) {
 export async function hydratePlanLibrary(projectId) {
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('chantier_plans')
+    const { data, error } = await sb.from('aichantier_chantier_plans')
       .select('id,bg,data').eq('chantier_id', projectId);
     if (error) { console.warn('hydratePlanLibrary error:', error); return null; }
     const map = {};
@@ -263,7 +286,7 @@ export async function hydratePlanLibrary(projectId) {
 export async function hydratePlans(projectId) {
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('chantier_localisations')
+    const { data, error } = await sb.from('aichantier_chantier_localisations')
       .select('id,plan_bg,plan_data').eq('chantier_id', projectId);
     if (error) { console.warn('hydratePlans error:', error); return null; }
     const map = {};
@@ -283,7 +306,7 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
   for (const id of legacyPhotoIds) {
     try {
       // Fetch one photo's data (by PK = fast even with large TOAST)
-      const { data: row, error } = await sb.from('item_photos')
+      const { data: row, error } = await sb.from('aichantier_item_photos')
         .select('id,item_id,name,data').eq('id', id).maybeSingle();
       if (error || !row?.data) continue;
       // Upload to Storage
@@ -293,11 +316,10 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
       const path = `${row.item_id}/${id}.${ext}`;
       const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
       if (upErr) { console.warn('Storage upload error:', upErr); continue; }
-      const { data: urlData } = sb.storage.from('photos').getPublicUrl(path);
-      const url = urlData.publicUrl;
-      // Update DB: set storage_url, clear data
-      await sb.from('item_photos').update({ storage_url: url, data: null }).eq('id', id);
-      result[id] = url;
+      // Store path (not public URL) + retourner signed URL pour affichage immédiat
+      await sb.from('aichantier_item_photos').update({ storage_url: path, data: null }).eq('id', id);
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, 3600);
+      result[id] = signed?.signedUrl ?? null;
     } catch (e) { console.warn('migratePhotosToStorage error for', id, e); }
   }
   return result;
@@ -315,8 +337,7 @@ async function uploadPhotoToStorage(sb, itemId, photoIndex, name, base64) {
     const path = `${itemId}/${Date.now()}_${photoIndex}.${ext}`;
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
     if (error) { console.warn('Storage upload error:', error); return null; }
-    const { data } = sb.storage.from('photos').getPublicUrl(path);
-    return data.publicUrl;
+    return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
@@ -329,22 +350,24 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
   const result = [];
   for (let pi = 0; pi < rawPhotos.length; pi++) {
     const ph = rawPhotos[pi];
-    let storageUrl = ph.storage_url ?? null;
+    let storageUrl = ph.storage_url
+      ? (extractPhotoPath(ph.storage_url) ?? ph.storage_url)
+      : null;
     if (storageUrl) {
-      // Already in Storage — reuse
+      // path normalisé — réutiliser
     } else if (ph.data?.startsWith('data:')) {
       storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
       if (!storageUrl) continue;
     } else if (ph.data?.startsWith('http')) {
-      storageUrl = ph.data;
+      storageUrl = extractPhotoPath(ph.data) ?? ph.data;
     } else {
       const legacyId = ph._id || ph.id;
       if (!legacyId) continue;
-      const { data: legRow } = await sb.from('item_photos').select('data').eq('id', legacyId).maybeSingle();
+      const { data: legRow } = await sb.from('aichantier_item_photos').select('data').eq('id', legacyId).maybeSingle();
       if (!legRow?.data) continue;
       storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, legRow.data);
       if (!storageUrl) continue;
-      await sb.from('item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
+      await sb.from('aichantier_item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
     }
     result.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
   }
@@ -362,7 +385,7 @@ async function saveRemote(ps, dirtyIds = null) {
   if (_lastRemoteIds !== null) {
     const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
     if (toDelete.length > 0) {
-      const { error } = await sb.from('chantiers').delete().in('id', toDelete);
+      const { error } = await sb.from('aichantier_chantiers').delete().in('id', toDelete);
       if (error) errors.push(error);
     }
   }
@@ -393,7 +416,7 @@ async function saveRemote(ps, dirtyIds = null) {
 
     // ── Parallèle : upsert chantier + lecture IDs existants ──────────────────
     const [chantierRes, dbLocsRes] = await Promise.all([
-      sb.from('chantiers').upsert({
+      sb.from('aichantier_chantiers').upsert({
         id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
         adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
         photo: coverPhotoUrl, date_visite: firstVisit?.dateVisite ?? null,
@@ -401,7 +424,7 @@ async function saveRemote(ps, dirtyIds = null) {
         participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
         visites: visitesMetadata, updated_at: now,
       }, { onConflict: 'id' }),
-      sb.from('chantier_localisations').select('id').eq('chantier_id', p.id),
+      sb.from('aichantier_chantier_localisations').select('id').eq('chantier_id', p.id),
     ]);
     if (chantierRes.error) { errors.push(chantierRes.error); continue; }
 
@@ -433,24 +456,24 @@ async function saveRemote(ps, dirtyIds = null) {
     const [, dbItemsRes] = await Promise.all([
       removedLocIds.length > 0
         ? (async () => {
-            await sb.from('localisation_items').delete().in('localisation_id', removedLocIds);
-            await sb.from('chantier_localisations').delete().in('id', removedLocIds);
+            await sb.from('aichantier_localisation_items').delete().in('localisation_id', removedLocIds);
+            await sb.from('aichantier_chantier_localisations').delete().in('id', removedLocIds);
           })()
         : Promise.resolve(),
       locIdsToFetch.length > 0
-        ? sb.from('localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
+        ? sb.from('aichantier_localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
         : Promise.resolve({ data: [] }),
     ]);
 
     // UPSERT locs (sans blobs null — PostgREST ne met à jour que les colonnes envoyées)
     if (locRows.length > 0) {
-      const { error: le } = await sb.from('chantier_localisations').upsert(locRows, { onConflict: 'id' });
+      const { error: le } = await sb.from('aichantier_chantier_localisations').upsert(locRows, { onConflict: 'id' });
       if (le) { errors.push(le); continue; }
     }
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
-      const dbPlansRes = await sb.from('chantier_plans').select('id').eq('chantier_id', p.id);
+      const dbPlansRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
@@ -464,8 +487,8 @@ async function saveRemote(ps, dirtyIds = null) {
       // Local can be empty because plans weren't hydrated yet (bg/data loaded lazily).
       if (planRows.length === 0 && dbPlanIds.size > 0) return;
       await Promise.all([
-        removedPlanIds.length ? sb.from('chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
-        planRows.length       ? sb.from('chantier_plans').upsert(planRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
+        removedPlanIds.length ? sb.from('aichantier_chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
+        planRows.length       ? sb.from('aichantier_chantier_plans').upsert(planRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
       ]);
     })();
 
@@ -508,18 +531,18 @@ async function saveRemote(ps, dirtyIds = null) {
     // ── Parallèle : suppr items retirés (batch) + upsert items + prefetch photos
     const deleteRemovedItemsPromise = allRemovedItemIds.length > 0
       ? (async () => {
-          await sb.from('item_photos').delete().in('item_id', allRemovedItemIds);
-          await sb.from('localisation_items').delete().in('id', allRemovedItemIds);
+          await sb.from('aichantier_item_photos').delete().in('item_id', allRemovedItemIds);
+          await sb.from('aichantier_localisation_items').delete().in('id', allRemovedItemIds);
         })()
       : Promise.resolve();
 
     const [, upsertItemsRes, photosRes] = await Promise.all([
       deleteRemovedItemsPromise,
       allItems.length > 0
-        ? sb.from('localisation_items').upsert(allItems, { onConflict: 'id' })
+        ? sb.from('aichantier_localisation_items').upsert(allItems, { onConflict: 'id' })
         : Promise.resolve({ error: null }),
       unloadedItemIds.length > 0
-        ? sb.from('item_photos').select('id,item_id,name,storage_url,sort_order')
+        ? sb.from('aichantier_item_photos').select('id,item_id,name,storage_url,sort_order')
             .in('item_id', unloadedItemIds).order('sort_order')
         : Promise.resolve({ data: [] }),
     ]);
@@ -529,7 +552,7 @@ async function saveRemote(ps, dirtyIds = null) {
 
     // Photos : delete + re-insert batch (une seule requête insert au lieu de N)
     if (itemsWithLocalPhotos.size > 0) {
-      await sb.from('item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
+      await sb.from('aichantier_item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
     }
     const allPhotoRows = [];
     for (const { itemId, item } of itemRecords) {
@@ -538,7 +561,7 @@ async function saveRemote(ps, dirtyIds = null) {
       allPhotoRows.push(...photos);
     }
     if (allPhotoRows.length > 0) {
-      const { error } = await sb.from('item_photos').insert(allPhotoRows);
+      const { error } = await sb.from('aichantier_item_photos').insert(allPhotoRows);
       if (error) errors.push(error);
     }
 
@@ -628,7 +651,7 @@ function showSyncWarning(firstError) {
 
   let hint = '';
   if (code === '42501' || msg.includes('row-level security') || msg.includes('violates row-level')) {
-    hint = 'Vérifier les politiques RLS Supabase (table item_photos ou storage.objects).';
+    hint = 'Vérifier les politiques RLS Supabase (table aichantier_item_photos ou storage.objects).';
   } else if (code === '23503') {
     hint = 'Erreur de clé étrangère — rechargez la page.';
   } else if (msg.includes('timeout') || msg.includes('57014')) {

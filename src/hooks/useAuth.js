@@ -25,7 +25,7 @@ export function useAuth() {
   const fetchProfile = async (userId) => {
     try {
       const sb = await getSupabase();
-      const { data, error } = await sb.from('profiles').select('*').eq('id', userId).single();
+      const { data, error } = await sb.from('aichantier_profiles').select('*').eq('id', userId).single();
       if (error || !data) return null;
       writeCachedProfile(data);
       return data;

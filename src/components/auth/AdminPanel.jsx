@@ -11,7 +11,7 @@ export default function AdminPanel({ onClose }) {
     setLoading(true); setErr('');
     try {
       const sb = await getSupabase();
-      const { data, error } = await sb.from('profiles').select('*').order('created_at', { ascending: true });
+      const { data, error } = await sb.from('aichantier_profiles').select('*').order('created_at', { ascending: true });
       if (error) throw error;
       setProfiles(data);
     } catch (e) { setErr(e.message); }
@@ -22,14 +22,14 @@ export default function AdminPanel({ onClose }) {
 
   const setApproval = async (id, approved) => {
     const sb = await getSupabase();
-    const { error } = await sb.from('profiles').update({ is_approved: approved }).eq('id', id);
+    const { error } = await sb.from('aichantier_profiles').update({ is_approved: approved }).eq('id', id);
     if (error) setErr(error.message);
     else fetchProfiles();
   };
 
   const setRole = async (id, role) => {
     const sb = await getSupabase();
-    const { error } = await sb.from('profiles').update({ role }).eq('id', id);
+    const { error } = await sb.from('aichantier_profiles').update({ role }).eq('id', id);
     if (error) setErr(error.message);
     else fetchProfiles();
   };

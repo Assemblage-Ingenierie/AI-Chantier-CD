@@ -8930,7 +8930,7 @@ function AdminPanel(_ref_ap) {
     setLoading(true); setErr("");
     try {
       var cfg = await _getSupabaseConfig();
-      var r = await fetch(cfg.url + "/rest/v1/profiles?select=*&order=created_at.asc", { headers: _sbHeaders(cfg.key) });
+      var r = await fetch(cfg.url + "/rest/v1/aichantier_profiles?select=*&order=created_at.asc", { headers: _sbHeaders(cfg.key) });
       if (!r.ok) throw new Error("Erreur " + r.status);
       setProfiles(await r.json());
     } catch(e) { setErr(e.message); }
@@ -8942,7 +8942,7 @@ function AdminPanel(_ref_ap) {
   var setApproval = async function(id, approved) {
     try {
       var cfg = await _getSupabaseConfig();
-      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + id, {
+      var r = await fetch(cfg.url + "/rest/v1/aichantier_profiles?id=eq." + id, {
         method: "PATCH",
         headers: _sbHeaders(cfg.key, { Prefer: "return=minimal" }),
         body: JSON.stringify({ is_approved: approved })
@@ -8955,7 +8955,7 @@ function AdminPanel(_ref_ap) {
   var setRole = async function(id, role) {
     try {
       var cfg = await _getSupabaseConfig();
-      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + id, {
+      var r = await fetch(cfg.url + "/rest/v1/aichantier_profiles?id=eq." + id, {
         method: "PATCH",
         headers: _sbHeaders(cfg.key, { Prefer: "return=minimal" }),
         body: JSON.stringify({ role: role })
@@ -9013,7 +9013,7 @@ function AuthGate() {
 
   var checkProfile = async function(userId, cfg) {
     try {
-      var r = await fetch(cfg.url + "/rest/v1/profiles?id=eq." + userId + "&select=*", { headers: _sbHeaders(cfg.key) });
+      var r = await fetch(cfg.url + "/rest/v1/aichantier_profiles?id=eq." + userId + "&select=*", { headers: _sbHeaders(cfg.key) });
       if (!r.ok) return null;
       var rows = await r.json();
       return rows[0] || null;

@@ -167,8 +167,17 @@ export default function RapportTab({ projet, onUpdate }) {
         counts[key]  = (counts[key] || 0) + 1;
         const ext    = ph.name.includes('.') ? ph.name.split('.').pop() : 'jpg';
         const fname  = `${base}_${counts[key]}.${ext}`;
-        const b64    = ph.data.includes(',') ? ph.data.split(',')[1] : ph.data;
-        zip.folder(folder).file(fname, b64, { base64: true });
+        try {
+          if (ph.data.startsWith('data:')) {
+            const b64 = ph.data.includes(',') ? ph.data.split(',')[1] : ph.data;
+            zip.folder(folder).file(fname, b64, { base64: true });
+          } else {
+            const resp = await fetch(ph.data);
+            if (!resp.ok) continue;
+            const blob = await resp.blob();
+            zip.folder(folder).file(fname, blob);
+          }
+        } catch { /* skip photo en erreur */ }
       }
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
       const url  = URL.createObjectURL(blob);
