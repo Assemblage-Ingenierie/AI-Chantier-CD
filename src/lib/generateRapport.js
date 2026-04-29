@@ -1,6 +1,7 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
+import { getBrandingUrl } from './branding.js';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
@@ -120,10 +121,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
-  // Charger le logo Assemblage Ingénierie en base64
+  // Charger le logo Assemblage Ingénierie en base64 (depuis le bucket Supabase branding)
   let logoDataUrl = null;
   try {
-    const resp = await fetch('/logo_Ai_rouge_HD.png');
+    const logoUrl = await getBrandingUrl('logo_Ai_rouge_HD.png');
+    const resp = await fetch(logoUrl);
     if (resp.ok) {
       const blob = await resp.blob();
       logoDataUrl = await new Promise(res => {
@@ -539,11 +541,19 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `CR_${(projet.nom || 'Projet').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  const filename = `CR_${(projet.nom || 'Projet').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+    // Mobile : ouvrir dans le viewer PDF natif (iOS/Android)
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } else {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
 }

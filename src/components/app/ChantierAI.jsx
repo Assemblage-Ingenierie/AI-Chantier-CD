@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
+import { useBrandingLogo } from '../../lib/branding.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
@@ -9,6 +10,7 @@ import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 
 export default function ChantierAI({ profile, onLogout }) {
+  const logoUrl = useBrandingLogo();
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -61,7 +63,7 @@ export default function ChantierAI({ profile, onLogout }) {
 
   if (showSplash) return (
     <div style={{ position:'fixed',inset:0,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:9999 }}>
-      <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ width:220,maxWidth:'60vw',objectFit:'contain' }}/>
+      <img src={logoUrl} alt="Assemblage Ingénierie" style={{ width:220,maxWidth:'60vw',objectFit:'contain' }}/>
       <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:10,color:DA.grayL }}>
         <Ic n="spn" s={28}/>
         <span style={{ fontSize:11,letterSpacing:1,textTransform:'uppercase',fontWeight:600 }}>Chargement…</span>
@@ -75,7 +77,7 @@ export default function ChantierAI({ profile, onLogout }) {
       {/* Header */}
       <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
-          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>
+          <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (

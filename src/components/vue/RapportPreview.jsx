@@ -3,6 +3,7 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
+import { useBrandingLogo } from '../../lib/branding.js';
 
 function SymbolIcon({ sym, size = 14 }) {
   const ref = useRef();
@@ -227,10 +228,11 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
 
 // ── Bandeau header commun (logo + titre projet) ─────────────────────────────
 function HdrBar({ projet, dateStr }) {
+  const logoUrl = useBrandingLogo();
   return (
     <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
       <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
-      <img src="/logo_Ai_rouge_HD.png" alt="AI"
+      <img src={logoUrl} alt="AI"
         style={{ height:16, objectFit:'contain', opacity:0.9, flexShrink:0 }}/>
       <span style={{ flex:1 }}/>
       <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
@@ -274,6 +276,7 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
 
 // ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────
 function CoverPage({ projet, pageNum, totalPages }) {
+  const logoUrl = useBrandingLogo();
   const participants = projet.participants || [];
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
@@ -296,7 +299,7 @@ function CoverPage({ projet, pageNum, totalPages }) {
             style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
         )}
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
-        <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie"
+        <img src={logoUrl} alt="Assemblage Ingénierie"
           style={{ position:'absolute', top:MX, right:MX, height:24, objectFit:'contain' }}/>
         <div style={{ position:'absolute', bottom:MX, left:MX+4 }}>
           <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>

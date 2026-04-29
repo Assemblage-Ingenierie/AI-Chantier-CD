@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
+import { useBrandingLogo } from '../../lib/branding.js';
 
 const BG = '#30323E';
 const RED = '#E30513';
 
 export default function LoginScreen({ onLogin }) {
+  const logoUrl = useBrandingLogo();
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,7 +74,7 @@ export default function LoginScreen({ onLogin }) {
 
         {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 32 }}>
-          <img src="/logo_Ai_rouge_HD.png" alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />
+          <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />
           <div style={{ color: 'white', fontWeight: 900, fontSize: 18, letterSpacing: -0.5 }}>AI Chantier</div>
         </div>
 

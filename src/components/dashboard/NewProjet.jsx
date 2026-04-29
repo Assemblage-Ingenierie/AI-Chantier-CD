@@ -8,9 +8,40 @@ const FIELDS = [
   { k: 'adresse', l: 'Adresse', ph: 'Ex: 12 rue des Acacias, Lyon' },
 ];
 
+const compress = (file) => new Promise(res => {
+  const r = new FileReader();
+  r.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1920;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      res(canvas.toDataURL('image/jpeg', 0.78));
+    };
+    img.onerror = () => res(null);
+    img.src = ev.target.result;
+  };
+  r.onerror = () => res(null);
+  r.readAsDataURL(file);
+});
+
 export default function NewProjet({ onClose, onSave }) {
   const [f, setF] = useState({ nom: '', adresse: '', photo: null, maitreOuvrage: '' });
-  const ref = useRef();
+  const gallRef = useRef();
+  const camRef = useRef();
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('Image trop grande (max 5 Mo)'); return; }
+    const dataUrl = await compress(file);
+    if (dataUrl) setF(p => ({ ...p, photo: dataUrl }));
+  };
 
   return (
     <div className="modal-overlay">
@@ -21,12 +52,17 @@ export default function NewProjet({ onClose, onSave }) {
         </div>
 
         {/* Photo */}
-        <div onClick={() => ref.current.click()} style={{ position:'relative',width:'100%',height:120,borderRadius:12,border:`2px dashed ${DA.border}`,overflow:'hidden',cursor:'pointer',background:DA.grayXL,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:14 }}>
+        <div style={{ position:'relative',width:'100%',height:120,borderRadius:12,border:`2px dashed ${DA.border}`,overflow:'hidden',background:DA.grayXL,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:8 }}>
           {f.photo ? (
             <>
               <img src={f.photo} alt="" style={{ position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover' }}/>
-              <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                <span style={{ color:'white',fontSize:12,background:'rgba(0,0,0,0.4)',borderRadius:8,padding:'4px 10px' }}>Changer</span>
+              <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
+                <button onClick={() => gallRef.current.click()} style={{ background:'rgba(255,255,255,0.9)',border:'none',borderRadius:8,padding:'5px 10px',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                  <Ic n="img" s={12}/> Galerie
+                </button>
+                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ background:'rgba(255,255,255,0.9)',border:'none',borderRadius:8,padding:'5px 10px',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                  <Ic n="cam" s={12}/> Photo
+                </button>
               </div>
             </>
           ) : (
@@ -35,11 +71,20 @@ export default function NewProjet({ onClose, onSave }) {
             </div>
           )}
         </div>
-        <input ref={ref} type="file" accept="image/*" style={{ display:'none' }} onChange={(e) => {
-          const fl = e.target.files[0]; if (!fl) return;
-          if (fl.size > 5 * 1024 * 1024) { alert('Image trop grande (max 5 Mo)'); e.target.value = ''; return; }
-          const r = new FileReader(); r.onload = (ev) => setF((p) => ({ ...p, photo: ev.target.result })); r.readAsDataURL(fl);
-        }}/>
+        {!f.photo && (
+          <div style={{ display:'flex',gap:8,marginBottom:14 }}>
+            <button onClick={() => gallRef.current.click()} style={{ flex:1,border:`1px solid ${DA.border}`,background:'white',borderRadius:8,padding:'6px 0',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:4,color:DA.gray }}>
+              <Ic n="img" s={12}/> Galerie
+            </button>
+            <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ flex:1,border:'none',background:DA.red,borderRadius:8,padding:'6px 0',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:4,color:'white' }}>
+              <Ic n="cam" s={12}/> Photo
+            </button>
+          </div>
+        )}
+        <input ref={gallRef} type="file" accept="image/*" style={{ display:'none' }}
+          onChange={e => handleFile(e.target.files?.[0])}/>
+        <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
+          onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); setTimeout(() => { if (camRef.current) camRef.current.value = ''; }, 200); }}/>
 
         {/* Champs */}
         {FIELDS.map(({ k, l, ph }) => (
