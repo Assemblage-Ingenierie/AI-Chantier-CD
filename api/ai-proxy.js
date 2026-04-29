@@ -29,6 +29,23 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Non autorisé' });
   }
 
+  // Valider le token Supabase — rejette les tokens forgés ou expirés
+  const sbUrl = (process.env.SUPABASE_URL || '').trim();
+  const sbAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+  if (sbUrl && sbAnonKey) {
+    let userRes;
+    try {
+      userRes = await fetch(`${sbUrl}/auth/v1/user`, {
+        headers: { 'Authorization': authHeader, 'apikey': sbAnonKey },
+      });
+    } catch {
+      return res.status(401).json({ error: 'Impossible de valider le token' });
+    }
+    if (!userRes.ok) {
+      return res.status(401).json({ error: 'Token invalide ou expiré' });
+    }
+  }
+
   const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
   if (!geminiKey) {
     return res.status(500).json({ error: 'Clé Gemini manquante (GEMINI_API_KEY non configurée dans Vercel)' });
