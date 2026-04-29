@@ -93,6 +93,9 @@ export default async function handler(req, res) {
 
   if (!upstream.ok) {
     const msg = data?.error?.message || JSON.stringify(data);
+    if (upstream.status === 429) {
+      return res.status(429).json({ error: 'Quota Gemini dépassé (15 req/min sur le plan gratuit) — attends 1 minute ou active la facturation sur Google Cloud Console' });
+    }
     return res.status(upstream.status).json({ error: `Erreur Gemini : ${msg}` });
   }
 
