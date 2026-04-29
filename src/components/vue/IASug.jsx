@@ -71,7 +71,7 @@ export default function IASug({ content, onApply }) {
       const texte = (content || '').slice(0, 2000);
       const d = await callAIProxy({
         feature: 'observation-suggestion',
-        model: 'claude-haiku-4-5-20251001',
+        model: 'gemini-2.0-flash',
         max_tokens: 900,
         system: 'Tu es expert MOE/BET bâtiment et rédiges des comptes-rendus de visite chantier. Français technique, concis, professionnel.',
         messages: [{

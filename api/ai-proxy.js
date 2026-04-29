@@ -1,14 +1,23 @@
 const ALLOWED_MODELS = [
-  'claude-sonnet-4-20250514',
-  'claude-haiku-4-5-20251001',
-  'claude-opus-4-5-20251101',
-  'claude-haiku-4-5',
-  'claude-sonnet-4-5',
-  'claude-sonnet-4-6',
-  'claude-3-5-haiku-20241022',
-  'claude-3-5-sonnet-20241022',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-1.5-pro',
 ];
 const MAX_TOKENS_CAP = 2000;
+const DEFAULT_MODEL = 'gemini-2.0-flash';
+
+// Convertit le format Anthropic (messages + system) vers le format Gemini
+function toGeminiBody(payload, maxTokens) {
+  const contents = (payload.messages || []).map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: typeof m.content === 'string' ? m.content : (m.content || []).map(c => c.text || '').join('') }],
+  }));
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
+  return body;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -20,9 +29,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Non autorisé' });
   }
 
-  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!anthropicKey) {
-    return res.status(500).json({ error: 'Clé Anthropic manquante (ANTHROPIC_API_KEY non configurée dans Vercel)' });
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!geminiKey) {
+    return res.status(500).json({ error: 'Clé Gemini manquante (GEMINI_API_KEY non configurée dans Vercel)' });
   }
 
   let payload;
@@ -32,36 +41,45 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Corps de requête invalide' });
   }
 
-  const model = ALLOWED_MODELS.includes(payload.model) ? payload.model : 'claude-3-5-haiku-20241022';
-  const max_tokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
+  const model = ALLOWED_MODELS.includes(payload.model) ? payload.model : DEFAULT_MODEL;
+  const maxTokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 20000);
 
   let upstream;
   try {
-    upstream = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({ model, max_tokens, system: payload.system, messages: payload.messages }),
-      signal: ctrl.signal,
-    });
+    upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': geminiKey,
+        },
+        body: JSON.stringify(toGeminiBody(payload, maxTokens)),
+        signal: ctrl.signal,
+      }
+    );
     clearTimeout(t);
   } catch (e) {
     clearTimeout(t);
-    return res.status(500).json({ error: `API Anthropic injoignable : ${e.message}` });
+    return res.status(500).json({ error: `API Gemini injoignable : ${e.message}` });
   }
 
   let data;
   try {
     data = await upstream.json();
   } catch {
-    return res.status(500).json({ error: 'Réponse non-JSON de Anthropic' });
+    return res.status(500).json({ error: 'Réponse non-JSON de Gemini' });
   }
 
-  return res.status(upstream.status).json(data);
+  if (!upstream.ok) {
+    const msg = data?.error?.message || JSON.stringify(data);
+    return res.status(upstream.status).json({ error: `Erreur Gemini : ${msg}` });
+  }
+
+  // Normaliser au format Anthropic pour compatibilité avec le client existant
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  return res.status(200).json({ content: [{ type: 'text', text }] });
 }
