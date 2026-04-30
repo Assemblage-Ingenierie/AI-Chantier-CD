@@ -124,7 +124,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // Charger le logo Assemblage Ingénierie en base64 (depuis le bucket Supabase branding)
   let logoDataUrl = null;
   try {
-    const logoUrl = await getBrandingUrl('logo-ai-rouge.png');
+    const logoUrl = await getBrandingUrl('logo/logo_Ai_rouge.png');
     const resp = await fetch(logoUrl);
     if (resp.ok) {
       const blob = await resp.blob();

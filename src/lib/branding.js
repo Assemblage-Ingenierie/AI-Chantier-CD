@@ -19,7 +19,7 @@ export async function getBrandingUrl(filename) {
 }
 
 // Hook React — commence par le fallback local, remplace par l'URL Supabase dès qu'elle est disponible.
-export function useBrandingLogo(filename = 'logo-ai-rouge.svg') {
+export function useBrandingLogo(filename = 'logo/logo_Ai_rouge.svg') {
   const [url, setUrl] = useState(`/${filename}`);
   useEffect(() => {
     getBrandingUrl(filename).then(u => setUrl(u));
