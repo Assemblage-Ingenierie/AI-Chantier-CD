@@ -8,7 +8,7 @@ const ALLOWED_MODELS = [
   'gemini-1.5-pro',
 ];
 const MAX_TOKENS_CAP = 2000;
-const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
+const DEFAULT_MODEL = 'gemma-3-12b-it';
 
 // Convertit le format Anthropic (messages + system) vers le format Gemini
 function toGeminiBody(payload, maxTokens, model) {
