@@ -93,6 +93,7 @@ function slimLoc(l) {
 function toSlim(ps) {
   return ps.map(p => ({
     ...p,
+    photo: p.photo?.startsWith('http') ? null : p.photo,
     planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })),
     visites: (p.visites || []).map(v => ({
       ...v,
