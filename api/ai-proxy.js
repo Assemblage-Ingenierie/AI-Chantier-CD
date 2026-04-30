@@ -10,13 +10,17 @@ const MAX_TOKENS_CAP = 2000;
 const DEFAULT_MODEL = 'gemma-3-12b-it';
 
 // Convertit le format Anthropic (messages + system) vers le format Gemini
-function toGeminiBody(payload, maxTokens) {
-  const contents = (payload.messages || []).map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: typeof m.content === 'string' ? m.content : (m.content || []).map(c => c.text || '').join('') }],
-  }));
+function toGeminiBody(payload, maxTokens, model) {
+  const msgs = payload.messages || [];
+  const isGemma = model.startsWith('gemma-');
+  const contents = msgs.map((m, i) => {
+    const text = typeof m.content === 'string' ? m.content : (m.content || []).map(c => c.text || '').join('');
+    // Gemma ne supporte pas system_instruction : on préfixe le system dans le 1er message user
+    const prefix = isGemma && i === 0 && m.role === 'user' && payload.system ? payload.system + '\n\n' : '';
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: prefix + text }] };
+  });
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens } };
-  if (payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
+  if (!isGemma && payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
   return body;
 }
 
@@ -75,7 +79,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           'x-goog-api-key': geminiKey,
         },
-        body: JSON.stringify(toGeminiBody(payload, maxTokens)),
+        body: JSON.stringify(toGeminiBody(payload, maxTokens, model)),
         signal: ctrl.signal,
       }
     );
