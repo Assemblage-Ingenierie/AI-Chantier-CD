@@ -1,6 +1,18 @@
 import { getSupabase } from '../supabase.js';
 
+const _lastCall = {};
+const THROTTLE_MS = 5000;
+
 export async function callAIProxy(params) {
+  const feature = params.feature || 'default';
+  const now = Date.now();
+  const elapsed = now - (_lastCall[feature] || 0);
+  if (elapsed < THROTTLE_MS) {
+    const wait = Math.ceil((THROTTLE_MS - elapsed) / 1000);
+    throw new Error(`Attends ${wait}s avant une nouvelle requête IA`);
+  }
+  _lastCall[feature] = now;
+
   const sb = await getSupabase();
   const { data: { session } } = await sb.auth.getSession();
   const token = session?.access_token;
