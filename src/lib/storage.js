@@ -429,7 +429,7 @@ async function saveRemote(ps, dirtyIds = null) {
       (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
     );
 
-    const slug = slugify(p.nom);
+    const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
     const newCoverPath = `${slug}/cover/${p.id}.jpg`;
 
     // Migrer la photo couverture si c'est encore un base64 → Storage
