@@ -56,6 +56,15 @@ function slimAnnot(ann) {
   return rest;
 }
 
+function slugify(nom) {
+  return (nom || 'projet')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'projet';
+}
+
 // Extrait le chemin Storage depuis une URL Supabase (formats public, authenticated, sign)
 // ou retourne la valeur telle quelle si c'est déjà un chemin relatif.
 function extractPhotoPath(urlOrPath) {
@@ -341,20 +350,20 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
 // --- Écriture dans les tables normalisées ---
 
 // Convertit un base64 data URL en blob et l'upload dans le bucket Storage `photos`.
-// Retourne l'URL publique ou null en cas d'erreur.
-async function uploadPhotoToStorage(sb, itemId, photoIndex, name, base64) {
+// Retourne le chemin relatif ou null en cas d'erreur.
+async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, base64) {
   try {
     const resp = await fetch(base64);
     const blob = await resp.blob();
     const ext = (name || 'photo').replace(/.*\./, '') || 'jpg';
-    const path = `${itemId}/${Date.now()}_${photoIndex}.${ext}`;
+    const path = `${projectSlug}/${itemId}/${Date.now()}_${photoIndex}.${ext}`;
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
-async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
+async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, projectSlug) {
   const hasLocalPhotos = (item.photos || []).some(ph => ph.data || ph.storage_url);
   const rawPhotos = (!item._photosHydrated && !hasLocalPhotos)
     ? (fetchedPhotosByItem[item.id] ?? [])
@@ -369,7 +378,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
     if (storageUrl) {
       // path normalisé — réutiliser
     } else if (ph.data?.startsWith('data:')) {
-      storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, ph.data);
+      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, ph.data);
       if (!storageUrl) continue;
     } else if (ph.data?.startsWith('http')) {
       storageUrl = extractPhotoPath(ph.data) ?? ph.data;
@@ -378,7 +387,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem) {
       if (!legacyId) continue;
       const { data: legRow } = await sb.from('aichantier_item_photos').select('data').eq('id', legacyId).maybeSingle();
       if (!legRow?.data) continue;
-      storageUrl = await uploadPhotoToStorage(sb, itemId, pi, ph.name, legRow.data);
+      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, legRow.data);
       if (!storageUrl) continue;
       await sb.from('aichantier_item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
     }
@@ -420,11 +429,26 @@ async function saveRemote(ps, dirtyIds = null) {
       (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
     );
 
+    const slug = slugify(p.nom);
+    const newCoverPath = `${slug}/cover/${p.id}.jpg`;
+
     // Migrer la photo couverture si c'est encore un base64 → Storage
     let coverPhotoUrl = p.photo ?? null;
     if (coverPhotoUrl?.startsWith('data:')) {
-      const uploaded = await uploadPhotoToStorage(sb, `cover_${p.id}`, 0, 'cover.jpg', coverPhotoUrl);
+      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.jpg', coverPhotoUrl);
       if (uploaded) coverPhotoUrl = uploaded;
+    }
+
+    // Migrer ancien dossier cover_{id}/ → {slug}/cover/{id}.jpg via storage.move()
+    if (coverPhotoUrl && !coverPhotoUrl.startsWith('data:')) {
+      const oldPath = extractPhotoPath(coverPhotoUrl) ?? coverPhotoUrl;
+      if (oldPath && /^cover_[^/]+\//.test(oldPath) && oldPath !== newCoverPath) {
+        const { error: mvErr } = await sb.storage.from('photos').move(oldPath, newCoverPath);
+        if (!mvErr) {
+          await sb.from('aichantier_chantiers').update({ photo: newCoverPath }).eq('id', p.id);
+          coverPhotoUrl = newCoverPath;
+        }
+      }
     }
 
     // ── Parallèle : upsert chantier + lecture IDs existants ──────────────────
@@ -570,7 +594,7 @@ async function saveRemote(ps, dirtyIds = null) {
     const allPhotoRows = [];
     for (const { itemId, item } of itemRecords) {
       if (!itemsWithLocalPhotos.has(itemId)) continue;
-      const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem);
+      const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, slug);
       allPhotoRows.push(...photos);
     }
     if (allPhotoRows.length > 0) {
