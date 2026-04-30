@@ -253,13 +253,26 @@ export async function hydrateChantierPhotos(chantierIds) {
   if (!chantierIds.length) return {};
   try {
     const sb = await getSupabase();
-    // Fetch par batch de 5 pour éviter les timeouts sur de gros base64
     const result = {};
     for (let i = 0; i < chantierIds.length; i += 5) {
       const batch = chantierIds.slice(i, i + 5);
       const { data } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
+      const paths = [];
+      const rowMap = {};
       for (const row of (data ?? [])) {
-        if (row.photo) result[row.id] = row.photo;
+        if (!row.photo) continue;
+        // base64 legacy — utiliser tel quel
+        if (row.photo.startsWith('data:')) { result[row.id] = row.photo; continue; }
+        // extraire le chemin storage depuis l'URL publique ou conserver si déjà un chemin
+        const path = extractPhotoPath(row.photo) ?? row.photo;
+        paths.push(path);
+        rowMap[path] = row.id;
+      }
+      if (paths.length) {
+        const { data: signed } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+        for (const s of (signed ?? [])) {
+          if (s.signedUrl) result[rowMap[s.path]] = s.signedUrl;
+        }
       }
     }
     return result;
