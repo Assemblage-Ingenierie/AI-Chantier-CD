@@ -130,7 +130,9 @@ export function useProjets(onSyncStatus) {
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
 
-        const missingPhotoIds = allMerged.filter(p => !p.photo).map(p => p.id);
+        // Inclure les projets dont le photo est une URL publique du bucket privé (cassée)
+        const needsSignedUrl = p => !p.photo || p.photo.includes('/object/public/photos/');
+        const missingPhotoIds = allMerged.filter(needsSignedUrl).map(p => p.id);
         if (missingPhotoIds.length) {
           hydrateChantierPhotos(missingPhotoIds).then(photoMap => {
             if (!Object.keys(photoMap).length) return;
