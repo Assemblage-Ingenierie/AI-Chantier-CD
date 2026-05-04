@@ -321,7 +321,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   doc.addPage(); y = 18; hdr();
 
-  const renderItems = (items) => {
+  const renderItems = (items, hasViewpoints = false) => {
+    let photoOff = 0;
     items.forEach(item => {
       if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
       const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
@@ -366,13 +367,24 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const show = item.photos.slice(0, maxPh);
         const pw = (CW - 4 - (cols - 1) * 2) / cols;
         const ph = pw * 0.65;
+        let validInItem = 0;
         show.forEach((p, pi) => {
           if (!p.data) return;
           const px = ML + 4 + (pi % cols) * (pw + 2);
           const py2 = y + Math.floor(pi / cols) * (ph + 2);
           try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, pw, ph, undefined, 'FAST'); } catch {}
           doc.setDrawColor(...GR); doc.setLineWidth(0.15); doc.rect(px, py2, pw, ph);
+          if (hasViewpoints) {
+            const vLabel = `V${photoOff + validInItem + 1}`;
+            doc.setFillColor(...RD);
+            doc.roundedRect(px + 0.5, py2 + 0.5, 7.5, 4.5, 1, 1, 'F');
+            doc.setFontSize(5.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+            doc.text(vLabel, px + 1.2, py2 + 3.7);
+            doc.setTextColor(0, 0, 0);
+          }
+          validInItem++;
         });
+        photoOff += validInItem;
         y += Math.ceil(show.length / cols) * (ph + 2) + 2;
       }
       y += 4;
@@ -388,7 +400,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
     doc.text(loc.nom.toUpperCase(), ML + 6, y + 7);
     doc.setTextColor(0, 0, 0); y += 14;
-    renderItems(items);
+    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
+    renderItems(items, hasVP);
 
     // Plan inline (si !plansEnFin et plan disponible)
     if (!plansEnFin) {

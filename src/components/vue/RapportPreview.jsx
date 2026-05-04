@@ -55,9 +55,12 @@ function buildPages(locs, ppl, breaks, plansEnFin) {
     if (breaks.has(loc.id)) flush();
     blocks.push({ type: 'zone', id: loc.id, loc });
 
+    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
+    let photoOffset = 0;
     for (const item of items) {
       if (breaks.has(item.id)) flush();
-      blocks.push({ type: 'item', id: item.id, item, locId: loc.id });
+      blocks.push({ type: 'item', id: item.id, item, locId: loc.id, vpPhotoOffset: photoOffset, hasViewpoints: hasVP });
+      photoOffset += (item.photos || []).filter(p => p.data).length;
     }
 
     if (!plansEnFin) {
@@ -100,7 +103,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit }) {
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false }) {
   const photos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -135,8 +138,15 @@ function ItemBlock({ item, ppl, onEdit }) {
       {photos.length > 0 && (
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.slice(0, 6).map((ph, pi) => (
-            <img key={pi} src={ph.data} alt=""
-              style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
+            <div key={pi} style={{ position:'relative' }}>
+              <img src={ph.data} alt=""
+                style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
+              {hasViewpoints && (
+                <div style={{ position:'absolute', top:2, left:2, background:DA.red, color:'white', fontSize:7, fontWeight:800, borderRadius:3, padding:'1px 4px', lineHeight:1.2, letterSpacing:0.3, pointerEvents:'none' }}>
+                  V{vpPhotoOffset + pi + 1}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -632,6 +642,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                         ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
                         : <ItemBlock item={block.item} ppl={ppl}
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
+                            vpPhotoOffset={block.vpPhotoOffset ?? 0}
+                            hasViewpoints={block.hasViewpoints ?? false}
                           />
                       }
                     </div>

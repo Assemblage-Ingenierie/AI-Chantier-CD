@@ -10,14 +10,12 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   const L  = 40 + size * 4;
   const sp = 0.62; // demi-angle du cône (~35°)
   ctx.save();
-  // Cône rempli semi-transparent
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.lineTo(x + Math.cos(angle - sp) * L, y + Math.sin(angle - sp) * L);
   ctx.arc(x, y, L, angle - sp, angle + sp);
   ctx.closePath();
   ctx.fillStyle = color; ctx.globalAlpha = 0.15; ctx.fill();
-  // Contour cône
   ctx.globalAlpha = 0.75;
   ctx.strokeStyle = color; ctx.lineWidth = 1.8;
   ctx.beginPath();
@@ -25,14 +23,11 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(angle + sp) * L, y + Math.sin(angle + sp) * L);
   ctx.stroke();
   ctx.beginPath(); ctx.arc(x, y, L, angle - sp, angle + sp); ctx.stroke();
-  // Cercle œil
   ctx.globalAlpha = 1;
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color; ctx.fill();
-  // Pupille
   ctx.beginPath(); ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
   ctx.fillStyle = '#fff'; ctx.fill();
-  // Étiquette
   if (label) {
     ctx.font = `bold ${8 + size}px Arial`;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
@@ -43,9 +38,6 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-// Dessine un tableau de paths annotateur sur un contexte canvas existant.
-// sizeScale > 1 agrandit les annotations proportionnellement (utile pour les rendus PDF/rapport
-// où l'image est réduite par rapport à sa taille naturelle).
 export function drawAnnotationPaths(ctx, paths, sizeScale = 1) {
   (paths || []).forEach(p => {
     if (p.type === 'viewpoint') {
@@ -107,32 +99,32 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
   const cvRef    = useRef();
   const bgRef    = useRef(null);
   const vpStart  = useRef(null);
+  const textDragRef = useRef(null); // { origX, origY, tapX, tapY } — drag d'un texte sélectionné
 
-  const [tool,      setTool]      = useState('pen');
-  const [color,     setColor]     = useState(DA.red);
-  const [size,      setSize]      = useState(3);
-  const [sym,       setSym]       = useState(SYMBOLS[0]);
-  const [paths,     setPaths]     = useState(savedPaths || []);
-  const [cur,       setCur]       = useState([]);
-  const [drawing,   setDrawing]   = useState(false);
-  const [bgOk,      setBgOk]      = useState(false);
-  const [showSyms,  setShowSyms]  = useState(false);
-  const [textPt,    setTextPt]    = useState(null);
-  const [textV,     setTextV]     = useState('');
-  const [activePh,  setActivePh]  = useState(null); // { label, src } photo sélectionnée
-  const [pendingVP, setPendingVP] = useState(null); // { x, y, angle } vue en cours de tracé
-  const [vt,        setVt]        = useState({ z: 1, px: 0, py: 0 }); // pinch zoom/pan
+  const [tool,       setTool]       = useState('pen');
+  const [color,      setColor]      = useState(DA.red);
+  const [size,       setSize]       = useState(3);
+  const [sym,        setSym]        = useState(SYMBOLS[0]);
+  const [paths,      setPaths]      = useState(savedPaths || []);
+  const [cur,        setCur]        = useState([]);
+  const [drawing,    setDrawing]    = useState(false);
+  const [bgOk,       setBgOk]       = useState(false);
+  const [showSyms,   setShowSyms]   = useState(false);
+  const [textPt,     setTextPt]     = useState(null);  // placement d'un nouveau texte
+  const [textV,      setTextV]      = useState('');
+  const [selTextIdx, setSelTextIdx] = useState(null);  // index dans paths du texte sélectionné
+  const [activePh,   setActivePh]   = useState(null);
+  const [pendingVP,  setPendingVP]  = useState(null);
+  const [vt,         setVt]         = useState({ z: 1, px: 0, py: 0 });
   const vtRef     = useRef({ z: 1, px: 0, py: 0 });
-  const gestureRef = useRef(null); // active pinch gesture state
+  const gestureRef = useRef(null);
 
-  // Global annotation size multiplier — persisted in localStorage across all plans
   const [annotScale, setAnnotScale] = useState(() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
     return isNaN(v) ? 1 : Math.max(0.3, Math.min(2, v));
   });
 
   useEffect(() => { vtRef.current = vt; }, [vt]);
-  // Reset zoom/pan when a new plan is loaded
   useEffect(() => { setVt({ z: 1, px: 0, py: 0 }); vtRef.current = { z: 1, px: 0, py: 0 }; }, [bgImage]);
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
@@ -144,15 +136,11 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     ctx.clearRect(0, 0, cv.width, cv.height);
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
 
-    // Scale annotations so they appear at a consistent visual size on screen,
-    // regardless of the image's native resolution (photos are often 3000+ px wide
-    // but displayed at ~350px on mobile, which makes unscaled annotations invisible).
     const displayScale = cv.clientWidth > 0 ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
     drawAnnotationPaths(ctx, all, displayScale);
 
-    // Vue en cours de tracé
     if (pendingVP) {
       ctx.save();
       if (displayScale > 1) {
@@ -163,7 +151,21 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
       drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount, annotScale]);
+
+    // Indicateur de sélection sur le texte sélectionné
+    if (selTextIdx !== null && paths[selTextIdx]?.type === 'text') {
+      const tp = paths[selTextIdx];
+      const fontSize = 12 + tp.size * 2;
+      ctx.save();
+      ctx.font = `bold ${fontSize}px Arial`;
+      const tw = ctx.measureText(tp.text).width;
+      ctx.strokeStyle = '#4A9EFF';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(tp.x - 4, tp.y - fontSize - 3, tw + 8, fontSize + 8);
+      ctx.restore();
+    }
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount, annotScale, selTextIdx]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -190,7 +192,6 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   const onStart = e => {
     e.preventDefault();
-    // Two-finger pinch/pan gesture
     if (e.touches?.length >= 2) {
       if (drawing) { setCur([]); setDrawing(false); }
       const [t1, t2] = e.touches;
@@ -201,22 +202,47 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
         startZ: cur.z, startPx: cur.px, startPy: cur.py,
         midX: (t1.clientX + t2.clientX) / 2,
         midY: (t1.clientY + t2.clientY) / 2,
-        // Natural center = visual canvas center minus the pan offset
         ncX: r ? r.left + r.width / 2 - cur.px : 0,
         ncY: r ? r.top + r.height / 2 - cur.py : 0,
       };
       return;
     }
-    if (gestureRef.current) return; // gesture in progress — ignore stray single touch
+    if (gestureRef.current) return;
     const pos = getXY(e, cvRef.current);
+
     if (tool === 'viewpoint') {
       vpStart.current = pos;
       setPendingVP({ x: pos.x, y: pos.y, angle: 0 });
       setDrawing(true);
       return;
     }
-    if (tool === 'symbol') { setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]); return; }
-    if (tool === 'text') { setTextPt(pos); setTextV(''); return; }
+    if (tool === 'symbol') {
+      setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]);
+      return;
+    }
+    if (tool === 'text') {
+      // Chercher un texte existant à proximité
+      const cv = cvRef.current;
+      const HIT_R = 60 * (cv.width / cv.clientWidth);
+      let existIdx = -1;
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type === 'text' && Math.hypot(p.x - pos.x, p.y - pos.y) < HIT_R) {
+          existIdx = i;
+          break;
+        }
+      }
+      if (existIdx >= 0) {
+        setSelTextIdx(existIdx);
+        setDrawing(true);
+        textDragRef.current = { origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y };
+        return;
+      }
+      setSelTextIdx(null);
+      setTextPt(pos);
+      setTextV('');
+      return;
+    }
     setDrawing(true); setCur([pos]);
   };
 
@@ -230,14 +256,19 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
       const g = gestureRef.current;
       const newZ = Math.min(6, Math.max(1, g.startZ * dist / g.startDist));
       const ratio = newZ / g.startZ;
-      // Zoom around initial pinch midpoint + follow midpoint translation
       const newPx = midX - g.ncX - (g.midX - g.ncX - g.startPx) * ratio;
       const newPy = midY - g.ncY - (g.midY - g.ncY - g.startPy) * ratio;
-      // Clamp so canvas never leaves the viewport entirely
       const cv = cvRef.current;
       const maxPx = cv ? cv.clientWidth  * (newZ - 1) / 2 : 9999;
       const maxPy = cv ? cv.clientHeight * (newZ - 1) / 2 : 9999;
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
+      return;
+    }
+    // Déplacement d'un texte sélectionné
+    if (tool === 'text' && drawing && selTextIdx !== null && textDragRef.current) {
+      const pos = getXY(e, cvRef.current);
+      const { origX, origY, tapX, tapY } = textDragRef.current;
+      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + (pos.x - tapX), y: origY + (pos.y - tapY) } : p));
       return;
     }
     if (!drawing) return;
@@ -255,6 +286,12 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     e.preventDefault();
     if (gestureRef.current) {
       if (e.touches.length < 2) gestureRef.current = null;
+      return;
+    }
+    // Fin du déplacement de texte
+    if (tool === 'text' && selTextIdx !== null && textDragRef.current) {
+      textDragRef.current = null;
+      setDrawing(false);
       return;
     }
     if (!drawing) return;
@@ -293,50 +330,67 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
     setShowSyms(false);
   };
 
+  const selText = selTextIdx !== null ? paths[selTextIdx] : null;
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
 
-      {/* ── Toolbar ── */}
-      <div style={{ background:DA.black,padding:'8px 12px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,flexShrink:0 }}>
-        <button onClick={onClose} style={{ color:DA.grayL }}><Ic n="x" s={18}/></button>
-        <div style={{ display:'flex',gap:4,background:'#333',padding:4,borderRadius:8 }}>
-          {[
-            { k:'pen', n:'pen' },
-            { k:'eraser', n:'eras' },
-            { k:'text', n:'txt' },
-            { k:'symbol', n:'sym' },
-            { k:'viewpoint', n:'eye' },
-          ].map(t => (
-            <button key={t.k}
-              onClick={() => {
-                setTool(t.k);
-                if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
-                if (t.k !== 'viewpoint') setActivePh(null);
-              }}
-              title={t.k === 'viewpoint' ? 'Vue photo — cliquer-glisser pour placer et orienter' : undefined}
-              style={{ padding:6,borderRadius:6,background:tool===t.k?DA.red:'transparent',color:tool===t.k?'white':'#aaa',transition:'all 0.15s' }}>
-              <Ic n={t.n} s={14}/>
+      {/* ── Toolbar (2 rangées fixes) ── */}
+      <div style={{ background:DA.black,padding:'7px 12px 6px',display:'flex',flexDirection:'column',gap:6,flexShrink:0 }}>
+
+        {/* Rangée 1 : outils + undo + sauvegarder */}
+        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+          <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:9,flexShrink:0 }}>
+            {[
+              { k:'pen',    n:'pen'  },
+              { k:'eraser', n:'eras' },
+              { k:'text',   n:'txt'  },
+              { k:'symbol', n:'sym'  },
+            ].map(t => (
+              <button key={t.k}
+                onClick={() => {
+                  setTool(t.k);
+                  if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
+                  if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
+                  if (t.k !== 'viewpoint') setActivePh(null);
+                }}
+                style={{ padding:'7px 9px',borderRadius:7,background:tool===t.k?DA.red:'transparent',color:tool===t.k?'white':'#aaa',transition:'all 0.15s',lineHeight:0 }}>
+                <Ic n={t.n} s={16}/>
+              </button>
+            ))}
+          </div>
+          <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
+            <button onClick={() => setPaths(p => p.slice(0,-1))}
+              style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}>
+              <Ic n="und" s={16}/>
             </button>
-          ))}
+            <button onClick={() => { const cv = cvRef.current; onSave(paths, cv ? cv.toDataURL('image/png') : null); onClose(); }}
+              style={{ padding:'7px 14px',borderRadius:8,background:DA.red,color:'white',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap' }}>
+              <Ic n="chk" s={14}/> Sauvegarder
+            </button>
+          </div>
         </div>
-        <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-          {ANNOT_COLORS.map(cl => (
-            <button key={cl} onClick={() => setColor(cl)}
-              style={{ width:20,height:20,borderRadius:'50%',background:cl,border:`2.5px solid ${color===cl?'white':'transparent'}`,cursor:'pointer',flexShrink:0 }}/>
-          ))}
-        </div>
-        <div style={{ display:'flex',alignItems:'center',gap:6 }}>
-          {[1,3,6].map(sz => (
-            <button key={sz} onClick={() => setSize(sz)}
-              style={{ width:sz*2+8,height:sz*2+8,borderRadius:'50%',background:size===sz?'white':'#555',cursor:'pointer',flexShrink:0 }}/>
-          ))}
-        </div>
-        <div style={{ marginLeft:'auto',display:'flex',gap:6 }}>
-          <button onClick={() => setPaths(p => p.slice(0,-1))} style={{ padding:6,borderRadius:8,background:'#333',color:DA.grayL }}><Ic n="und" s={15}/></button>
-          <button onClick={() => { const cv = cvRef.current; onSave(paths, cv ? cv.toDataURL('image/png') : null); onClose(); }}
-            style={{ padding:'6px 12px',borderRadius:8,background:DA.red,color:'white',fontSize:12,fontWeight:600,display:'flex',alignItems:'center',gap:4 }}>
-            <Ic n="chk" s={13}/> Sauvegarder
-          </button>
+
+        {/* Rangée 2 : couleurs + tailles */}
+        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+          <div style={{ display:'flex',gap:5,flexShrink:0 }}>
+            {ANNOT_COLORS.map(cl => (
+              <button key={cl} onClick={() => {
+                setColor(cl);
+                if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,color:cl} : p));
+              }}
+                style={{ width:22,height:22,borderRadius:'50%',background:cl,border:`2.5px solid ${color===cl?'white':'transparent'}`,cursor:'pointer',flexShrink:0,transition:'border-color 0.1s' }}/>
+            ))}
+          </div>
+          <div style={{ marginLeft:4,display:'flex',alignItems:'center',gap:6,flexShrink:0 }}>
+            {[1,3,6].map(sz => (
+              <button key={sz} onClick={() => {
+                setSize(sz);
+                if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,size:sz} : p));
+              }}
+                style={{ width:sz*2+10,height:sz*2+10,borderRadius:'50%',background:size===sz?'white':'#555',cursor:'pointer',flexShrink:0,transition:'background 0.1s' }}/>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -358,10 +412,31 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
         <div style={{ background:'#1a1a1a',padding:'8px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333' }}>
           {SYMBOLS.map(sm => (
             <button key={sm.id} onClick={() => setSym(sm)}
-              style={{ flexShrink:0,padding:'4px 10px',borderRadius:8,background:sym.id===sm.id?DA.red:'#333',color:sym.id===sm.id?'white':'#ccc',fontSize:11,fontWeight:500,whiteSpace:'nowrap',cursor:'pointer' }}>
+              style={{ flexShrink:0,padding:'5px 12px',borderRadius:8,background:sym.id===sm.id?DA.red:'#333',color:sym.id===sm.id?'white':'#ccc',fontSize:12,fontWeight:500,whiteSpace:'nowrap',cursor:'pointer' }}>
               {sm.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* ── Panneau édition texte sélectionné ── */}
+      {tool === 'text' && selText && (
+        <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap' }}>
+          <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>Texte :</span>
+          <input
+            value={selText.text || ''}
+            onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
+            style={{ flex:1,minWidth:80,fontSize:12,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',fontFamily:'inherit' }}
+          />
+          <span style={{ fontSize:10,color:'#888',flexShrink:0 }}>Glisser pour déplacer</span>
+          <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }}
+            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:0,display:'flex',alignItems:'center' }}>
+            <Ic n="del" s={13}/>
+          </button>
+          <button onClick={() => setSelTextIdx(null)}
+            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
+            ✕
+          </button>
         </div>
       )}
 
@@ -371,8 +446,8 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
           <Ic n="eye" s={12}/>
           <span style={{ fontSize:11,color:'#888' }}>
             {activePh
-              ? <><span style={{ color:DA.red,fontWeight:700 }}>{activePh.label}</span> sélectionnée — cliquer-glisser sur le plan pour placer et orienter</>
-              : 'Cliquer-glisser sur le plan pour placer un œil de vue. Sélectionnez une photo en bas pour la numéroter.'}
+              ? <><span style={{ color:DA.red,fontWeight:700 }}>{activePh.label}</span> sélectionnée — cliquer-glisser pour placer et orienter</>
+              : 'Cliquer-glisser sur le plan pour placer un œil de vue.'}
           </span>
         </div>
       )}
@@ -393,6 +468,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
                 ×{vt.z.toFixed(1)} ↺
               </button>
             )}
+            {/* Popup placement d'un nouveau texte */}
             {textPt && (
               <div style={{ position:'absolute',top:0,left:0,transform:`translate(${textPt.x*(cvRef.current?.clientWidth/cvRef.current?.width||1)}px,${textPt.y*(cvRef.current?.clientHeight/cvRef.current?.height||1)}px)`,zIndex:10 }}>
                 <div style={{ background:'white',borderRadius:8,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',padding:8,display:'flex',gap:6,minWidth:200 }}>
@@ -411,7 +487,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
         )}
       </div>
 
-      {/* ── Bande de photos ── */}
+      {/* ── Bande de photos (sans labels V1/V2) ── */}
       {validPhotos.length > 0 && (
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
           <span style={{ color:'#666',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,flexShrink:0 }}>Vues :</span>
@@ -422,12 +498,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
               <button key={i} onClick={() => selectPhoto(ph, i)}
                 title={ph.name || `Photo ${i + 1}`}
                 style={{ flexShrink:0,padding:0,background:'none',border:`2.5px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s' }}>
-                <div style={{ position:'relative' }}>
-                  <img src={ph.data} alt="" style={{ width:48,height:48,objectFit:'cover',display:'block' }}/>
-                  <div style={{ position:'absolute',bottom:0,left:0,right:0,background:isActive?DA.red:'rgba(0,0,0,0.65)',color:'white',fontSize:9,fontWeight:800,textAlign:'center',padding:'2px 0',transition:'background 0.15s' }}>
-                    {label}
-                  </div>
-                </div>
+                <img src={ph.data} alt="" style={{ width:48,height:48,objectFit:'cover',display:'block' }}/>
               </button>
             );
           })}
