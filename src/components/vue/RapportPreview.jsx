@@ -40,34 +40,67 @@ const HDR = 10  * S;  // 30px hauteur header
 const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
 
+// ── Hauteur disponible par page A4 (px preview) ────────────────────────────
+const AVAIL_H    = PH - HDR - (MT - HDR) - MB - FTR; // 774px de contenu utile
+const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
+
+// Estimation de la hauteur rendue d'un bloc (approximation pour la pagination auto)
+function estimateBlockH(block, ppl) {
+  if (block.type === 'zone') return 36; // ZoneHeader: padding + barre + marge
+  if (block.type === 'plan') return 320; // PlanBlock: image + légende (conservateur)
+  const item = block.item;
+  let h = 43; // header: titre (18px) + badges (16px) + padding 4+5
+  if (item.commentaire) h += 36; // texte ~2 lignes + padding 5+5
+  const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
+  if (nPh > 0) {
+    const cols  = Math.min(ppl, 3);
+    const cellW = (CW - 12 - (cols - 1) * 3) / cols; // 12 = padding 6px*2
+    const rows  = Math.ceil(nPh / cols);
+    h += rows * (cellW * 0.75) + 10; // ratio 4:3 + padding container
+  }
+  return Math.round(h) + 5; // +5 marginBottom ItemBlock
+}
+
 // ── Pagination ─────────────────────────────────────────────────────────────
-// Retourne un tableau de pages divisées UNIQUEMENT aux sauts explicites.
+// Pages découpées automatiquement quand la hauteur estimée dépasse AVAIL_H.
+// Les sauts explicites (breaks) forcent un saut indépendamment de la hauteur.
 // bloc = { type:'zone'|'item'|'plan', id, loc?, item? }
 function buildPages(locs, ppl, breaks, plansEnFin) {
-  const pages = [];
-  let blocks = [];
-  const flush = () => { if (blocks.length) { pages.push(blocks); blocks = []; } };
+  const pages  = [];
+  let blocks   = [];
+  let usedH    = 0;
+
+  const flush = () => {
+    if (blocks.length) { pages.push(blocks); blocks = []; usedH = 0; }
+  };
+
+  const pushBlock = (block) => {
+    const bh  = estimateBlockH(block, ppl);
+    const gap = blocks.length > 0 ? BREAK_CTL_H : 0; // BreakControl avant ce bloc
+    // Auto-saut si ça déborde ET qu'il y a déjà du contenu sur la page
+    if (usedH + gap + bh > AVAIL_H && blocks.length > 0) flush();
+    blocks.push(block);
+    usedH += (blocks.length > 1 ? BREAK_CTL_H : 0) + bh;
+  };
 
   for (const loc of locs) {
     const items = (loc.items || []).filter(i => i.titre);
     if (!items.length) continue;
 
     if (breaks.has(loc.id)) flush();
-    blocks.push({ type: 'zone', id: loc.id, loc });
+    pushBlock({ type: 'zone', id: loc.id, loc });
 
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     let photoOffset = 0;
     for (const item of items) {
       if (breaks.has(item.id)) flush();
-      blocks.push({ type: 'item', id: item.id, item, locId: loc.id, vpPhotoOffset: photoOffset, hasViewpoints: hasVP });
+      pushBlock({ type: 'item', id: item.id, item, locId: loc.id, vpPhotoOffset: photoOffset, hasViewpoints: hasVP });
       photoOffset += (item.photos || []).filter(p => p.data).length;
     }
 
     if (!plansEnFin) {
       const hasPlan = loc.planAnnotations?.exported || loc.planBg;
-      if (hasPlan) {
-        blocks.push({ type: 'plan', id: `plan-${loc.id}`, loc });
-      }
+      if (hasPlan) pushBlock({ type: 'plan', id: `plan-${loc.id}`, loc });
     }
   }
   flush();
