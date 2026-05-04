@@ -401,7 +401,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                         onDragEnd={onZoneDragEnd}
                         onDragOver={e => e.preventDefault()}
                         style={{
-                          background: zoneDragIdx===locIdx ? '#f0f0f0' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : DA.white,
+                          background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : '#F4F4F4',
                           borderBottom:`1px solid ${DA.border}`,
                           borderTop: zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? `2px solid ${DA.red}` : 'none',
                           opacity: zoneDragIdx===locIdx ? 0.45 : 1,
@@ -420,8 +420,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                           <EditTitle
                             value={loc.nom}
                             onSave={nom => patchLoc(loc.id, { nom })}
-                            style={{ fontSize:16, fontWeight:700, color:DA.black }}
-                            inputStyle={{ fontSize:16, fontWeight:700 }}
+                            style={{ fontSize:13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
+                            inputStyle={{ fontSize:13, fontWeight:800, textTransform:'uppercase' }}
                           />
                           <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
                             {urgentCount > 0 && (

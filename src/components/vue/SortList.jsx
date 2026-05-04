@@ -28,11 +28,32 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
   // ── Touch drag (mobile) ────────────────────────────────────────────────────
   const touchDragRef    = useRef(null); // { idx, startY, curOverIdx }
   const ghostRef        = useRef(null);
+  const wrapperRef      = useRef(null);
 
   useEffect(() => () => { ghostRef.current?.remove(); }, []);
 
+  // Attache touchmove avec { passive: false } pour pouvoir appeler preventDefault sans warning
+  useEffect(() => {
+    onGripTouchMoveRef.current = onGripTouchMove;
+    onGripTouchEndRef.current  = onGripTouchEnd;
+  });
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const move   = (e) => onGripTouchMoveRef.current(e);
+    const end    = (e) => onGripTouchEndRef.current(e);
+    el.addEventListener('touchmove',   move, { passive: false });
+    el.addEventListener('touchend',    end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchmove',   move);
+      el.removeEventListener('touchend',    end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, []);
+
   const onGripTouchStart = (e, idx) => {
-    e.preventDefault(); // empêche le scroll pendant le drag
+    // touchAction:'none' on the grip already prevents scroll — no preventDefault needed here
     const touch = e.touches[0];
     dragDidMoveRef.current = false;
     touchDragRef.current = { idx, startY: touch.clientY, curOverIdx: idx };
@@ -48,9 +69,12 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
     }
   };
 
+  const onGripTouchMoveRef = useRef(null);
+  const onGripTouchEndRef  = useRef(null);
+
   const onGripTouchMove = (e) => {
     if (!touchDragRef.current) return;
-    e.preventDefault();
+    e.preventDefault(); // { passive: false } set via useEffect below
     const touch = e.touches[0];
     dragDidMoveRef.current = true;
 
@@ -110,11 +134,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
       </div>
     )}
 
-    <div
-      onTouchMove={onGripTouchMove}
-      onTouchEnd={onGripTouchEnd}
-      onTouchCancel={onGripTouchEnd}
-    >
+    <div ref={wrapperRef}>
       {items.length === 0 && (
         <div style={{ padding:'24px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
           <p style={{ fontSize:14,color:DA.grayL,margin:'0 0 14px' }}>Aucune observation dans cette zone</p>
@@ -140,6 +160,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                 display:'flex', alignItems:'flex-start', gap:8,
                 padding:'14px 14px 14px 6px',
                 borderBottom:`1px solid ${DA.border}`,
+                borderLeft:`4px solid ${URGENCE[item.urgence]?.dot || DA.border}`,
                 cursor:'pointer',
                 background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
                 borderTop: isOver ? `2px solid ${DA.red}` : 'none',
@@ -158,8 +179,6 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                 }}>
                 <Ic n="grp" s={16}/>
               </div>
-
-              <span style={{ marginTop:8,width:10,height:10,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>
 
               <div style={{ flex:1,minWidth:0 }}>
                 <p style={{ fontSize:15,fontWeight:700,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{item.titre}</p>
@@ -185,7 +204,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                       {validPhotos.map((ph, pi) => (
                         <img key={pi} src={ph.data} alt=""
                           onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                          style={{ width:'clamp(64px,10vw,120px)',height:'clamp(64px,10vw,120px)',objectFit:'cover',borderRadius:8,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
+                          style={{ width:'clamp(80px,23vw,130px)',height:'clamp(80px,23vw,130px)',objectFit:'cover',borderRadius:8,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
                       ))}
                     </div>
                   );
