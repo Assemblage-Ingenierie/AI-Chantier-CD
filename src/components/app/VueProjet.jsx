@@ -409,6 +409,37 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                               }}
                               onDelete={itemId => deleteItem(loc.id, itemId)}
                             />
+                            {/* Plan thumbnail shortcut */}
+                            {loc.planBg ? (
+                              <button
+                                onClick={() => setModal({ t:'plan', locId:loc.id })}
+                                style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'white', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', textAlign:'left' }}>
+                                <div style={{ position:'relative', flexShrink:0 }}>
+                                  <img src={loc.planBg} alt="Plan"
+                                    style={{ width:80, height:54, objectFit:'cover', borderRadius:8, border:`1px solid ${DA.border}`, display:'block' }}/>
+                                  {loc.planAnnotations?.paths?.length > 0 && (
+                                    <span style={{ position:'absolute', top:3, right:3, background:DA.red, color:'white', borderRadius:6, fontSize:9, fontWeight:800, padding:'1px 5px', lineHeight:1.6 }}>
+                                      {loc.planAnnotations.paths.length}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <p style={{ fontSize:13, fontWeight:700, color:DA.black, margin:'0 0 3px' }}>Annoter le plan</p>
+                                  <p style={{ fontSize:11, color:DA.grayL, margin:0 }}>
+                                    {loc.planAnnotations?.paths?.length > 0
+                                      ? `${loc.planAnnotations.paths.length} annotation${loc.planAnnotations.paths.length > 1 ? 's' : ''} · Modifier`
+                                      : 'Aucune annotation — toucher pour commencer'}
+                                  </p>
+                                </div>
+                                <span style={{ color:DA.red, flexShrink:0, display:'flex', alignItems:'center' }}><Ic n="map" s={16}/></span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setModal({ t:'niveaux' })}
+                                style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 14px', background:DA.grayXL, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12 }}>
+                                <Ic n="map" s={13}/> Assigner un plan à cette zone
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
