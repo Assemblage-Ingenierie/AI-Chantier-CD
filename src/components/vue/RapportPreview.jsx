@@ -316,6 +316,11 @@ function CoverPage({ projet, pageNum, totalPages }) {
             Compte-rendu de visite
           </div>
           <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2 }}>{projet.nom}</div>
+          {projet.visiteNom && (
+            <div style={{ marginTop:6, display:'inline-flex', alignItems:'center', gap:5, background:DA.red, borderRadius:4, padding:'3px 8px' }}>
+              <span style={{ fontSize:9, fontWeight:800, color:'white', letterSpacing:0.8, textTransform:'uppercase' }}>{projet.visiteNom}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -518,7 +523,7 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onAnnotScaleChange, onUpdateItem }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -581,30 +586,42 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
     <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
       {/* ── Barre de navigation pages ── */}
-      <div style={{ background:'#1e1e1e', padding:'7px 14px', display:'flex', alignItems:'center', gap:10, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        <button
-          onClick={() => scrollToPage(currentPage - 1)}
-          disabled={currentPage <= 1}
-          style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 13px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
-          ‹
-        </button>
-        <div style={{ flex:1, textAlign:'center' }}>
-          <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5 }}>
+      <div style={{ background:'#1e1e1e', padding:'7px 10px', display:'flex', alignItems:'center', gap:8, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        {/* Bouton Paramètres — toujours visible */}
+        {onTogglePanel && (
+          <button
+            onClick={onTogglePanel}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer', flexShrink:0, transition:'all 0.15s',
+              background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
+              color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)',
+            }}>
+            <Ic n="sld" s={13}/>
+            <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
+          </button>
+        )}
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+          <button
+            onClick={() => scrollToPage(currentPage - 1)}
+            disabled={currentPage <= 1}
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+            ‹
+          </button>
+          <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5, minWidth:70, textAlign:'center' }}>
             Page {currentPage} / {totalPages}
           </span>
+          <button
+            onClick={() => scrollToPage(currentPage + 1)}
+            disabled={currentPage >= totalPages}
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+            ›
+          </button>
         </div>
-        <button
-          onClick={() => scrollToPage(currentPage + 1)}
-          disabled={currentPage >= totalPages}
-          style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 13px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
-          ›
-        </button>
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
-        {/* Conteneur scalé pour mobile */}
-        <div style={{ width: PW * scale, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', ...(scale < 1 ? { transform:`scale(${scale})`, marginBottom: -(PW * (1 - scale) * 0.5) } : {}) }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+        {/* Conteneur scalé : transformOrigin top-center pour que les pages restent centrées */}
+        <div style={{ width: PW, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', transform: scale < 1 ? `scale(${scale})` : 'none' }}>
 
         {/* ── PAGE DE GARDE ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>

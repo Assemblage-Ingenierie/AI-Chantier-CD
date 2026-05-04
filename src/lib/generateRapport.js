@@ -230,8 +230,16 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const tlines = doc.splitTextToSize(projet.nom, W - ML - 30);
   doc.text(tlines, ML + 6, 34);
   const afterT = 34 + tlines.length * 10;
+  // Badge nom de visite (ex. "Visite 1", "Diagnostic")
+  if (projet.visiteNom) {
+    const bw = doc.getTextWidth(projet.visiteNom.toUpperCase()) + 8;
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+    doc.setFillColor(...RD); doc.roundedRect(ML + 6, afterT + 3, bw, 6, 1.5, 1.5, 'F');
+    doc.setTextColor(...WH); doc.text(projet.visiteNom.toUpperCase(), ML + 10, afterT + 7.2);
+    doc.setTextColor(0, 0, 0);
+  }
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(180, 180, 180);
-  if (projet.adresse) doc.text(projet.adresse, ML + 6, afterT + 4);
+  if (projet.adresse) doc.text(projet.adresse, ML + 6, afterT + (projet.visiteNom ? 14 : 4));
   doc.setTextColor(0, 0, 0);
 
   // ── Partie blanche : présentation + intervenants ─────────────────────────

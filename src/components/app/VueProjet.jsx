@@ -48,6 +48,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
     includeTableauRecap: selectedVisite?.includeTableauRecap  !== false,
     includeConclusion:   selectedVisite?.includeConclusion    ?? false,
     conclusion:          selectedVisite?.conclusion           ?? '',
+    visiteNom:           selectedVisite?.nom                  ?? '',
   }), [projet, selectedVisite]);
 
   // Route les mises à jour : champs visite → visites[], champs projet → projet

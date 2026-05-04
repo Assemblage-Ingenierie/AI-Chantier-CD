@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
@@ -9,9 +9,6 @@ import JSZip from 'jszip';
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
-  const [btnPos, setBtnPos] = useState({ x: 16, y: 16 });
-  const btnDragRef = useRef(null);
-  const mouseListenersRef = useRef(null);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
 
@@ -20,49 +17,6 @@ export default function RapportTab({ projet, onUpdate }) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-
-  useEffect(() => () => {
-    if (mouseListenersRef.current) {
-      document.removeEventListener('mousemove', mouseListenersRef.current.onMove);
-      document.removeEventListener('mouseup', mouseListenersRef.current.onUp);
-      mouseListenersRef.current = null;
-    }
-  }, []);
-
-  const onBtnMouseDown = (e) => {
-    e.preventDefault();
-    btnDragRef.current = { startX: e.clientX - btnPos.x, startY: e.clientY - btnPos.y, moved: false };
-    const onMove = (ev) => {
-      btnDragRef.current.moved = true;
-      setBtnPos({ x: ev.clientX - btnDragRef.current.startX, y: ev.clientY - btnDragRef.current.startY });
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      mouseListenersRef.current = null;
-      if (!btnDragRef.current?.moved) setPanelOpen(true);
-      btnDragRef.current = null;
-    };
-    mouseListenersRef.current = { onMove, onUp };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
-
-  const onBtnTouchStart = (e) => {
-    const t = e.touches[0];
-    btnDragRef.current = { startX: t.clientX - btnPos.x, startY: t.clientY - btnPos.y, moved: false };
-  };
-  const onBtnTouchMove = (e) => {
-    if (!btnDragRef.current) return;
-    // touchAction:'none' on the element already prevents scroll — no preventDefault needed
-    const t = e.touches[0];
-    btnDragRef.current.moved = true;
-    setBtnPos({ x: t.clientX - btnDragRef.current.startX, y: t.clientY - btnDragRef.current.startY });
-  };
-  const onBtnTouchEnd = () => {
-    if (btnDragRef.current && !btnDragRef.current.moved) setPanelOpen(true);
-    btnDragRef.current = null;
-  };
 
   const onUpdateItem = (locId, itemId, updatedItem) => {
     onUpdate({
@@ -217,25 +171,17 @@ export default function RapportTab({ projet, onUpdate }) {
 
         {/* Boutons Export en haut — toujours visibles */}
         <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:6 }}>
-          <div style={{ display:'flex', gap:8 }}>
-            <button
-              onClick={handleExport}
-              disabled={exporting || allItems.length === 0}
-              style={{ flex:1, padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
-                cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
-                background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
-                color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-                boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
-              {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
-              {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
-            </button>
-            {isMobile && (
-              <button onClick={() => setPanelOpen(false)}
-                style={{ padding:'11px 12px', borderRadius:10, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:4, fontSize:12, fontWeight:600 }}>
-                <Ic n="eye" s={14}/> Aperçu
-              </button>
-            )}
-          </div>
+          <button
+            onClick={handleExport}
+            disabled={exporting || allItems.length === 0}
+            style={{ width:'100%', padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
+              cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
+              background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
+              color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
+            {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
+            {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
+          </button>
 
           {/* ZIP photos */}
           <button
@@ -485,23 +431,6 @@ export default function RapportTab({ projet, onUpdate }) {
       </div>
       )}
 
-      {/* Bouton flottant draggable pour rouvrir les paramètres sur mobile */}
-      {isMobile && !panelOpen && (
-        <div
-          onMouseDown={onBtnMouseDown}
-          onTouchStart={onBtnTouchStart}
-          onTouchMove={onBtnTouchMove}
-          onTouchEnd={onBtnTouchEnd}
-          style={{ position:'fixed', left:btnPos.x, top:btnPos.y, zIndex:30,
-            width:44, height:44, borderRadius:'50%',
-            background:DA.black, color:'white',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            cursor:'grab', touchAction:'none', userSelect:'none',
-            boxShadow:'0 3px 14px rgba(0,0,0,0.4)' }}>
-          <Ic n="grp" s={18}/>
-        </div>
-      )}
-
       {/* ── Panneau droit : aperçu A4 ── */}
       <RapportPreview
         projet={projet}
@@ -517,6 +446,8 @@ export default function RapportTab({ projet, onUpdate }) {
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         onUpdateItem={onUpdateItem}
+        onTogglePanel={() => setPanelOpen(v => !v)}
+        panelOpen={panelOpen}
       />
     </div>
   );
