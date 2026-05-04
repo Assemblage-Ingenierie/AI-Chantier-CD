@@ -45,7 +45,17 @@ export default function LoginScreen({ onLogin }) {
     try {
       const sb = await getSupabase();
       if (mode === 'signup') {
-        const { error } = await sb.auth.signUp({ email, password });
+        const { data: signUpData, error } = await sb.auth.signUp({ email, password });
+        if (!error && signUpData?.user) {
+          // Create profile immediately (needed for admin to see the pending request)
+          await sb.from('aichantier_profiles').upsert({
+            id:          signUpData.user.id,
+            email:       signUpData.user.email || email,
+            full_name:   email.split('@')[0],
+            is_approved: false,
+            role:        'user',
+          }, { onConflict: 'id', ignoreDuplicates: true }).throwOnError().catch(() => {});
+        }
         setMsg(error ? error.message : "Compte créé ! En attente d'approbation par un administrateur.");
         setLoading(false);
         return;
