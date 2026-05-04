@@ -70,7 +70,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             <div style={{ textAlign:'center',padding:'40px 0',color:DA.grayL }}>
               <Ic n="pin" s={40}/>
               <p style={{ fontSize:13,color:DA.gray,margin:'10px 0 0',fontWeight:600 }}>Aucun niveau créé</p>
-              <p style={{ fontSize:11,color:DA.grayL,margin:'4px 0 0' }}>Appuyez sur "+ Ajouter un niveau" pour commencer</p>
+              <p style={{ fontSize:11,color:DA.grayL,margin:'4px 0 0' }}>Appuyez sur le bouton en bas pour commencer</p>
             </div>
           )}
 
@@ -174,16 +174,17 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               );
             })}
           </div>
+
+          <button onClick={addLoc}
+            style={{ width:'100%',marginTop:8,padding:'13px 0',background:'none',border:`2px dashed ${DA.border}`,borderRadius:12,fontSize:14,fontWeight:700,color:DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            <Ic n="plus" s={15}/> Ajouter un niveau
+          </button>
         </div>
 
         {/* Footer */}
-        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',gap:8 }}>
-          <button onClick={addLoc}
-            style={{ flex:1,background:DA.white,color:DA.black,border:`1.5px solid ${DA.border}`,borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
-            <Ic n="plus" s={14}/> Ajouter un niveau
-          </button>
+        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0 }}>
           <button onClick={onClose}
-            style={{ flex:1,background:DA.red,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
           </button>
         </div>
