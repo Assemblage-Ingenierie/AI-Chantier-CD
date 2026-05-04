@@ -23,7 +23,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   if (showAnnot) return (
     <Annotator bgImage={planBg} savedPaths={annot?.paths || []}
       photos={zonePhotos}
-      onSave={(p, e) => { setAnnot({ paths: p, exported: e }); setShowAnnot(false); }}
+      onSave={(p, e) => {
+        const newAnnot = { paths: p, exported: e };
+        onSave({ planBg, planData, planAnnotations: newAnnot });
+        onClose();
+      }}
       onClose={() => setShowAnnot(false)}/>
   );
 
