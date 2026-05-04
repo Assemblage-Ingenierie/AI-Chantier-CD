@@ -182,7 +182,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           </div>
 
           <button onClick={addLoc}
-            style={{ width:'100%',marginTop:8,padding:'13px 0',background:DA.white,border:`1.5px solid ${DA.border}`,borderRadius:12,fontSize:14,fontWeight:700,color:DA.black,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            style={{ width:'100%',marginTop:8,padding:'13px 0',background:DA.white,border:`1.5px solid ${DA.red}`,borderRadius:12,fontSize:14,fontWeight:700,color:DA.red,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="plus" s={15}/> Ajouter un niveau
           </button>
         </div>

@@ -186,7 +186,6 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     patchItem(locId, { ...form, id: form.id || crypto.randomUUID() });
   };
 
-  const [search, setSearch] = useState('');
   const [undoToast, setUndoToast] = useState(null); // { label, onUndo }
   const undoTimerRef = useRef(null);
 
@@ -347,24 +346,6 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                 );
               })()}
 
-              {/* Barre de recherche */}
-              {totalItems > 0 && (
-                <div style={{ padding:'12px 14px', borderBottom:`1px solid ${DA.border}`, background:'white', display:'flex', alignItems:'center', gap:8 }}>
-                  <Ic n="txt" s={16}/>
-                  <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Rechercher une observation…"
-                    style={{ flex:1, border:'none', outline:'none', fontSize:15, color:DA.black, background:'transparent', fontFamily:'inherit' }}
-                  />
-                  {search && (
-                    <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex', alignItems:'center' }}>
-                      <Ic n="x" s={14}/>
-                    </button>
-                  )}
-                </div>
-              )}
-
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -380,13 +361,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
               ) : (
                 <>
                   {visitProjet.localisations.map((loc, locIdx) => {
-                    const q = search.trim().toLowerCase();
-                    const rawItems = loc.items || [];
-                    const items = q
-                      ? rawItems.filter(i => (i.titre||'').toLowerCase().includes(q) || (i.commentaire||'').toLowerCase().includes(q))
-                      : rawItems;
-                    if (q && items.length === 0) return null;
-                    const isOpen      = q ? true : openLocIds.has(loc.id);
+                    const items    = loc.items || [];
+                    const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const total       = visitProjet.localisations.length;
                     return (

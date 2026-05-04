@@ -198,6 +198,14 @@ export default function RapportTab({ projet, onUpdate }) {
     localisations.flatMap(l => l.items || []).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
   [localisations]);
 
+  const [search, setSearch] = useState('');
+  const filteredRecapRows = search.trim()
+    ? recapRows.filter(r =>
+        r.titre.toLowerCase().includes(search.toLowerCase()) ||
+        r.locNom.toLowerCase().includes(search.toLowerCase())
+      )
+    : recapRows;
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
@@ -249,6 +257,22 @@ export default function RapportTab({ projet, onUpdate }) {
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+
+          {/* Recherche */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', background:DA.grayXL, borderRadius:10, border:`1px solid ${DA.border}` }}>
+            <Ic n="txt" s={15}/>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Filtrer les observations…"
+              style={{ flex:1, border:'none', outline:'none', fontSize:14, color:DA.black, background:'transparent', fontFamily:'inherit' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex' }}>
+                <Ic n="x" s={13}/>
+              </button>
+            )}
+          </div>
 
           {/* Intervenants */}
           <ParticipantsEditor
@@ -370,10 +394,10 @@ export default function RapportTab({ projet, onUpdate }) {
                   Solution pré-remplie depuis les commentaires — modifiable ici
                 </p>
                 <div style={{ border:`1px solid ${DA.border}`, borderRadius:8, overflow:'hidden' }}>
-                  {recapRows.map((row, i) => {
+                  {filteredRecapRows.map((row, i) => {
                     const u = URGENCE[row.urgence] || URGENCE.basse;
                     return (
-                      <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < recapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
+                      <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < filteredRecapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
                         <div style={{ background:u.dot }}/>
                         <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:5 }}>
                           {/* Zone */}
