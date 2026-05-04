@@ -234,7 +234,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
       </div>
 
       <div style={{ display:'flex',borderTop:`1px solid ${DA.border}` }}>
-        <button onClick={() => onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:16,fontSize:15,fontWeight:700,color:DA.red,background:'none',border:'none',cursor:'pointer' }}>
+        <button onClick={() => onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:16,fontSize:15,fontWeight:700,color:DA.red,background:DA.white,border:'none',cursor:'pointer' }}>
           <Ic n="plus" s={16}/> Ajouter
         </button>
       </div>
