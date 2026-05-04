@@ -9,18 +9,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.aichantier_profiles (id, email, full_name, is_approved, role)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(
-      NEW.raw_user_meta_data->>'full_name',
-      NEW.raw_user_meta_data->>'name',
-      split_part(NEW.email, '@', 1)
-    ),
-    false,
-    'user'
-  )
+  INSERT INTO public.aichantier_profiles (id, email, is_approved, role)
+  VALUES (NEW.id, NEW.email, false, 'user')
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;

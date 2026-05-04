@@ -51,7 +51,6 @@ export default function LoginScreen({ onLogin }) {
           await sb.from('aichantier_profiles').upsert({
             id:          signUpData.user.id,
             email:       signUpData.user.email || email,
-            full_name:   email.split('@')[0],
             is_approved: false,
             role:        'user',
           }, { onConflict: 'id', ignoreDuplicates: true }).throwOnError().catch(() => {});
