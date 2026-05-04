@@ -227,14 +227,10 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             <p style={{ fontWeight:800, fontSize:16, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
             {projet.adresse && <p style={{ fontSize:12, color:'rgba(255,255,255,0.45)', margin:'3px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
-          <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+          <div style={{ flexShrink:0 }}>
             <button onClick={() => setModal({ t:'niveaux' })}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 10px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
-              <Ic n="bld" s={14}/> Niveaux
-            </button>
-            <button onClick={() => setModal({ t:'planLib' })}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 10px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
-              <Ic n="lib" s={14}/> Plans
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 12px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+              <Ic n="bld" s={14}/> Zones & Plans
             </button>
           </div>
         </div>
@@ -459,7 +455,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                     );
                   })}
                   <button onClick={addLoc}
-                    style={{ width:'100%', padding:18, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:DA.red, background:DA.white, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer' }}>
+                    style={{ width:'100%', padding:18, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', cursor:'pointer' }}>
                     <Ic n="plus" s={16}/> Ajouter une zone
                   </button>
                 </>
@@ -537,6 +533,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           planLibrary={projet.planLibrary || []}
           onChange={newLocs => onUpdateVisit({ localisations: newLocs })}
           onClose={() => setModal(null)}
+          onOpenPlanLib={() => setModal({ t:'planLib' })}
         />
       )}
     </div>

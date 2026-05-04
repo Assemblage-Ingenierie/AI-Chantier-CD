@@ -10,7 +10,7 @@ import EditTitle from '../ui/EditTitle.jsx';
 //   onChange      - (newLocalisations) => void — appelé immédiatement à chaque action
 //   onClose       - () => void
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib }) {
   const [pickingForId, setPickingForId] = useState(null); // id de la zone dont on choisit le plan
 
   const addLoc = () => {
@@ -140,8 +140,14 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     {isPicking && (
                       <div style={{ marginTop:10 }}>
                         {planLibrary.length === 0 ? (
-                          <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#92400E',lineHeight:1.5 }}>
-                            📋 Bibliothèque vide — importez d'abord vos plans via le bouton <strong>Plans</strong> en haut du projet
+                          <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10 }}>
+                            <span style={{ fontSize:12,color:'#92400E',lineHeight:1.4 }}>Bibliothèque vide</span>
+                            {onOpenPlanLib && (
+                              <button onClick={() => { onClose(); onOpenPlanLib(); }}
+                                style={{ fontSize:12,fontWeight:700,color:'#92400E',background:'none',border:'1px solid #D97706',borderRadius:7,padding:'4px 10px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0 }}>
+                                Importer des plans
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
@@ -176,7 +182,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           </div>
 
           <button onClick={addLoc}
-            style={{ width:'100%',marginTop:8,padding:'13px 0',background:'none',border:`2px dashed ${DA.border}`,borderRadius:12,fontSize:14,fontWeight:700,color:DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            style={{ width:'100%',marginTop:8,padding:'13px 0',background:DA.white,border:`1.5px solid ${DA.border}`,borderRadius:12,fontSize:14,fontWeight:700,color:DA.black,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="plus" s={15}/> Ajouter un niveau
           </button>
         </div>
