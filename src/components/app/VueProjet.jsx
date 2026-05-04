@@ -17,9 +17,9 @@ const VISIT_FIELDS = new Set([
   'includeConclusion','conclusion',
 ]);
 
-export default function VueProjet({ projet, onBack, onUpdate }) {
+export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
   const visites = projet.visites || [];
-  const [selectedVisiteId, setSelectedVisiteId] = useState(() => visites[0]?.id ?? null);
+  const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
   const [modal, setModal] = useState(null);
   const [editingVisiteLabel, setEditingVisiteLabel] = useState(null);
@@ -67,34 +67,6 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
       onUpdate(projectUpd);
     }
   }, [projet.visites, selectedVisiteId, onUpdate]);
-
-  const deleteVisite = (visiteId) => {
-    const v = visites.find(v => v.id === visiteId);
-    const obsCount = (v?.localisations || []).flatMap(l => l.items || []).length;
-    const msg = obsCount > 0
-      ? `Supprimer "${v?.label || 'cette visite'}" et ses ${obsCount} observation${obsCount > 1 ? 's' : ''} ?`
-      : `Supprimer "${v?.label || 'cette visite'}" ?`;
-    if (!window.confirm(msg)) return;
-    const newVisites = visites.filter(vv => vv.id !== visiteId);
-    onUpdate({ visites: newVisites });
-    if (selectedVisiteId === visiteId) setSelectedVisiteId(newVisites[0]?.id ?? null);
-  };
-
-  const addVisite = () => {
-    const newId = crypto.randomUUID();
-    const n     = visites.length + 1;
-    const today = new Date().toISOString().slice(0, 10);
-    const newVisite = {
-      id: newId, label: `Visite ${n}`,
-      dateVisite: today, participants: [], tableauRecap: [],
-      photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
-      includeTableauRecap: true, includeConclusion: false, conclusion: '',
-      localisations: [],
-    };
-    onUpdate({ visites: [...visites, newVisite] });
-    setSelectedVisiteId(newId);
-    setTab('visite');
-  };
 
   const updateVisite = (visiteId, patch) => {
     const newVisites = visites.map(v => v.id === visiteId ? { ...v, ...patch } : v);
@@ -220,92 +192,37 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           <button onClick={onBack}
             style={{ color:'rgba(255,255,255,0.7)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'7px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
             <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={14}/></span>
-            <span style={{ fontSize:13, fontWeight:600 }}>Projets</span>
+            <span style={{ fontSize:13, fontWeight:600 }}>Visites</span>
           </button>
           <div style={{ flex:1, minWidth:0 }}>
             <p style={{ fontWeight:800, fontSize:16, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
             {projet.adresse && <p style={{ fontSize:12, color:'rgba(255,255,255,0.45)', margin:'3px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
-          <div style={{ flexShrink:0 }}>
+          <div style={{ flexShrink:0, display:'flex', alignItems:'center', gap:6 }}>
+            {/* Nom + date de la visite en cours */}
+            {(() => {
+              const v = visites.find(vv => vv.id === selectedVisiteId);
+              if (!v) return null;
+              return editingVisiteLabel === v.id ? (
+                <input autoFocus value={visitLabelVal}
+                  onChange={e => setVisitLabelVal(e.target.value)}
+                  onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
+                  style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:12, fontWeight:700, padding:'4px 8px', width: Math.max(80, visitLabelVal.length * 8) + 'px' }}
+                />
+              ) : (
+                <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
+                  style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.8)', fontSize:12, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                  {v.label ?? 'Visite'}
+                  {v.dateVisite && <span style={{ opacity:0.55, fontWeight:500 }}>· {formatDate(v.dateVisite)}</span>}
+                </button>
+              );
+            })()}
             <button onClick={() => setModal({ t:'niveaux' })}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 12px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
-              <Ic n="bld" s={14}/> Zones & Plans
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 10px', color:'rgba(255,255,255,0.6)', cursor:'pointer', display:'flex', alignItems:'center' }}>
+              <Ic n="bld" s={15}/>
             </button>
           </div>
-        </div>
-
-        {/* ── Sélecteur de visites ── */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:10, overflowX:'auto', paddingBottom:2 }}>
-          {visites.map(v => {
-            const isSelected = v.id === selectedVisiteId;
-            const isEditLabel = editingVisiteLabel === v.id;
-            const canDelete = visites.length > 1;
-            if (isSelected) return (
-              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:6, padding:'4px 6px 4px 13px', borderRadius:20, background:DA.red }}>
-                {isEditLabel ? (
-                  <input
-                    autoFocus
-                    value={visitLabelVal}
-                    onChange={e => setVisitLabelVal(e.target.value)}
-                    onBlur={() => {
-                      const t = visitLabelVal.trim();
-                      if (t) updateVisite(v.id, { label: t });
-                      setEditingVisiteLabel(null);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
-                      if (e.key === 'Escape') setEditingVisiteLabel(null);
-                    }}
-                    style={{ background:'rgba(255,255,255,0.2)', border:'none', outline:'none', borderRadius:6, color:'white', fontSize:13, fontWeight:700, padding:'1px 6px', width: Math.max(60, visitLabelVal.length * 8.5) + 'px' }}
-                  />
-                ) : (
-                  <span
-                    onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
-                    title="Cliquer pour renommer"
-                    style={{ color:'white', fontSize:13, fontWeight:700, cursor:'text', userSelect:'none' }}>
-                    {v.label ?? 'Visite'}
-                  </span>
-                )}
-                <input
-                  type="date"
-                  value={v.dateVisite || ''}
-                  onChange={e => updateVisite(v.id, { dateVisite: e.target.value || null })}
-                  style={{ background:'rgba(255,255,255,0.18)', border:'none', color:'rgba(255,255,255,0.9)', fontSize:12, fontWeight:600, borderRadius:8, padding:'3px 8px', cursor:'pointer', outline:'none', colorScheme:'dark' }}
-                />
-                {canDelete && (
-                  <button onClick={() => deleteVisite(v.id)}
-                    title="Supprimer cette visite"
-                    style={{ background:'rgba(0,0,0,0.2)', border:'none', borderRadius:6, padding:'3px 5px', cursor:'pointer', color:'rgba(255,255,255,0.7)', display:'flex', alignItems:'center', flexShrink:0 }}>
-                    <Ic n="del" s={11}/>
-                  </button>
-                )}
-              </div>
-            );
-            return (
-              <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'5px 8px 5px 11px', borderRadius:20, background:'rgba(255,255,255,0.1)' }}>
-                <span
-                  onClick={() => { setSelectedVisiteId(v.id); setTab('visite'); }}
-                  style={{ fontSize:13, fontWeight:700, cursor:'pointer', color:'rgba(255,255,255,0.55)', display:'flex', alignItems:'center', gap:4 }}>
-                  {v.label ?? 'Visite'}
-                  {v.dateVisite && <span style={{ fontSize:12, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
-                </span>
-                {canDelete && (
-                  <button onClick={() => deleteVisite(v.id)}
-                    title="Supprimer cette visite"
-                    style={{ background:'none', border:'none', padding:'2px 3px', cursor:'pointer', color:'rgba(255,255,255,0.3)', display:'flex', alignItems:'center', flexShrink:0 }}
-                    onMouseEnter={e => e.currentTarget.style.color='rgba(255,255,255,0.7)'}
-                    onMouseLeave={e => e.currentTarget.style.color='rgba(255,255,255,0.3)'}>
-                    <Ic n="x" s={10}/>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          <button onClick={addVisite}
-            style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'6px 12px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer',
-              border:'1px dashed rgba(255,255,255,0.3)', background:'transparent', color:'rgba(255,255,255,0.45)' }}>
-            <Ic n="plus" s={13}/> Nouvelle visite
-          </button>
         </div>
 
         {/* Tabs Visite / Rapport */}

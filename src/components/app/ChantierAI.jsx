@@ -8,6 +8,7 @@ import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
+import VisitesScreen from './VisitesScreen.jsx';
 
 export default function ChantierAI({ profile, onLogout }) {
   const logoUrl = useBrandingLogo();
@@ -16,6 +17,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [showNew, setShowNew] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
+  const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
@@ -122,18 +124,26 @@ export default function ChantierAI({ profile, onLogout }) {
 
       {/* Corps */}
       <div style={{ flex:1,overflow:'hidden' }}>
-        {ouvert ? (
+        {ouvert && selectedVisiteId ? (
           <VueProjet
             projet={projets.find(p => p.id === ouvert.id) ?? ouvert}
-            onBack={() => setOuvert(null)}
+            visiteId={selectedVisiteId}
+            onBack={() => setSelectedVisiteId(null)}
             onUpdate={upd => updateProjet(ouvert.id, upd)}
+          />
+        ) : ouvert ? (
+          <VisitesScreen
+            projet={projets.find(p => p.id === ouvert.id) ?? ouvert}
+            onBack={() => { setOuvert(null); setSelectedVisiteId(null); }}
+            onSelectVisite={setSelectedVisiteId}
+            onUpdateProjet={upd => updateProjet(ouvert.id, upd)}
           />
         ) : (
           <div style={{ height:'100%',overflowY:'auto' }}>
             <Dashboard
               projets={projets}
               remoteLoaded={remoteLoaded}
-              onSelect={(p) => { setOuvert(p); hydratePhotos(p.id); hydratePlans(p.id); hydratePlanLibrary(p.id); }}
+              onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePhotos(p.id); hydratePlans(p.id); hydratePlanLibrary(p.id); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
               onArchive={handleArchive}
