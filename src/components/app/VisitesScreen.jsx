@@ -12,16 +12,21 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const addVisite = () => {
     const newId = crypto.randomUUID();
     const today = new Date().toISOString().slice(0, 10);
+    const planLibrary = projet.planLibrary || [];
     // Pré-remplir les zones depuis la dernière visite (plans uniquement, sans obs ni annotations)
+    // On cherche en priorité dans planLibrary (données fraîches) pour éviter les problèmes d'hydration
     const lastVisite = visites[visites.length - 1];
-    const localisations = (lastVisite?.localisations || []).map(loc => ({
-      id: crypto.randomUUID(),
-      nom: loc.nom,
-      planBg: loc.planBg || null,
-      planData: loc.planData || null,
-      planAnnotations: null,
-      items: [],
-    }));
+    const localisations = (lastVisite?.localisations || []).map(loc => {
+      const libPlan = planLibrary.find(p => p.bg && p.bg === loc.planBg);
+      return {
+        id: crypto.randomUUID(),
+        nom: loc.nom,
+        planBg: libPlan?.bg || loc.planBg || null,
+        planData: libPlan?.data || loc.planData || null,
+        planAnnotations: null,
+        items: [],
+      };
+    });
     const newVisite = {
       id: newId,
       label: `Visite ${visites.length + 1}`,
