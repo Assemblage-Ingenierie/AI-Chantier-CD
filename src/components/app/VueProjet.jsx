@@ -330,22 +330,6 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
           {tab === 'visite' && (
             <div>
               {/* Bannière résumé */}
-              {(() => {
-                const total = totalItems;
-                const urgs  = visitProjet.localisations.flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
-                if (!total) return null;
-                return (
-                  <div style={{ padding:'10px 14px', background: urgs > 0 ? '#FFF0F0' : DA.grayXL, borderBottom:`1px solid ${urgs > 0 ? '#FCA5A5' : DA.border}`, display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:13, color: urgs > 0 ? DA.red : DA.gray, fontWeight:700 }}>{total} obs.</span>
-                    {urgs > 0 && <span style={{ fontSize:13, color:DA.red, fontWeight:700 }}>· {urgs} urgente{urgs > 1 ? 's' : ''} ⚠️</span>}
-                    <button onClick={() => setTab('rapport')}
-                      style={{ marginLeft:'auto', fontSize:13, color:DA.red, fontWeight:700, background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
-                      Voir rapport <Ic n="chv" s={12}/>
-                    </button>
-                  </div>
-                );
-              })()}
-
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
