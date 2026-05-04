@@ -34,30 +34,28 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
   }, [menuOpen, p.id, setMenuOpen]);
 
   return (
-    <div style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative',display:'flex',flexDirection:'column' }}>
-      {/* Photo — paddingTop:100% works on all iOS versions (aspect-ratio not supported on iOS<15) */}
-      <div style={{ position:'relative',width:'100%',paddingTop:'100%',background:DA.grayXL,cursor:'pointer',flexShrink:0 }} onClick={() => !arc && onSelect(p)}>
+    <div className="proj-card" style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
+      {/* Photo */}
+      <div className="proj-card-img" onClick={() => !arc && onSelect(p)}>
         {p.photo
-          ? <img src={p.photo} alt={p.nom} style={{ position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block' }}/>
-          : <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="bld" s={28}/></div>
+          ? <img src={p.photo} alt={p.nom}/>
+          : <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
         }
-        <button onClick={(e) => { e.stopPropagation(); setPhotoTgt(p); }} style={{ position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.5)',border:'none',borderRadius:8,padding:10,cursor:'pointer',color:'white',display:'flex' }}>
-          <Ic n="cam" s={14}/>
+        <button onClick={(e) => { e.stopPropagation(); setPhotoTgt(p); }} style={{ position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:8,padding:10,cursor:'pointer',color:'white',display:'flex' }}>
+          <Ic n="cam" s={15}/>
         </button>
-        {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:10,padding:'2px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={9}/> Archivé</div>}
+        {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,padding:'3px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={10}/> Archivé</div>}
         <div style={{ position:'absolute',bottom:0,left:0,right:0,height:3,background:DA.red }}/>
       </div>
 
       {/* Infos */}
-      <div style={{ padding:'12px 14px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flex:1 }}>
+      <div className="proj-card-body" style={{ padding:'14px 14px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
-          <p style={{ fontWeight:800,fontSize:15,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
-          {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'3px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>MO : {p.maitreOuvrage}</p>}
+          <p style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
+          {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
           <p style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.adresse || '—'}</p>
-          {p.updatedAt && <p style={{ fontSize:12,color:DA.grayL,margin:'4px 0 0' }}>Modifié le {new Date(p.updatedAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</p>}
-          {!arc && <p style={{ fontSize:12,color:DA.red,margin:'5px 0 0',fontWeight:600,display:'flex',alignItems:'center',gap:3 }}>Ouvrir la visite →</p>}
           {(obs > 0 || urg > 0) && (
-            <div style={{ display:'flex',gap:5,marginTop:6,flexWrap:'wrap' }}>
+            <div style={{ display:'flex',gap:5,marginTop:8,flexWrap:'wrap' }}>
               {obs > 0 && (
                 <span style={{ display:'inline-flex',alignItems:'center',gap:3,fontSize:12,color:DA.grayL,background:DA.grayXL,border:`1px solid ${DA.border}`,borderRadius:20,padding:'3px 9px' }}>
                   <Ic n="pin" s={10}/> {obs} obs
@@ -70,12 +68,13 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
               )}
             </div>
           )}
+          {!arc && <p style={{ fontSize:13,color:DA.red,margin:'8px 0 0',fontWeight:700,display:'flex',alignItems:'center',gap:3 }}>Ouvrir →</p>}
         </div>
 
         {/* Menu — dropdown uses position:fixed to escape overflow:hidden on the card */}
         <div style={{ flexShrink:0 }}>
           <button onClick={toggleMenu} style={{ padding:10,background:'none',border:'none',cursor:'pointer',color:DA.grayL,borderRadius:8 }}>
-            <Ic n="dts" s={16}/>
+            <Ic n="dts" s={18}/>
           </button>
           {menuOpen === p.id && menuPos && (
             <div style={{ position:'fixed',top:menuPos.top,right:menuPos.right,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:9999,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>

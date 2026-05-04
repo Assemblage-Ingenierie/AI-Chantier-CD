@@ -340,12 +340,12 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                 const urgs  = visitProjet.localisations.flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
                 if (!total) return null;
                 return (
-                  <div style={{ padding:'8px 14px', background: urgs > 0 ? '#FFF0F0' : DA.grayXL, borderBottom:`1px solid ${urgs > 0 ? '#FCA5A5' : DA.border}`, display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:11, color: urgs > 0 ? DA.red : DA.gray, fontWeight:700 }}>{total} obs.</span>
-                    {urgs > 0 && <span style={{ fontSize:11, color:DA.red, fontWeight:700 }}>· {urgs} urgente{urgs > 1 ? 's' : ''} ⚠️</span>}
+                  <div style={{ padding:'10px 14px', background: urgs > 0 ? '#FFF0F0' : DA.grayXL, borderBottom:`1px solid ${urgs > 0 ? '#FCA5A5' : DA.border}`, display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:13, color: urgs > 0 ? DA.red : DA.gray, fontWeight:700 }}>{total} obs.</span>
+                    {urgs > 0 && <span style={{ fontSize:13, color:DA.red, fontWeight:700 }}>· {urgs} urgente{urgs > 1 ? 's' : ''} ⚠️</span>}
                     <button onClick={() => setTab('rapport')}
-                      style={{ marginLeft:'auto', fontSize:11, color:DA.red, fontWeight:700, background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
-                      Voir rapport <Ic n="chv" s={10}/>
+                      style={{ marginLeft:'auto', fontSize:13, color:DA.red, fontWeight:700, background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+                      Voir rapport <Ic n="chv" s={12}/>
                     </button>
                   </div>
                 );
@@ -353,13 +353,13 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
 
               {/* Barre de recherche */}
               {totalItems > 0 && (
-                <div style={{ padding:'8px 14px', borderBottom:`1px solid ${DA.border}`, background:'white', display:'flex', alignItems:'center', gap:8 }}>
-                  <Ic n="txt" s={14}/>
+                <div style={{ padding:'12px 14px', borderBottom:`1px solid ${DA.border}`, background:'white', display:'flex', alignItems:'center', gap:8 }}>
+                  <Ic n="txt" s={16}/>
                   <input
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder="Rechercher une observation…"
-                    style={{ flex:1, border:'none', outline:'none', fontSize:13, color:DA.black, background:'transparent', fontFamily:'inherit' }}
+                    style={{ flex:1, border:'none', outline:'none', fontSize:15, color:DA.black, background:'transparent', fontFamily:'inherit' }}
                   />
                   {search && (
                     <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex', alignItems:'center' }}>
@@ -377,7 +377,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                   <p style={{ fontWeight:700, fontSize:15, color:DA.black, margin:'0 0 6px' }}>Aucune zone</p>
                   <p style={{ color:DA.gray, fontSize:12, margin:'0 0 20px' }}>Créez des zones pour organiser vos observations par localisation.</p>
                   <button onClick={addLoc}
-                    style={{ background:DA.red, color:'white', border:'none', borderRadius:12, padding:'11px 28px', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                    style={{ background:DA.red, color:'white', border:'none', borderRadius:12, padding:'14px 32px', fontSize:15, fontWeight:700, cursor:'pointer' }}>
                     + Ajouter une zone
                   </button>
                 </div>
@@ -407,38 +407,38 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                           opacity: zoneDragIdx===locIdx ? 0.45 : 1,
                           transition:'background 0.08s,opacity 0.08s',
                         }}>
-                        <div style={{ display:'flex', alignItems:'center', padding:'10px 14px', gap:8 }}>
+                        <div style={{ display:'flex', alignItems:'center', padding:'14px 14px', gap:8 }}>
                           {/* Poignée drag zone */}
                           <div onClick={e => e.stopPropagation()}
                             style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
-                            <Ic n="grp" s={16}/>
+                            <Ic n="grp" s={18}/>
                           </div>
                           <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
-                            <Ic n="chv" s={14}/>
+                            <Ic n="chv" s={16}/>
                           </button>
                           <EditTitle
                             value={loc.nom}
                             onSave={nom => patchLoc(loc.id, { nom })}
-                            style={{ fontSize:14, fontWeight:700, color:DA.black }}
-                            inputStyle={{ fontSize:14, fontWeight:700 }}
+                            style={{ fontSize:16, fontWeight:700, color:DA.black }}
+                            inputStyle={{ fontSize:16, fontWeight:700 }}
                           />
-                          <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
                             {urgentCount > 0 && (
-                              <span style={{ fontSize:10, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'1px 7px', lineHeight:1.6 }}>
+                              <span style={{ fontSize:12, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'2px 8px', lineHeight:1.6 }}>
                                 {urgentCount} ⚠
                               </span>
                             )}
-                            <span style={{ fontSize:11, color:DA.grayL, minWidth:14, textAlign:'center' }}>{items.length}</span>
+                            <span style={{ fontSize:13, color:DA.grayL, minWidth:14, textAlign:'center' }}>{items.length}</span>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
-                              style={{ padding:'5px 7px', border:`1px solid ${loc.planBg ? DA.red : DA.border}`, background:loc.planBg ? DA.redL : 'white', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', color:loc.planBg ? DA.red : DA.grayL }}>
-                              <Ic n="map" s={13}/>
+                              style={{ padding:'7px 9px', border:`1px solid ${loc.planBg ? DA.red : DA.border}`, background:loc.planBg ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:loc.planBg ? DA.red : DA.grayL }}>
+                              <Ic n="map" s={15}/>
                             </button>
                             <button onClick={() => deleteLoc(loc.id, loc.nom)}
-                              style={{ padding:'5px 6px', border:'none', background:'none', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
+                              style={{ padding:'7px 8px', border:'none', background:'none', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
                               onMouseEnter={e => e.currentTarget.style.color = DA.red}
                               onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
-                              <Ic n="del" s={14}/>
+                              <Ic n="del" s={16}/>
                             </button>
                           </div>
                         </div>
@@ -459,8 +459,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                     );
                   })}
                   <button onClick={addLoc}
-                    style={{ width:'100%', padding:14, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:13, fontWeight:600, color:DA.red, background:DA.white, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer' }}>
-                    <Ic n="plus" s={14}/> Ajouter une zone
+                    style={{ width:'100%', padding:18, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:DA.red, background:DA.white, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer' }}>
+                    <Ic n="plus" s={16}/> Ajouter une zone
                   </button>
                 </>
               )}

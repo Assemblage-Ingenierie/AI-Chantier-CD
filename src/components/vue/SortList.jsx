@@ -116,10 +116,10 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
       onTouchCancel={onGripTouchEnd}
     >
       {items.length === 0 && (
-        <div style={{ padding:'20px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
-          <p style={{ fontSize:12,color:DA.grayL,margin:'0 0 10px' }}>Aucune observation dans cette zone</p>
-          <button onClick={() => onEdit(null)} style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'8px 16px',background:DA.red,color:'white',borderRadius:20,border:'none',fontSize:12,fontWeight:700,cursor:'pointer' }}>
-            <Ic n="plus" s={13}/> Ajouter la 1ère observation
+        <div style={{ padding:'24px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
+          <p style={{ fontSize:14,color:DA.grayL,margin:'0 0 14px' }}>Aucune observation dans cette zone</p>
+          <button onClick={() => onEdit(null)} style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'12px 22px',background:DA.red,color:'white',borderRadius:20,border:'none',fontSize:15,fontWeight:700,cursor:'pointer' }}>
+            <Ic n="plus" s={15}/> Ajouter la 1ère observation
           </button>
         </div>
       )}
@@ -138,7 +138,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
               onClick={() => { if (dragDidMoveRef.current) { dragDidMoveRef.current = false; return; } onEdit(item); }}
               style={{
                 display:'flex', alignItems:'flex-start', gap:8,
-                padding:'10px 12px 10px 6px',
+                padding:'14px 14px 14px 6px',
                 borderBottom:`1px solid ${DA.border}`,
                 cursor:'pointer',
                 background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
@@ -159,12 +159,12 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                 <Ic n="grp" s={16}/>
               </div>
 
-              <span style={{ marginTop:7,width:8,height:8,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>
+              <span style={{ marginTop:8,width:10,height:10,borderRadius:'50%',background:URGENCE[item.urgence]?.dot,flexShrink:0 }}/>
 
               <div style={{ flex:1,minWidth:0 }}>
-                <p style={{ fontSize:13,fontWeight:600,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{item.titre}</p>
+                <p style={{ fontSize:15,fontWeight:700,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{item.titre}</p>
                 {item.commentaire && (
-                  <p style={{ fontSize:11,color:DA.gray,marginTop:2,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',margin:'2px 0 0' }}>{item.commentaire}</p>
+                  <p style={{ fontSize:13,color:DA.gray,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',margin:'4px 0 0',lineHeight:1.4 }}>{item.commentaire}</p>
                 )}
                 <div style={{ display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap' }}>
                   <Badge level={item.urgence}/>
@@ -201,13 +201,12 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
               </div>
 
               {(confirmDelId === item.id
-                ? <div style={{ display:'flex',alignItems:'center',gap:4,flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                    <span style={{ fontSize:10,fontWeight:700,color:'#B91C1C',whiteSpace:'nowrap' }}>Supprimer ?</span>
-                    <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'3px 7px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer' }}>Oui</button>
-                    <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'3px 6px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:5,fontSize:11,cursor:'pointer' }}>Non</button>
+                ? <div style={{ display:'flex',alignItems:'center',gap:6,flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
+                    <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
                   </div>
-                : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red,padding:'3px 6px',cursor:'pointer',flexShrink:0,background:'#FFF0F0',border:'1px solid #FECACA',borderRadius:6,display:'flex',alignItems:'center' }}>
-                    <Ic n="del" s={13}/>
+                : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red,padding:'8px 9px',cursor:'pointer',flexShrink:0,background:'#FFF0F0',border:'1px solid #FECACA',borderRadius:8,display:'flex',alignItems:'center' }}>
+                    <Ic n="del" s={15}/>
                   </button>
               )}
             </div>
@@ -216,8 +215,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
       </div>
 
       <div style={{ display:'flex',borderTop:`1px solid ${DA.border}` }}>
-        <button onClick={() => onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:10,fontSize:13,fontWeight:600,color:DA.red,background:'none',border:'none',cursor:'pointer' }}>
-          <Ic n="plus" s={14}/> Ajouter
+        <button onClick={() => onEdit(null)} style={{ flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:16,fontSize:15,fontWeight:700,color:DA.red,background:'none',border:'none',cursor:'pointer' }}>
+          <Ic n="plus" s={16}/> Ajouter
         </button>
       </div>
     </div>
