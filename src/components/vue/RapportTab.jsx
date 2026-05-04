@@ -169,6 +169,18 @@ export default function RapportTab({ projet, onUpdate }) {
       {panelOpen && (
       <div style={{ width: isMobile ? '100%' : 272, borderRight:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
 
+        {/* Bouton retour — visible uniquement sur mobile */}
+        {isMobile && (
+          <div style={{ padding:'8px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, background:'#f8f8f8' }}>
+            <button
+              onClick={() => setPanelOpen(false)}
+              style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 14px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', cursor:'pointer', fontSize:13, fontWeight:700, color:DA.black, width:'100%' }}>
+              <span style={{ fontSize:16, lineHeight:1, marginTop:-1 }}>‹</span>
+              Retour à l'aperçu
+            </button>
+          </div>
+        )}
+
         {/* Boutons Export en haut — toujours visibles */}
         <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:6 }}>
           <button

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
@@ -80,16 +80,16 @@ function BreakControl({ id, active, onToggle }) {
   return (
     <div onClick={() => onToggle(id)}
       style={{ display:'flex', alignItems:'center', gap:6, padding:'4px 0', cursor:'pointer', userSelect:'none' }}>
-      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : '1px dashed #ddd' }}/>
+      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : `1px dashed #f0c0c0` }}/>
       <span style={{
         fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap',
-        background: active ? DA.red : '#f5f5f5',
-        color: active ? 'white' : '#bbb',
-        border: `1px solid ${active ? DA.red : '#e0e0e0'}`,
+        background: active ? DA.red : '#fff3f3',
+        color: active ? 'white' : DA.red,
+        border: `1px solid ${active ? DA.red : '#fecaca'}`,
       }}>
         {active ? '× Retirer saut' : '⊕ Saut de page'}
       </span>
-      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : '1px dashed #ddd' }}/>
+      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : `1px dashed #f0c0c0` }}/>
     </div>
   );
 }
@@ -251,34 +251,55 @@ function HdrBar({ projet, dateStr }) {
 }
 
 function A4Card({ children, projet, pageNum, totalPages }) {
+  const cardRef = useRef();
+  const [overflow, setOverflow] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!cardRef.current) return;
+    const measure = () => {
+      const h = cardRef.current?.offsetHeight ?? 0;
+      setOverflow(Math.max(0, h - PH));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(cardRef.current);
+    return () => ro.disconnect();
+  }, [children]);
+
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : new Date().toLocaleDateString('fr-FR');
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+    <div ref={cardRef} style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      {/* Contenu */}
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>{children}</div>
       <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      {/* Marqueur de fin de page A4 */}
+      <div style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:2 }}>
+        <div style={{ borderTop:`2px dashed ${DA.red}`, display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
+          <span style={{ background:DA.red, color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', borderRadius:'0 0 4px 4px', letterSpacing:0.5, textTransform:'uppercase', whiteSpace:'nowrap' }}>
+            {overflow > 0 ? `⚠ Déborde de ${Math.round(overflow / S)}mm — ajoutez un saut de page` : 'Fin de page A4'}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
 
-function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }) {
+function PageSepBanner({ firstBlockId, isForced, onToggle }) {
   return (
-    <div style={{ width:PW, background:'#1e1e1e', padding:'10px 0 8px', display:'flex', flexDirection:'column', alignItems:'center', gap:6, flexShrink:0 }}>
-      <span style={{ fontSize:11, fontWeight:800, color:'rgba(255,255,255,0.6)', letterSpacing:1.5, textTransform:'uppercase', whiteSpace:'nowrap' }}>
-        — Page {pageNum} / {totalPages} —
-      </span>
-      {firstBlockId && (
+    <div style={{ width:PW, background:'#2a2a2a', padding:'7px 0 6px', display:'flex', flexDirection:'column', alignItems:'center', gap:5, flexShrink:0 }}>
+      {firstBlockId ? (
         <div onClick={() => onToggle(firstBlockId)}
-          style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 10px', borderRadius:4, cursor:'pointer',
-            background: isForced ? DA.red : 'rgba(255,255,255,0.07)',
-            border: `1px solid ${isForced ? DA.red : 'rgba(255,255,255,0.14)'}` }}>
-          <span style={{ fontSize:9, fontWeight:700, color: isForced ? 'white' : 'rgba(255,255,255,0.45)', whiteSpace:'nowrap' }}>
-            {isForced ? '× Saut forcé' : '⊕ Forcer saut ici'}
+          style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 12px', borderRadius:5, cursor:'pointer',
+            background: isForced ? DA.red : 'rgba(255,255,255,0.08)',
+            border: `1px solid ${isForced ? DA.red : 'rgba(255,255,255,0.15)'}` }}>
+          <span style={{ fontSize:9, fontWeight:700, color: isForced ? 'white' : 'rgba(255,255,255,0.5)', whiteSpace:'nowrap' }}>
+            {isForced ? '× Retirer le saut de page' : '⊕ Insérer un saut de page ici'}
           </span>
         </div>
+      ) : (
+        <div style={{ width:32, height:3, background:'rgba(255,255,255,0.12)', borderRadius:2 }}/>
       )}
     </div>
   );
@@ -636,8 +657,6 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           return (
             <React.Fragment key={pi}>
               <PageSepBanner
-                pageNum={pageNum}
-                totalPages={totalPages}
                 firstBlockId={firstId}
                 isForced={firstForced}
                 onToggle={onTogglePageBreak}
@@ -677,7 +696,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length;
           return (
             <>
-              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages} tableauRecap={tableauRecap}/>
               </div>
@@ -691,7 +710,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0);
           return (
             <>
-              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <ConclusionPage conclusion={conclusion} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
               </div>
@@ -705,7 +724,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
             <React.Fragment key={`plan-end-${loc.id}`}>
-              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
                   <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
