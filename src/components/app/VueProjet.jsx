@@ -216,25 +216,25 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
       {/* ── Header projet ── */}
-      <div style={{ background:DA.black, padding:'10px 14px', flexShrink:0 }}>
+      <div style={{ background:DA.black, padding:'12px 14px', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <button onClick={onBack}
-            style={{ color:'rgba(255,255,255,0.7)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'5px 8px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
-            <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-            <span style={{ fontSize:11, fontWeight:600 }}>Projets</span>
+            style={{ color:'rgba(255,255,255,0.7)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'7px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
+            <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={14}/></span>
+            <span style={{ fontSize:13, fontWeight:600 }}>Projets</span>
           </button>
           <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
-            {projet.adresse && <p style={{ fontSize:10, color:'rgba(255,255,255,0.45)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
+            <p style={{ fontWeight:800, fontSize:16, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+            {projet.adresse && <p style={{ fontSize:12, color:'rgba(255,255,255,0.45)', margin:'3px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
           <div style={{ display:'flex', gap:6, flexShrink:0 }}>
             <button onClick={() => setModal({ t:'niveaux' })}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.7)', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
-              <Ic n="bld" s={13}/> Niveaux
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 10px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+              <Ic n="bld" s={14}/> Niveaux
             </button>
             <button onClick={() => setModal({ t:'planLib' })}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 10px', color:'rgba(255,255,255,0.7)', fontSize:11, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
-              <Ic n="lib" s={13}/> Plans
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'7px 10px', color:'rgba(255,255,255,0.7)', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:5, cursor:'pointer' }}>
+              <Ic n="lib" s={14}/> Plans
             </button>
           </div>
         </div>
@@ -261,13 +261,13 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                       if (e.key === 'Enter') e.currentTarget.blur();
                       if (e.key === 'Escape') setEditingVisiteLabel(null);
                     }}
-                    style={{ background:'rgba(255,255,255,0.2)', border:'none', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'1px 6px', width: Math.max(60, visitLabelVal.length * 7.5) + 'px' }}
+                    style={{ background:'rgba(255,255,255,0.2)', border:'none', outline:'none', borderRadius:6, color:'white', fontSize:13, fontWeight:700, padding:'1px 6px', width: Math.max(60, visitLabelVal.length * 8.5) + 'px' }}
                   />
                 ) : (
                   <span
                     onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
                     title="Cliquer pour renommer"
-                    style={{ color:'white', fontSize:11, fontWeight:700, cursor:'text', userSelect:'none' }}>
+                    style={{ color:'white', fontSize:13, fontWeight:700, cursor:'text', userSelect:'none' }}>
                     {v.label ?? 'Visite'}
                   </span>
                 )}
@@ -275,7 +275,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                   type="date"
                   value={v.dateVisite || ''}
                   onChange={e => updateVisite(v.id, { dateVisite: e.target.value || null })}
-                  style={{ background:'rgba(255,255,255,0.18)', border:'none', color:'rgba(255,255,255,0.9)', fontSize:10, fontWeight:600, borderRadius:8, padding:'2px 6px', cursor:'pointer', outline:'none', colorScheme:'dark' }}
+                  style={{ background:'rgba(255,255,255,0.18)', border:'none', color:'rgba(255,255,255,0.9)', fontSize:12, fontWeight:600, borderRadius:8, padding:'3px 8px', cursor:'pointer', outline:'none', colorScheme:'dark' }}
                 />
                 {canDelete && (
                   <button onClick={() => deleteVisite(v.id)}
@@ -290,9 +290,9 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
               <div key={v.id} style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'5px 8px 5px 11px', borderRadius:20, background:'rgba(255,255,255,0.1)' }}>
                 <span
                   onClick={() => { setSelectedVisiteId(v.id); setTab('visite'); }}
-                  style={{ fontSize:11, fontWeight:700, cursor:'pointer', color:'rgba(255,255,255,0.55)', display:'flex', alignItems:'center', gap:4 }}>
+                  style={{ fontSize:13, fontWeight:700, cursor:'pointer', color:'rgba(255,255,255,0.55)', display:'flex', alignItems:'center', gap:4 }}>
                   {v.label ?? 'Visite'}
-                  {v.dateVisite && <span style={{ fontSize:10, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
+                  {v.dateVisite && <span style={{ fontSize:12, opacity:0.75 }}>· {formatDate(v.dateVisite)}</span>}
                 </span>
                 {canDelete && (
                   <button onClick={() => deleteVisite(v.id)}
@@ -307,9 +307,9 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             );
           })}
           <button onClick={addVisite}
-            style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer',
+            style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'6px 12px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer',
               border:'1px dashed rgba(255,255,255,0.3)', background:'transparent', color:'rgba(255,255,255,0.45)' }}>
-            <Ic n="plus" s={11}/> Nouvelle visite
+            <Ic n="plus" s={13}/> Nouvelle visite
           </button>
         </div>
 
@@ -320,8 +320,8 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
           ].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:12, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? DA.red : 'transparent'}`, background:'transparent', color:tab===t.k ? DA.red : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
-              <Ic n={t.n} s={13}/>{t.l}
+              style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'13px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? DA.red : 'transparent'}`, background:'transparent', color:tab===t.k ? DA.red : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+              <Ic n={t.n} s={15}/>{t.l}
             </button>
           ))}
         </div>

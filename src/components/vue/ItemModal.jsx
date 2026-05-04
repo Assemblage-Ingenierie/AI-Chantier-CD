@@ -279,21 +279,21 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé *</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé *</label>
             <input value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
               placeholder="Ex: Fissures, Humidité…"
-              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box' }}
+              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
           {/* Urgence */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
             <div style={{ display:'flex',gap:8 }}>
               {Object.entries(URGENCE).map(([k, u]) => (
                 <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                  style={{ flex:1,padding:'8px 4px',borderRadius:8,fontSize:11,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
-                  <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
+                  style={{ flex:1,padding:'11px 4px',borderRadius:8,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
+                  <span style={{ width:8,height:8,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
                 </button>
               ))}
             </div>
@@ -301,12 +301,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
           {/* Suivi */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
             <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
               {Object.entries(SUIVI).map(([k, s]) => (
                 <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
-                  style={{ padding:'5px 10px',borderRadius:20,fontSize:11,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
-                  <span style={{ width:6,height:6,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
+                  style={{ padding:'8px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
+                  <span style={{ width:7,height:7,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
                 </button>
               ))}
             </div>
@@ -314,10 +314,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
           {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
             <textarea value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée…" rows={4}
-              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'10px 12px',fontSize:13,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
+              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
@@ -353,13 +353,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           {/* Photos */}
           <div style={{ marginBottom:14 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
-              <label style={{ fontSize:11,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
+              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
               <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-                <button onClick={() => gallRef.current.click()} style={{ fontSize:11,border:`1px solid ${DA.border}`,padding:'5px 10px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
-                  <Ic n="img" s={12}/> Galerie
+                <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
+                  <Ic n="img" s={14}/> Galerie
                 </button>
-                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ fontSize:11,border:`1px solid ${DA.red}`,padding:'5px 10px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
-                  <Ic n="cam" s={12}/> Photo
+                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
+                  <Ic n="cam" s={14}/> Photo
                 </button>
               </div>
             </div>

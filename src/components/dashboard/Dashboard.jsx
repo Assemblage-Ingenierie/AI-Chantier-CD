@@ -29,15 +29,15 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
       {/* En-tête */}
       <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between' }}>
         <div>
-          <h1 style={{ fontSize:22,fontWeight:900,color:DA.black,margin:0,letterSpacing:-0.5 }}>
+          <h1 style={{ fontSize:25,fontWeight:900,color:DA.black,margin:0,letterSpacing:-0.5 }}>
             <span style={{ color:DA.red }}>AI</span> chantier
           </h1>
-          <p style={{ fontSize:11,color:DA.grayL,margin:'2px 0 0' }}>
+          <p style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0' }}>
             {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}
           </p>
         </div>
-        <button onClick={onNew} style={{ background:DA.red,color:'white',border:'none',borderRadius:10,padding:'8px 16px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6 }}>
-          <Ic n="plus" s={14}/> Nouveau
+        <button onClick={onNew} style={{ background:DA.red,color:'white',border:'none',borderRadius:10,padding:'11px 18px',fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6 }}>
+          <Ic n="plus" s={15}/> Nouveau
         </button>
       </div>
 
@@ -46,7 +46,7 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
         {stats.map(s => (
           <div key={s.l} style={{ background:DA.grayXL,borderRadius:12,padding:'12px 14px',border:`1px solid ${DA.border}` }}>
             <p style={{ fontSize:22,fontWeight:900,color:s.red ? DA.red : DA.black,margin:0 }}>{s.v}</p>
-            <p style={{ fontSize:11,color:DA.gray,margin:'2px 0 0' }}>{s.l}</p>
+            <p style={{ fontSize:13,color:DA.gray,margin:'3px 0 0' }}>{s.l}</p>
           </div>
         ))}
       </div>
@@ -54,8 +54,8 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
       {/* Projets actifs */}
       <div>
         <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10 }}>
-          <h2 style={{ fontSize:13,fontWeight:800,color:DA.black,margin:0 }}>Projets en cours</h2>
-          <span style={{ fontSize:11,background:DA.redL,color:DA.red,padding:'2px 8px',borderRadius:10,fontWeight:700 }}>{actifs.length}</span>
+          <h2 style={{ fontSize:15,fontWeight:800,color:DA.black,margin:0 }}>Projets en cours</h2>
+          <span style={{ fontSize:13,background:DA.redL,color:DA.red,padding:'3px 9px',borderRadius:10,fontWeight:700 }}>{actifs.length}</span>
         </div>
 
         {actifs.length === 0 && !remoteLoaded ? (
@@ -103,7 +103,7 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
       {/* Archivés */}
       {archives.length > 0 && (
         <div>
-          <h2 style={{ fontSize:12,fontWeight:700,color:DA.grayL,margin:'0 0 10px',display:'flex',alignItems:'center',gap:6 }}>
+          <h2 style={{ fontSize:14,fontWeight:700,color:DA.grayL,margin:'0 0 10px',display:'flex',alignItems:'center',gap:6 }}>
             <Ic n="arc" s={13}/> Archivés ({archives.length})
           </h2>
           <div className="proj-grid" style={{ opacity:0.65 }}>
