@@ -412,7 +412,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
                             {/* Plan thumbnail shortcut */}
                             {loc.planBg ? (
                               <button
-                                onClick={() => setModal({ t:'plan', locId:loc.id })}
+                                onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
                                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'white', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', textAlign:'left' }}>
                                 <div style={{ position:'relative', flexShrink:0 }}>
                                   <img src={loc.planBg} alt="Plan"
@@ -497,6 +497,7 @@ export default function VueProjet({ projet, onBack, onUpdate }) {
             loc={loc}
             items={loc?.items || []}
             planLibrary={projet.planLibrary || []}
+            autoAnnot={!!modal.autoAnnot}
             onClose={() => setModal(null)}
             onSave={({ planBg, planData, planAnnotations }) => {
               patchLoc(modal.locId, { planBg, planData, planAnnotations });

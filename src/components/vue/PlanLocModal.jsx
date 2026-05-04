@@ -5,11 +5,11 @@ import { renderPdfPage } from '../../lib/pdfUtils.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items, autoAnnot }) {
   const [planBg, setPlanBg] = useState(loc.planBg || null);
   const [planData, setPlanData] = useState(loc.planData || null);
   const [annot, setAnnot] = useState(loc.planAnnotations || null);
-  const [showAnnot, setShowAnnot] = useState(false);
+  const [showAnnot, setShowAnnot] = useState(!!autoAnnot);
   const [showPicker, setShowPicker] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [renderErr, setRenderErr] = useState(null);
