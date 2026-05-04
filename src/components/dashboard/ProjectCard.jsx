@@ -49,7 +49,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
       </div>
 
       {/* Infos */}
-      <div className="proj-card-body" style={{ padding:'14px 14px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8 }}>
+      <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           <p style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
           {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
@@ -68,7 +68,6 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
               )}
             </div>
           )}
-          {!arc && <p style={{ fontSize:13,color:DA.red,margin:'8px 0 0',fontWeight:700,display:'flex',alignItems:'center',gap:3 }}>Ouvrir →</p>}
         </div>
 
         {/* Menu — dropdown uses position:fixed to escape overflow:hidden on the card */}
