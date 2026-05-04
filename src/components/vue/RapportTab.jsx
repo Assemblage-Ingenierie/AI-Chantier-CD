@@ -54,7 +54,7 @@ export default function RapportTab({ projet, onUpdate }) {
   };
   const onBtnTouchMove = (e) => {
     if (!btnDragRef.current) return;
-    e.preventDefault();
+    // touchAction:'none' on the element already prevents scroll — no preventDefault needed
     const t = e.touches[0];
     btnDragRef.current.moved = true;
     setBtnPos({ x: t.clientX - btnDragRef.current.startX, y: t.clientY - btnDragRef.current.startY });
