@@ -1,20 +1,47 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet }) {
   const visites = projet.visites || [];
 
-  const formatDate = (d) => d
-    ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' })
-    : 'Sans date';
+  // ── Drag reorder ──────────────────────────────────────────────────────────
+  const [dragIdx, setDragIdx]   = useState(null);
+  const [overIdx, setOverIdx]   = useState(null);
+  const dragDidMove             = useRef(false);
+
+  const onDragStart = (i) => { setDragIdx(i); dragDidMove.current = false; };
+  const onDragEnter = (i) => { setOverIdx(i); dragDidMove.current = true; };
+  const onDragEnd   = () => {
+    if (dragDidMove.current && dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+      const next = [...visites];
+      const [moved] = next.splice(dragIdx, 1);
+      next.splice(overIdx, 0, moved);
+      onUpdateProjet({ visites: next });
+    }
+    setDragIdx(null); setOverIdx(null); dragDidMove.current = false;
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const patchVisite = (visiteId, patch) => {
+    onUpdateProjet({ visites: visites.map(v => v.id === visiteId ? { ...v, ...patch } : v) });
+  };
+
+  const deleteVisite = (e, visiteId) => {
+    e.stopPropagation();
+    const v = visites.find(v => v.id === visiteId);
+    const obsCount = (v?.localisations || []).flatMap(l => l.items || []).length;
+    const msg = obsCount > 0
+      ? `Supprimer "${v?.label || 'cette visite'}" et ses ${obsCount} observation${obsCount > 1 ? 's' : ''} ?`
+      : `Supprimer "${v?.label || 'cette visite'}" ?`;
+    if (!window.confirm(msg)) return;
+    onUpdateProjet({ visites: visites.filter(vv => vv.id !== visiteId) });
+  };
 
   const addVisite = () => {
     const newId = crypto.randomUUID();
     const today = new Date().toISOString().slice(0, 10);
     const planLibrary = projet.planLibrary || [];
-    // Pré-remplir les zones depuis la dernière visite (plans uniquement, sans obs ni annotations)
-    // On cherche en priorité dans planLibrary (données fraîches) pour éviter les problèmes d'hydration
     const lastVisite = visites[visites.length - 1];
     const localisations = (lastVisite?.localisations || []).map(loc => {
       const libPlan = planLibrary.find(p => p.bg && p.bg === loc.planBg);
@@ -45,17 +72,6 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     onSelectVisite(newId);
   };
 
-  const deleteVisite = (e, visiteId) => {
-    e.stopPropagation();
-    const v = visites.find(v => v.id === visiteId);
-    const obsCount = (v?.localisations || []).flatMap(l => l.items || []).length;
-    const msg = obsCount > 0
-      ? `Supprimer "${v?.label || 'cette visite'}" et ses ${obsCount} observation${obsCount > 1 ? 's' : ''} ?`
-      : `Supprimer "${v?.label || 'cette visite'}" ?`;
-    if (!window.confirm(msg)) return;
-    onUpdateProjet({ visites: visites.filter(vv => vv.id !== visiteId) });
-  };
-
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
@@ -75,7 +91,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         </div>
       </div>
 
-      {/* Liste des visites */}
+      {/* Liste */}
       <div style={{ flex:1, overflowY:'auto' }}>
         {visites.length === 0 && (
           <div style={{ padding:'48px 24px', textAlign:'center' }}>
@@ -87,20 +103,57 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
           </div>
         )}
 
-        {[...visites].reverse().map(v => {
-          const obsCount = (v.localisations || []).flatMap(l => l.items || []).length;
-          const urgCount = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
+        {visites.map((v, i) => {
+          const obsCount  = (v.localisations || []).flatMap(l => l.items || []).length;
+          const urgCount  = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
           const zonesCount = (v.localisations || []).length;
+          const isDragging = dragIdx === i;
+          const isOver     = overIdx === i && dragIdx !== i;
           return (
             <div key={v.id}
-              onClick={() => onSelectVisite(v.id)}
-              style={{ display:'flex', alignItems:'center', gap:12, padding:'16px 16px', background:'white', borderBottom:`1px solid ${DA.border}`, cursor:'pointer' }}>
-              <div style={{ width:44, height:44, borderRadius:10, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, color:DA.red }}>
-                <Ic n="fil" s={20}/>
+              draggable
+              onDragStart={() => onDragStart(i)}
+              onDragEnter={() => onDragEnter(i)}
+              onDragEnd={onDragEnd}
+              onDragOver={e => e.preventDefault()}
+              onClick={() => { if (dragDidMove.current) { dragDidMove.current = false; return; } onSelectVisite(v.id); }}
+              style={{
+                display:'flex', alignItems:'center', gap:10,
+                padding:'12px 14px 12px 8px',
+                background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
+                borderBottom:`1px solid ${DA.border}`,
+                borderTop: isOver ? `2px solid ${DA.red}` : 'none',
+                opacity: isDragging ? 0.45 : 1,
+                cursor:'pointer',
+                transition:'background 0.08s, opacity 0.08s',
+              }}>
+
+              {/* Poignée drag */}
+              <div onClick={e => e.stopPropagation()}
+                style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
+                <Ic n="grp" s={16}/>
               </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontWeight:700, fontSize:15, color:DA.black, margin:0 }}>{v.label || 'Visite'}</p>
-                <p style={{ fontSize:12, color:DA.gray, margin:'2px 0 0' }}>{formatDate(v.dateVisite)}</p>
+
+              {/* Icône visite */}
+              <div style={{ width:40, height:40, borderRadius:10, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, color:DA.red }}>
+                <Ic n="fil" s={18}/>
+              </div>
+
+              {/* Contenu */}
+              <div style={{ flex:1, minWidth:0 }} onClick={e => e.stopPropagation()}>
+                <input
+                  value={v.label || ''}
+                  onChange={e => patchVisite(v.id, { label: e.target.value })}
+                  onClick={e => e.stopPropagation()}
+                  style={{ fontSize:14, fontWeight:700, color:DA.black, border:'none', outline:'none', background:'transparent', width:'100%', padding:0, margin:0 }}
+                />
+                <input
+                  type="date"
+                  value={v.dateVisite || ''}
+                  onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
+                  onClick={e => e.stopPropagation()}
+                  style={{ fontSize:12, color:DA.gray, border:'none', outline:'none', background:'transparent', padding:0, margin:'2px 0 0', display:'block', cursor:'pointer' }}
+                />
                 <div style={{ display:'flex', gap:5, marginTop:5, flexWrap:'wrap' }}>
                   {zonesCount > 0 && (
                     <span style={{ fontSize:11, color:DA.grayL, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:20, padding:'2px 8px' }}>
@@ -119,7 +172,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   )}
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+
+              {/* Actions */}
+              <div style={{ display:'flex', alignItems:'center', gap:2, flexShrink:0 }} onClick={e => e.stopPropagation()}>
                 {visites.length > 1 && (
                   <button onClick={e => deleteVisite(e, v.id)}
                     style={{ padding:'7px 8px', background:'none', border:'none', color:'#ccc', cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center' }}
@@ -128,7 +183,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     <Ic n="del" s={15}/>
                   </button>
                 )}
-                <span style={{ color:DA.grayL, display:'flex', alignItems:'center', transform:'rotate(-90deg)' }}><Ic n="chv" s={16}/></span>
+                <span style={{ color:'#ccc', display:'flex', alignItems:'center', transform:'rotate(-90deg)' }}><Ic n="chv" s={16}/></span>
               </div>
             </div>
           );
