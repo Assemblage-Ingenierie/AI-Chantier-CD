@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 
+const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+
 export default function SortList({ items, onReorder, onEdit, onDelete }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [lightbox, setLightbox]         = useState(null);
@@ -157,8 +159,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
               onDragOver={e => e.preventDefault()}
               onClick={() => { if (dragDidMoveRef.current) { dragDidMoveRef.current = false; return; } onEdit(item); }}
               style={{
-                display:'flex', alignItems:'flex-start', gap:8,
-                padding:'14px 14px 14px 6px',
+                display:'flex', alignItems:'flex-start', gap: isDesktop ? 12 : 8,
+                padding: isDesktop ? '18px 20px 18px 8px' : '14px 14px 14px 6px',
                 borderBottom:`1px solid ${DA.border}`,
                 borderLeft:`4px solid ${URGENCE[item.urgence]?.dot || DA.border}`,
                 cursor:'pointer',
@@ -177,57 +179,86 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                   padding:'6px 4px', cursor:'grab', touchAction:'none',
                   color:'#bbb', display:'flex', alignItems:'center',
                 }}>
-                <Ic n="grp" s={16}/>
+                <Ic n="grp" s={isDesktop ? 18 : 16}/>
               </div>
 
-              <div style={{ flex:1, minWidth:0, display:'flex', gap:10, alignItems:'flex-start' }}>
-                {/* Texte + badges */}
-                <div style={{ flex:1, minWidth:0 }}>
-                  <p style={{ fontSize:15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
-                  {item.commentaire && (
-                    <p style={{ fontSize:13, color:DA.gray, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', margin:'4px 0 0', lineHeight:1.4 }}>{item.commentaire}</p>
-                  )}
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, flexWrap:'wrap' }}>
-                    <Badge level={item.urgence}/>
-                    <span style={{ display:'flex', alignItems:'center', gap:3 }}>
-                      <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
-                        e.stopPropagation();
-                        const keys = Object.keys(SUIVI);
-                        const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
-                        onEdit({ ...item, suivi: next, _quickSuivi: true });
-                      }}/>
-                      <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
-                    </span>
+              {/* ── Content ── */}
+              <div style={{ flex:1, minWidth:0 }}>
+                {/* Top row: text + (mobile: photos right, desktop: nothing yet) */}
+                <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
+                    {item.commentaire && (
+                      <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, overflow:'hidden', display:'-webkit-box', WebkitLineClamp: isDesktop ? 3 : 2, WebkitBoxOrient:'vertical', margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.5 }}>{item.commentaire}</p>
+                    )}
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 8 : 6, flexWrap:'wrap' }}>
+                      <Badge level={item.urgence}/>
+                      <span style={{ display:'flex', alignItems:'center', gap:3 }}>
+                        <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
+                          e.stopPropagation();
+                          const keys = Object.keys(SUIVI);
+                          const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
+                          onEdit({ ...item, suivi: next, _quickSuivi: true });
+                        }}/>
+                        <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Mobile: compact 2x2 photo grid to the right */}
+                  {!isDesktop && (() => {
+                    const validPhotos = (item.photos || []).filter(ph => ph.data);
+                    if (validPhotos.length) {
+                      const shown = validPhotos.slice(0, 4);
+                      const extra = validPhotos.length - shown.length;
+                      return (
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
+                          {shown.map((ph, pi) => (
+                            <div key={pi} style={{ position:'relative' }}>
+                              <img src={ph.data} alt=""
+                                onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
+                                style={{ width:64, height:64, objectFit:'cover', borderRadius:6, border:`1px solid ${DA.border}`, display:'block', cursor:'pointer' }}/>
+                              {pi === shown.length - 1 && extra > 0 && (
+                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                                  onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
+                                  <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    if (!item._photosHydrated && (item.photos||[]).length > 0) return (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
+                        {(item.photos||[]).slice(0,4).map((_,pi) => (
+                          <div key={pi} style={{ width:64, height:64, borderRadius:6, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
+                        ))}
+                      </div>
+                    );
+                    return null;
+                  })()}
                 </div>
-                {/* Photos à droite */}
-                {(() => {
+
+                {/* Desktop: large photos in a row below the text */}
+                {isDesktop && (() => {
                   const validPhotos = (item.photos || []).filter(ph => ph.data);
                   if (validPhotos.length) {
-                    const shown = validPhotos.slice(0, 4);
-                    const extra = validPhotos.length - shown.length;
                     return (
-                      <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
-                        {shown.map((ph, pi) => (
-                          <div key={pi} style={{ position:'relative' }}>
-                            <img src={ph.data} alt=""
-                              onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                              style={{ width:64, height:64, objectFit:'cover', borderRadius:6, border:`1px solid ${DA.border}`, display:'block', cursor:'pointer' }}/>
-                            {pi === shown.length - 1 && extra > 0 && (
-                              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
-                                onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
-                                <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
-                              </div>
-                            )}
-                          </div>
+                      <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap' }}
+                        onClick={e => e.stopPropagation()}>
+                        {validPhotos.map((ph, pi) => (
+                          <img key={pi} src={ph.data} alt=""
+                            onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
+                            style={{ height:160, width:'auto', maxWidth:240, objectFit:'cover', borderRadius:10, border:`1px solid ${DA.border}`, cursor:'pointer', flexShrink:0, display:'block' }}/>
                         ))}
                       </div>
                     );
                   }
                   if (!item._photosHydrated && (item.photos||[]).length > 0) return (
-                    <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
+                    <div style={{ display:'flex', gap:10, marginTop:14 }}>
                       {(item.photos||[]).slice(0,4).map((_,pi) => (
-                        <div key={pi} style={{ width:64, height:64, borderRadius:6, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
+                        <div key={pi} style={{ height:160, width:200, borderRadius:10, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
                       ))}
                     </div>
                   );
@@ -240,7 +271,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                     <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
                     <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
                   </div>
-                : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red,padding:'8px 9px',cursor:'pointer',flexShrink:0,background:'#FFF0F0',border:'1px solid #FECACA',borderRadius:8,display:'flex',alignItems:'center' }}>
+                : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red,padding: isDesktop ? '10px 12px' : '8px 9px',cursor:'pointer',flexShrink:0,background:'#FFF0F0',border:'1px solid #FECACA',borderRadius:8,display:'flex',alignItems:'center' }}>
                     <Ic n="del" s={15}/>
                   </button>
               )}

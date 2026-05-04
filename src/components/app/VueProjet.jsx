@@ -246,7 +246,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
 
           {/* ════ TAB VISITE ════ */}
           {tab === 'visite' && (
-            <div style={{ maxWidth:900, margin:'0 auto' }}>
+            <div style={{ maxWidth:1400, margin:'0 auto' }}>
               {/* Bannière résumé */}
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
@@ -281,7 +281,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                           opacity: zoneDragIdx===locIdx ? 0.45 : 1,
                           transition:'background 0.08s,opacity 0.08s',
                         }}>
-                        <div style={{ display:'flex', alignItems:'center', padding:'14px 14px', gap:8 }}>
+                        <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
                           {/* Poignée drag zone */}
                           <div onClick={e => e.stopPropagation()}
                             style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
