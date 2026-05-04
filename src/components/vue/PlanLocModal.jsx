@@ -75,7 +75,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                   return (
                     <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,transition:'all 0.15s',overflow:'hidden' }}>
                       {/* Zone cliquable = sélection */}
-                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);setAnnot(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setAnnot(null); setConfirmDelId(null); }}
+                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setAnnot(null); setConfirmDelId(null); }}
                         style={{ flex:1,display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',minWidth:0 }}>
                         {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
                         <div style={{ flex:1,minWidth:0 }}>
@@ -152,7 +152,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
 
         <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',gap:8 }}>
           {planBg && (
-            <button onClick={() => { setPlanBg(null); setPlanData(null); setAnnot(null); }}
+            <button onClick={() => { setPlanBg(null); setPlanData(null); }}
               style={{ padding:'12px 16px',background:'white',color:DA.red,border:'1px solid #FCA5A5',borderRadius:12,fontSize:12,fontWeight:600,cursor:'pointer' }}>
               <Ic n="del" s={14}/>
             </button>

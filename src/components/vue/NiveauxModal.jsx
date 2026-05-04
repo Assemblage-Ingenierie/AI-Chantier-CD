@@ -31,17 +31,18 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   };
 
   const assignPlan = (locId, plan) => {
-    onChange(localisations.map(l =>
-      l.id === locId
-        ? { ...l, planBg: plan?.bg || null, planData: plan?.data || null, planAnnotations: null }
-        : l
-    ));
+    onChange(localisations.map(l => {
+      if (l.id !== locId) return l;
+      const isSamePlan = l.planBg === (plan?.bg || null);
+      return { ...l, planBg: plan?.bg || null, planData: plan?.data || null, planAnnotations: isSamePlan ? l.planAnnotations : null };
+    }));
     setPickingForId(null);
   };
 
   const removePlan = (locId) => {
+    // Garde planAnnotations pour ne pas perdre le travail si on réassigne le même plan
     onChange(localisations.map(l =>
-      l.id === locId ? { ...l, planBg: null, planData: null, planAnnotations: null } : l
+      l.id === locId ? { ...l, planBg: null, planData: null } : l
     ));
   };
 
