@@ -475,15 +475,19 @@ async function saveRemote(ps, dirtyIds = null) {
       continue;
     }
 
-    // Loc rows — plan_bg/plan_data exclus quand null (évite d'écraser les blobs DB + timeout)
+    // Loc rows — plan_bg/plan_data envoyés seulement pour nouvelles zones ou si _planDirty.
+    // Évite de retransmettre des MB d'images à chaque save sur des zones existantes (timeout 57014).
     const locRows = allLocsFlat.map((l, i) => {
       const row = {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
         plan_annotations: l.planAnnotations ? JSON.stringify(slimAnnot(l.planAnnotations)) : null,
         sort_order: i, visite_id: l._visiteId,
       };
-      if (l.planBg  != null) row.plan_bg   = l.planBg;
-      if (l.planData != null) row.plan_data = l.planData;
+      const isNew = !dbLocIds.has(l.id);
+      if (isNew || l._planDirty) {
+        row.plan_bg   = l.planBg   ?? null;
+        row.plan_data = l.planData ?? null;
+      }
       return row;
     });
 
