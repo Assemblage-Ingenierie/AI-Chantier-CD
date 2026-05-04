@@ -246,7 +246,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
 
           {/* ════ TAB VISITE ════ */}
           {tab === 'visite' && (
-            <div>
+            <div style={{ maxWidth:900, margin:'0 auto' }}>
               {/* Bannière résumé */}
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
