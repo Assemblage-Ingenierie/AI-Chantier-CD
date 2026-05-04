@@ -109,25 +109,30 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
-      {/* Titre */}
-      <div style={{ background:'#F5F5F5', padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
-        <span style={{ width:7, height:7, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
-        <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
-        <span style={{ fontSize:9, color:urg.text, fontWeight:600, flexShrink:0 }}>{urg.label}</span>
-        {onEdit && (
-          <button onClick={onEdit}
-            style={{ marginLeft:4, background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
-            title="Modifier">
-            <Ic n="pen" s={10}/>
-          </button>
-        )}
-      </div>
-      {/* Suivi */}
-      {suivi && (
-        <div style={{ padding:'2px 9px', background:'#fafafa', borderBottom:`1px solid ${DA.border}` }}>
-          <span style={{ fontSize:9, color:suivi.text, fontWeight:600 }}>↩ {suivi.label}</span>
+      {/* Titre + badges urgence/suivi */}
+      <div style={{ background:'#F5F5F5', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+          <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+          {onEdit && (
+            <button onClick={onEdit}
+              style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
+              title="Modifier">
+              <Ic n="pen" s={10}/>
+            </button>
+          )}
         </div>
-      )}
+        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+          <span style={{ width:6, height:6, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
+          <span style={{ fontSize:8, fontWeight:700, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+            {urg.label}
+          </span>
+          {suivi && (
+            <span style={{ fontSize:8, fontWeight:700, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+              ↩ {suivi.label}
+            </span>
+          )}
+        </div>
+      </div>
       {/* Commentaire */}
       {item.commentaire && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
@@ -142,7 +147,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
               <img src={ph.data} alt=""
                 style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
               {hasViewpoints && (
-                <div style={{ position:'absolute', top:2, left:2, background:DA.red, color:'white', fontSize:7, fontWeight:800, borderRadius:3, padding:'1px 4px', lineHeight:1.2, letterSpacing:0.3, pointerEvents:'none' }}>
+                <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                   V{vpPhotoOffset + pi + 1}
                 </div>
               )}
