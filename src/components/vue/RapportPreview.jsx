@@ -77,19 +77,44 @@ function buildPages(locs, ppl, breaks, plansEnFin) {
 // ── Sous-composants ────────────────────────────────────────────────────────
 
 function BreakControl({ id, active, onToggle }) {
+  const [hover, setHover] = useState(false);
+
+  if (active) {
+    return (
+      <div onClick={() => onToggle(id)}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        style={{ margin:'6px -9px', display:'flex', alignItems:'center', gap:10, padding:'8px 14px',
+          background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
+          borderTop:`2px solid rgba(255,255,255,0.2)`, borderBottom:`2px solid rgba(255,255,255,0.2)` }}>
+        <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
+        <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
+          Saut de page actif — cliquer pour annuler
+        </span>
+        <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
+          background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
+          × Supprimer
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div onClick={() => onToggle(id)}
-      style={{ display:'flex', alignItems:'center', gap:6, padding:'4px 0', cursor:'pointer', userSelect:'none' }}>
-      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : `1px dashed #f0c0c0` }}/>
-      <span style={{
-        fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap',
-        background: active ? DA.red : '#fff3f3',
-        color: active ? 'white' : DA.red,
-        border: `1px solid ${active ? DA.red : '#fecaca'}`,
-      }}>
-        {active ? '× Retirer saut' : '⊕ Saut de page'}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ margin:'4px -9px', display:'flex', alignItems:'center', gap:10, padding:'7px 14px',
+        background: hover ? '#fff0f0' : '#fffafa',
+        border: `1.5px dashed ${hover ? DA.red : '#f0b8b8'}`,
+        borderLeft: 'none', borderRight: 'none',
+        cursor:'pointer', userSelect:'none', transition:'background 0.1s' }}>
+      <span style={{ fontSize:12, color: hover ? DA.red : '#d08080', lineHeight:1 }}>✂</span>
+      <span style={{ fontSize:9, fontWeight:700, color: hover ? DA.red : '#c08080', flex:1 }}>
+        Couper ici — insérer un saut de page
       </span>
-      <div style={{ flex:1, borderTop: active ? `2px dashed ${DA.red}` : `1px dashed #f0c0c0` }}/>
+      <span style={{ fontSize:8, color: hover ? DA.red : '#d0a0a0',
+        background: hover ? '#ffe0e0' : '#fdf0f0', border:`1px solid ${hover ? '#fca5a5' : '#f0d0d0'}`,
+        borderRadius:3, padding:'1px 6px', whiteSpace:'nowrap' }}>
+        ⊕ Nouvelle page ici
+      </span>
     </div>
   );
 }
@@ -279,32 +304,66 @@ function A4Card({ children, projet, pageNum, totalPages }) {
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>{children}</div>
       <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      {/* Zone de débordement (visible si overflow) */}
+      {overflow > 0 && (
+        <div style={{ position:'absolute', top:PH, left:0, right:0, bottom:0, pointerEvents:'none', zIndex:1,
+          background:'repeating-linear-gradient(45deg,rgba(227,5,19,0.05),rgba(227,5,19,0.05) 8px,rgba(255,255,255,0) 8px,rgba(255,255,255,0) 16px)' }}/>
+      )}
       {/* Marqueur de fin de page A4 */}
-      <div style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:2 }}>
-        <div style={{ borderTop:`2px dashed ${DA.red}`, display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
-          <span style={{ background:DA.red, color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', borderRadius:'0 0 4px 4px', letterSpacing:0.5, textTransform:'uppercase', whiteSpace:'nowrap' }}>
-            {overflow > 0 ? `⚠ Déborde de ${Math.round(overflow / S)}mm — ajoutez un saut de page` : 'Fin de page A4'}
-          </span>
+      <div style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:3 }}>
+        <div style={{ borderTop:`3px solid ${DA.red}`, display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
+          <div style={{ background:DA.red, color:'white', fontSize:8, fontWeight:800, padding:'3px 12px',
+            borderRadius:'0 0 6px 6px', letterSpacing:0.3, whiteSpace:'nowrap',
+            display:'flex', alignItems:'center', gap:5 }}>
+            {overflow > 0 ? (
+              <>
+                <span>⚠</span>
+                <span>Dépasse la limite A4 de {Math.round(overflow / S)} mm — utilisez ✂ Couper ici ci-dessus</span>
+              </>
+            ) : (
+              <span>Fin de la page A4</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function PageSepBanner({ firstBlockId, isForced, onToggle }) {
+function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }) {
   return (
-    <div style={{ width:PW, background:'#2a2a2a', padding:'7px 0 6px', display:'flex', flexDirection:'column', alignItems:'center', gap:5, flexShrink:0 }}>
-      {firstBlockId ? (
+    <div style={{ width:PW, background:'#1a1a1a', padding:'8px 14px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+      {/* Indicateur page */}
+      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        <div style={{ width:3, height:18, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+        <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+          <span style={{ fontSize:10, fontWeight:800, color:'white', lineHeight:1 }}>
+            Page {pageNum}
+          </span>
+          <span style={{ fontSize:8, color:'rgba(255,255,255,0.3)', lineHeight:1 }}>
+            sur {totalPages} au total
+          </span>
+        </div>
+      </div>
+
+      <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.07)' }}/>
+
+      {/* Contrôle saut forcé */}
+      {isForced && firstBlockId ? (
         <div onClick={() => onToggle(firstBlockId)}
-          style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 12px', borderRadius:5, cursor:'pointer',
-            background: isForced ? DA.red : 'rgba(255,255,255,0.08)',
-            border: `1px solid ${isForced ? DA.red : 'rgba(255,255,255,0.15)'}` }}>
-          <span style={{ fontSize:9, fontWeight:700, color: isForced ? 'white' : 'rgba(255,255,255,0.5)', whiteSpace:'nowrap' }}>
-            {isForced ? '× Retirer le saut de page' : '⊕ Insérer un saut de page ici'}
+          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:5,
+            background:'rgba(227,5,19,0.18)', border:`1px solid rgba(227,5,19,0.5)`, cursor:'pointer' }}>
+          <span style={{ fontSize:10, lineHeight:1 }}>✂</span>
+          <span style={{ fontSize:9, fontWeight:700, color:DA.red, whiteSpace:'nowrap' }}>Saut forcé</span>
+          <span style={{ fontSize:9, color:'rgba(255,255,255,0.45)',
+            background:'rgba(255,255,255,0.08)', borderRadius:3, padding:'1px 6px' }}>
+            × Supprimer
           </span>
         </div>
       ) : (
-        <div style={{ width:32, height:3, background:'rgba(255,255,255,0.12)', borderRadius:2 }}/>
+        <span style={{ fontSize:8, color:'rgba(255,255,255,0.2)', fontStyle:'italic' }}>
+          séparateur automatique
+        </span>
       )}
     </div>
   );
@@ -662,6 +721,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           return (
             <React.Fragment key={pi}>
               <PageSepBanner
+                pageNum={pageNum}
+                totalPages={totalPages}
                 firstBlockId={firstId}
                 isForced={firstForced}
                 onToggle={onTogglePageBreak}
@@ -701,7 +762,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length;
           return (
             <>
-              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages} tableauRecap={tableauRecap}/>
               </div>
@@ -715,7 +776,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0);
           return (
             <>
-              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <ConclusionPage conclusion={conclusion} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
               </div>
@@ -729,7 +790,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
             <React.Fragment key={`plan-end-${loc.id}`}>
-              <PageSepBanner firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
                   <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
