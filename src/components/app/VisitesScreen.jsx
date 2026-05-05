@@ -169,9 +169,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       </div>
 
       {/* Liste */}
-      <div ref={wrapperRef} style={{ flex:1, overflowY:'auto' }}>
+      <div ref={wrapperRef} style={{ flex:1, overflowY:'auto', background:'#E8E8E8' }}>
+        <div style={{ maxWidth:860, margin:'0 auto', padding:'14px 14px', display:'flex', flexDirection:'column', gap:10 }}>
+
         {visites.length === 0 && (
-          <div style={{ padding:'48px 24px', textAlign:'center' }}>
+          <div style={{ background:'white', borderRadius:12, padding:'48px 24px', textAlign:'center', border:`1px solid ${DA.border}` }}>
             <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
               <Ic n="fil" s={24}/>
             </div>
@@ -180,7 +182,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
           </div>
         )}
 
-        <div ref={listRef}>
+        <div ref={listRef} style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {visites.map((v, i) => {
             const obsCount   = (v.localisations || []).flatMap(l => l.items || []).length;
             const urgCount   = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
@@ -199,9 +201,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                 style={{
                   display:'flex', alignItems:'stretch', gap:0,
                   background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
-                  borderBottom:`1px solid ${DA.border}`,
-                  borderTop: isOver ? `2px solid ${DA.red}` : 'none',
-                  borderLeft: isEditing ? `3px solid ${DA.red}` : '3px solid transparent',
+                  borderRadius: 10,
+                  border: `1px solid ${isOver ? DA.red : DA.border}`,
+                  boxShadow: isDragging ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
+                  borderLeft: isEditing ? `3px solid ${DA.red}` : undefined,
+                  overflow: 'hidden',
                   opacity: isDragging ? 0.45 : 1,
                   transition:'background 0.08s, opacity 0.08s',
                 }}>
@@ -283,9 +287,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         </div>
 
         <button onClick={addVisite}
-          style={{ width:'100%', padding:18, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', cursor:'pointer' }}>
+          style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
           <Ic n="plus" s={16}/> Nouvelle visite
         </button>
+
+        </div>
       </div>
     </div>
   );
