@@ -41,24 +41,29 @@ const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
-const AVAIL_H    = PH - HDR - (MT - HDR) - MB - FTR; // 774px de contenu utile
+// -60 de marge de sécurité pour absorber les imprécisions d'estimation
+const AVAIL_H    = PH - HDR - (MT - HDR) - MB - FTR - 60; // ~714px de contenu utile
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
 
 // Estimation de la hauteur rendue d'un bloc (approximation pour la pagination auto)
 function estimateBlockH(block, ppl) {
-  if (block.type === 'zone') return 36; // ZoneHeader: padding + barre + marge
-  if (block.type === 'plan') return 320; // PlanBlock: image + légende (conservateur)
+  if (block.type === 'zone') return 42;
+  if (block.type === 'plan') {
+    // image paysage typique (4:3) + header + légende avec symboles
+    const imgH = Math.round(CW * 0.6); // ratio conservateur 3:5
+    return imgH + 30 + 90; // header + légende
+  }
   const item = block.item;
-  let h = 43; // header: titre (18px) + badges (16px) + padding 4+5
-  if (item.commentaire) h += 36; // texte ~2 lignes + padding 5+5
+  let h = 52; // header: titre + badges + paddings (conservateur)
+  if (item.commentaire) h += 46; // texte multi-lignes + padding
   const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
   if (nPh > 0) {
     const cols  = Math.min(ppl, 3);
-    const cellW = (CW - 12 - (cols - 1) * 3) / cols; // 12 = padding 6px*2
+    const cellW = (CW - 12 - (cols - 1) * 3) / cols;
     const rows  = Math.ceil(nPh / cols);
-    h += rows * (cellW * 0.75) + 10; // ratio 4:3 + padding container
+    h += rows * (cellW * 0.75) + 14; // ratio 4:3 + padding container
   }
-  return Math.round(h) + 5; // +5 marginBottom ItemBlock
+  return Math.round(h * 1.12) + 5; // +12% marge + 5px marginBottom
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────
@@ -335,8 +340,12 @@ function A4Card({ children, projet, pageNum, totalPages }) {
   return (
     <div ref={cardRef} style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>{children}</div>
-      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      {/* Padding-bottom réserve la place pour le footer absolument positionné */}
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>{children}</div>
+      {/* Footer toujours ancré au bas de la page A4, même si le contenu est court */}
+      <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
+        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      </div>
       {/* Zone de débordement (visible si overflow) */}
       {overflow > 0 && (
         <div style={{ position:'absolute', top:PH, left:0, right:0, bottom:0, pointerEvents:'none', zIndex:1,
