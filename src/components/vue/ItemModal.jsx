@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
@@ -10,7 +11,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [form, setForm] = useState(() => {
     const base = item
       ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' }
-      : { titre:'', commentaire:'', urgence:'moyenne', photos:[], suivi:'rien' };
+      : { titre:'', commentaire:'', urgence:'rien', photos:[], suivi:'rien' };
     try {
       const saved = localStorage.getItem(DRAFT_KEY(item?.id));
       if (saved) {
@@ -34,6 +35,15 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [correcting, setCorrecting] = useState(false);
   const gallRef = useRef();
   const camRef = useRef();
+  const textareaRef = useRef();
+
+  // Auto-grow textarea
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.max(el.scrollHeight, isDesktop ? 180 : 90) + 'px';
+  }, [form.commentaire]);
   const recogRef       = useRef(null);
   const recordingRef   = useRef(false);
   const lastFinalIdx   = useRef(0);
@@ -289,11 +299,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           {/* Urgence */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
-            <div style={{ display:'flex',gap:8 }}>
+            <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
               {Object.entries(URGENCE).map(([k, u]) => (
                 <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                  style={{ flex:1,padding:'11px 4px',borderRadius:8,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
-                  <span style={{ width:8,height:8,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
+                  style={{ padding:'8px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,transition:'all 0.15s',cursor:'pointer' }}>
+                  <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
                 </button>
               ))}
             </div>
@@ -315,9 +325,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
-            <textarea value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
-              placeholder="Description détaillée…" rows={4}
-              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s' }}
+            <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
+              placeholder="Description détaillée…"
+              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'12px 14px',fontSize: isDesktop ? 15 : 15,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s',overflow:'hidden',lineHeight:1.65,minHeight: isDesktop ? 180 : 90 }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',paddingLeft:2,lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>

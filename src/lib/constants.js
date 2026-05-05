@@ -13,9 +13,10 @@ export const DA = {
 };
 
 export const URGENCE = {
-  haute: { bg: '#FFF0F0', text: '#B91C1C', dot: '#E30513', border: '#FCA5A5', label: 'Urgent', hex: '#E30513' },
+  rien:    { bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', border: '#E5E7EB', label: '—',          hex: '#9CA3AF' },
+  haute:   { bg: '#FFF0F0', text: '#B91C1C', dot: '#E30513', border: '#FCA5A5', label: 'Urgent',      hex: '#E30513' },
   moyenne: { bg: '#FFFBEB', text: '#92400E', dot: '#D97706', border: '#FCD34D', label: 'À planifier', hex: '#D97706' },
-  basse: { bg: '#F0FDF4', text: '#15803D', dot: '#16A34A', border: '#86EFAC', label: 'Mineur', hex: '#16A34A' },
+  basse:   { bg: '#F0FDF4', text: '#15803D', dot: '#16A34A', border: '#86EFAC', label: 'Mineur',      hex: '#16A34A' },
 };
 
 export const SUIVI = {
