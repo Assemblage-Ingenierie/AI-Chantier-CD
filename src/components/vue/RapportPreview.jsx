@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { renderMarkup } from '../../lib/markup.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
@@ -199,7 +200,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Commentaire */}
       {item.commentaire && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
-          {item.commentaire}
+          {renderMarkup(item.commentaire)}
         </div>
       )}
       {/* Photos */}

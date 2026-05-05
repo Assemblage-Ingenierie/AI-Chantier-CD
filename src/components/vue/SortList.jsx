@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
+import { renderMarkup } from '../../lib/markup.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 
@@ -189,7 +190,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                   <div style={{ flex:1, minWidth:0 }}>
                     <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
                     {item.commentaire && (
-                      <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, overflow:'hidden', display:'-webkit-box', WebkitLineClamp: isDesktop ? 3 : 2, WebkitBoxOrient:'vertical', margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.5 }}>{item.commentaire}</p>
+                      <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
                     )}
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 8 : 6, flexWrap:'wrap' }}>
                       <Badge level={item.urgence}/>

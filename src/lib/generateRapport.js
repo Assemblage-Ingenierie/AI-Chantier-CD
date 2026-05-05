@@ -1,5 +1,6 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
+import { stripMarkup } from './markup.js';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
 
@@ -335,7 +336,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
       const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
       const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
-      const cLines = item.commentaire ? doc.splitTextToSize(item.commentaire, CW - 14) : [];
+      const cLines = item.commentaire ? doc.splitTextToSize(stripMarkup(item.commentaire), CW - 14) : [];
       const phRows = item.photos?.length ? Math.ceil(Math.min(item.photos.length, 6) / 3) : 0;
       pb(14 + cLines.length * 4.5 + phRows * 30 + 4 + (suiviTxt ? 6 : 0));
 

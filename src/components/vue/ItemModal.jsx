@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { renderMarkup } from '../../lib/markup.js';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
@@ -325,6 +326,39 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
+            {/* Toolbar mise en forme */}
+            <div style={{ display:'flex',gap:4,marginBottom:4 }}>
+              {[
+                { label:'G', title:'Gras (sélectionner puis cliquer)', before:'**', after:'**', style:{ fontWeight:800 } },
+                { label:'I', title:'Italique',    before:'*',  after:'*',  style:{ fontStyle:'italic' } },
+                { label:'S', title:'Souligné',    before:'__', after:'__', style:{ textDecoration:'underline' } },
+              ].map(({ label, title, before, after, style: btnStyle }) => (
+                <button key={label} type="button" title={title}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    const el = textareaRef.current;
+                    if (!el) return;
+                    const start = el.selectionStart;
+                    const end   = el.selectionEnd;
+                    const text  = form.commentaire || '';
+                    const sel   = text.slice(start, end);
+                    const newText = text.slice(0, start) + before + sel + after + text.slice(end);
+                    setForm(f => ({ ...f, commentaire: newText }));
+                    setTimeout(() => {
+                      el.focus();
+                      el.setSelectionRange(start + before.length, end + before.length);
+                    }, 0);
+                  }}
+                  style={{ ...btnStyle, padding:'4px 10px',border:`1px solid ${DA.border}`,borderRadius:6,background:'white',color:DA.black,fontSize:13,cursor:'pointer',userSelect:'none',minWidth:32 }}>
+                  {label}
+                </button>
+              ))}
+              {form.commentaire?.trim() && (
+                <span style={{ marginLeft:'auto',fontSize:11,color:DA.grayL,alignSelf:'center',fontStyle:'italic' }}>
+                  **gras** · *italique* · __souligné__
+                </span>
+              )}
+            </div>
             <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée…"
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'12px 14px',fontSize: isDesktop ? 15 : 15,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',transition:'border-color 0.15s',overflow:'hidden',lineHeight:1.65,minHeight: isDesktop ? 180 : 90 }}
