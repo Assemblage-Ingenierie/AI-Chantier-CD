@@ -444,8 +444,9 @@ function CoverPage({ projet, pageNum, totalPages }) {
           </div>
           <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2 }}>{projet.nom}</div>
           {projet.visiteNom && (
-            <div style={{ marginTop:6, display:'inline-flex', alignItems:'center', gap:5, background:DA.red, borderRadius:4, padding:'3px 8px' }}>
-              <span style={{ fontSize:9, fontWeight:800, color:'white', letterSpacing:0.8, textTransform:'uppercase' }}>{projet.visiteNom}</span>
+            <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:3, height:20, background:DA.red, borderRadius:2, flexShrink:0 }}/>
+              <span style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.92)', letterSpacing:0.3 }}>{projet.visiteNom}</span>
             </div>
           )}
         </div>
