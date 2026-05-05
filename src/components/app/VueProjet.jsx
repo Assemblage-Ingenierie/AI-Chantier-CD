@@ -241,12 +241,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
       </div>
 
       {/* ── Corps scrollable ── */}
-      <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto' }}>
+      <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto', background: tab === 'visite' ? '#E8E8E8' : undefined }}>
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {/* ════ TAB VISITE ════ */}
           {tab === 'visite' && (
-            <div style={{ maxWidth:1400, margin:'0 auto' }}>
+            <div style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
               {/* Bannière résumé */}
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
@@ -275,11 +275,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                         onDragEnd={onZoneDragEnd}
                         onDragOver={e => e.preventDefault()}
                         style={{
-                          background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : '#F4F4F4',
-                          borderBottom:`1px solid ${DA.border}`,
-                          borderTop: zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? `2px solid ${DA.red}` : 'none',
+                          background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : 'white',
+                          borderRadius: 10,
+                          border: `1px solid ${zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.red : DA.border}`,
+                          boxShadow: zoneDragIdx===locIdx ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
+                          overflow: 'hidden',
                           opacity: zoneDragIdx===locIdx ? 0.45 : 1,
-                          transition:'background 0.08s,opacity 0.08s',
+                          transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
                         }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
                           {/* Poignée drag zone */}
@@ -364,7 +366,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                     );
                   })}
                   <button onClick={addLoc}
-                    style={{ width:'100%', padding:18, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', cursor:'pointer' }}>
+                    style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
                     <Ic n="plus" s={16}/> Ajouter une zone
                   </button>
                 </>
