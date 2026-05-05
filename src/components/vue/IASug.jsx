@@ -21,7 +21,7 @@ function parseSuggestions(text) {
   return items;
 }
 
-export default function IASug({ content, onApply }) {
+export default function IASug({ content, commentaire, onApply }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
@@ -68,16 +68,28 @@ export default function IASug({ content, onApply }) {
     setApplied(new Set());
 
     try {
-      const texte = (content || '').slice(0, 2000);
+      const titre   = (content    || '').slice(0, 300);
+      const texte   = (commentaire || '').slice(0, 2000);
+      const hasText = texte.trim().length > 20;
+      const prompt  = hasText
+        ? `Observation de chantier :
+Titre : "${titre}"
+Commentaire déjà rédigé : "${texte}"
+
+En te basant UNIQUEMENT sur ce qui est décrit ci-dessus, génère 3 à 4 suggestions pour COMPLÉTER ce commentaire existant : préconisations précises liées au désordre décrit, réserves formelles, points de vigilance ou actions correctives.
+Ne répète pas ce qui est déjà écrit. Reste dans le même sujet technique. Sois direct et concis.
+Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`
+        : `Observation de chantier : "${titre}"
+
+Génère 3 à 4 suggestions techniques numérotées directement liées à ce désordre spécifique : actions correctives précises, réserves formelles, préconisations DTU ou points de vigilance.
+Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`;
+
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'gemma-3-12b-it',
         max_tokens: 900,
-        system: 'Tu es expert MOE/BET bâtiment et rédiges des comptes-rendus de visite chantier. Français technique, concis, professionnel.',
-        messages: [{
-          role: 'user',
-          content: `Observation de chantier :\n\n"${texte}"\n\nGénère 3 à 4 suggestions techniques numérotées (actions correctives, réserves formelles, préconisations ou points de vigilance). Chaque suggestion doit être concise, directement exploitable dans un compte-rendu.\n\nFormat strict : une suggestion par ligne, "1. texte", "2. texte", etc. Sans introduction ni conclusion.`,
-        }],
+        system: 'Tu es expert MOE/BET bâtiment, spécialiste des comptes-rendus de visite chantier. Tu génères des suggestions précises et contextuelles, jamais génériques. Français technique, concis.',
+        messages: [{ role: 'user', content: prompt }],
         _signal: controller.signal,
       });
       if (controller.signal.aborted) return;

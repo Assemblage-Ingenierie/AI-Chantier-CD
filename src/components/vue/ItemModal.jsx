@@ -390,6 +390,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
             <IASug
               content={form.titre}
+              commentaire={form.commentaire}
               onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
             />
           </div>
