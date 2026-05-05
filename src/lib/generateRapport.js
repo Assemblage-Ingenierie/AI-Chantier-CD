@@ -562,7 +562,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
-  const filename = `CR_${(projet.nom || 'Projet').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  const safeName   = (projet.nom      || 'Projet').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
+  const safeVisite = (projet.visiteNom || '').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
+  const filename   = safeVisite
+    ? `${safeName} - CR ${safeVisite}.pdf`
+    : `${safeName} - CR.pdf`;
 
   if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
     // Mobile : ouvrir dans le viewer PDF natif (iOS/Android)
