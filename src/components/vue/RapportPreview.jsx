@@ -44,6 +44,28 @@ const CW  = PW - 2 * MX; // 522px largeur contenu
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
+const CHUNK_CHARS = 600; // max chars per text chunk before splitting into multiple blocks
+
+// Découpe un long commentaire en morceaux aux limites de paragraphes
+function splitComment(comment, maxChars = CHUNK_CHARS) {
+  if (!comment || comment.length <= maxChars) return [comment || ''];
+  const sep = /\n{2,}/.test(comment) ? /\n{2,}/ : /\n/;
+  const paras = comment.split(sep).map(p => p.trim()).filter(Boolean);
+  if (paras.length <= 1) {
+    // Pas de paragraphes → couper au dernier espace avant maxChars
+    const cut = comment.lastIndexOf(' ', maxChars) || maxChars;
+    return [comment.slice(0, cut).trim(), ...splitComment(comment.slice(cut).trim(), maxChars)];
+  }
+  const chunks = [];
+  let cur = '';
+  for (const p of paras) {
+    const cand = cur ? cur + '\n\n' + p : p;
+    if (cand.length > maxChars && cur) { chunks.push(cur); cur = p; }
+    else cur = cand;
+  }
+  if (cur) chunks.push(cur);
+  return chunks.length > 1 ? chunks : [comment];
+}
 
 // Estimation fallback (utilisée uniquement si la mesure DOM n'est pas encore dispo)
 function estimateBlockH(block, ppl) {
@@ -51,9 +73,10 @@ function estimateBlockH(block, ppl) {
   if (block.type === 'plan') return Math.round(CW * 0.6) + 30 + 90;
   const item = block.item;
   const mode = block.mode || 'full';
-  let h = 52; // header toujours présent
-  if (mode !== 'photos' && item.commentaire) h += Math.min(Math.ceil(item.commentaire.length / 60) * 18, 400);
-  if (mode !== 'text') {
+  const txt  = block.textContent ?? item.commentaire ?? '';
+  let h = mode === 'cont' ? 20 : 52;
+  if (mode !== 'photos' && txt) h += Math.ceil(txt.length / 65) * 16;
+  if (mode !== 'text' && mode !== 'cont') {
     const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
     if (nPh > 0) {
       const cols  = Math.min(ppl, 3);
@@ -61,12 +84,12 @@ function estimateBlockH(block, ppl) {
       h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
     }
   }
-  return Math.round(h * 1.05) + 5;
+  return Math.round(h * 1.1) + 5;
 }
 
 // Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination).
-// Les items ayant à la fois du texte ET des photos sont découpés en deux blocs
-// (texte puis photos) pour permettre un saut de page entre eux.
+// • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
+// • Les photos sont un bloc séparé (mode:'photos') pour permettre les sauts de page
 function flattenBlocks(locs, plansEnFin) {
   const blocks = [];
   for (const loc of locs) {
@@ -76,12 +99,23 @@ function flattenBlocks(locs, plansEnFin) {
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     let photoOffset = 0;
     for (const item of items) {
-      const photos = (item.photos || []).filter(p => p.data);
-      const hasText = item.commentaire?.trim();
-      if (photos.length > 0 && hasText) {
-        // Découper en bloc-texte + bloc-photos pour permettre la pagination
-        blocks.push({ type:'item', id:item.id,        item, locId:loc.id, mode:'text',   vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-        blocks.push({ type:'item', id:item.id+'_ph',  item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      const photos  = (item.photos || []).filter(p => p.data);
+      const comment = item.commentaire?.trim() || '';
+      const chunks  = splitComment(comment);
+
+      if (chunks.length > 1) {
+        // Commentaire long → plusieurs blocs-paragraphes + bloc-photos séparé
+        chunks.forEach((chunk, idx) => {
+          blocks.push({ type:'item', id: idx === 0 ? item.id : `${item.id}_c${idx}`,
+            item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
+            textContent:chunk, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+        });
+        if (photos.length > 0)
+          blocks.push({ type:'item', id:`${item.id}_ph`, item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      } else if (photos.length > 0 && comment) {
+        // Texte court + photos → texte seul puis photos (coupage possible)
+        blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'text', textContent:comment, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+        blocks.push({ type:'item', id:`${item.id}_ph`, item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
       } else {
         blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
       }
@@ -184,14 +218,15 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full' }) {
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent }) {
   const photos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
-  const showHeader  = mode !== 'photos';
-  const showPhotoHdr = mode === 'photos'; // bannière de continuation
-  const showComment = mode !== 'photos' && item.commentaire;
-  const showPhotos  = mode !== 'text' && photos.length > 0;
+  const commentToShow = textContent ?? item.commentaire;
+  const showHeader   = mode !== 'photos' && mode !== 'cont';
+  const showContHdr  = mode === 'cont' || mode === 'photos';
+  const showComment  = mode !== 'photos' && commentToShow;
+  const showPhotos   = mode !== 'text' && mode !== 'cont' && photos.length > 0;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       {/* En-tête normal (titre + badges) */}
@@ -220,11 +255,11 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
           </div>
         </div>
       )}
-      {/* Bannière de continuation (mode photos uniquement) */}
-      {showPhotoHdr && (
+      {/* Bannière de continuation (suite texte ou photos) */}
+      {showContHdr && (
         <div style={{ background:'#F5F5F5', padding:'3px 9px', display:'flex', alignItems:'center', gap:6 }}>
           <span style={{ fontSize:9, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
-          <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>photos</span>
+          <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? 'photos' : 'suite'}</span>
           {onEdit && (
             <button onClick={onEdit} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }} title="Modifier">
               <Ic n="pen" s={10}/>
@@ -235,7 +270,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Commentaire */}
       {showComment && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
-          {renderMarkup(item.commentaire)}
+          {renderMarkup(commentToShow)}
         </div>
       )}
       {/* Photos */}
@@ -825,7 +860,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
                 }
               </div>
             ))}
@@ -869,6 +904,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                         : block.type === 'plan'
                         ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
                         : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
+                            textContent={block.textContent}
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                             vpPhotoOffset={block.vpPhotoOffset ?? 0}
                             hasViewpoints={block.hasViewpoints ?? false}
