@@ -34,6 +34,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
+  const [spellError, setSpellError] = useState('');
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef();
@@ -195,6 +196,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const fixSpelling = async () => {
     if (!form.commentaire?.trim() || correcting) return;
     setCorrecting(true);
+    setSpellError('');
     try {
       const d = await callAIProxy({
         feature: 'spell-correction',
@@ -205,7 +207,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       });
       const corrected = d.content?.[0]?.text?.trim();
       if (corrected) setForm(f => ({ ...f, commentaire: corrected }));
-    } catch (e) { console.error('Spell check:', e); }
+    } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
   };
 
@@ -331,30 +333,23 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
-          {/* Niveau + Suivi côte à côte */}
-          <div style={{ display:'flex', gap:16, marginBottom:14, flexWrap:'wrap' }}>
-            <div style={{ flex:1, minWidth:180 }}>
-              <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
-              <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                {Object.entries(URGENCE).map(([k, u]) => (
-                  <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                    style={{ padding:'7px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                    <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ flex:1, minWidth:180 }}>
-              <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
-              <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                {Object.entries(SUIVI).map(([k, s]) => (
-                  <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
-                    style={{ padding:'7px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                    <span style={{ width:7,height:7,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Niveau + Suivi — une seule ligne avec scroll horizontal */}
+          <div style={{ display:'flex',alignItems:'center',gap:0,marginBottom:14,overflowX:'auto',border:`1px solid ${DA.border}`,borderRadius:10,padding:'8px 12px',background:'white' }}>
+            <span style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap',marginRight:8,flexShrink:0 }}>Niveau</span>
+            {Object.entries(URGENCE).map(([k, u]) => (
+              <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
+                style={{ padding:'5px 10px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginRight:4 }}>
+                <span style={{ width:6,height:6,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
+              </button>
+            ))}
+            <div style={{ width:1,height:20,background:DA.border,margin:'0 10px',flexShrink:0 }}/>
+            <span style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap',marginRight:8,flexShrink:0 }}>Suivi</span>
+            {Object.entries(SUIVI).map(([k, s]) => (
+              <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
+                style={{ padding:'5px 10px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginRight:4 }}>
+                <span style={{ width:6,height:6,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
+              </button>
+            ))}
           </div>
 
           {/* Commentaire — pleine largeur */}
@@ -415,6 +410,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 </button>
               )}
             </div>
+
+            {spellError && (
+              <div style={{ marginTop:6,padding:'7px 10px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,fontSize:12,color:'#B91C1C' }}>
+                {spellError}
+              </div>
+            )}
 
             <IASug
               content={form.titre}

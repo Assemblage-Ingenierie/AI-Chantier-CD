@@ -102,6 +102,18 @@ function buildPages(allBlocks, ppl, breaks, heights) {
     usedH += (blocks.length > 1 ? BREAK_CTL_H : 0) + bh;
   }
   flush();
+
+  // Anti-orphan : si un en-tête de zone est le dernier bloc d'une page,
+  // le déplacer en tête de la page suivante pour qu'il reste avec ses items.
+  for (let p = 0; p < pages.length - 1; p++) {
+    const page = pages[p];
+    if (page.length > 0 && page[page.length - 1].type === 'zone') {
+      const orphan = page.pop();
+      pages[p + 1].unshift(orphan);
+      if (page.length === 0) { pages.splice(p, 1); p--; }
+    }
+  }
+
   return pages;
 }
 
