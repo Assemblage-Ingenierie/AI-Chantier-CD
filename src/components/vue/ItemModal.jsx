@@ -200,13 +200,19 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     try {
       const d = await callAIProxy({
         feature: 'spell-correction',
-        model: 'gemini-2.5-flash',
-        max_tokens: 600,
-        system: 'Correcteur orthographe et grammaire français. Corrige UNIQUEMENT les fautes sans reformuler. Garde le vocabulaire technique de chantier. Réponds UNIQUEMENT avec le texte corrigé, sans guillemets ni explication.',
+        model: 'gemini-2.0-flash-lite',
+        max_tokens: 2000,
+        system: 'Tu es un correcteur orthographique et grammatical français. Corrige UNIQUEMENT les fautes d\'orthographe et de grammaire, sans rien reformuler, sans résumer, sans couper le texte. Le texte corrigé doit avoir exactement la même longueur et le même contenu que l\'original. Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
         messages: [{ role: 'user', content: form.commentaire }],
       });
       const corrected = d.content?.[0]?.text?.trim();
-      if (corrected) setForm(f => ({ ...f, commentaire: corrected }));
+      // Sécurité : ne pas appliquer si la réponse est tronquée (moins de 60% de l'original)
+      const minLen = Math.floor(form.commentaire.length * 0.6);
+      if (corrected && corrected.length >= minLen) {
+        setForm(f => ({ ...f, commentaire: corrected }));
+      } else if (corrected) {
+        throw new Error('Réponse IA tronquée — réessaie');
+      }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
   };
