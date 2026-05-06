@@ -86,7 +86,7 @@ Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`;
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
-        model: 'gemma-3-12b-it',
+        model: 'gemini-2.0-flash-lite',
         max_tokens: 900,
         system: 'Tu es expert MOE/BET bâtiment, spécialiste des comptes-rendus de visite chantier. Tu génères des suggestions précises et contextuelles, jamais génériques. Français technique, concis.',
         messages: [{ role: 'user', content: prompt }],

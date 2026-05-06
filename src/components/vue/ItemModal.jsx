@@ -198,7 +198,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     try {
       const d = await callAIProxy({
         feature: 'spell-correction',
-        model: 'gemma-3-12b-it',
+        model: 'gemini-2.0-flash-lite',
         max_tokens: 600,
         system: 'Correcteur orthographe et grammaire français. Corrige UNIQUEMENT les fautes sans reformuler. Garde le vocabulaire technique de chantier. Réponds UNIQUEMENT avec le texte corrigé, sans guillemets ni explication.',
         messages: [{ role: 'user', content: form.commentaire }],
