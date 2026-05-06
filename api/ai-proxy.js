@@ -1,12 +1,12 @@
 // Ordre de préférence : le proxy essaie chaque modèle en cas de 429 (quota épuisé)
 const FALLBACK_CHAIN = [
-  'gemini-2.0-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite-preview-06-17',
   'gemini-2.0-flash',
-  'gemini-2.5-flash-preview-04-17',
-  'gemini-2.5-pro-preview-03-25',
+  'gemini-2.0-flash-lite',
 ];
 const MAX_TOKENS_CAP = 2000;
-const DEFAULT_MODEL  = 'gemini-2.0-flash-lite';
+const DEFAULT_MODEL  = 'gemini-2.5-flash';
 
 // Convertit le format Anthropic (messages + system) vers le format Gemini
 function toGeminiBody(payload, maxTokens, model) {
