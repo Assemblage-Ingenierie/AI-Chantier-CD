@@ -194,8 +194,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
   };
 
-  // Diff mot à mot entre original et corrigé
-  const buildWordDiff = (orig, corr) => {
+  // Construit des segments diff avec corrections individuellement toggleables
+  const buildDiffSegments = (orig, corr) => {
     const wa = orig.split(/(\s+)/);
     const wb = corr.split(/(\s+)/);
     const n = wa.length, m = wb.length;
@@ -206,11 +206,38 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     const tokens = [];
     let i = n, j = m;
     while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && wa[i-1] === wb[j-1]) { tokens.unshift({ t: 'eq', v: wb[j-1] }); i--; j--; }
-      else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t: 'add', v: wb[j-1] }); j--; }
-      else { tokens.unshift({ t: 'del', v: wa[i-1] }); i--; }
+      if (i > 0 && j > 0 && wa[i-1] === wb[j-1]) { tokens.unshift({ t:'eq', v:wb[j-1] }); i--; j--; }
+      else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
+      else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
     }
-    return tokens;
+    // Grouper en segments : texte neutre ou correction toggleable
+    const segs = [];
+    let ci = 0, k = 0;
+    while (k < tokens.length) {
+      if (tokens[k].t === 'eq') {
+        let text = '';
+        while (k < tokens.length && tokens[k].t === 'eq') { text += tokens[k].v; k++; }
+        segs.push({ type:'eq', text });
+      } else {
+        const dels = [], adds = [];
+        while (k < tokens.length && tokens[k].t === 'del') { dels.push(tokens[k].v); k++; }
+        while (k < tokens.length && tokens[k].t === 'add') { adds.push(tokens[k].v); k++; }
+        segs.push({ type:'fix', id: ci++, del: dels.join(''), add: adds.join(''), active: true });
+      }
+    }
+    return segs;
+  };
+
+  const toggleFix = (id) => setSpellDiff(d => ({
+    ...d,
+    segments: d.segments.map(s => s.type === 'fix' && s.id === id ? { ...s, active: !s.active } : s),
+  }));
+
+  const applyDiff = (all = false) => {
+    const segs = all ? spellDiff.segments.map(s => s.type === 'fix' ? { ...s, active: true } : s) : spellDiff.segments;
+    const text = segs.map(s => s.type === 'eq' ? s.text : (s.active ? s.add : s.del)).join('');
+    setForm(f => ({ ...f, commentaire: text }));
+    setSpellDiff(null);
   };
 
   const fixSpelling = async () => {
@@ -233,7 +260,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       if (corrected === form.commentaire) {
         setSpellError('Aucune faute détectée ✓');
       } else {
-        setSpellDiff({ original: form.commentaire, corrected, tokens: buildWordDiff(form.commentaire, corrected) });
+        setSpellDiff({ segments: buildDiffSegments(form.commentaire, corrected) });
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
@@ -458,30 +485,66 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               </div>
             )}
 
-            {spellDiff && (
-              <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
-                <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB' }}>
-                  <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Corrections proposées</span>
-                  <div style={{ display:'flex', gap:6 }}>
-                    <button onClick={() => { setForm(f => ({ ...f, commentaire: spellDiff.corrected })); setSpellDiff(null); }}
-                      style={{ background:'#059669', color:'white', border:'none', borderRadius:6, padding:'5px 12px', fontSize:11, fontWeight:700, cursor:'pointer' }}>
-                      ✓ Appliquer
-                    </button>
-                    <button onClick={() => setSpellDiff(null)}
-                      style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                      Ignorer
-                    </button>
+            {spellDiff && (() => {
+              const fixes = spellDiff.segments.filter(s => s.type === 'fix');
+              const activeCount = fixes.filter(s => s.active).length;
+              return (
+                <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
+                  {/* Barre d'en-tête */}
+                  <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB', gap:8, flexWrap:'wrap' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Corrections proposées</span>
+                      <span style={{ fontSize:11, color:'#6B7280' }}>{activeCount}/{fixes.length} sélectionnée{activeCount !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button onClick={() => setSpellDiff(d => ({ ...d, segments: d.segments.map(s => s.type === 'fix' ? { ...s, active: true } : s) }))}
+                        style={{ background:'white', color:'#374151', border:'1px solid #D1D5DB', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                        Tout
+                      </button>
+                      <button onClick={() => setSpellDiff(d => ({ ...d, segments: d.segments.map(s => s.type === 'fix' ? { ...s, active: false } : s) }))}
+                        style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                        Aucune
+                      </button>
+                      <button onClick={() => applyDiff()}
+                        disabled={activeCount === 0}
+                        style={{ background: activeCount > 0 ? '#059669' : '#9CA3AF', color:'white', border:'none', borderRadius:6, padding:'4px 12px', fontSize:11, fontWeight:700, cursor: activeCount > 0 ? 'pointer' : 'default' }}>
+                        ✓ Appliquer ({activeCount})
+                      </button>
+                      <button onClick={() => setSpellDiff(null)}
+                        style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  {/* Légende */}
+                  <div style={{ background:'#FFFBEB', padding:'5px 12px', borderBottom:'1px solid #FDE68A', fontSize:10, color:'#92400E' }}>
+                    Clique sur une correction pour la sélectionner / désélectionner
+                  </div>
+                  {/* Texte avec corrections */}
+                  <div style={{ padding:'10px 12px', lineHeight:1.9, color:'#1F2937', background:'white' }}>
+                    {spellDiff.segments.map((seg, i) => {
+                      if (seg.type === 'eq') return <span key={i}>{seg.text}</span>;
+                      const on = seg.active;
+                      return (
+                        <span key={i}
+                          onClick={() => toggleFix(seg.id)}
+                          title={on ? 'Cliquer pour ignorer cette correction' : 'Cliquer pour accepter cette correction'}
+                          style={{ cursor:'pointer', borderRadius:3, padding:'1px 2px', border: on ? '1px solid transparent' : '1px dashed #D1D5DB', background: on ? 'transparent' : '#F9FAFB', display:'inline' }}>
+                          {on ? (
+                            <>
+                              {seg.del && <span style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 2px', marginRight:1 }}>{seg.del}</span>}
+                              {seg.add && <span style={{ background:'#DCFCE7', color:'#166534', fontWeight:700, borderRadius:2, padding:'0 2px' }}>{seg.add}</span>}
+                            </>
+                          ) : (
+                            <span style={{ color:'#9CA3AF', textDecoration:'line-through' }}>{seg.del || seg.add}</span>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
-                <div style={{ padding:'10px 12px', lineHeight:1.7, color:'#1F2937', background:'white' }}>
-                  {spellDiff.tokens.map((tk, i) => {
-                    if (tk.t === 'eq') return <span key={i}>{tk.v}</span>;
-                    if (tk.t === 'del') return <span key={i} style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 1px' }}>{tk.v}</span>;
-                    return <span key={i} style={{ background:'#DCFCE7', color:'#166534', fontWeight:600, borderRadius:2, padding:'0 1px' }}>{tk.v}</span>;
-                  })}
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             <IASug
               content={form.titre}
