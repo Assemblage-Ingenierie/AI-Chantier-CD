@@ -333,23 +333,36 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
-          {/* Niveau + Suivi — une seule ligne avec scroll horizontal */}
-          <div style={{ display:'flex',alignItems:'center',gap:0,marginBottom:14,overflowX:'auto',border:`1px solid ${DA.border}`,borderRadius:10,padding:'8px 12px',background:'white' }}>
-            <span style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap',marginRight:8,flexShrink:0 }}>Niveau</span>
-            {Object.entries(URGENCE).map(([k, u]) => (
-              <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                style={{ padding:'5px 10px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginRight:4 }}>
-                <span style={{ width:6,height:6,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
-              </button>
-            ))}
-            <div style={{ width:1,height:20,background:DA.border,margin:'0 10px',flexShrink:0 }}/>
-            <span style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,whiteSpace:'nowrap',marginRight:8,flexShrink:0 }}>Suivi</span>
-            {Object.entries(SUIVI).map(([k, s]) => (
-              <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
-                style={{ padding:'5px 10px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,marginRight:4 }}>
-                <span style={{ width:6,height:6,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
-              </button>
-            ))}
+          {/* Niveau + Suivi — une seule ligne */}
+          <div style={{ display:'flex',gap:8,marginBottom:14,overflowX:'auto' }}>
+            {/* Groupe Niveau */}
+            <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
+              <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Niveau</span>
+              {Object.entries(URGENCE).map(([k, u]) => {
+                const on = form.urgence === k;
+                return (
+                  <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
+                    style={{ padding:'4px 9px',borderRadius:6,fontSize:12,fontWeight:on?700:500,border:'none',background:on?u.dot:'transparent',color:on?'white':'#777',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'flex',alignItems:'center',gap:3 }}>
+                    {!on && <span style={{ width:5,height:5,borderRadius:'50%',background:u.dot,flexShrink:0 }}/>}
+                    {u.label}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Groupe Suivi */}
+            <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
+              <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Suivi</span>
+              {Object.entries(SUIVI).map(([k, s]) => {
+                const on = form.suivi === k;
+                return (
+                  <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
+                    style={{ padding:'4px 9px',borderRadius:6,fontSize:12,fontWeight:on?700:500,border:'none',background:on?s.dot:'transparent',color:on?'white':'#777',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'flex',alignItems:'center',gap:3 }}>
+                    {!on && <span style={{ width:5,height:5,borderRadius:'50%',background:s.dot,flexShrink:0 }}/>}
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Commentaire — pleine largeur */}

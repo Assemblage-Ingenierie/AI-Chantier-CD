@@ -1,10 +1,10 @@
 // Ordre de préférence : le proxy essaie chaque modèle en cas de 429 (quota épuisé)
+// Les modèles 1.5 sont dépréciés sur v1beta (404). Garder uniquement les 2.0.
 const FALLBACK_CHAIN = [
   'gemini-2.0-flash-lite',
   'gemini-2.0-flash',
-  'gemini-2.0-flash-thinking-exp-01-21',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  'gemini-2.0-flash-exp',
+  'gemini-2.0-pro-exp-02-05',
 ];
 const MAX_TOKENS_CAP = 2000;
 const DEFAULT_MODEL  = 'gemini-2.0-flash-lite';
@@ -131,5 +131,9 @@ export default async function handler(req, res) {
   }
 
   // Tous les modèles ont échoué
-  return res.status(429).json({ error: `Tous les modèles Gemini sont indisponibles — ${lastErr}` });
+  const isQuota = lastErr && (lastErr.includes('429') || lastErr.toLowerCase().includes('quota') || lastErr.toLowerCase().includes('resource exhausted'));
+  const userMsg = isQuota
+    ? 'Quota Gemini épuisé pour aujourd\'hui. Réessaie demain ou vérifie ta clé API dans Vercel.'
+    : `IA indisponible — ${lastErr}`;
+  return res.status(429).json({ error: userMsg });
 }
