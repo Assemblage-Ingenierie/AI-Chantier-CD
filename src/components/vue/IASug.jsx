@@ -76,19 +76,41 @@ export default function IASug({ content, commentaire, onApply }) {
 Titre : "${titre}"
 Commentaire déjà rédigé : "${texte}"
 
-En te basant UNIQUEMENT sur ce qui est décrit ci-dessus, génère 3 à 4 suggestions pour COMPLÉTER ce commentaire existant : préconisations précises liées au désordre décrit, réserves formelles, points de vigilance ou actions correctives.
-Ne répète pas ce qui est déjà écrit. Reste dans le même sujet technique. Sois direct et concis.
+Tu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER ce commentaire (entre 3 et 10 selon la richesse du sujet) :
+- préconisations techniques précises (DTU, normes, tolérances chiffrées si applicables)
+- réserves formelles à notifier à l'entreprise
+- points de vigilance pour la prochaine visite
+- actions correctives concrètes
+- essais ou contrôles à demander
+
+Règles absolues :
+- Ne répète JAMAIS ce qui est déjà écrit dans le commentaire
+- Chaque suggestion doit apporter une information nouvelle et utile
+- Sois direct, précis, technique — jamais générique
+- Si le sujet est riche (fissure, infiltration, structure…) génère jusqu'à 10 suggestions
+- Si le sujet est simple, génère seulement ce qui est réellement pertinent (3-5 max)
 Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`
         : `Observation de chantier : "${titre}"
 
-Génère 3 à 4 suggestions techniques numérotées directement liées à ce désordre spécifique : actions correctives précises, réserves formelles, préconisations DTU ou points de vigilance.
+Tu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes liées à ce désordre spécifique (entre 3 et 10 selon la richesse du sujet) :
+- actions correctives précises avec références DTU/normes si applicable
+- réserves formelles à notifier à l'entreprise
+- points de vigilance et contrôles à effectuer
+- tolérances chiffrées si le désordre le permet
+- essais ou investigations complémentaires éventuels
+
+Règles absolues :
+- Chaque suggestion doit être directement liée au désordre décrit, jamais générique
+- Sois précis et technique — cite des références si pertinent
+- Si le désordre est grave ou complexe, génère jusqu'à 10 suggestions
+- Si simple, génère seulement ce qui est utile (3-5)
 Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`;
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'gemini-2.0-flash-lite',
-        max_tokens: 900,
-        system: 'Tu es expert MOE/BET bâtiment, spécialiste des comptes-rendus de visite chantier. Tu génères des suggestions précises et contextuelles, jamais génériques. Français technique, concis.',
+        max_tokens: 2000,
+        system: 'Tu es expert MOE/BET bâtiment senior, spécialiste des comptes-rendus de visite chantier et de la maîtrise d\'œuvre d\'exécution. Tu connais parfaitement les DTU, NF EN, règles professionnelles et tolérances de mise en œuvre. Tu génères des suggestions ultra-précises et contextuelles, jamais vagues ni génériques.',
         messages: [{ role: 'user', content: prompt }],
         _signal: controller.signal,
       });
