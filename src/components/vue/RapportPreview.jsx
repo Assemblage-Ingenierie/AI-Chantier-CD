@@ -42,36 +42,49 @@ const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
-// -60 de marge de sécurité pour absorber les imprécisions d'estimation
-const AVAIL_H    = PH - HDR - (MT - HDR) - MB - FTR - 60; // ~714px de contenu utile
+const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
 
-// Estimation de la hauteur rendue d'un bloc (approximation pour la pagination auto)
+// Estimation fallback (utilisée uniquement si la mesure DOM n'est pas encore dispo)
 function estimateBlockH(block, ppl) {
   if (block.type === 'zone') return 42;
-  if (block.type === 'plan') {
-    // image paysage typique (4:3) + header + légende avec symboles
-    const imgH = Math.round(CW * 0.6); // ratio conservateur 3:5
-    return imgH + 30 + 90; // header + légende
-  }
+  if (block.type === 'plan') return Math.round(CW * 0.6) + 30 + 90;
   const item = block.item;
-  let h = 52; // header: titre + badges + paddings (conservateur)
-  if (item.commentaire) h += 46; // texte multi-lignes + padding
+  let h = 52;
+  if (item.commentaire) h += Math.min(Math.ceil(item.commentaire.length / 60) * 18, 300);
   const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
   if (nPh > 0) {
     const cols  = Math.min(ppl, 3);
     const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-    const rows  = Math.ceil(nPh / cols);
-    h += rows * (cellW * 0.75) + 14; // ratio 4:3 + padding container
+    h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
   }
-  return Math.round(h * 1.12) + 5; // +12% marge + 5px marginBottom
+  return Math.round(h * 1.1) + 5;
+}
+
+// Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination)
+function flattenBlocks(locs, plansEnFin) {
+  const blocks = [];
+  for (const loc of locs) {
+    const items = (loc.items || []).filter(i => i.titre);
+    if (!items.length) continue;
+    blocks.push({ type:'zone', id:loc.id, loc });
+    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
+    let photoOffset = 0;
+    for (const item of items) {
+      blocks.push({ type:'item', id:item.id, item, locId:loc.id, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      photoOffset += (item.photos || []).filter(p => p.data).length;
+    }
+    if (!plansEnFin) {
+      const hasPlan = loc.planAnnotations?.exported || loc.planBg;
+      if (hasPlan) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
+    }
+  }
+  return blocks;
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────
-// Pages découpées automatiquement quand la hauteur estimée dépasse AVAIL_H.
-// Les sauts explicites (breaks) forcent un saut indépendamment de la hauteur.
-// bloc = { type:'zone'|'item'|'plan', id, loc?, item? }
-function buildPages(locs, ppl, breaks, plansEnFin) {
+// Prend une map de hauteurs réelles (ou estimées en fallback) pour chaque bloc.
+function buildPages(allBlocks, ppl, breaks, heights) {
   const pages  = [];
   let blocks   = [];
   let usedH    = 0;
@@ -80,34 +93,13 @@ function buildPages(locs, ppl, breaks, plansEnFin) {
     if (blocks.length) { pages.push(blocks); blocks = []; usedH = 0; }
   };
 
-  const pushBlock = (block) => {
-    const bh  = estimateBlockH(block, ppl);
-    const gap = blocks.length > 0 ? BREAK_CTL_H : 0; // BreakControl avant ce bloc
-    // Auto-saut si ça déborde ET qu'il y a déjà du contenu sur la page
+  for (const block of allBlocks) {
+    const bh  = (heights && heights[block.id]) || estimateBlockH(block, ppl);
+    const gap = blocks.length > 0 ? BREAK_CTL_H : 0;
+    if (breaks.has(block.id)) flush();
     if (usedH + gap + bh > AVAIL_H && blocks.length > 0) flush();
     blocks.push(block);
     usedH += (blocks.length > 1 ? BREAK_CTL_H : 0) + bh;
-  };
-
-  for (const loc of locs) {
-    const items = (loc.items || []).filter(i => i.titre);
-    if (!items.length) continue;
-
-    if (breaks.has(loc.id)) flush();
-    pushBlock({ type: 'zone', id: loc.id, loc });
-
-    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
-    let photoOffset = 0;
-    for (const item of items) {
-      if (breaks.has(item.id)) flush();
-      pushBlock({ type: 'item', id: item.id, item, locId: loc.id, vpPhotoOffset: photoOffset, hasViewpoints: hasVP });
-      photoOffset += (item.photos || []).filter(p => p.data).length;
-    }
-
-    if (!plansEnFin) {
-      const hasPlan = loc.planAnnotations?.exported || loc.planBg;
-      if (hasPlan) pushBlock({ type: 'plan', id: `plan-${loc.id}`, loc });
-    }
   }
   flush();
   return pages;
@@ -663,7 +655,37 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
     [localisations, plansEnFin]
   );
 
-  const pages = useMemo(() => buildPages(locs, ppl, breaks, plansEnFin), [locs, ppl, breaks, plansEnFin]);
+  // ── Mesure des hauteurs réelles ──────────────────────────────────────────
+  const allBlocks    = useMemo(() => flattenBlocks(locs, plansEnFin), [locs, plansEnFin]);
+  const [measuredH, setMeasuredH] = useState({});
+  const blockElsRef  = useRef({});
+  const measureRef   = useRef();
+
+  useLayoutEffect(() => {
+    const container = measureRef.current;
+    if (!container) return;
+    const measure = () => {
+      const h = {};
+      for (const block of allBlocks) {
+        const el = blockElsRef.current[block.id];
+        if (el && el.offsetHeight > 0) h[block.id] = el.offsetHeight;
+      }
+      setMeasuredH(prev => {
+        // N'updater que si au moins une valeur a changé
+        const changed = allBlocks.some(b => h[b.id] && h[b.id] !== prev[b.id]);
+        return changed ? h : prev;
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [allBlocks]);
+
+  const pages = useMemo(
+    () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null),
+    [allBlocks, ppl, breaks, measuredH]
+  );
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
@@ -745,6 +767,20 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             ›
           </button>
         </div>
+      </div>
+
+      {/* ── Couche de mesure invisible — rend chaque bloc à la largeur CW exacte ── */}
+      <div ref={measureRef} style={{ position:'fixed', left:'-9999px', top:0, width:CW, visibility:'hidden', pointerEvents:'none', zIndex:-1 }}>
+        {allBlocks.map(block => (
+          <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
+            {block.type === 'zone'
+              ? <ZoneHeader loc={block.loc}/>
+              : block.type === 'plan'
+              ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
+              : <ItemBlock item={block.item} ppl={ppl} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
+            }
+          </div>
+        ))}
       </div>
 
       {/* ── Zone défilante ── */}
