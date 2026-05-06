@@ -227,16 +227,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
         </div>
 
         {/* Tabs Visite / Rapport */}
-        <div style={{ display:'flex', borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:10 }}>
-          {[
-            { k:'visite',  n:'bld', l:'Visite' },
-            { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
-          ].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'13px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? DA.red : 'transparent'}`, background:'transparent', color:tab===t.k ? DA.red : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
-              <Ic n={t.n} s={15}/>{t.l}
-            </button>
-          ))}
+        <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:10 }}>
+          <div style={{ maxWidth:1400, margin:'0 auto', padding:'0 14px', display:'flex' }}>
+            {[
+              { k:'visite',  n:'bld', l:'Visite' },
+              { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
+            ].map(t => (
+              <button key={t.k} onClick={() => setTab(t.k)}
+                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'13px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? DA.red : 'transparent'}`, background:'transparent', color:tab===t.k ? DA.red : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+                <Ic n={t.n} s={15}/>{t.l}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

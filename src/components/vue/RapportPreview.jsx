@@ -514,10 +514,17 @@ function CoverPage({ projet, pageNum, totalPages }) {
             Compte-rendu de visite
           </div>
           <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2 }}>{projet.nom}</div>
-          {projet.visiteNom && (
+          {(projet.visiteNom || dateStr) && (
             <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:8 }}>
               <div style={{ width:3, height:20, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-              <span style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.92)', letterSpacing:0.3 }}>{projet.visiteNom}</span>
+              <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                {projet.visiteNom && (
+                  <span style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.92)', letterSpacing:0.3 }}>{projet.visiteNom}</span>
+                )}
+                {dateStr && (
+                  <span style={{ fontSize:11, fontWeight:500, color:'rgba(255,255,255,0.6)', letterSpacing:0.2 }}>Visite du {dateStr}</span>
+                )}
+              </div>
             </div>
           )}
         </div>

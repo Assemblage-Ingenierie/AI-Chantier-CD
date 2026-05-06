@@ -35,6 +35,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
+  const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef();
@@ -193,10 +194,30 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
   };
 
+  // Diff mot à mot entre original et corrigé
+  const buildWordDiff = (orig, corr) => {
+    const wa = orig.split(/(\s+)/);
+    const wb = corr.split(/(\s+)/);
+    const n = wa.length, m = wb.length;
+    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = 1; i <= n; i++)
+      for (let j = 1; j <= m; j++)
+        dp[i][j] = wa[i-1] === wb[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+    const tokens = [];
+    let i = n, j = m;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && wa[i-1] === wb[j-1]) { tokens.unshift({ t: 'eq', v: wb[j-1] }); i--; j--; }
+      else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t: 'add', v: wb[j-1] }); j--; }
+      else { tokens.unshift({ t: 'del', v: wa[i-1] }); i--; }
+    }
+    return tokens;
+  };
+
   const fixSpelling = async () => {
     if (!form.commentaire?.trim() || correcting) return;
     setCorrecting(true);
     setSpellError('');
+    setSpellDiff(null);
     try {
       const d = await callAIProxy({
         feature: 'spell-correction',
@@ -206,12 +227,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         messages: [{ role: 'user', content: form.commentaire }],
       });
       const corrected = d.content?.[0]?.text?.trim();
-      // Sécurité : ne pas appliquer si la réponse est tronquée (moins de 60% de l'original)
       const minLen = Math.floor(form.commentaire.length * 0.6);
-      if (corrected && corrected.length >= minLen) {
-        setForm(f => ({ ...f, commentaire: corrected }));
-      } else if (corrected) {
-        throw new Error('Réponse IA tronquée — réessaie');
+      if (!corrected) throw new Error('Réponse vide du modèle');
+      if (corrected.length < minLen) throw new Error('Réponse IA tronquée — réessaie');
+      if (corrected === form.commentaire) {
+        setSpellError('Aucune faute détectée ✓');
+      } else {
+        setSpellDiff({ original: form.commentaire, corrected, tokens: buildWordDiff(form.commentaire, corrected) });
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
@@ -431,8 +453,33 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
 
             {spellError && (
-              <div style={{ marginTop:6,padding:'7px 10px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,fontSize:12,color:'#B91C1C' }}>
+              <div style={{ marginTop:6,padding:'7px 10px',background: spellError.includes('✓') ? '#F0FDF4' : '#FEF2F2',border:`1px solid ${spellError.includes('✓') ? '#BBF7D0' : '#FECACA'}`,borderRadius:8,fontSize:12,color:spellError.includes('✓') ? '#15803D' : '#B91C1C' }}>
                 {spellError}
+              </div>
+            )}
+
+            {spellDiff && (
+              <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
+                <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB' }}>
+                  <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Corrections proposées</span>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button onClick={() => { setForm(f => ({ ...f, commentaire: spellDiff.corrected })); setSpellDiff(null); }}
+                      style={{ background:'#059669', color:'white', border:'none', borderRadius:6, padding:'5px 12px', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                      ✓ Appliquer
+                    </button>
+                    <button onClick={() => setSpellDiff(null)}
+                      style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                      Ignorer
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding:'10px 12px', lineHeight:1.7, color:'#1F2937', background:'white' }}>
+                  {spellDiff.tokens.map((tk, i) => {
+                    if (tk.t === 'eq') return <span key={i}>{tk.v}</span>;
+                    if (tk.t === 'del') return <span key={i} style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 1px' }}>{tk.v}</span>;
+                    return <span key={i} style={{ background:'#DCFCE7', color:'#166534', fontWeight:600, borderRadius:2, padding:'0 1px' }}>{tk.v}</span>;
+                  })}
+                </div>
               </div>
             )}
 
