@@ -1,12 +1,33 @@
-// Ordre de préférence : le proxy essaie chaque modèle en cas de 429 (quota épuisé)
+// Ordre de préférence : modèles avec les quotas free les plus généreux en premier
 const FALLBACK_CHAIN = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite-preview-06-17',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash-lite',   // 30 RPM / 1500 RPD free — le plus permissif
+  'gemini-2.0-flash',         // 15 RPM / 1500 RPD free
+  'gemini-2.5-flash',         // 10 RPM / 500 RPD free — quota séparé
+  'gemini-2.5-pro',           // 5 RPM / 25 RPD free — dernier recours
 ];
 const MAX_TOKENS_CAP = 2000;
-const DEFAULT_MODEL  = 'gemini-2.5-flash';
+const DEFAULT_MODEL  = 'gemini-2.0-flash-lite';
+
+// Extrait le délai de retry depuis la réponse d'erreur Gemini (en secondes)
+function parseRetryDelay(data) {
+  try {
+    const details = data?.error?.details || [];
+    for (const d of details) {
+      if (d['@type']?.includes('RetryInfo') && d.retryDelay) {
+        return parseInt(d.retryDelay, 10) || null;
+      }
+    }
+    // Fallback : cherche dans le message
+    const msg = data?.error?.message || '';
+    const m = msg.match(/retry.*?(\d+)\s*s/i);
+    if (m) return parseInt(m[1], 10);
+  } catch {}
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
 
 // Convertit le format Anthropic (messages + system) vers le format Gemini
 function toGeminiBody(payload, maxTokens, model) {
@@ -22,7 +43,7 @@ function toGeminiBody(payload, maxTokens, model) {
   return body;
 }
 
-async function callGemini(model, body, geminiKey, timeoutMs = 20000) {
+async function callGemini(model, body, geminiKey, timeoutMs = 25000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -96,43 +117,57 @@ export default async function handler(req, res) {
 
   for (const model of modelsToTry) {
     const geminiBody = toGeminiBody(payload, maxTokens, model);
-    const { res: upstream, timedOut, err } = await callGemini(model, geminiBody, geminiKey);
 
-    if (timedOut) {
-      errors[model] = 'timeout';
-      continue;
-    }
+    // Jusqu'à 2 tentatives par modèle (1 retry si délai court)
+    let attempts = 0;
+    while (attempts < 2) {
+      attempts++;
+      const { res: upstream, timedOut, err } = await callGemini(model, geminiBody, geminiKey);
 
-    let data;
-    try { data = await upstream.json(); } catch { errors[model] = 'non-json'; continue; }
+      if (timedOut) {
+        errors[model] = 'timeout';
+        break; // passer au modèle suivant
+      }
 
-    if (upstream.status === 429 || upstream.status === 503) {
-      errors[model] = 'quota';
-      continue;
-    }
-    if (upstream.status === 401 || upstream.status === 403) {
-      // Clé invalide — inutile d'essayer les autres
-      return res.status(401).json({ error: 'Clé API Gemini invalide ou expirée. Vérifie GEMINI_API_KEY dans Vercel.' });
-    }
-    if (!upstream.ok) {
-      errors[model] = upstream.status === 404 ? 'not-found' : (data?.error?.message || upstream.status);
-      continue;
-    }
+      let data;
+      try { data = await upstream.json(); } catch { errors[model] = 'non-json'; break; }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    return res.status(200).json({ content: [{ type: 'text', text }], _model: model });
+      if (upstream.status === 429 || upstream.status === 503) {
+        const delaySec = parseRetryDelay(data);
+        // Si Gemini dit "retry dans X secondes" et que c'est court, on attend et on retente
+        if (delaySec && delaySec <= 12 && attempts === 1) {
+          await sleep(delaySec * 1000 + 500);
+          continue; // retry même modèle
+        }
+        errors[model] = delaySec ? `quota(${delaySec}s)` : 'quota';
+        break;
+      }
+      if (upstream.status === 401 || upstream.status === 403) {
+        // Clé invalide — inutile d'essayer les autres
+        return res.status(401).json({ error: 'Clé API Gemini invalide ou expirée. Vérifie GEMINI_API_KEY dans Vercel.' });
+      }
+      if (!upstream.ok) {
+        errors[model] = upstream.status === 404 ? 'not-found' : (data?.error?.message || upstream.status);
+        break;
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      return res.status(200).json({ content: [{ type: 'text', text }], _model: model });
+    }
   }
 
-  // Tous les modèles ont échoué — construire un message clair
-  const quotaFailed = Object.values(errors).filter(e => e === 'quota').length;
+  // Tous les modèles ont échoué — message clair selon le type d'erreur
+  const quotaFailed = Object.values(errors).filter(e => String(e).startsWith('quota')).length;
   const notFound    = Object.values(errors).filter(e => e === 'not-found').length;
+  const workingModels = modelsToTry.length - notFound;
+
   let userMsg;
-  if (quotaFailed === modelsToTry.length) {
-    userMsg = 'Quota Gemini épuisé pour aujourd\'hui (limite journalière atteinte). Réessaie demain ou utilise une clé API avec un forfait payant.';
+  if (notFound === modelsToTry.length) {
+    userMsg = 'Aucun modèle IA disponible. Vérifie que ta clé API est valide (GEMINI_API_KEY dans Vercel).';
+  } else if (quotaFailed === workingModels) {
+    userMsg = 'Quota IA dépassé — tous les modèles sont saturés. Attends 1 minute et réessaie, ou active la facturation Google Cloud pour ta clé API.';
   } else if (quotaFailed > 0) {
-    userMsg = `Quota partiel dépassé (${quotaFailed}/${modelsToTry.length} modèles). Réessaie dans quelques minutes.`;
-  } else if (notFound === modelsToTry.length) {
-    userMsg = 'Aucun modèle Gemini disponible. Vérifie que ta clé API est valide dans Vercel (GEMINI_API_KEY).';
+    userMsg = `Quota IA partiel — ${quotaFailed} modèle(s) saturé(s). Réessaie dans 1 minute.`;
   } else {
     const details = Object.entries(errors).map(([m, e]) => `${m.replace('gemini-','')}: ${e}`).join(' | ');
     userMsg = `IA indisponible — ${details}`;

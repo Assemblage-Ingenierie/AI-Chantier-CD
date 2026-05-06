@@ -1,7 +1,7 @@
 import { getSupabase } from '../supabase.js';
 
 const _lastCall = {};
-const THROTTLE_MS = 5000;
+const THROTTLE_MS = 15000; // 15s entre deux appels par feature pour ménager le quota free
 
 export async function callAIProxy(params) {
   const feature = params.feature || 'default';
