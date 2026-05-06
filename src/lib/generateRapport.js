@@ -118,7 +118,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
  */
-export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1 }) {
+export async function exportPdf({ projet, localisations, photosParLigne = 2, rapportPageBreaks = [], plansEnFin = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1 }) {
   await ensureJsPDF();
   const { jsPDF } = window.jspdf;
 
@@ -524,11 +524,15 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.text(today, ML + 7, cy + 12);
     doc.setTextColor(0, 0, 0); cy += 18;
     doc.setFillColor(...LG); doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
-    const lines = doc.splitTextToSize(conclusion.trim(), CW - 10);
+    const conclusionText = stripMarkup(conclusion.trim());
+    const lines = doc.splitTextToSize(conclusionText, CW - 10);
     const boxH = lines.length * 5 + 10;
     doc.roundedRect(ML, cy, CW, boxH, 2, 2, 'FD');
     doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
-    doc.text(lines, ML + 5, cy + 7);
+    const ca  = conclusionAlign || 'left';
+    const tx  = ca === 'center' ? ML + CW / 2 : ca === 'right' ? ML + CW - 5 : ML + 5;
+    const to  = ca === 'left' ? {} : ca === 'justify' ? { align: 'justify', maxWidth: CW - 10 } : { align: ca };
+    doc.text(lines, tx, cy + 7, to);
   }
 
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────

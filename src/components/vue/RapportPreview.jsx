@@ -540,7 +540,7 @@ function PageFtr({ pageNum, totalPages }) {
 
 
 // ── Page conclusion ────────────────────────────────────────────────────────
-function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
+function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages }) {
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : null;
@@ -552,8 +552,8 @@ function ConclusionPage({ conclusion, projet, pageNum, totalPages }) {
           <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
           <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Conclusion</span>
         </div>
-        <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60 }}>
-          {conclusion || <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
+        <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60, textAlign:conclusionAlign }}>
+          {conclusion ? renderMarkup(conclusion) : <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
         </div>
       </div>
       <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
@@ -644,7 +644,7 @@ function usePreviewScale(containerRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }) {
+export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -861,7 +861,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
-                <ConclusionPage conclusion={conclusion} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
+                <ConclusionPage conclusion={conclusion} conclusionAlign={conclusionAlign} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
               </div>
             </>
           );

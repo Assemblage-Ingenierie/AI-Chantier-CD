@@ -1,10 +1,82 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 import JSZip from 'jszip';
+
+function ConclusionEditor({ value, align, onChange, onAlignChange }) {
+  const taRef = useRef();
+
+  const wrap = (before, after) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const newVal = value.slice(0, s) + before + value.slice(s, e) + after + value.slice(e);
+    onChange(newVal);
+    requestAnimationFrame(() => {
+      ta.selectionStart = s + before.length;
+      ta.selectionEnd   = e + before.length;
+      ta.focus();
+    });
+  };
+
+  const FMT = [
+    { lbl:'G', title:'Gras',     b:'**', a:'**', fw:800 },
+    { lbl:'I', title:'Italique', b:'*',  a:'*',  fi:'italic' },
+    { lbl:'S', title:'Souligné', b:'__', a:'__', td:'underline' },
+  ];
+  const ALIGNS = [
+    { k:'left',    sym:'←', lbl:'Gauche' },
+    { k:'center',  sym:'↔', lbl:'Centrer' },
+    { k:'right',   sym:'→', lbl:'Droite' },
+    { k:'justify', sym:'☰', lbl:'Justifier' },
+  ];
+
+  return (
+    <div style={{ marginTop:8 }}>
+      <div style={{ display:'flex', gap:3, marginBottom:5, alignItems:'center', flexWrap:'wrap' }}>
+        {FMT.map(btn => (
+          <button key={btn.lbl}
+            onMouseDown={e => { e.preventDefault(); wrap(btn.b, btn.a); }}
+            title={btn.title}
+            style={{ width:28, height:28, borderRadius:5, border:`1px solid ${DA.border}`, background:'white', cursor:'pointer',
+              fontSize:12, fontWeight:btn.fw??400, fontStyle:btn.fi??'normal', textDecoration:btn.td??'none',
+              color:DA.black, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            {btn.lbl}
+          </button>
+        ))}
+        <div style={{ width:1, height:20, background:DA.border, margin:'0 2px', flexShrink:0 }}/>
+        {ALIGNS.map(a => (
+          <button key={a.k}
+            onClick={() => onAlignChange(a.k)}
+            title={a.lbl}
+            style={{ width:28, height:28, borderRadius:5, fontSize:14, cursor:'pointer', flexShrink:0,
+              border:`1.5px solid ${align===a.k ? DA.red : DA.border}`,
+              background: align===a.k ? DA.redL : 'white',
+              color: align===a.k ? DA.red : DA.gray,
+              display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {a.sym}
+          </button>
+        ))}
+      </div>
+      <textarea
+        ref={taRef}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Saisissez votre conclusion…"
+        rows={5}
+        style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:8, padding:'8px 10px',
+          outline:'none', boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', color:DA.black,
+          lineHeight:1.5, textAlign:align }}
+      />
+      <p style={{ fontSize:9, color:DA.grayL, margin:'2px 0 0', fontStyle:'italic' }}>
+        Sélectionne du texte → clique G/I/S pour le mettre en forme
+      </p>
+    </div>
+  );
+}
 
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
@@ -86,6 +158,7 @@ export default function RapportTab({ projet, onUpdate }) {
         annotScale,
         includeConclusion:    projet.includeConclusion ?? false,
         conclusion:           projet.conclusion ?? '',
+        conclusionAlign:      projet.conclusionAlign ?? 'left',
       });
     } catch (e) {
       console.error('Export PDF:', e);
@@ -429,12 +502,11 @@ export default function RapportTab({ projet, onUpdate }) {
               <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Ajouter une conclusion</span>
             </label>
             {(projet.includeConclusion ?? false) && (
-              <textarea
+              <ConclusionEditor
                 value={projet.conclusion ?? ''}
-                onChange={e => onUpdate({ conclusion: e.target.value })}
-                placeholder="Saisissez votre conclusion…"
-                rows={5}
-                style={{ marginTop:8, width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:8, padding:'8px 10px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', color:DA.black, lineHeight:1.5 }}
+                align={projet.conclusionAlign ?? 'left'}
+                onChange={v => onUpdate({ conclusion: v })}
+                onAlignChange={a => onUpdate({ conclusionAlign: a })}
               />
             )}
           </div>
@@ -457,6 +529,7 @@ export default function RapportTab({ projet, onUpdate }) {
         onAnnotScaleChange={handleAnnotScale}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
+        conclusionAlign={projet.conclusionAlign ?? 'left'}
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}
         panelOpen={panelOpen}
