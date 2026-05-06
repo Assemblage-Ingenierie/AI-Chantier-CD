@@ -656,29 +656,30 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   );
 
   // ── Mesure des hauteurs réelles ──────────────────────────────────────────
-  const allBlocks    = useMemo(() => flattenBlocks(locs, plansEnFin), [locs, plansEnFin]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin), [locs, plansEnFin]);
   const [measuredH, setMeasuredH] = useState({});
-  const blockElsRef  = useRef({});
-  const measureRef   = useRef();
+  const blockElsRef = useRef({});
 
   useLayoutEffect(() => {
-    const container = measureRef.current;
-    if (!container) return;
     const measure = () => {
       const h = {};
       for (const block of allBlocks) {
         const el = blockElsRef.current[block.id];
         if (el && el.offsetHeight > 0) h[block.id] = el.offsetHeight;
       }
+      if (!Object.keys(h).length) return;
       setMeasuredH(prev => {
-        // N'updater que si au moins une valeur a changé
         const changed = allBlocks.some(b => h[b.id] && h[b.id] !== prev[b.id]);
-        return changed ? h : prev;
+        return changed ? { ...prev, ...h } : prev;
       });
     };
     measure();
+    // Observer chaque bloc individuellement pour détecter les chargements d'images
     const ro = new ResizeObserver(measure);
-    ro.observe(container);
+    for (const block of allBlocks) {
+      const el = blockElsRef.current[block.id];
+      if (el) ro.observe(el);
+    }
     return () => ro.disconnect();
   }, [allBlocks]);
 
@@ -769,22 +770,24 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
         </div>
       </div>
 
-      {/* ── Couche de mesure invisible — rend chaque bloc à la largeur CW exacte ── */}
-      <div ref={measureRef} style={{ position:'fixed', left:'-9999px', top:0, width:CW, visibility:'hidden', pointerEvents:'none', zIndex:-1 }}>
-        {allBlocks.map(block => (
-          <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
-            {block.type === 'zone'
-              ? <ZoneHeader loc={block.loc}/>
-              : block.type === 'plan'
-              ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
-              : <ItemBlock item={block.item} ppl={ppl} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
-            }
-          </div>
-        ))}
-      </div>
-
       {/* ── Zone défilante ── */}
       <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+
+        {/* ── Couche de mesure invisible — height:0 overflow:hidden = en flux normal, offsetHeight fiable ── */}
+        <div style={{ height:0, overflow:'hidden', flexShrink:0, width:PW }}>
+          <div style={{ width:CW, visibility:'hidden', pointerEvents:'none' }}>
+            {allBlocks.map(block => (
+              <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
+                {block.type === 'zone'
+                  ? <ZoneHeader loc={block.loc}/>
+                  : block.type === 'plan'
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
+                  : <ItemBlock item={block.item} ppl={ppl} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
+                }
+              </div>
+            ))}
+          </div>
+        </div>
         {/* Conteneur scalé : transformOrigin top-center pour que les pages restent centrées */}
         <div style={{ width: PW, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', transform: scale < 1 ? `scale(${scale})` : 'none' }}>
 
