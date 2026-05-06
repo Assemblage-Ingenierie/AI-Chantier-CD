@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
-import { renderMarkup } from '../../lib/markup.js';
+import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';

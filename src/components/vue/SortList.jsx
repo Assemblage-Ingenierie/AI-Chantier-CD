@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
-import { renderMarkup } from '../../lib/markup.js';
+import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 

@@ -1,6 +1,6 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
-import { stripMarkup } from './markup.js';
+import { stripMarkup } from './markup.jsx';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
 
