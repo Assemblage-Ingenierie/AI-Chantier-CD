@@ -50,18 +50,23 @@ function estimateBlockH(block, ppl) {
   if (block.type === 'zone') return 42;
   if (block.type === 'plan') return Math.round(CW * 0.6) + 30 + 90;
   const item = block.item;
-  let h = 52;
-  if (item.commentaire) h += Math.min(Math.ceil(item.commentaire.length / 60) * 18, 300);
-  const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
-  if (nPh > 0) {
-    const cols  = Math.min(ppl, 3);
-    const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-    h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
+  const mode = block.mode || 'full';
+  let h = 52; // header toujours présent
+  if (mode !== 'photos' && item.commentaire) h += Math.min(Math.ceil(item.commentaire.length / 60) * 18, 400);
+  if (mode !== 'text') {
+    const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
+    if (nPh > 0) {
+      const cols  = Math.min(ppl, 3);
+      const cellW = (CW - 12 - (cols - 1) * 3) / cols;
+      h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
+    }
   }
-  return Math.round(h * 1.1) + 5;
+  return Math.round(h * 1.05) + 5;
 }
 
-// Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination)
+// Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination).
+// Les items ayant à la fois du texte ET des photos sont découpés en deux blocs
+// (texte puis photos) pour permettre un saut de page entre eux.
 function flattenBlocks(locs, plansEnFin) {
   const blocks = [];
   for (const loc of locs) {
@@ -71,8 +76,16 @@ function flattenBlocks(locs, plansEnFin) {
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     let photoOffset = 0;
     for (const item of items) {
-      blocks.push({ type:'item', id:item.id, item, locId:loc.id, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-      photoOffset += (item.photos || []).filter(p => p.data).length;
+      const photos = (item.photos || []).filter(p => p.data);
+      const hasText = item.commentaire?.trim();
+      if (photos.length > 0 && hasText) {
+        // Découper en bloc-texte + bloc-photos pour permettre la pagination
+        blocks.push({ type:'item', id:item.id,        item, locId:loc.id, mode:'text',   vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+        blocks.push({ type:'item', id:item.id+'_ph',  item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      } else {
+        blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      }
+      photoOffset += photos.length;
     }
     if (!plansEnFin) {
       const hasPlan = loc.planAnnotations?.exported || loc.planBg;
@@ -171,44 +184,62 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false }) {
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full' }) {
   const photos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
+  const showHeader  = mode !== 'photos';
+  const showPhotoHdr = mode === 'photos'; // bannière de continuation
+  const showComment = mode !== 'photos' && item.commentaire;
+  const showPhotos  = mode !== 'text' && photos.length > 0;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
-      {/* Titre + badges urgence/suivi */}
-      <div style={{ background:'#F5F5F5', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-          <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+      {/* En-tête normal (titre + badges) */}
+      {showHeader && (
+        <div style={{ background:'#F5F5F5', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+            {onEdit && (
+              <button onClick={onEdit}
+                style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
+                title="Modifier">
+                <Ic n="pen" s={10}/>
+              </button>
+            )}
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:6, height:6, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
+            <span style={{ fontSize:8, fontWeight:700, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+              {urg.label}
+            </span>
+            {suivi && (
+              <span style={{ fontSize:8, fontWeight:700, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+                ↩ {suivi.label}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Bannière de continuation (mode photos uniquement) */}
+      {showPhotoHdr && (
+        <div style={{ background:'#F5F5F5', padding:'3px 9px', display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:9, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
+          <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>photos</span>
           {onEdit && (
-            <button onClick={onEdit}
-              style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
-              title="Modifier">
+            <button onClick={onEdit} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }} title="Modifier">
               <Ic n="pen" s={10}/>
             </button>
           )}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-          <span style={{ width:6, height:6, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
-          <span style={{ fontSize:8, fontWeight:700, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
-            {urg.label}
-          </span>
-          {suivi && (
-            <span style={{ fontSize:8, fontWeight:700, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
-              ↩ {suivi.label}
-            </span>
-          )}
-        </div>
-      </div>
+      )}
       {/* Commentaire */}
-      {item.commentaire && (
+      {showComment && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
           {renderMarkup(item.commentaire)}
         </div>
       )}
       {/* Photos */}
-      {photos.length > 0 && (
+      {showPhotos && (
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.slice(0, 6).map((ph, pi) => (
             <div key={pi} style={{ position:'relative' }}>
@@ -794,7 +825,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
-                  : <ItemBlock item={block.item} ppl={ppl} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
                 }
               </div>
             ))}
@@ -837,7 +868,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                         ? <ZoneHeader loc={block.loc} />
                         : block.type === 'plan'
                         ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
-                        : <ItemBlock item={block.item} ppl={ppl}
+                        : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                             vpPhotoOffset={block.vpPhotoOffset ?? 0}
                             hasViewpoints={block.hasViewpoints ?? false}

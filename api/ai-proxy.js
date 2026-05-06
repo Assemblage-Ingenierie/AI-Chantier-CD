@@ -1,10 +1,9 @@
 // Ordre de préférence : le proxy essaie chaque modèle en cas de 429 (quota épuisé)
-// Les modèles 1.5 sont dépréciés sur v1beta (404). Garder uniquement les 2.0.
 const FALLBACK_CHAIN = [
   'gemini-2.0-flash-lite',
   'gemini-2.0-flash',
-  'gemini-2.0-flash-exp',
-  'gemini-2.0-pro-exp-02-05',
+  'gemini-2.5-flash-preview-04-17',
+  'gemini-2.5-pro-preview-03-25',
 ];
 const MAX_TOKENS_CAP = 2000;
 const DEFAULT_MODEL  = 'gemini-2.0-flash-lite';
@@ -93,47 +92,50 @@ export default async function handler(req, res) {
     ...FALLBACK_CHAIN.slice(0, startIdx),
   ];
 
-  let lastErr = null;
+  const errors = {};
 
   for (const model of modelsToTry) {
     const geminiBody = toGeminiBody(payload, maxTokens, model);
     const { res: upstream, timedOut, err } = await callGemini(model, geminiBody, geminiKey);
 
     if (timedOut) {
-      lastErr = `API Gemini injoignable : ${err}`;
-      continue; // essaie le prochain modèle
+      errors[model] = 'timeout';
+      continue;
     }
 
     let data;
-    try {
-      data = await upstream.json();
-    } catch {
-      lastErr = 'Réponse non-JSON de Gemini';
+    try { data = await upstream.json(); } catch { errors[model] = 'non-json'; continue; }
+
+    if (upstream.status === 429 || upstream.status === 503) {
+      errors[model] = 'quota';
       continue;
     }
-
-    if (upstream.status === 429) {
-      // Quota épuisé sur ce modèle → tente le suivant
-      lastErr = data?.error?.message || 'Quota dépassé';
-      continue;
+    if (upstream.status === 401 || upstream.status === 403) {
+      // Clé invalide — inutile d'essayer les autres
+      return res.status(401).json({ error: 'Clé API Gemini invalide ou expirée. Vérifie GEMINI_API_KEY dans Vercel.' });
     }
-
     if (!upstream.ok) {
-      const msg = data?.error?.message || JSON.stringify(data);
-      // Erreur non-quota (ex: modèle introuvable) → tente quand même le suivant
-      lastErr = `Erreur Gemini (${model}) : ${msg}`;
+      errors[model] = upstream.status === 404 ? 'not-found' : (data?.error?.message || upstream.status);
       continue;
     }
 
-    // Succès
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     return res.status(200).json({ content: [{ type: 'text', text }], _model: model });
   }
 
-  // Tous les modèles ont échoué
-  const isQuota = lastErr && (lastErr.includes('429') || lastErr.toLowerCase().includes('quota') || lastErr.toLowerCase().includes('resource exhausted'));
-  const userMsg = isQuota
-    ? 'Quota Gemini épuisé pour aujourd\'hui. Réessaie demain ou vérifie ta clé API dans Vercel.'
-    : `IA indisponible — ${lastErr}`;
+  // Tous les modèles ont échoué — construire un message clair
+  const quotaFailed = Object.values(errors).filter(e => e === 'quota').length;
+  const notFound    = Object.values(errors).filter(e => e === 'not-found').length;
+  let userMsg;
+  if (quotaFailed === modelsToTry.length) {
+    userMsg = 'Quota Gemini épuisé pour aujourd\'hui (limite journalière atteinte). Réessaie demain ou utilise une clé API avec un forfait payant.';
+  } else if (quotaFailed > 0) {
+    userMsg = `Quota partiel dépassé (${quotaFailed}/${modelsToTry.length} modèles). Réessaie dans quelques minutes.`;
+  } else if (notFound === modelsToTry.length) {
+    userMsg = 'Aucun modèle Gemini disponible. Vérifie que ta clé API est valide dans Vercel (GEMINI_API_KEY).';
+  } else {
+    const details = Object.entries(errors).map(([m, e]) => `${m.replace('gemini-','')}: ${e}`).join(' | ');
+    userMsg = `IA indisponible — ${details}`;
+  }
   return res.status(429).json({ error: userMsg });
 }
