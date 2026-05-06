@@ -83,7 +83,7 @@ export default function LoginScreen({ onLogin }) {
 
         {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 32 }}>
-          <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />
+          {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />}
           <div style={{ color: 'white', fontWeight: 900, fontSize: 18, letterSpacing: -0.5 }}>AI Chantier</div>
         </div>
 

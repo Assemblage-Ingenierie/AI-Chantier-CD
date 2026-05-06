@@ -65,7 +65,7 @@ export default function ChantierAI({ profile, onLogout }) {
 
   if (showSplash) return (
     <div style={{ position:'fixed',inset:0,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:32,zIndex:9999 }}>
-      <img src={logoUrl} alt="Assemblage Ingénierie" style={{ width:220,maxWidth:'60vw',objectFit:'contain' }}/>
+      {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ width:220,maxWidth:'60vw',objectFit:'contain' }}/>}
       <div style={{ display:'flex',flexDirection:'column',alignItems:'center',gap:10,color:DA.grayL }}>
         <Ic n="spn" s={28}/>
         <span style={{ fontSize:11,letterSpacing:1,textTransform:'uppercase',fontWeight:600 }}>Chargement…</span>
@@ -79,7 +79,7 @@ export default function ChantierAI({ profile, onLogout }) {
       {/* Header */}
       <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
-          <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>
+          {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>}
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (
