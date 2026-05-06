@@ -11,8 +11,8 @@ const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
   const [form, setForm] = useState(() => {
     const base = item
-      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien' }
-      : { titre:'', commentaire:'', urgence:'rien', photos:[], suivi:'rien' };
+      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
+      : { titre:'', commentaire:'', urgence:'rien', photos:[], suivi:'rien', commentaireAlign:'left' };
     try {
       const saved = localStorage.getItem(DRAFT_KEY(item?.id));
       if (saved) {
@@ -62,7 +62,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
   useEffect(() => {
     const t = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi })); } catch {}
+      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi, commentaireAlign: form.commentaireAlign })); } catch {}
     }, 600);
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
@@ -268,57 +268,34 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     </div>
   );
 
-  // Inputs fichiers partagés entre colonnes
+  const FMT_BTNS = [
+    { label:'G', title:'Gras',     before:'**', after:'**', fw:800 },
+    { label:'I', title:'Italique', before:'*',  after:'*',  fi:'italic' },
+    { label:'S', title:'Souligné', before:'__', after:'__', td:'underline' },
+  ];
+  const ALIGN_BTNS = [
+    { k:'left',    sym:'←', title:'Aligner à gauche' },
+    { k:'center',  sym:'↔', title:'Centrer' },
+    { k:'right',   sym:'→', title:'Aligner à droite' },
+    { k:'justify', sym:'☰', title:'Justifier' },
+  ];
+
+  const wrapSel = (before, after) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const s = el.selectionStart, e = el.selectionEnd;
+    const text = form.commentaire || '';
+    setForm(f => ({ ...f, commentaire: text.slice(0,s)+before+text.slice(s,e)+after+text.slice(e) }));
+    setTimeout(() => { el.focus(); el.setSelectionRange(s+before.length, e+before.length); }, 0);
+  };
+
+  // Inputs fichiers (hidden)
   const fileInputs = (
     <>
       <input ref={gallRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => readFiles(e.target.files)}/>
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
         onChange={e => { if (e.target.files?.length) readFiles(e.target.files); setTimeout(() => { if(camRef.current) camRef.current.value=''; }, 200); }}/>
     </>
-  );
-
-  const photoGrid = (
-    <div style={{ marginBottom: isDesktop ? 0 : 14 }}>
-      <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
-        <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
-        <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-          <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
-            <Ic n="img" s={14}/> Galerie
-          </button>
-          <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap',cursor:'pointer' }}>
-            <Ic n="cam" s={14}/> Photo
-          </button>
-        </div>
-      </div>
-      {form.photos.length > 0 ? (
-        <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8 }}>
-          {form.photos.map((ph, i) => (
-            <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
-              <img src={ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
-              <button onClick={() => setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) }))}
-                style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
-                <Ic n="x" s={10}/>
-              </button>
-            </div>
-          ))}
-          <button onClick={() => gallRef.current.click()} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.border}`,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
-            <Ic n="img" s={15}/><span style={{ fontSize:9,color:DA.grayL }}>Galerie</span>
-          </button>
-          <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
-            <Ic n="cam" s={15}/><span style={{ fontSize:9,color:DA.red,fontWeight:700 }}>Photo</span>
-          </button>
-        </div>
-      ) : (
-        <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:8 }}>
-          <div onClick={() => gallRef.current.click()} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.border}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.grayXL }}>
-            <Ic n="img" s={20}/><span style={{ fontSize:11,color:DA.grayL }}>Galerie</span>
-          </div>
-          <div onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
-            <Ic n="cam" s={20}/><span style={{ fontSize:11,color:DA.red }}>Prendre photo</span>
-          </div>
-        </div>
-      )}
-    </div>
   );
 
   return (
@@ -336,14 +313,16 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           {draftRestored && (
             <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginBottom:14 }}>
               <span style={{ fontSize:11,color:'#92400E',fontWeight:600 }}>📝 Brouillon restauré</span>
-              <button onClick={() => { setDraftRestored(false); try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} setForm(item ? { ...item, photos:(item.photos||[]).filter(ph=>ph.data), suivi:item.suivi||'rien' } : { titre:'',commentaire:'',urgence:'moyenne',photos:[],suivi:'rien' }); }}
+              <button onClick={() => { setDraftRestored(false); try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} setForm(item ? { ...item, photos:(item.photos||[]).filter(ph=>ph.data), suivi:item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' } : { titre:'',commentaire:'',urgence:'rien',photos:[],suivi:'rien',commentaireAlign:'left' }); }}
                 style={{ marginLeft:'auto',fontSize:10,color:'#92400E',background:'none',border:'1px solid #FCD34D',borderRadius:5,padding:'2px 7px',cursor:'pointer',fontWeight:600 }}>
                 Ignorer
               </button>
             </div>
           )}
 
-          {/* Titre — toujours pleine largeur */}
+          {fileInputs}
+
+          {/* Titre */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé *</label>
             <input value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
@@ -352,242 +331,164 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
-          {fileInputs}
-
-          {isDesktop ? (
-            /* ── Layout 2 colonnes desktop ── */
-            <div style={{ display:'grid', gridTemplateColumns:'260px 1fr', gap:20, alignItems:'start' }}>
-
-              {/* Colonne gauche : métadonnées + photos + plan */}
-              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-
-                {/* Urgence */}
-                <div>
-                  <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
-                  <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                    {Object.entries(URGENCE).map(([k, u]) => (
-                      <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                        style={{ padding:'7px 11px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                        <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Suivi */}
-                <div>
-                  <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
-                  <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                    {Object.entries(SUIVI).map(([k, s]) => (
-                      <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
-                        style={{ padding:'7px 11px',borderRadius:20,fontSize:12,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                        <span style={{ width:7,height:7,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Plan */}
-                <button onClick={() => setShowPlan(true)}
-                  style={{ width:'100%',border:`1px solid ${planBg?DA.red:DA.border}`,borderRadius:10,padding:10,fontSize:13,background:planBg?DA.redL:'white',color:planBg?DA.red:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer' }}>
-                  <Ic n="map" s={15}/>
-                  {planBg ? 'Plan de la zone' : 'Aucun plan'}
-                  {planAnnotations?.paths?.length > 0 && (
-                    <span style={{ marginLeft:'auto',fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 8px' }}>{planAnnotations.paths.length} annot.</span>
-                  )}
-                </button>
-
-                {/* Photos */}
-                {photoGrid}
-
-                {compressing && (
-                  <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8 }}>
-                    <Ic n="spn" s={13}/>
-                    <span style={{ fontSize:12,color:'#15803D',fontWeight:600 }}>Traitement…</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Colonne droite : grande zone d'écriture */}
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Commentaire</label>
-
-                {/* Toolbar */}
-                <div style={{ display:'flex',gap:4 }}>
-                  {[
-                    { label:'G', title:'Gras', before:'**', after:'**', style:{ fontWeight:800 } },
-                    { label:'I', title:'Italique', before:'*', after:'*', style:{ fontStyle:'italic' } },
-                    { label:'S', title:'Souligné', before:'__', after:'__', style:{ textDecoration:'underline' } },
-                  ].map(({ label, title, before, after, style: btnStyle }) => (
-                    <button key={label} type="button" title={title}
-                      onMouseDown={e => {
-                        e.preventDefault();
-                        const el = textareaRef.current;
-                        if (!el) return;
-                        const start = el.selectionStart, end = el.selectionEnd;
-                        const text = form.commentaire || '';
-                        setForm(f => ({ ...f, commentaire: text.slice(0,start)+before+text.slice(start,end)+after+text.slice(end) }));
-                        setTimeout(() => { el.focus(); el.setSelectionRange(start+before.length, end+before.length); }, 0);
-                      }}
-                      style={{ ...btnStyle, padding:'4px 10px',border:`1px solid ${DA.border}`,borderRadius:6,background:'white',color:DA.black,fontSize:13,cursor:'pointer',userSelect:'none',minWidth:32 }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
-                  placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
-                  style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'14px 16px',fontSize:15,outline:'none',resize:'vertical',boxSizing:'border-box',fontFamily:'inherit',lineHeight:1.7,minHeight:280,overflow:'auto' }}
-                  onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
-
-                {recording && (
-                  <p style={{ fontSize:11,fontStyle:'italic',margin:0,lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
-                    {interimText ? interimText + '…' : 'En écoute — parlez maintenant…'}
-                  </p>
-                )}
-
-                {/* Dictée + Correction */}
-                <div style={{ display:'flex', gap:8 }}>
-                  <button
-                    onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
-                    onPointerUp={() => { if (recording) stopDictaphone(); }}
-                    onPointerCancel={() => { if (recording) stopDictaphone(); }}
-                    style={{ flex:1,padding:'11px 14px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:13,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s' }}>
-                    <Ic n={recording ? 'spn' : 'mic'} s={16}/>
-                    {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
+          {/* Niveau + Suivi côte à côte */}
+          <div style={{ display:'flex', gap:16, marginBottom:14, flexWrap:'wrap' }}>
+            <div style={{ flex:1, minWidth:180 }}>
+              <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
+              <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
+                {Object.entries(URGENCE).map(([k, u]) => (
+                  <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
+                    style={{ padding:'7px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
+                    <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
                   </button>
-                  {form.commentaire?.trim() && (
-                    <button onClick={fixSpelling} disabled={correcting}
-                      style={{ padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity: correcting ? 0.6 : 1,whiteSpace:'nowrap' }}>
-                      {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
-                      {correcting ? 'Correction…' : 'Corriger IA'}
-                    </button>
-                  )}
-                </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex:1, minWidth:180 }}>
+              <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
+              <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
+                {Object.entries(SUIVI).map(([k, s]) => (
+                  <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
+                    style={{ padding:'7px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
+                    <span style={{ width:7,height:7,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
-                <IASug
-                  content={form.titre}
-                  commentaire={form.commentaire}
-                  onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
-                />
+          {/* Commentaire — pleine largeur */}
+          <div style={{ marginBottom:14 }}>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
 
-                <button onClick={handleSave} disabled={!form.titre || compressing}
-                  style={{ width:'100%',background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:'13px 0',fontSize:15,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed',marginTop:4 }}>
-                  Enregistrer l'observation
+            {/* Toolbar : G/I/S + séparateur + alignements */}
+            <div style={{ display:'flex',gap:3,marginBottom:6,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
+              {FMT_BTNS.map(btn => (
+                <button key={btn.label} type="button" title={btn.title}
+                  onMouseDown={e => { e.preventDefault(); wrapSel(btn.before, btn.after); }}
+                  style={{ width:30,height:28,borderRadius:5,border:`1px solid ${DA.border}`,background:'white',color:DA.black,fontSize:13,fontWeight:btn.fw??400,fontStyle:btn.fi??'normal',textDecoration:btn.td??'none',cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                  {btn.label}
+                </button>
+              ))}
+              <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
+              {ALIGN_BTNS.map(a => (
+                <button key={a.k} type="button" title={a.title}
+                  onClick={() => setForm(f => ({ ...f, commentaireAlign: a.k }))}
+                  style={{ width:30,height:28,borderRadius:5,fontSize:14,cursor:'pointer',flexShrink:0,
+                    border:`1.5px solid ${form.commentaireAlign===a.k ? DA.red : DA.border}`,
+                    background: form.commentaireAlign===a.k ? DA.redL : 'white',
+                    color: form.commentaireAlign===a.k ? DA.red : DA.gray,
+                    display:'flex',alignItems:'center',justifyContent:'center' }}>
+                  {a.sym}
+                </button>
+              ))}
+              <span style={{ marginLeft:'auto',fontSize:10,color:DA.grayL,fontStyle:'italic',whiteSpace:'nowrap' }}>
+                sélectionner → G/I/S
+              </span>
+            </div>
+
+            <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
+              placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
+              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:'0 0 8px 8px',padding:'12px 14px',fontSize:15,outline:'none',resize:'vertical',boxSizing:'border-box',fontFamily:'inherit',lineHeight:1.7,minHeight: isDesktop ? 260 : 90,overflow:'auto',textAlign: form.commentaireAlign||'left' }}
+              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
+
+            {recording && (
+              <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
+                {interimText ? interimText + '…' : 'En écoute — parlez maintenant…'}
+              </p>
+            )}
+
+            <div style={{ display:'flex',gap:8,marginTop:8 }}>
+              <button
+                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
+                onPointerUp={() => { if (recording) stopDictaphone(); }}
+                onPointerCancel={() => { if (recording) stopDictaphone(); }}
+                style={{ flex:1,padding:'12px 14px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s',boxShadow:recording?'inset 0 2px 6px rgba(0,0,0,0.25)':'0 2px 8px rgba(185,28,28,0.35)' }}>
+                <Ic n={recording ? 'spn' : 'mic'} s={16}/>
+                {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
+              </button>
+              {form.commentaire?.trim() && (
+                <button onClick={fixSpelling} disabled={correcting}
+                  style={{ padding:'12px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap',flexShrink:0 }}>
+                  {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
+                  {correcting ? 'Correction…' : isDesktop ? "Corriger avec l'IA" : 'Corriger IA'}
+                </button>
+              )}
+            </div>
+
+            <IASug
+              content={form.titre}
+              commentaire={form.commentaire}
+              onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
+            />
+          </div>
+
+          {/* Photos — pleine largeur */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
+              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
+              <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+                <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
+                  <Ic n="img" s={14}/> Galerie
+                </button>
+                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
+                  <Ic n="cam" s={14}/> Photo
                 </button>
               </div>
             </div>
-
-          ) : (
-            /* ── Layout mobile : colonne unique ── */
-            <>
-              {/* Urgence */}
-              <div style={{ marginBottom:14 }}>
-                <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Niveau</label>
-                <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                  {Object.entries(URGENCE).map(([k, u]) => (
-                    <button key={k} onClick={() => setForm(f => ({ ...f, urgence: k }))}
-                      style={{ padding:'8px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.urgence===k?u.border:DA.border}`,background:form.urgence===k?u.bg:'white',color:form.urgence===k?u.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                      <span style={{ width:7,height:7,borderRadius:'50%',background:u.dot,display:'inline-block' }}/>{u.label}
+            {form.photos.length > 0 ? (
+              <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
+                {form.photos.map((ph, i) => (
+                  <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
+                    <img src={ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
+                    <button onClick={() => setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) }))}
+                      style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+                      <Ic n="x" s={10}/>
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Suivi */}
-              <div style={{ marginBottom:14 }}>
-                <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:8,textTransform:'uppercase',letterSpacing:0.5 }}>Suivi</label>
-                <div style={{ display:'flex',gap:6,flexWrap:'wrap' }}>
-                  {Object.entries(SUIVI).map(([k, s]) => (
-                    <button key={k} onClick={() => setForm(f => ({ ...f, suivi: k }))}
-                      style={{ padding:'8px 12px',borderRadius:20,fontSize:13,fontWeight:600,border:`1.5px solid ${form.suivi===k?s.border:DA.border}`,background:form.suivi===k?s.bg:'white',color:form.suivi===k?s.text:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                      <span style={{ width:7,height:7,borderRadius:'50%',background:s.dot,display:'inline-block' }}/>{s.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Commentaire */}
-              <div style={{ marginBottom:14 }}>
-                <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
-                <div style={{ display:'flex',gap:4,marginBottom:4 }}>
-                  {[
-                    { label:'G', title:'Gras', before:'**', after:'**', style:{ fontWeight:800 } },
-                    { label:'I', title:'Italique', before:'*', after:'*', style:{ fontStyle:'italic' } },
-                    { label:'S', title:'Souligné', before:'__', after:'__', style:{ textDecoration:'underline' } },
-                  ].map(({ label, title, before, after, style: btnStyle }) => (
-                    <button key={label} type="button" title={title}
-                      onMouseDown={e => {
-                        e.preventDefault();
-                        const el = textareaRef.current;
-                        if (!el) return;
-                        const start = el.selectionStart, end = el.selectionEnd;
-                        const text = form.commentaire || '';
-                        setForm(f => ({ ...f, commentaire: text.slice(0,start)+before+text.slice(start,end)+after+text.slice(end) }));
-                        setTimeout(() => { el.focus(); el.setSelectionRange(start+before.length, end+before.length); }, 0);
-                      }}
-                      style={{ ...btnStyle, padding:'4px 10px',border:`1px solid ${DA.border}`,borderRadius:6,background:'white',color:DA.black,fontSize:13,cursor:'pointer',userSelect:'none',minWidth:32 }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
-                  placeholder="Description détaillée…"
-                  style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',resize:'none',boxSizing:'border-box',fontFamily:'inherit',overflow:'hidden',lineHeight:1.65,minHeight:90 }}
-                  onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
-                {recording && (
-                  <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
-                    {interimText ? interimText + '…' : 'En écoute — parlez maintenant…'}
-                  </p>
-                )}
-                <button
-                  onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
-                  onPointerUp={() => { if (recording) stopDictaphone(); }}
-                  onPointerCancel={() => { if (recording) stopDictaphone(); }}
-                  style={{ marginTop:8,width:'100%',padding:'13px 16px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s' }}>
-                  <Ic n={recording ? 'spn' : 'mic'} s={17}/>
-                  {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
+                  </div>
+                ))}
+                <button onClick={() => gallRef.current.click()} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.border}`,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
+                  <Ic n="img" s={15}/><span style={{ fontSize:9,color:DA.grayL }}>Galerie</span>
                 </button>
-                {form.commentaire?.trim() && (
-                  <button onClick={fixSpelling} disabled={correcting}
-                    style={{ marginTop:6,width:'100%',padding:'9px 12px',borderRadius:8,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:12,fontWeight:600,cursor:'pointer',opacity: correcting ? 0.6 : 1 }}>
-                    {correcting ? <Ic n="spn" s={12}/> : <Ic n="chk" s={12}/>}
-                    {correcting ? 'Correction en cours…' : "Corriger avec l'IA"}
-                  </button>
-                )}
-                <IASug
-                  content={form.titre}
-                  commentaire={form.commentaire}
-                  onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
-                />
+                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
+                  <Ic n="cam" s={15}/><span style={{ fontSize:9,color:DA.red,fontWeight:700 }}>Photo</span>
+                </button>
               </div>
-
-              {/* Photos */}
-              {photoGrid}
-
-              {/* Plan */}
-              <button onClick={() => setShowPlan(true)}
-                style={{ width:'100%',border:`1px solid ${planBg?DA.red:DA.border}`,borderRadius:10,padding:10,fontSize:13,background:planBg?DA.redL:'white',color:planBg?DA.red:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:14,cursor:'pointer' }}>
-                <Ic n="map" s={15}/>
-                {planBg ? 'Consulter le plan de la zone' : 'Aucun plan pour cette zone'}
-                {planAnnotations?.paths?.length > 0 && (
-                  <span style={{ marginLeft:'auto',fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 8px' }}>{planAnnotations.paths.length} annot.</span>
-                )}
-              </button>
-
-              {compressing && (
-                <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8,marginBottom:12 }}>
-                  <Ic n="spn" s={13}/>
-                  <span style={{ fontSize:12,color:'#15803D',fontWeight:600 }}>Traitement des photos…</span>
+            ) : (
+              <div style={{ display:'grid',gridTemplateColumns:'1fr 1fr',gap:8 }}>
+                <div onClick={() => gallRef.current.click()} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.border}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.grayXL }}>
+                  <Ic n="img" s={20}/><span style={{ fontSize:11,color:DA.grayL }}>Galerie</span>
                 </div>
-              )}
+                <div onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
+                  <Ic n="cam" s={20}/><span style={{ fontSize:11,color:DA.red }}>Prendre photo</span>
+                </div>
+              </div>
+            )}
+          </div>
 
-              <button onClick={handleSave} disabled={!form.titre || compressing}
-                style={{ width:'100%',background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:14,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed' }}>
-                Enregistrer l'observation
-              </button>
-            </>
+          {compressing && (
+            <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#F0FDF4',border:'1px solid #86EFAC',borderRadius:8,marginBottom:12 }}>
+              <Ic n="spn" s={13}/>
+              <span style={{ fontSize:12,color:'#15803D',fontWeight:600 }}>Traitement des photos…</span>
+            </div>
           )}
+
+          {/* Plan + Enregistrer */}
+          <div style={{ display:'flex',gap:8,alignItems:'stretch' }}>
+            <button onClick={() => setShowPlan(true)}
+              style={{ border:`1px solid ${planBg?DA.red:DA.border}`,borderRadius:10,padding:'12px 14px',fontSize:13,background:planBg?DA.redL:'white',color:planBg?DA.red:DA.gray,display:'flex',alignItems:'center',gap:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap' }}>
+              <Ic n="map" s={15}/>
+              {planBg ? 'Plan' : 'Plan (vide)'}
+              {planAnnotations?.paths?.length > 0 && (
+                <span style={{ fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 7px',border:`1px solid #FECACA` }}>{planAnnotations.paths.length}</span>
+              )}
+            </button>
+            <button onClick={handleSave} disabled={!form.titre || compressing}
+              style={{ flex:1,background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed' }}>
+              Enregistrer l'observation
+            </button>
+          </div>
+
         </div>
       </div>
     </div>
