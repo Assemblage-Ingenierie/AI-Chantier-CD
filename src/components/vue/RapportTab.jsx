@@ -81,6 +81,11 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
+  const [panelW, setPanelW] = useState(() => {
+    const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
+    return saved >= 220 && saved <= 600 ? saved : 300;
+  });
+  const dragRef = useRef(null);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
 
@@ -89,6 +94,23 @@ export default function RapportTab({ projet, onUpdate }) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  const startDrag = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelW;
+    const onMove = (ev) => {
+      const newW = Math.min(600, Math.max(220, startW + ev.clientX - startX));
+      setPanelW(newW);
+      localStorage.setItem('chantierai_panel_w', String(newW));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const onUpdateItem = (locId, itemId, updatedItem) => {
     onUpdate({
@@ -125,7 +147,7 @@ export default function RapportTab({ projet, onUpdate }) {
           locNom:  'zone'     in ov ? ov.zone     : (loc.nom          || ''),
           titre:   'titre'    in ov ? ov.titre    : (i.titre           || ''),
           urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence        || 'basse'),
-          solution:'solution' in ov ? ov.solution : (i.commentaire    || ''),
+          solution:'solution' in ov ? ov.solution : '',
         };
       })
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
@@ -240,7 +262,7 @@ export default function RapportTab({ projet, onUpdate }) {
 
       {/* ── Panneau gauche : paramètres ── */}
       {panelOpen && (
-      <div style={{ width: isMobile ? '100%' : 272, borderRight:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
+      <div style={{ width: isMobile ? '100%' : panelW, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
 
         {/* Bouton retour — visible uniquement sur mobile */}
         {isMobile && (
@@ -513,6 +535,17 @@ export default function RapportTab({ projet, onUpdate }) {
         </div>
 
       </div>
+      )}
+
+      {/* ── Poignée de redimensionnement ── */}
+      {panelOpen && !isMobile && (
+        <div
+          onMouseDown={startDrag}
+          style={{ width:5, flexShrink:0, cursor:'col-resize', background:'transparent', borderRight:`1px solid ${DA.border}`, position:'relative', zIndex:5 }}
+          title="Glisser pour redimensionner"
+        >
+          <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:3, height:32, borderRadius:2, background:DA.border }}/>
+        </div>
       )}
 
       {/* ── Panneau droit : aperçu A4 ── */}

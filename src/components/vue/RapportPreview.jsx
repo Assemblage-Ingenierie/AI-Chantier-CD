@@ -661,7 +661,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         locNom:  'zone'     in ov ? ov.zone     : (loc.nom       || ''),
         titre:   'titre'    in ov ? ov.titre    : (i.titre        || ''),
         urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence     || 'basse'),
-        solution:'solution' in ov ? ov.solution : (i.commentaire || ''),
+        solution:'solution' in ov ? ov.solution : '',
       };
     })
   ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
