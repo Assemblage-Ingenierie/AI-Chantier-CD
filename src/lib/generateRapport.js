@@ -20,7 +20,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1) {
       cv.height = img.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      const sizeScale = Math.max(1, cv.width / 700) * annotScale;
+      const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
       drawAnnotationPaths(ctx, paths, sizeScale);
       resolve(cv.toDataURL('image/png'));
     };

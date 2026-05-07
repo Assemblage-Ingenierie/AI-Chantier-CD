@@ -358,12 +358,12 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
         {/* Rangée 1 : outils + undo + sauvegarder */}
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:9,flexShrink:0 }}>
+          <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,flexShrink:0 }}>
             {[
-              { k:'pen',    n:'pen'  },
-              { k:'eraser', n:'eras' },
-              { k:'text',   n:'txt'  },
-              { k:'symbol', n:'sym'  },
+              { k:'pen',    n:'pen',  lbl:'Dessin'  },
+              { k:'eraser', n:'eras', lbl:'Gomme'   },
+              { k:'text',   n:'txt',  lbl:'Texte'   },
+              { k:'symbol', n:'sym',  lbl:'Symbole' },
             ].map(t => (
               <button key={t.k}
                 onClick={() => {
@@ -372,25 +372,33 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
                   if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
                   if (t.k !== 'viewpoint') setActivePh(null);
                 }}
-                style={{ padding:'7px 9px',borderRadius:7,background:tool===t.k?DA.red:'transparent',color:tool===t.k?'white':'#aaa',transition:'all 0.15s',lineHeight:0 }}>
-                <Ic n={t.n} s={16}/>
+                style={{ padding:'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                  color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:52 }}>
+                <Ic n={t.n} s={22}/>
+                <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
               </button>
             ))}
           </div>
           <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
             <button onClick={onClose}
-              style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}
+              style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:44 }}
               title="Annuler">
-              <Ic n="x" s={16}/>
+              <Ic n="x" s={20}/>
+              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>
             </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
-              style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}>
-              <Ic n="und" s={16}/>
+              style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:44 }}
+              title="Annuler dernière action">
+              <Ic n="und" s={20}/>
+              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
             </button>
             <button onClick={() => {
               const cv = cvRef.current;
               if (!cv || !bgRef.current) { onSave(paths, null); onClose(); return; }
-              // Exporter à max 1400px avec des traits épais visibles en miniature
+              // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
               const EW = Math.min(cv.width, 1400);
               const EH = Math.round(cv.height * EW / cv.width);
               const ec = document.createElement('canvas');
@@ -399,35 +407,49 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
               ectx.drawImage(bgRef.current, 0, 0, EW, EH);
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
-              drawAnnotationPaths(ectx, paths, exportSizeMultiplier * annotScale);
+              // Scale export = display scale (cv.width/clientWidth*0.5) pour cohérence
+              const exportScale = cv.clientWidth > 0
+                ? (cv.width / cv.clientWidth) * 0.5 * annotScale
+                : exportSizeMultiplier * annotScale;
+              drawAnnotationPaths(ectx, paths, exportScale);
               ectx.restore();
               onSave(paths, ec.toDataURL('image/jpeg', 0.88));
               onClose();
             }}
-              style={{ padding:'7px 14px',borderRadius:8,background:DA.red,color:'white',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap' }}>
-              <Ic n="chk" s={14}/> Sauvegarder
+              style={{ padding:'8px 14px',borderRadius:8,background:DA.red,color:'white',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4 }}>
+              <Ic n="chk" s={20}/>
+              <span style={{ fontSize:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>Sauvegarder</span>
             </button>
           </div>
         </div>
 
         {/* Rangée 2 : couleurs + tailles */}
-        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          <div style={{ display:'flex',gap:5,flexShrink:0 }}>
+        <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
+          <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             {ANNOT_COLORS.map(cl => (
               <button key={cl} onClick={() => {
                 setColor(cl);
                 if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,color:cl} : p));
               }}
-                style={{ width:22,height:22,borderRadius:'50%',background:cl,border:`2.5px solid ${color===cl?'white':'transparent'}`,cursor:'pointer',flexShrink:0,transition:'border-color 0.1s' }}/>
+                style={{ width:26,height:26,borderRadius:'50%',background:cl,
+                  border:`3px solid ${color===cl?'white':'transparent'}`,
+                  boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',
+                  cursor:'pointer',flexShrink:0,transition:'all 0.1s' }}/>
             ))}
           </div>
-          <div style={{ marginLeft:4,display:'flex',alignItems:'center',gap:6,flexShrink:0 }}>
+          <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+            <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3 }}>ÉPAISSEUR</span>
             {[1,3,6].map(sz => (
               <button key={sz} onClick={() => {
                 setSize(sz);
                 if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,size:sz} : p));
               }}
-                style={{ width:sz*2+10,height:sz*2+10,borderRadius:'50%',background:size===sz?'white':'#555',cursor:'pointer',flexShrink:0,transition:'background 0.1s' }}/>
+                style={{ width:sz*3+14,height:sz*3+14,borderRadius:'50%',
+                  background:size===sz?'white':'#555',
+                  border:`2px solid ${size===sz?'white':'#444'}`,
+                  cursor:'pointer',flexShrink:0,transition:'background 0.1s',
+                  display:'flex',alignItems:'center',justifyContent:'center' }}/>
             ))}
           </div>
         </div>

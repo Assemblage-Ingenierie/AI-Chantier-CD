@@ -232,7 +232,8 @@ export async function loadProjectPhotos(itemIds) {
     const full = await sb.from('aichantier_item_photos')
       .select('id,item_id,name,storage_url,annotated_storage_url,annotations,sort_order')
       .in('item_id', itemIds).order('sort_order');
-    if (full.error?.code === '42703') {
+    const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
+    if (isColErr(full.error)) {
       hasAnnotCols = false;
       const basic = await sb.from('aichantier_item_photos')
         .select('id,item_id,name,storage_url,sort_order')
@@ -651,7 +652,8 @@ async function saveRemote(ps, dirtyIds = null) {
     }
     if (allPhotoRows.length > 0) {
       const { error } = await sb.from('aichantier_item_photos').insert(allPhotoRows);
-      if (error?.code === '42703') {
+      const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
+      if (isAnnotColErr(error)) {
         // Annotation columns not yet created — retry without them
         const stripped = allPhotoRows.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
         const { error: e2 } = await sb.from('aichantier_item_photos').insert(stripped);

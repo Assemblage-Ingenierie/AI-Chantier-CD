@@ -181,7 +181,8 @@ function buildPages(allBlocks, ppl, breaks, heights) {
 
 // ── Sous-composants ────────────────────────────────────────────────────────
 
-function BreakControl({ id, active, onToggle }) {
+// BreakControl — shown at zone boundaries WITHIN a page (suggestions + active removals)
+function BreakControl({ id, active, onToggle, zoneName }) {
   const [hover, setHover] = useState(false);
 
   if (active) {
@@ -190,10 +191,10 @@ function BreakControl({ id, active, onToggle }) {
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
         style={{ margin:'6px -9px', display:'flex', alignItems:'center', gap:10, padding:'8px 14px',
           background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
-          borderTop:`2px solid rgba(255,255,255,0.2)`, borderBottom:`2px solid rgba(255,255,255,0.2)` }}>
+          borderTop:'2px solid rgba(255,255,255,0.2)', borderBottom:'2px solid rgba(255,255,255,0.2)' }}>
         <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
         <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
-          Saut de page actif — cliquer pour annuler
+          Saut de page actif{zoneName ? ` avant « ${zoneName} »` : ''} — cliquer pour annuler
         </span>
         <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
           background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
@@ -213,12 +214,34 @@ function BreakControl({ id, active, onToggle }) {
         cursor:'pointer', userSelect:'none', transition:'background 0.1s' }}>
       <span style={{ fontSize:12, color: hover ? DA.red : '#d08080', lineHeight:1 }}>✂</span>
       <span style={{ fontSize:9, fontWeight:700, color: hover ? DA.red : '#c08080', flex:1 }}>
-        Couper ici — insérer un saut de page
+        {zoneName ? `Forcer une nouvelle page avant « ${zoneName} »` : 'Couper ici — insérer un saut de page'}
       </span>
       <span style={{ fontSize:8, color: hover ? DA.red : '#d0a0a0',
         background: hover ? '#ffe0e0' : '#fdf0f0', border:`1px solid ${hover ? '#fca5a5' : '#f0d0d0'}`,
         borderRadius:3, padding:'1px 6px', whiteSpace:'nowrap' }}>
-        ⊕ Nouvelle page ici
+        ⊕ Nouvelle page
+      </span>
+    </div>
+  );
+}
+
+// TopBreakControl — shown at the TOP of a page when its first block has a forced break
+// Allows users to remove the break directly from within the page
+function TopBreakControl({ id, zoneName, onToggle }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div onClick={() => onToggle(id)}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ margin:`0 -9px ${6}px`, display:'flex', alignItems:'center', gap:10, padding:'7px 14px',
+        background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
+        borderBottom:'2px solid rgba(255,255,255,0.2)' }}>
+      <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
+      <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
+        Saut de page forcé{zoneName ? ` avant « ${zoneName} »` : ''} — cliquer pour retirer et laisser fluer naturellement
+      </span>
+      <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
+        background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
+        × Annuler le saut
       </span>
     </div>
   );
@@ -329,7 +352,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      const sizeScale = Math.max(1, cv.width / 700) * annotScale;
+      const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
       drawAnnotationPaths(ctx, paths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
@@ -904,6 +927,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
         {/* ── PAGES OBSERVATIONS ── */}
         {pages.map((pageBlocks, pi) => {
           const firstId     = pageBlocks[0]?.id;
+          const firstBlock  = pageBlocks[0];
           const firstForced = breaks.has(firstId);
           const pageNum     = pi + 2;
           return (
@@ -917,20 +941,32 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
               />
               <div ref={el => { pageRefs.current[pi + 1] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
+                  {/* Bouton de suppression en haut si ce saut de page est forcé */}
+                  {firstForced && firstBlock && (
+                    <TopBreakControl
+                      id={firstId}
+                      zoneName={firstBlock.type === 'zone' ? firstBlock.loc?.nom : firstBlock.item?.titre}
+                      onToggle={onTogglePageBreak}
+                    />
+                  )}
                   {pageBlocks.map((block, bi) => {
                     // Pas de BreakControl entre les morceaux d'un même item (cont/photos)
+                    // BreakControl uniquement aux frontières de zone (block.type === 'zone')
+                    // pour éviter le bruit visuel entre chaque item
                     const prevBlock = pageBlocks[bi - 1];
                     const isContinuation = bi > 0 && (
                       (block.item && prevBlock?.item?.id === block.item.id
                         && (block.mode === 'cont' || block.mode === 'photos'))
                       || prevBlock?.type === 'zone'
                     );
+                    const showBreakCtl = bi > 0 && !isContinuation && block.type === 'zone';
                     return (
                     <div key={block.id}>
-                      {bi > 0 && !isContinuation && (
+                      {showBreakCtl && (
                         <BreakControl
                           id={block.id}
                           active={breaks.has(block.id)}
+                          zoneName={block.loc?.nom}
                           onToggle={onTogglePageBreak}
                         />
                       )}
