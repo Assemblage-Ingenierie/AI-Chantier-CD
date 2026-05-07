@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
@@ -96,7 +96,7 @@ export const SYMBOLS = [
 ];
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
-export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7 }) {
+const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7 }, ref) {
   const cvRef    = useRef();
   const bgRef    = useRef(null);
   const vpStart  = useRef(null);
@@ -127,6 +127,28 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   useEffect(() => { vtRef.current = vt; }, [vt]);
   useEffect(() => { setVt({ z: 1, px: 0, py: 0 }); vtRef.current = { z: 1, px: 0, py: 0 }; }, [bgImage]);
+
+  // Exposer getAnnotation() pour auto-save depuis le parent (navigation entre photos)
+  useImperativeHandle(ref, () => ({
+    getAnnotation: () => {
+      const cv = cvRef.current;
+      if (!cv || !bgRef.current) return { paths, annotated: null };
+      const EW = Math.min(cv.width, 1400);
+      const EH = Math.round(cv.height * EW / cv.width);
+      const ec = document.createElement('canvas');
+      ec.width = EW; ec.height = EH;
+      const ectx = ec.getContext('2d');
+      ectx.drawImage(bgRef.current, 0, 0, EW, EH);
+      ectx.save();
+      ectx.scale(EW / cv.width, EH / cv.height);
+      const exportScale = cv.clientWidth > 0
+        ? (cv.width / cv.clientWidth) * 0.5 * annotScale
+        : exportSizeMultiplier * annotScale;
+      drawAnnotationPaths(ectx, paths, exportScale);
+      ectx.restore();
+      return { paths, annotated: ec.toDataURL('image/jpeg', 0.88) };
+    },
+  }), [paths, annotScale, exportSizeMultiplier]);
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
 
@@ -566,4 +588,6 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
       )}
     </div>
   );
-}
+});
+
+export default Annotator;
