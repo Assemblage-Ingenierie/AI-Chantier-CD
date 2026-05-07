@@ -227,31 +227,37 @@ export async function loadProjectPhotos(itemIds) {
   try {
     const sb = await getSupabase();
     const { data, error } = await sb.from('aichantier_item_photos')
-      .select('id,item_id,name,storage_url,sort_order').in('item_id', itemIds).order('sort_order');
+      .select('id,item_id,name,storage_url,annotated_storage_url,annotations,sort_order').in('item_id', itemIds).order('sort_order');
     if (error) { console.warn('loadProjectPhotos error:', error); return null; }
 
     const rows = (data ?? []).map(ph => ({
       ...ph,
-      _path: ph.storage_url ? extractPhotoPath(ph.storage_url) : null,
+      _path:          ph.storage_url          ? extractPhotoPath(ph.storage_url)          : null,
+      _annotatedPath: ph.annotated_storage_url ? extractPhotoPath(ph.annotated_storage_url) : null,
     }));
 
-    // Batch generate signed URLs (1 appel réseau pour toutes les photos)
-    const paths = rows.filter(r => r._path).map(r => r._path);
+    // Batch generate signed URLs pour photos ET composites annotés
+    const allPaths = [...new Set([
+      ...rows.filter(r => r._path).map(r => r._path),
+      ...rows.filter(r => r._annotatedPath).map(r => r._annotatedPath),
+    ])];
     const signedMap = {};
-    if (paths.length > 0) {
-      const { data: signed } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+    if (allPaths.length > 0) {
+      const { data: signed } = await sb.storage.from('photos').createSignedUrls(allPaths, 3600);
       for (const s of (signed ?? [])) {
         if (s.signedUrl) signedMap[s.path] = s.signedUrl;
       }
     }
 
     const mapped = rows.map(ph => ({
-      id:         ph.id,
-      item_id:    ph.item_id,
-      name:       ph.name,
-      data:       ph._path ? (signedMap[ph._path] ?? null) : null,
-      sort_order: ph.sort_order,
-      _legacy:    !ph.storage_url,
+      id:          ph.id,
+      item_id:     ph.item_id,
+      name:        ph.name,
+      data:        ph._path         ? (signedMap[ph._path]          ?? null) : null,
+      annotated:   ph._annotatedPath ? (signedMap[ph._annotatedPath] ?? null) : null,
+      annotations: ph.annotations   ?? null,
+      sort_order:  ph.sort_order,
+      _legacy:     !ph.storage_url,
     }));
     return groupBy(mapped, 'item_id');
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
@@ -392,7 +398,25 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       if (!storageUrl) continue;
       await sb.from('aichantier_item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
     }
-    result.push({ item_id: itemId, name: ph.name ?? '', storage_url: storageUrl, data: null, sort_order: pi });
+    // Sauvegarder le composite annoté dans Storage si présent
+    let annotatedUrl = ph.annotated_storage_url
+      ? (extractPhotoPath(ph.annotated_storage_url) ?? ph.annotated_storage_url)
+      : null;
+    if (!annotatedUrl && ph.annotated?.startsWith('data:')) {
+      annotatedUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, `${pi}_annot`, ph.name, ph.annotated);
+    } else if (!annotatedUrl && ph.annotated?.startsWith('http')) {
+      annotatedUrl = extractPhotoPath(ph.annotated) ?? null;
+    }
+
+    result.push({
+      item_id: itemId,
+      name: ph.name ?? '',
+      storage_url: storageUrl,
+      data: null,
+      sort_order: pi,
+      annotations: ph.annotations?.length ? ph.annotations : null,
+      annotated_storage_url: annotatedUrl ?? null,
+    });
   }
   return result;
 }
