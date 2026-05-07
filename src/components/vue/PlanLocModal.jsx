@@ -23,6 +23,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   if (showAnnot) return (
     <Annotator bgImage={planBg} savedPaths={annot?.paths || []}
       photos={zonePhotos}
+      exportSizeMultiplier={2}
       onSave={(p, e) => {
         const newAnnot = { paths: p, exported: e };
         onSave({ planBg, planData, planAnnotations: newAnnot });

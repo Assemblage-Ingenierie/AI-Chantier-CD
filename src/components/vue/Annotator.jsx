@@ -95,7 +95,8 @@ export const SYMBOLS = [
   { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
 ];
 
-export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos }) {
+// exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
+export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7 }) {
   const cvRef    = useRef();
   const bgRef    = useRef(null);
   const vpStart  = useRef(null);
@@ -398,8 +399,7 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
               ectx.drawImage(bgRef.current, 0, 0, EW, EH);
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
-              // sizeScale=7 → traits ~3px à 200px thumbnail
-              drawAnnotationPaths(ectx, paths, 7 * annotScale);
+              drawAnnotationPaths(ectx, paths, exportSizeMultiplier * annotScale);
               ectx.restore();
               onSave(paths, ec.toDataURL('image/jpeg', 0.88));
               onClose();

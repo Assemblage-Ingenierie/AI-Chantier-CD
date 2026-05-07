@@ -196,6 +196,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
         bgImage={loc?.planBg}
         savedPaths={modal.form.planAnnotations?.paths || []}
         photos={(modal.form.photos || []).filter(ph => ph.data)}
+        exportSizeMultiplier={2}
         onSave={(paths, exported) => {
           setModal({ t:'item', locId:modal.locId, item:modal.form, savedForm:{ ...modal.form, planAnnotations:{ paths, exported } } });
         }}
