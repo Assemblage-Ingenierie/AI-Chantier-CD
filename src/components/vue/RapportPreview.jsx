@@ -764,23 +764,20 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 // Mesure le scrollRef (pas containerRef) pour inclure la largeur de la barre de défilement.
 // useLayoutEffect → mesure synchrone avant le premier paint, évite le flash.
 function usePreviewScale(scrollRef) {
-  const [info, setInfo] = useState({ scale: 1, cw: 0 });
+  const [scale, setScale] = useState(1);
   useLayoutEffect(() => {
     const update = () => {
       if (!scrollRef.current) return;
-      const cw = scrollRef.current.clientWidth; // clientWidth exclut la scrollbar ✓
-      const ratio = (cw - 32) / PW;
-      setInfo(prev => {
-        const scale = ratio < 1 ? ratio : 1;
-        return (prev.scale === scale && prev.cw === cw) ? prev : { scale, cw };
-      });
+      const cw = scrollRef.current.clientWidth;
+      const next = Math.min(1, (cw - 32) / PW);
+      setScale(prev => prev === next ? prev : next);
     };
     update();
     const ro = new ResizeObserver(update);
     if (scrollRef.current) ro.observe(scrollRef.current);
     return () => ro.disconnect();
   }, [scrollRef]);
-  return info;
+  return scale;
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
@@ -831,12 +828,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
   // scrollRef passed so we measure the actual scrollable area (excludes scrollbar width)
-  const { scale, cw } = usePreviewScale(scrollRef);
-  // translateX centers the PW element inside the scroll area without touching flex alignment
-  const tx = cw > 0 ? Math.max(0, (cw - PW * scale) / 2) : 0;
-  const pagesTransform = scale < 1
-    ? `translateX(${tx}px) scale(${scale})`
-    : tx > 0 ? `translateX(${tx}px)` : 'none';
+  const scale = usePreviewScale(scrollRef);
 
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
   const hasTableau    = includeTableauRecap && recapItems.length > 0;
@@ -917,9 +909,9 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'block', paddingBottom:20, position:'relative' }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative' }}>
 
-        {/* ── Couche de mesure invisible — position:absolute la sort du flux flex pour ne pas causer de débordement horizontal ── */}
+        {/* ── Couche de mesure invisible ── */}
         <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
           <div style={{ width:CW, visibility:'hidden', pointerEvents:'none' }}>
             {allBlocks.map(block => (
@@ -934,8 +926,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             ))}
           </div>
         </div>
-        {/* Conteneur scalé — translateX centre géométriquement, indépendant du flex/scroll */}
-        <div style={{ width: PW, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top left', transform: pagesTransform }}>
+        {/* zoom CSS réduit visuellement ET en layout → margin:auto centre parfaitement */}
+        <div style={{ width: PW, margin:'0 auto', zoom: scale, display:'flex', flexDirection:'column', alignItems:'center' }}>
 
         {/* ── PAGE DE GARDE ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
