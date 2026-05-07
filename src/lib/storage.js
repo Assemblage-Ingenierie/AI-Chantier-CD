@@ -93,7 +93,7 @@ function slimLoc(l) {
 function toSlim(ps) {
   return ps.map(p => ({
     ...p,
-    photo: p.photo?.startsWith('http') ? null : p.photo,
+    photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
     planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })),
     visites: (p.visites || []).map(v => ({
       ...v,
@@ -286,29 +286,28 @@ export async function hydrateChantierPhotos(chantierIds) {
   if (!chantierIds.length) return {};
   try {
     const sb = await getSupabase();
+    // Fetch all photo paths from DB in one query
+    const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', chantierIds);
+    if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); return {}; }
+
+    const paths = [];
+    const pathToId = {};
     const result = {};
-    for (let i = 0; i < chantierIds.length; i += 5) {
-      const batch = chantierIds.slice(i, i + 5);
-      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
-      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); continue; }
-      const paths = [];
-      const pathToId = {};
-      for (const row of (data ?? [])) {
-        if (!row.photo) continue;
-        if (row.photo.startsWith('data:')) { result[row.id] = row.photo; continue; }
-        const path = extractPhotoPath(row.photo) ?? row.photo;
-        if (!pathToId[path]) { paths.push(path); }
-        pathToId[path] = row.id;
-      }
-      if (!paths.length) continue;
-      const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
-      if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); continue; }
-      // Use index-based mapping to avoid s.path encoding mismatches
-      (signed ?? []).forEach((s, idx) => {
-        const id = pathToId[paths[idx]];
-        if (s.signedUrl && id) result[id] = s.signedUrl;
-      });
+    for (const row of (data ?? [])) {
+      if (!row.photo) continue;
+      if (row.photo.startsWith('data:')) { result[row.id] = row.photo; continue; }
+      const path = extractPhotoPath(row.photo) ?? row.photo;
+      if (!pathToId[path]) paths.push(path);
+      pathToId[path] = row.id;
     }
+    if (!paths.length) return result;
+
+    const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+    if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); return result; }
+    (signed ?? []).forEach((s, idx) => {
+      const id = pathToId[paths[idx]];
+      if (s.signedUrl && id) result[id] = s.signedUrl;
+    });
     return result;
   } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
 }
@@ -831,33 +830,47 @@ export async function recoverPhotosFromStorage() {
   try {
     const { data: chantiers, error: cErr } = await sb.from('aichantier_chantiers').select('id,nom');
     if (cErr) throw cErr;
+
+    // Charger tous les item IDs valides et toutes les storage_url déjà en DB en une passe
+    const { data: allItems } = await sb.from('aichantier_localisation_items').select('id');
+    const validItemIds = new Set((allItems ?? []).map(i => i.id));
+    const { data: existingRows } = await sb.from('aichantier_item_photos').select('storage_url');
+    const existingPaths = new Set((existingRows ?? []).map(r => r.storage_url));
+
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
     for (const chantier of (chantiers ?? [])) {
       const slug = `${slugify(chantier.nom)}_${String(chantier.id).slice(0, 8)}`;
-      const { data: topLevel } = await sb.storage.from('photos').list(slug);
+      const { data: topLevel, error: listErr } = await sb.storage.from('photos').list(slug);
+      if (listErr) { errs.push(`list ${slug}: ${listErr.message}`); continue; }
+
       for (const entry of (topLevel ?? [])) {
-        if (entry.id !== null) continue; // skip files, only folders
+        // Les dossiers virtuels ont metadata:null ; les fichiers ont metadata avec size
+        const isFolder = !entry.metadata;
+        if (!isFolder) continue;
         if (entry.name === 'cover') continue;
         const itemId = entry.name;
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemId)) continue;
-        // Vérifier que l'item existe encore en DB
-        const { count: ic } = await sb.from('aichantier_localisation_items').select('id', { count: 'exact', head: true }).eq('id', itemId);
-        if (!ic) continue;
-        // Récupérer les photos déjà connues pour cet item
-        const { data: existingPhotos } = await sb.from('aichantier_item_photos').select('storage_url').eq('item_id', itemId);
-        const existingPaths = new Set((existingPhotos ?? []).map(p => p.storage_url));
-        // Lister les fichiers dans ce dossier
-        const { data: files } = await sb.storage.from('photos').list(`${slug}/${itemId}`);
-        let si = (existingPhotos ?? []).length;
+        if (!UUID_RE.test(itemId)) continue;
+        if (!validItemIds.has(itemId)) continue; // item supprimé de DB
+
+        const { data: files, error: fErr } = await sb.storage.from('photos').list(`${slug}/${itemId}`);
+        if (fErr) { errs.push(`list ${slug}/${itemId}: ${fErr.message}`); continue; }
+
+        // Compter les photos déjà présentes pour cet item (pour sort_order)
+        const { count: existingCount } = await sb.from('aichantier_item_photos')
+          .select('id', { count: 'exact', head: true }).eq('item_id', itemId);
+        let si = existingCount ?? 0;
+
         for (const file of (files ?? [])) {
-          if (!file.name || file.id === null) continue; // skip sub-folders
-          if (file.name.includes('_annot')) continue; // skip annotation composites
+          if (!file.name || !file.metadata) continue; // skip dossiers
+          if (file.name.includes('_annot')) continue; // skip composites annotés
           const storagePath = `${slug}/${itemId}/${file.name}`;
           if (existingPaths.has(storagePath)) { si++; continue; }
           const { error: iErr } = await sb.from('aichantier_item_photos').insert({
             item_id: itemId, name: file.name, storage_url: storagePath, sort_order: si++,
           });
           if (iErr) errs.push(`${storagePath}: ${iErr.message}`);
-          else recovered++;
+          else { recovered++; existingPaths.add(storagePath); }
         }
       }
     }
