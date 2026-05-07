@@ -122,7 +122,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
       <div onClick={() => setLightbox(null)}
         style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.96)',zIndex:9999,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12 }}>
         <img src={lightbox.photos[lightbox.idx].annotated || lightbox.photos[lightbox.idx].data} alt=""
-          style={{ maxWidth:'100%',maxHeight:'80vh',objectFit:'contain',borderRadius:6 }}/>
+          style={{ maxWidth:'100%',maxHeight:'72vh',objectFit:'contain',borderRadius:6 }}/>
         {lightbox.photos.length > 1 && (
           <div style={{ display:'flex',gap:6,flexWrap:'wrap',justifyContent:'center',padding:'0 16px' }}
             onClick={e => e.stopPropagation()}>
@@ -133,7 +133,21 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
             ))}
           </div>
         )}
-        <p style={{ color:'rgba(255,255,255,0.35)',fontSize:11,margin:0 }}>Toucher pour fermer</p>
+        <div style={{ display:'flex',alignItems:'center',gap:12 }} onClick={e => e.stopPropagation()}>
+          {onAnnotatePhoto && lightbox.item && (
+            <button
+              onClick={() => {
+                const ph = lightbox.photos[lightbox.idx];
+                const realIdx = (lightbox.item.photos || []).indexOf(ph);
+                setLightbox(null);
+                onAnnotatePhoto(lightbox.item, realIdx >= 0 ? realIdx : lightbox.idx);
+              }}
+              style={{ background:DA.red,color:'white',border:'none',borderRadius:8,padding:'9px 16px',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:6,cursor:'pointer' }}>
+              <Ic n="pen" s={14}/> Annoter cette photo
+            </button>
+          )}
+          <p style={{ color:'rgba(255,255,255,0.35)',fontSize:11,margin:0 }}>Toucher ailleurs pour fermer</p>
+        </div>
       </div>
     )}
 
@@ -220,7 +234,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                           return (
                           <div key={pi} style={{ position:'relative', flexShrink:0 }}>
                             <img src={ph.annotated || ph.data} alt=""
-                              onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
+                              onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi, item }); }}
                               style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block' }}/>
                             {!isDesktop && pi === shown.length - 1 && extra > 0 && (
                               <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}

@@ -386,7 +386,24 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
               style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}>
               <Ic n="und" s={16}/>
             </button>
-            <button onClick={() => { const cv = cvRef.current; onSave(paths, cv ? cv.toDataURL('image/png') : null); onClose(); }}
+            <button onClick={() => {
+              const cv = cvRef.current;
+              if (!cv || !bgRef.current) { onSave(paths, null); onClose(); return; }
+              // Exporter à max 1400px avec des traits épais visibles en miniature
+              const EW = Math.min(cv.width, 1400);
+              const EH = Math.round(cv.height * EW / cv.width);
+              const ec = document.createElement('canvas');
+              ec.width = EW; ec.height = EH;
+              const ectx = ec.getContext('2d');
+              ectx.drawImage(bgRef.current, 0, 0, EW, EH);
+              ectx.save();
+              ectx.scale(EW / cv.width, EH / cv.height);
+              // sizeScale=7 → traits ~3px à 200px thumbnail
+              drawAnnotationPaths(ectx, paths, 7 * annotScale);
+              ectx.restore();
+              onSave(paths, ec.toDataURL('image/jpeg', 0.88));
+              onClose();
+            }}
               style={{ padding:'7px 14px',borderRadius:8,background:DA.red,color:'white',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap' }}>
               <Ic n="chk" s={14}/> Sauvegarder
             </button>
