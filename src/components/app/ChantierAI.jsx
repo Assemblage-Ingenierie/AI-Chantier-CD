@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
@@ -23,6 +23,34 @@ export default function ChantierAI({ profile, onLogout }) {
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [undoToast, setUndoToast] = useState(null);
   const undoToastRef = useRef(null);
+
+  // --- Navigation arrière (swipe iOS / bouton Android) ---
+  const ouvertRef = useRef(ouvert);
+  const selectedVisiteIdRef = useRef(selectedVisiteId);
+  useEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
+  useEffect(() => { selectedVisiteIdRef.current = selectedVisiteId; }, [selectedVisiteId]);
+  const childBackHandler = useRef(null); // fn() → true si le modal a géré le retour
+
+  const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
+
+  // Sentinel : sans entrée en plus, le premier swipe sort de l'appli
+  useEffect(() => { history.pushState({ pwaSentinel: true }, ''); }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      if (childBackHandler.current?.()) {
+        // modal géré
+      } else if (selectedVisiteIdRef.current) {
+        setSelectedVisiteId(null);
+      } else if (ouvertRef.current) {
+        setOuvert(null);
+      }
+      // Toujours re-push → impossible de quitter l'app par swipe accidentel
+      history.pushState({ pwaSentinel: true }, '');
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []); // refs, pas de dépendances
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -130,6 +158,7 @@ export default function ChantierAI({ profile, onLogout }) {
             visiteId={selectedVisiteId}
             onBack={() => setSelectedVisiteId(null)}
             onUpdate={upd => updateProjet(ouvert.id, upd)}
+            setBackHandler={setBackHandler}
           />
         ) : ouvert ? (
           <VisitesScreen

@@ -18,11 +18,30 @@ const VISIT_FIELDS = new Set([
   'includeConclusion','conclusion',
 ]);
 
-export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
+export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackHandler }) {
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
   const [modal, setModal] = useState(null);
+  const modalRef = useRef(null);
+  useEffect(() => { modalRef.current = modal; }, [modal]);
+
+  // Enregistre le handler "retour arrière" pour les modals (swipe iOS / bouton Android)
+  useEffect(() => {
+    if (!setBackHandler) return;
+    setBackHandler(() => {
+      const m = modalRef.current;
+      if (!m) return false;
+      if (m.t === 'annotate') {
+        setModal({ t:'item', locId:m.locId, item:m.form, savedForm:m.form });
+      } else {
+        setModal(null);
+      }
+      return true;
+    });
+    return () => setBackHandler(null);
+  }, [setBackHandler]);
+
   const [editingVisiteLabel, setEditingVisiteLabel] = useState(null);
   const [visitLabelVal, setVisitLabelVal] = useState('');
 
