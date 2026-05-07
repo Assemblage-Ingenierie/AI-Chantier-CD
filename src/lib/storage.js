@@ -821,6 +821,36 @@ function showSyncWarning(firstError) {
   setTimeout(() => { if (document.getElementById(id)) el.remove(); }, 15000);
 }
 
+// Supprime les doublons de photos (même item_id + storage_url) — garde le plus ancien.
+// Retourne le nombre de doublons supprimés.
+export async function cleanupDuplicatePhotos() {
+  const sb = await getSupabase();
+  let deleted = 0;
+  try {
+    // Charger tous les ids + clés de déduplication
+    const { data: rows, error } = await sb.from('aichantier_item_photos')
+      .select('id,item_id,storage_url,sort_order').order('sort_order');
+    if (error) throw error;
+    const seen = new Map(); // "item_id|storage_url" → premier id vu
+    const toDelete = [];
+    for (const row of (rows ?? [])) {
+      if (!row.storage_url) continue;
+      const key = `${row.item_id}|${row.storage_url}`;
+      if (seen.has(key)) { toDelete.push(row.id); }
+      else { seen.set(key, row.id); }
+    }
+    if (toDelete.length > 0) {
+      // Supprimer par batch de 100
+      for (let i = 0; i < toDelete.length; i += 100) {
+        const batch = toDelete.slice(i, i + 100);
+        await sb.from('aichantier_item_photos').delete().in('id', batch);
+        deleted += batch.length;
+      }
+    }
+  } catch (e) { console.warn('cleanupDuplicatePhotos error:', e); }
+  return deleted;
+}
+
 // Récupère les photos perdues : liste les fichiers existants dans Storage et recrée
 // les enregistrements DB manquants. Retourne { recovered, errors }.
 export async function recoverPhotosFromStorage() {
@@ -830,13 +860,8 @@ export async function recoverPhotosFromStorage() {
   try {
     const { data: chantiers, error: cErr } = await sb.from('aichantier_chantiers').select('id,nom');
     if (cErr) throw cErr;
-
-    // Charger tous les item IDs valides et toutes les storage_url déjà en DB en une passe
     const { data: allItems } = await sb.from('aichantier_localisation_items').select('id');
     const validItemIds = new Set((allItems ?? []).map(i => i.id));
-    const { data: existingRows } = await sb.from('aichantier_item_photos').select('storage_url');
-    const existingPaths = new Set((existingRows ?? []).map(r => r.storage_url));
-
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
     for (const chantier of (chantiers ?? [])) {
@@ -845,32 +870,32 @@ export async function recoverPhotosFromStorage() {
       if (listErr) { errs.push(`list ${slug}: ${listErr.message}`); continue; }
 
       for (const entry of (topLevel ?? [])) {
-        // Les dossiers virtuels ont metadata:null ; les fichiers ont metadata avec size
         const isFolder = !entry.metadata;
         if (!isFolder) continue;
         if (entry.name === 'cover') continue;
         const itemId = entry.name;
         if (!UUID_RE.test(itemId)) continue;
-        if (!validItemIds.has(itemId)) continue; // item supprimé de DB
+        if (!validItemIds.has(itemId)) continue;
 
         const { data: files, error: fErr } = await sb.storage.from('photos').list(`${slug}/${itemId}`);
         if (fErr) { errs.push(`list ${slug}/${itemId}: ${fErr.message}`); continue; }
 
-        // Compter les photos déjà présentes pour cet item (pour sort_order)
-        const { count: existingCount } = await sb.from('aichantier_item_photos')
-          .select('id', { count: 'exact', head: true }).eq('item_id', itemId);
-        let si = existingCount ?? 0;
+        // Vérification par item pour éviter la limite PostgREST 1000 lignes du set global
+        const { data: itemPhotos } = await sb.from('aichantier_item_photos')
+          .select('storage_url').eq('item_id', itemId);
+        const itemPaths = new Set((itemPhotos ?? []).map(p => p.storage_url));
+        let si = itemPhotos?.length ?? 0;
 
         for (const file of (files ?? [])) {
-          if (!file.name || !file.metadata) continue; // skip dossiers
-          if (file.name.includes('_annot')) continue; // skip composites annotés
+          if (!file.name || !file.metadata) continue;
+          if (file.name.includes('_annot')) continue;
           const storagePath = `${slug}/${itemId}/${file.name}`;
-          if (existingPaths.has(storagePath)) { si++; continue; }
+          if (itemPaths.has(storagePath)) { si++; continue; }
           const { error: iErr } = await sb.from('aichantier_item_photos').insert({
             item_id: itemId, name: file.name, storage_url: storagePath, sort_order: si++,
           });
           if (iErr) errs.push(`${storagePath}: ${iErr.message}`);
-          else { recovered++; existingPaths.add(storagePath); }
+          else { recovered++; itemPaths.add(storagePath); }
         }
       }
     }
