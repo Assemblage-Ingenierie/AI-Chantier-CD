@@ -6,6 +6,7 @@ import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
+import RichTextArea from '../ui/RichTextArea.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -34,6 +35,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [editorSyncKey, setEditorSyncKey] = useState(0);
+  const bumpSync = () => setEditorSyncKey(k => k + 1);
   const [analyzeError, setAnalyzeError] = useState('');
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
@@ -42,16 +45,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
   const gallRef = useRef();
   const camRef = useRef();
-  const textareaRef = useRef();
-  const savedSelRef = useRef({ s: 0, e: 0 }); // dernière sélection connue (mobile-safe)
-
-  // Auto-grow textarea
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.max(el.scrollHeight, isDesktop ? 180 : 90) + 'px';
-  }, [form.commentaire]);
+  const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
   const recogRef       = useRef(null);
   const recordingRef   = useRef(false);
   const lastFinalIdx   = useRef(0);
@@ -138,6 +132,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           ...f,
           commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
         }));
+        bumpSync();
       }
     };
 
@@ -243,6 +238,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     const text = segs.map(s => s.type === 'eq' ? s.text : (s.active ? s.add : s.del)).join('');
     setForm(f => ({ ...f, commentaire: text }));
     setSpellDiff(null);
+    bumpSync();
   };
 
   const fixSpelling = async () => {
@@ -379,6 +375,7 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
         commentaire: parsed.commentaire || f.commentaire,
         urgence:    parsed.urgence   || f.urgence,
       }));
+      bumpSync();
     } catch (e) {
       setAnalyzeError(e.message || 'Erreur analyse');
     } finally {
@@ -428,9 +425,9 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
   );
 
   const FMT_BTNS = [
-    { label:'G', title:'Gras',     before:'**', after:'**', fw:800 },
-    { label:'I', title:'Italique', before:'*',  after:'*',  fi:'italic' },
-    { label:'S', title:'Souligné', before:'__', after:'__', td:'underline' },
+    { label:'G', title:'Gras (Ctrl+B)',      cmd:'bold',      fw:800 },
+    { label:'I', title:'Italique (Ctrl+I)',  cmd:'italic',    fi:'italic' },
+    { label:'S', title:'Souligné (Ctrl+U)',  cmd:'underline', td:'underline' },
   ];
   const ALIGN_BTNS = [
     { k:'left',    sym:'←', title:'Aligner à gauche' },
@@ -438,30 +435,6 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
     { k:'right',   sym:'→', title:'Aligner à droite' },
     { k:'justify', sym:'☰', title:'Justifier' },
   ];
-
-  const wrapSel = (before, after) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    // Sur mobile, tapper un bouton peut faire perdre le focus → restaurer la sélection sauvegardée
-    if (document.activeElement !== el) {
-      el.focus();
-      el.setSelectionRange(savedSelRef.current.s, savedSelRef.current.e);
-    }
-    const s = el.selectionStart, e = el.selectionEnd;
-    const text = el.value;
-    const sel = text.slice(s, e);
-    // Toggle: if selection is already wrapped, unwrap it
-    if (sel.startsWith(before) && sel.endsWith(after)) {
-      const inner = sel.slice(before.length, sel.length - after.length);
-      const next = text.slice(0, s) + inner + text.slice(e);
-      setForm(f => ({ ...f, commentaire: next }));
-      setTimeout(() => { el.focus(); el.setSelectionRange(s, s + inner.length); }, 0);
-    } else {
-      const next = text.slice(0, s) + before + sel + after + text.slice(e);
-      setForm(f => ({ ...f, commentaire: next }));
-      setTimeout(() => { el.focus(); el.setSelectionRange(s + before.length, e + before.length); }, 0);
-    }
-  };
 
   // Inputs fichiers (hidden)
   const fileInputs = (
@@ -542,10 +515,10 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
 
             {/* Toolbar : G/I/S + séparateur + alignements */}
-            <div style={{ display:'flex',gap:3,marginBottom:6,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
+            <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
               {FMT_BTNS.map(btn => (
                 <button key={btn.label} type="button" title={btn.title}
-                  onMouseDown={e => { e.preventDefault(); wrapSel(btn.before, btn.after); }}
+                  onMouseDown={e => { e.preventDefault(); document.execCommand(btn.cmd); textareaRef.current?.getEditor()?.focus(); }}
                   style={{ width:30,height:28,borderRadius:5,border:`1px solid ${DA.border}`,background:'white',color:DA.black,fontSize:13,fontWeight:btn.fw??400,fontStyle:btn.fi??'normal',textDecoration:btn.td??'none',cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
                   {btn.label}
                 </button>
@@ -553,7 +526,7 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
               <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
               {ALIGN_BTNS.map(a => (
                 <button key={a.k} type="button" title={a.title}
-                  onClick={() => setForm(f => ({ ...f, commentaireAlign: a.k }))}
+                  onMouseDown={e => { e.preventDefault(); setForm(f => ({ ...f, commentaireAlign: a.k })); }}
                   style={{ width:30,height:28,borderRadius:5,fontSize:14,cursor:'pointer',flexShrink:0,
                     border:`1.5px solid ${form.commentaireAlign===a.k ? DA.red : DA.border}`,
                     background: form.commentaireAlign===a.k ? DA.redL : 'white',
@@ -562,24 +535,19 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
                   {a.sym}
                 </button>
               ))}
-              <span style={{ marginLeft:'auto',fontSize:10,color:DA.grayL,fontStyle:'italic',whiteSpace:'nowrap' }}>
-                Ctrl+B / Ctrl+I / Ctrl+U
-              </span>
             </div>
 
-            <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
+            <RichTextArea
+              ref={textareaRef}
+              value={form.commentaire || ''}
+              syncKey={editorSyncKey}
+              onChange={val => setForm(f => ({ ...f, commentaire: val }))}
               placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
-              style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:'0 0 8px 8px',padding:'12px 14px',fontSize:15,outline:'none',resize:'vertical',boxSizing:'border-box',fontFamily:'inherit',lineHeight:1.7,minHeight: isDesktop ? 260 : 90,overflow:'auto',textAlign: form.commentaireAlign||'left' }}
-              onFocus={e => e.target.style.borderColor=DA.red}
-              onBlur={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; if (!recording) e.target.style.borderColor=DA.border; }}
-              onSelect={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; }}
-              onKeyUp={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; }}
-              onKeyDown={e => {
-                if (!e.ctrlKey && !e.metaKey) return;
-                if (e.key === 'b' || e.key === 'B') { e.preventDefault(); wrapSel('**','**'); }
-                else if (e.key === 'i' || e.key === 'I') { e.preventDefault(); wrapSel('*','*'); }
-                else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); wrapSel('__','__'); }
-              }}/>
+              textAlign={form.commentaireAlign || 'left'}
+              style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', fontSize:15, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
+              onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
+              onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
+            />
 
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
