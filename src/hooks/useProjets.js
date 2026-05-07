@@ -130,8 +130,8 @@ export function useProjets(onSyncStatus) {
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
 
-        // Inclure les projets dont le photo est une URL publique du bucket privé (cassée)
-        const needsSignedUrl = p => !p.photo || p.photo.startsWith('http');
+        // Tout photo non-base64 a besoin d'une signed URL (chemin relatif ou URL expirée)
+        const needsSignedUrl = p => !p.photo || !p.photo.startsWith('data:');
         const missingPhotoIds = allMerged.filter(needsSignedUrl).map(p => p.id);
         if (missingPhotoIds.length) {
           hydrateChantierPhotos(missingPhotoIds).then(photoMap => {

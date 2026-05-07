@@ -43,6 +43,7 @@ const RichTextArea = forwardRef(function RichTextArea(
 ) {
   const editorRef = useRef(null);
   const isComposing = useRef(false); // IME (Chinese, Japanese…)
+  const isTyping = useRef(false); // true seulement pendant la frappe active (pas simple focus)
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -58,19 +59,20 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (el.innerHTML !== html) el.innerHTML = html;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Si value change depuis l'extérieur (IA, dictaphone, correction) → resynchroniser
-  // syncKey incrémenté par le parent force la sync même si l'éditeur est focalisé
+  // Si value change depuis l'extérieur (IA, dictaphone, changement de visite) → resynchroniser
+  // syncKey incrémenté par le parent force la sync même si l'éditeur est en cours de frappe
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    if (document.activeElement === el && !syncKey) return;
+    if (isTyping.current && !syncKey) return;
     const html = normalizeToHtml(value);
-    if (el.innerHTML !== html) { el.innerHTML = html; el.blur(); }
+    if (el.innerHTML !== html) { el.innerHTML = html; if (syncKey) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
     if (isComposing.current) return;
     const el = editorRef.current;
+    isTyping.current = true;
     if (el) onChange(el.innerHTML);
   };
 
@@ -113,7 +115,7 @@ const RichTextArea = forwardRef(function RichTextArea(
         onCompositionEnd={() => { isComposing.current = false; handleInput(); }}
         onFocus={onFocus}
         onBlur={e => {
-          // Sauvegarder le contenu final au blur
+          isTyping.current = false;
           if (editorRef.current) onChange(editorRef.current.innerHTML);
           onBlur?.(e);
         }}
