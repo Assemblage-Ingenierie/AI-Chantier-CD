@@ -5,6 +5,7 @@ import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
+import Annotator from './Annotator.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -30,6 +31,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     return false;
   });
   const [showPlan, setShowPlan] = useState(false);
+  const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
@@ -301,6 +303,24 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done.filter(Boolean)] })))
       .finally(() => setCompressing(false));
   };
+
+  if (annotatingPhotoIdx !== null) {
+    const ph = form.photos[annotatingPhotoIdx];
+    return (
+      <Annotator
+        bgImage={ph?.data}
+        savedPaths={ph?.annotations || []}
+        onSave={(paths, exported) => {
+          setForm(f => ({
+            ...f,
+            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+          }));
+          setAnnotatingPhotoIdx(null);
+        }}
+        onClose={() => setAnnotatingPhotoIdx(null)}
+      />
+    );
+  }
 
   if (showPlan) return (
     <div style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:50,display:'flex',flexDirection:'column' }}>
@@ -578,10 +598,15 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
-                    <img src={ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
+                    <img src={ph.annotated || ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
                     <button onClick={() => setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) }))}
                       style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
                       <Ic n="x" s={10}/>
+                    </button>
+                    <button onClick={() => setAnnotatingPhotoIdx(i)}
+                      title="Annoter"
+                      style={{ position:'absolute',bottom:4,right:4,background: ph.annotations?.length ? DA.red : 'rgba(0,0,0,0.55)',color:'white',border:'none',borderRadius:'50%',width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+                      <Ic n="pen" s={11}/>
                     </button>
                   </div>
                 ))}

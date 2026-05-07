@@ -121,13 +121,13 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
     {lightbox && (
       <div onClick={() => setLightbox(null)}
         style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.96)',zIndex:9999,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12 }}>
-        <img src={lightbox.photos[lightbox.idx].data} alt=""
+        <img src={lightbox.photos[lightbox.idx].annotated || lightbox.photos[lightbox.idx].data} alt=""
           style={{ maxWidth:'100%',maxHeight:'80vh',objectFit:'contain',borderRadius:6 }}/>
         {lightbox.photos.length > 1 && (
           <div style={{ display:'flex',gap:6,flexWrap:'wrap',justifyContent:'center',padding:'0 16px' }}
             onClick={e => e.stopPropagation()}>
             {lightbox.photos.map((ph, pi) => (
-              <img key={pi} src={ph.data} alt=""
+              <img key={pi} src={ph.annotated || ph.data} alt=""
                 onClick={() => setLightbox(v => ({ ...v, idx: pi }))}
                 style={{ width:44,height:44,objectFit:'cover',borderRadius:5,cursor:'pointer',border:`2px solid ${lightbox.idx===pi?'white':'transparent'}`,opacity:lightbox.idx===pi?1:0.5,transition:'all 0.1s' }}/>
             ))}
@@ -216,7 +216,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                         onClick={e => e.stopPropagation()}>
                         {shown.map((ph, pi) => (
                           <div key={pi} style={{ position:'relative', flexShrink:0 }}>
-                            <img src={ph.data} alt=""
+                            <img src={ph.annotated || ph.data} alt=""
                               onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
                               style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block' }}/>
                             {!isDesktop && pi === shown.length - 1 && extra > 0 && (

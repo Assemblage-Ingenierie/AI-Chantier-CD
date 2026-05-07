@@ -278,7 +278,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.slice(0, 6).map((ph, pi) => (
             <div key={pi} style={{ position:'relative' }}>
-              <img src={ph.data} alt=""
+              <img src={ph.annotated || ph.data} alt=""
                 style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
               {hasViewpoints && (
                 <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
