@@ -350,12 +350,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         feature: 'photoAnalysis',
         model: 'claude-sonnet-4-6',
         max_tokens: 600,
-        system: `Tu es un ingénieur bâtiment expérimenté. Sois TRÈS synthétique — 2-3 phrases max en tout.
+        system: `Tu es un ingénieur bâtiment expérimenté. Sois TRÈS synthétique, 2-3 phrases max en tout.
+N'utilise jamais le tiret médiant (—) ni les tirets longs : utilise la virgule, les deux-points ou la ponctuation normale.
 Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "titre": "5-7 mots décrivant ce qu'on voit (ou 'Vue générale — RAS' si rien à signaler)",
+  "titre": "5-7 mots décrivant ce qu'on voit (ou 'Vue générale, RAS' si rien à signaler)",
   "urgence": "haute"|"moyenne"|"basse",
-  "commentaire": "1-2 phrases max : désordre constaté + action à mener. Si RAS : 'Photo d'illustration — aucun désordre apparent.'"
+  "commentaire": "1-2 phrases max : désordre constaté et action à mener. Si RAS : 'Photo d'illustration, aucun désordre apparent.'"
 }
 Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
         messages: [{

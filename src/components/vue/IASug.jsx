@@ -110,7 +110,7 @@ Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`;
         feature: 'observation-suggestion',
         model: 'gemini-2.0-flash-lite',
         max_tokens: 2000,
-        system: 'Tu es expert MOE/BET bâtiment senior, spécialiste des comptes-rendus de visite chantier et de la maîtrise d\'œuvre d\'exécution. Tu connais parfaitement les DTU, NF EN, règles professionnelles et tolérances de mise en œuvre. Tu génères des suggestions ultra-précises et contextuelles, jamais vagues ni génériques.',
+        system: 'Tu es expert MOE/BET bâtiment senior, spécialiste des comptes-rendus de visite chantier et de la maîtrise d\'oeuvre d\'exécution. Tu connais parfaitement les DTU, NF EN, règles professionnelles et tolérances de mise en oeuvre. Tu génères des suggestions ultra-précises et contextuelles, jamais vagues ni génériques. N\'utilise jamais le tiret médiant (—) ni les tirets longs : utilise la virgule, les deux-points ou la ponctuation normale.',
         messages: [{ role: 'user', content: prompt }],
         _signal: controller.signal,
       });
