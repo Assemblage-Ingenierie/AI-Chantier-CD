@@ -33,12 +33,17 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // Deux sentinels : replaceState sur l'entrée 0 + pushState sur l'entrée 1
-  // Garantit que le popstate fire même depuis VisitesScreen (iOS PWA ferme l'app si entrée 0 est atteinte)
+  // Sentinel initial : remplace l'entrée 0 + ajoute l'entrée 1
   useEffect(() => {
     history.replaceState({ pwaSentinel: true }, '');
     history.pushState({ pwaSentinel: true }, '');
   }, []);
+
+  // Sentinel supplémentaire à chaque ouverture de projet → garantit qu'en revenant
+  // de VueProjet vers VisitesScreen, il reste encore une entrée devant l'entrée 0
+  useEffect(() => {
+    if (ouvert) history.pushState({ pwaSentinel: true }, '');
+  }, [ouvert?.id]);
 
   useEffect(() => {
     const handler = () => {
