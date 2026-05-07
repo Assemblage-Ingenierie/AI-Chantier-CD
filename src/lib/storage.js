@@ -226,14 +226,29 @@ export async function loadProjectPhotos(itemIds) {
   if (!itemIds.length) return {};
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('aichantier_item_photos')
-      .select('id,item_id,name,storage_url,annotated_storage_url,annotations,sort_order').in('item_id', itemIds).order('sort_order');
-    if (error) { console.warn('loadProjectPhotos error:', error); return null; }
+
+    // Try full query with annotation columns; fall back if migration not applied yet (42703)
+    let data, hasAnnotCols = true;
+    const full = await sb.from('aichantier_item_photos')
+      .select('id,item_id,name,storage_url,annotated_storage_url,annotations,sort_order')
+      .in('item_id', itemIds).order('sort_order');
+    if (full.error?.code === '42703') {
+      hasAnnotCols = false;
+      const basic = await sb.from('aichantier_item_photos')
+        .select('id,item_id,name,storage_url,sort_order')
+        .in('item_id', itemIds).order('sort_order');
+      if (basic.error) { console.warn('loadProjectPhotos error:', basic.error); return null; }
+      data = basic.data;
+    } else if (full.error) {
+      console.warn('loadProjectPhotos error:', full.error); return null;
+    } else {
+      data = full.data;
+    }
 
     const rows = (data ?? []).map(ph => ({
       ...ph,
-      _path:          ph.storage_url          ? extractPhotoPath(ph.storage_url)          : null,
-      _annotatedPath: ph.annotated_storage_url ? extractPhotoPath(ph.annotated_storage_url) : null,
+      _path:          ph.storage_url                            ? extractPhotoPath(ph.storage_url)          : null,
+      _annotatedPath: hasAnnotCols && ph.annotated_storage_url  ? extractPhotoPath(ph.annotated_storage_url) : null,
     }));
 
     // Batch generate signed URLs pour photos ET composites annotés
@@ -253,9 +268,9 @@ export async function loadProjectPhotos(itemIds) {
       id:          ph.id,
       item_id:     ph.item_id,
       name:        ph.name,
-      data:        ph._path         ? (signedMap[ph._path]          ?? null) : null,
+      data:        ph._path          ? (signedMap[ph._path]          ?? null) : null,
       annotated:   ph._annotatedPath ? (signedMap[ph._annotatedPath] ?? null) : null,
-      annotations: ph.annotations   ?? null,
+      annotations: hasAnnotCols ? (ph.annotations ?? null) : null,
       sort_order:  ph.sort_order,
       _legacy:     !ph.storage_url,
     }));
@@ -408,15 +423,19 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       annotatedUrl = extractPhotoPath(ph.annotated) ?? null;
     }
 
-    result.push({
+    const photoRow = {
       item_id: itemId,
       name: ph.name ?? '',
       storage_url: storageUrl,
       data: null,
       sort_order: pi,
-      annotations: ph.annotations?.length ? ph.annotations : null,
-      annotated_storage_url: annotatedUrl ?? null,
-    });
+    };
+    // Only include annotation columns if they exist in DB (migration may not be applied yet)
+    if (ph.annotations?.length || annotatedUrl) {
+      photoRow.annotations = ph.annotations?.length ? ph.annotations : null;
+      photoRow.annotated_storage_url = annotatedUrl ?? null;
+    }
+    result.push(photoRow);
   }
   return result;
 }
@@ -632,7 +651,14 @@ async function saveRemote(ps, dirtyIds = null) {
     }
     if (allPhotoRows.length > 0) {
       const { error } = await sb.from('aichantier_item_photos').insert(allPhotoRows);
-      if (error) errors.push(error);
+      if (error?.code === '42703') {
+        // Annotation columns not yet created — retry without them
+        const stripped = allPhotoRows.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
+        const { error: e2 } = await sb.from('aichantier_item_photos').insert(stripped);
+        if (e2) errors.push(e2);
+      } else if (error) {
+        errors.push(error);
+      }
     }
 
     await plansPromise;
