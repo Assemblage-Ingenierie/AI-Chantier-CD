@@ -358,11 +358,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                             {loc.planBg ? (
                               <button
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
-                                style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#111' }}>
+                                style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#f4f4f4' }}>
                                 <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
-                                  style={{ width:'100%', height:'100%', objectFit:'contain', display:'block', opacity:0.92 }}/>
-                                {/* Gradient overlay en bas */}
-                                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.1) 45%, transparent 100%)' }}/>
+                                  style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                {/* Gradient overlay en bas — plus doux sur fond clair */}
+                                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>
                                 {/* Badge annotation count */}
                                 {loc.planAnnotations?.paths?.length > 0 && (
                                   <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
