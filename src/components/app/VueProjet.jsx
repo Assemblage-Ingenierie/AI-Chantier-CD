@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
@@ -333,28 +334,59 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                             />
                             {/* Plan thumbnail shortcut */}
                             {loc.planBg ? (
-                              <button
-                                onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
-                                style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'white', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', textAlign:'left' }}>
-                                <div style={{ position:'relative', flexShrink:0 }}>
-                                  <img src={loc.planBg} alt="Plan"
-                                    style={{ width:80, height:54, objectFit:'cover', borderRadius:8, border:`1px solid ${DA.border}`, display:'block' }}/>
+                              isDesktop ? (
+                                /* Desktop — grande bannière avec plan en fond */
+                                <button
+                                  onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
+                                  style={{ width:'100%', position:'relative', height:160, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0 }}>
+                                  <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
+                                    style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                                  {/* Overlay gradient */}
+                                  <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 55%, transparent 100%)' }}/>
+                                  {/* Badge annotation count */}
                                   {loc.planAnnotations?.paths?.length > 0 && (
-                                    <span style={{ position:'absolute', top:3, right:3, background:DA.red, color:'white', borderRadius:6, fontSize:9, fontWeight:800, padding:'1px 5px', lineHeight:1.6 }}>
-                                      {loc.planAnnotations.paths.length}
-                                    </span>
+                                    <div style={{ position:'absolute', top:12, right:12, background:DA.red, color:'white', borderRadius:8, fontSize:11, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
+                                      <Ic n="pen" s={11}/> {loc.planAnnotations.paths.length} annotation{loc.planAnnotations.paths.length > 1 ? 's' : ''}
+                                    </div>
                                   )}
-                                </div>
-                                <div style={{ flex:1, minWidth:0 }}>
-                                  <p style={{ fontSize:13, fontWeight:700, color:DA.black, margin:'0 0 3px' }}>Annoter le plan</p>
-                                  <p style={{ fontSize:11, color:DA.grayL, margin:0 }}>
-                                    {loc.planAnnotations?.paths?.length > 0
-                                      ? `${loc.planAnnotations.paths.length} annotation${loc.planAnnotations.paths.length > 1 ? 's' : ''} · Modifier`
-                                      : 'Aucune annotation — toucher pour commencer'}
-                                  </p>
-                                </div>
-                                <span style={{ color:DA.red, flexShrink:0, display:'flex', alignItems:'center' }}><Ic n="map" s={16}/></span>
-                              </button>
+                                  {/* Bottom caption */}
+                                  <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                                    <div>
+                                      <p style={{ margin:0, fontSize:14, fontWeight:800, color:'white', letterSpacing:0.2 }}>Plan de zone</p>
+                                      <p style={{ margin:'2px 0 0', fontSize:11, color:'rgba(255,255,255,0.65)' }}>
+                                        {loc.planAnnotations?.paths?.length > 0 ? 'Cliquer pour modifier les annotations' : 'Cliquer pour annoter le plan'}
+                                      </p>
+                                    </div>
+                                    <div style={{ background:DA.red, color:'white', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                                      <Ic n="pen" s={13}/> Annoter
+                                    </div>
+                                  </div>
+                                </button>
+                              ) : (
+                                /* Mobile — compact */
+                                <button
+                                  onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
+                                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'white', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', textAlign:'left' }}>
+                                  <div style={{ position:'relative', flexShrink:0 }}>
+                                    <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
+                                      style={{ width:80, height:54, objectFit:'cover', borderRadius:8, border:`1px solid ${DA.border}`, display:'block' }}/>
+                                    {loc.planAnnotations?.paths?.length > 0 && (
+                                      <span style={{ position:'absolute', top:3, right:3, background:DA.red, color:'white', borderRadius:6, fontSize:9, fontWeight:800, padding:'1px 5px', lineHeight:1.6 }}>
+                                        {loc.planAnnotations.paths.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ flex:1, minWidth:0 }}>
+                                    <p style={{ fontSize:13, fontWeight:700, color:DA.black, margin:'0 0 3px' }}>Annoter le plan</p>
+                                    <p style={{ fontSize:11, color:DA.grayL, margin:0 }}>
+                                      {loc.planAnnotations?.paths?.length > 0
+                                        ? `${loc.planAnnotations.paths.length} annotation${loc.planAnnotations.paths.length > 1 ? 's' : ''} · Modifier`
+                                        : 'Aucune annotation — toucher pour commencer'}
+                                    </p>
+                                  </div>
+                                  <span style={{ color:DA.red, flexShrink:0, display:'flex', alignItems:'center' }}><Ic n="map" s={16}/></span>
+                                </button>
+                              )
                             ) : (
                               <button
                                 onClick={() => setModal({ t:'niveaux' })}
