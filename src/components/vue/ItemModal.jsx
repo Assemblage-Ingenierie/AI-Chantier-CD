@@ -320,15 +320,15 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       const result = await callAIProxy({
         feature: 'photoAnalysis',
         model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
-        system: `Tu es un ingénieur structure et bâtiment expérimenté (20 ans de terrain en France).
-Analyse les photos de chantier et rédige un constat de désordre professionnel.
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni explication :
+        max_tokens: 600,
+        system: `Tu es un ingénieur bâtiment expérimenté. Sois TRÈS synthétique — 2-3 phrases max en tout.
+Réponds UNIQUEMENT avec un objet JSON valide :
 {
-  "titre": "titre court (5-8 mots max) décrivant précisément le désordre",
-  "urgence": "haute" | "moyenne" | "basse",
-  "commentaire": "texte structuré décrivant : 1) le désordre observé (nature, localisation, étendue) 2) le diagnostic probable (cause, pathologie) 3) les préconisations techniques (DTU/normes si applicable, travaux à réaliser)"
-}`,
+  "titre": "5-7 mots décrivant ce qu'on voit (ou 'Vue générale — RAS' si rien à signaler)",
+  "urgence": "haute"|"moyenne"|"basse",
+  "commentaire": "1-2 phrases max : désordre constaté + action à mener. Si RAS : 'Photo d'illustration — aucun désordre apparent.'"
+}
+Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
         messages: [{
           role: 'user',
           content: [
