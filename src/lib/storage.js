@@ -559,11 +559,16 @@ async function saveRemote(ps, dirtyIds = null) {
         : Promise.resolve({ data: [] }),
     ]);
 
-    // UPSERT locs (sans blobs null — PostgREST ne met à jour que les colonnes envoyées)
-    if (locRows.length > 0) {
-      const { error: le } = await sb.from('aichantier_chantier_localisations').upsert(locRows, { onConflict: 'id' });
-      if (le) { errors.push(le); continue; }
-    }
+    // UPSERT locs en deux passes séparées pour éviter que PostgREST normalise le batch
+    // et écrase plan_bg/plan_data avec null pour les lignes qui ne les envoient pas.
+    const locRowsWithPlan    = locRows.filter(r => 'plan_bg' in r);
+    const locRowsWithoutPlan = locRows.filter(r => !('plan_bg' in r));
+    const upsertResults = await Promise.all([
+      locRowsWithPlan.length    ? sb.from('aichantier_chantier_localisations').upsert(locRowsWithPlan,    { onConflict: 'id' }) : Promise.resolve({}),
+      locRowsWithoutPlan.length ? sb.from('aichantier_chantier_localisations').upsert(locRowsWithoutPlan, { onConflict: 'id' }) : Promise.resolve({}),
+    ]);
+    const locErr = upsertResults.find(r => r.error)?.error;
+    if (locErr) { errors.push(locErr); continue; }
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
