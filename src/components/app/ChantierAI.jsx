@@ -47,6 +47,10 @@ export default function ChantierAI({ profile, onLogout }) {
 
   useEffect(() => {
     const handler = () => {
+      // Re-push EN PREMIER — sur Android Chrome, l'app est fermée dès qu'on
+      // atteint l'entrée 0, avant que la fin du handler puisse re-pousser
+      history.pushState({ pwaSentinel: true }, '');
+
       if (childBackHandler.current?.()) {
         // modal géré
       } else if (selectedVisiteIdRef.current) {
@@ -54,8 +58,6 @@ export default function ChantierAI({ profile, onLogout }) {
       } else if (ouvertRef.current) {
         setOuvert(null);
       }
-      // Toujours re-push → impossible de quitter l'app par swipe accidentel
-      history.pushState({ pwaSentinel: true }, '');
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
