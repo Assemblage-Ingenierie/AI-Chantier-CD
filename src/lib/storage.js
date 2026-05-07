@@ -289,24 +289,25 @@ export async function hydrateChantierPhotos(chantierIds) {
     const result = {};
     for (let i = 0; i < chantierIds.length; i += 5) {
       const batch = chantierIds.slice(i, i + 5);
-      const { data } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
+      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
+      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); continue; }
       const paths = [];
-      const rowMap = {};
+      const pathToId = {};
       for (const row of (data ?? [])) {
         if (!row.photo) continue;
-        // base64 legacy — utiliser tel quel
         if (row.photo.startsWith('data:')) { result[row.id] = row.photo; continue; }
-        // extraire le chemin storage depuis l'URL publique ou conserver si déjà un chemin
         const path = extractPhotoPath(row.photo) ?? row.photo;
-        paths.push(path);
-        rowMap[path] = row.id;
+        if (!pathToId[path]) { paths.push(path); }
+        pathToId[path] = row.id;
       }
-      if (paths.length) {
-        const { data: signed } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
-        for (const s of (signed ?? [])) {
-          if (s.signedUrl) result[rowMap[s.path]] = s.signedUrl;
-        }
-      }
+      if (!paths.length) continue;
+      const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+      if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); continue; }
+      // Use index-based mapping to avoid s.path encoding mismatches
+      (signed ?? []).forEach((s, idx) => {
+        const id = pathToId[paths[idx]];
+        if (s.signedUrl && id) result[id] = s.signedUrl;
+      });
     }
     return result;
   } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
@@ -485,9 +486,15 @@ async function saveRemote(ps, dirtyIds = null) {
       if (uploaded) coverPhotoUrl = uploaded;
     }
 
+    // Toujours normaliser vers un chemin relatif (pas une signed URL) avant de sauvegarder en DB
+    if (coverPhotoUrl && !coverPhotoUrl.startsWith('data:')) {
+      const relPath = extractPhotoPath(coverPhotoUrl);
+      if (relPath) coverPhotoUrl = relPath;
+    }
+
     // Migrer ancien dossier cover_{id}/ → {slug}/cover/{id}.jpg via storage.move()
     if (coverPhotoUrl && !coverPhotoUrl.startsWith('data:')) {
-      const oldPath = extractPhotoPath(coverPhotoUrl) ?? coverPhotoUrl;
+      const oldPath = coverPhotoUrl;
       if (oldPath && /^cover_[^/]+\//.test(oldPath) && oldPath !== newCoverPath) {
         const { error: mvErr } = await sb.storage.from('photos').move(oldPath, newCoverPath);
         if (!mvErr) {
