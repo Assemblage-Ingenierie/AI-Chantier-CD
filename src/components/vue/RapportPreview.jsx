@@ -762,20 +762,20 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 
 // ── Hook scale adaptatif ───────────────────────────────────────────────────
 function usePreviewScale(containerRef) {
-  const [scale, setScale] = useState(1);
+  const [info, setInfo] = useState({ scale: 1, cw: 0 });
   useEffect(() => {
     const update = () => {
       if (!containerRef.current) return;
-      const available = containerRef.current.clientWidth - 32; // 16px padding each side
-      const ratio = available / PW;
-      setScale(ratio < 1 ? ratio : 1);
+      const cw = containerRef.current.clientWidth;
+      const ratio = (cw - 32) / PW;
+      setInfo({ scale: ratio < 1 ? ratio : 1, cw });
     };
     update();
     const ro = new ResizeObserver(update);
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [containerRef]);
-  return scale;
+  return info;
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
@@ -825,7 +825,9 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
-  const scale = usePreviewScale(containerRef);
+  const { scale, cw } = usePreviewScale(containerRef);
+  // Horizontal margin so scaled pages are always centered regardless of panel width
+  const marginH = Math.max(0, (cw - PW * scale) / 2);
 
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
   const hasTableau    = includeTableauRecap && recapItems.length > 0;
@@ -906,7 +908,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20, position:'relative' }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'flex-start', paddingBottom:20, position:'relative' }}>
 
         {/* ── Couche de mesure invisible — position:absolute la sort du flux flex pour ne pas causer de débordement horizontal ── */}
         <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
@@ -923,8 +925,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             ))}
           </div>
         </div>
-        {/* Conteneur scalé : transformOrigin top-center pour que les pages restent centrées */}
-        <div style={{ width: PW, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top center', transform: scale < 1 ? `scale(${scale})` : 'none' }}>
+        {/* Conteneur scalé — marginH calculé pour un centrage exact même si la fenêtre est plus étroite que PW */}
+        <div style={{ width: PW, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', marginLeft: marginH, marginRight: marginH, transformOrigin:'top left', transform: scale < 1 ? `scale(${scale})` : 'none' }}>
 
         {/* ── PAGE DE GARDE ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
