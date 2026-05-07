@@ -44,7 +44,7 @@ const CW  = PW - 2 * MX; // 522px largeur contenu
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
-const CHUNK_CHARS = 1400; // max chars per text chunk — only split genuinely long texts
+const CHUNK_CHARS = 2500; // max chars per text chunk — only split genuinely long texts
 
 // Découpe un long commentaire en morceaux aux limites de paragraphes
 function splitComment(comment, maxChars = CHUNK_CHARS) {
@@ -856,10 +856,10 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20, position:'relative' }}>
 
-        {/* ── Couche de mesure invisible — height:0 overflow:hidden = en flux normal, offsetHeight fiable ── */}
-        <div style={{ height:0, overflow:'hidden', flexShrink:0, width:PW }}>
+        {/* ── Couche de mesure invisible — position:absolute la sort du flux flex pour ne pas causer de débordement horizontal ── */}
+        <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
           <div style={{ width:CW, visibility:'hidden', pointerEvents:'none' }}>
             {allBlocks.map(block => (
               <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
@@ -900,10 +900,11 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                   {pageBlocks.map((block, bi) => {
                     // Pas de BreakControl entre les morceaux d'un même item (cont/photos)
                     const prevBlock = pageBlocks[bi - 1];
-                    const isContinuation = bi > 0
-                      && block.item
-                      && prevBlock?.item?.id === block.item.id
-                      && (block.mode === 'cont' || block.mode === 'photos');
+                    const isContinuation = bi > 0 && (
+                      (block.item && prevBlock?.item?.id === block.item.id
+                        && (block.mode === 'cont' || block.mode === 'photos'))
+                      || prevBlock?.type === 'zone'
+                    );
                     return (
                     <div key={block.id}>
                       {bi > 0 && !isContinuation && (
