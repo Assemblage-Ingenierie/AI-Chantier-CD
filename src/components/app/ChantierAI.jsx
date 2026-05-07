@@ -101,11 +101,13 @@ export default function ChantierAI({ profile, onLogout }) {
     </div>
   );
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100vh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
 
-      {/* Header */}
-      <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
+      {/* Header — caché sur mobile quand dans un projet */}
+      {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
           {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>}
         </div>
@@ -121,7 +123,7 @@ export default function ChantierAI({ profile, onLogout }) {
             <span style={{ color:syncStatus==='error'?DA.red:syncStatus==='saving'?DA.urgAmb:DA.grayL,fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Bandeau connexion lente */}
       {!remoteLoaded && splashTimedOut && hasDataToShow && (
