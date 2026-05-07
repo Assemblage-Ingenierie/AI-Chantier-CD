@@ -446,14 +446,22 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 </button>
               ))}
               <span style={{ marginLeft:'auto',fontSize:10,color:DA.grayL,fontStyle:'italic',whiteSpace:'nowrap' }}>
-                sélectionner → G/I/S
+                Ctrl+B / Ctrl+I / Ctrl+U
               </span>
             </div>
 
             <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:'0 0 8px 8px',padding:'12px 14px',fontSize:15,outline:'none',resize:'vertical',boxSizing:'border-box',fontFamily:'inherit',lineHeight:1.7,minHeight: isDesktop ? 260 : 90,overflow:'auto',textAlign: form.commentaireAlign||'left' }}
-              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}/>
+              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}
+              onKeyDown={e => {
+                const isMac = navigator.platform?.toUpperCase().includes('MAC');
+                const mod = isMac ? e.metaKey : e.ctrlKey;
+                if (!mod) return;
+                if (e.key === 'b' || e.key === 'B') { e.preventDefault(); wrapSel('**','**'); }
+                else if (e.key === 'i' || e.key === 'I') { e.preventDefault(); wrapSel('*','*'); }
+                else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); wrapSel('__','__'); }
+              }}/>
 
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
