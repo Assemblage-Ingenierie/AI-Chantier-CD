@@ -33,8 +33,12 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // Sentinel : sans entrée en plus, le premier swipe sort de l'appli
-  useEffect(() => { history.pushState({ pwaSentinel: true }, ''); }, []);
+  // Deux sentinels : replaceState sur l'entrée 0 + pushState sur l'entrée 1
+  // Garantit que le popstate fire même depuis VisitesScreen (iOS PWA ferme l'app si entrée 0 est atteinte)
+  useEffect(() => {
+    history.replaceState({ pwaSentinel: true }, '');
+    history.pushState({ pwaSentinel: true }, '');
+  }, []);
 
   useEffect(() => {
     const handler = () => {

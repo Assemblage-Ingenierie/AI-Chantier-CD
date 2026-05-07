@@ -153,8 +153,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
       {/* Header */}
-      <div style={{ background:DA.black, padding:'10px 16px', flexShrink:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      <div style={{ background:DA.black, flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'0 16px', minHeight:52 }}>
           <button onClick={onBack}
             style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
             <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>

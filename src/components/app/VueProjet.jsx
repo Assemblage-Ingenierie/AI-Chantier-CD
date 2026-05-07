@@ -262,81 +262,109 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
       {/* ── Header projet ── */}
       <div style={{ background:DA.black, flexShrink:0 }}>
 
-        {/* Ligne principale — sur desktop, contient aussi les tabs inline */}
-        <div style={{ padding: isDesktop ? '0 16px' : '8px 12px 0', display:'flex', alignItems: isDesktop ? 'stretch' : 'center', gap: isDesktop ? 0 : 8, minHeight: isDesktop ? 52 : undefined }}>
+        {isDesktop ? (
+          /* ── Desktop : 3 colonnes [gauche | tabs centrés | droite] sur une ligne ── */
+          <div style={{ display:'flex', alignItems:'stretch', minHeight:52, padding:'0 16px' }}>
 
-          {/* Bouton retour — desktop uniquement */}
-          {isDesktop && (
-            <button onClick={onBack}
-              style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'0 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0, margin:'10px 10px 10px 0' }}>
-              <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-              <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
-            </button>
-          )}
-
-          {/* Nom du projet */}
-          <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', justifyContent:'center' }}>
-            <p style={{ fontWeight:800, fontSize: isDesktop ? 15 : 14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
-            {isDesktop && projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
-          </div>
-
-          {/* Tabs — desktop inline, mobile absent ici */}
-          {isDesktop && [
-            { k:'visite',  n:'bld', l:'Visite' },
-            { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
-          ].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'0 18px', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s', flexShrink:0 }}>
-              <Ic n={t.n} s={15}/>{t.l}
-            </button>
-          ))}
-
-          {isDesktop && <div style={{ width:1, background:'rgba(255,255,255,0.12)', margin:'12px 10px' }}/>}
-
-          {/* Nom + date de la visite */}
-          {(() => {
-            const v = visites.find(vv => vv.id === selectedVisiteId);
-            if (!v) return null;
-            return editingVisiteLabel === v.id ? (
-              <input autoFocus value={visitLabelVal}
-                onChange={e => setVisitLabelVal(e.target.value)}
-                onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
-                onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
-                style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px', alignSelf:'center' }}
-              />
-            ) : (
-              <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
-                style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:6, padding: isDesktop ? '4px 9px' : '3px 8px', color:'rgba(255,255,255,0.75)', fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4, maxWidth: isDesktop ? 220 : 130, overflow:'hidden', flexShrink:0, alignSelf:'center' }}>
-                <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v.label ?? 'Visite'}</span>
-                {v.dateVisite && <span style={{ opacity:0.5, fontWeight:500, flexShrink:0 }}>· {formatDate(v.dateVisite)}</span>}
+            {/* Gauche : retour + nom projet */}
+            <div style={{ flex:1, display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
+              <button onClick={onBack}
+                style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
+                <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
+                <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
               </button>
-            );
-          })()}
+              <div style={{ minWidth:0 }}>
+                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
+              </div>
+            </div>
 
-          {/* Bouton Niveaux */}
-          <button onClick={() => setModal({ t:'niveaux' })}
-            style={{ background: isDesktop ? 'white' : 'rgba(255,255,255,0.08)', border:'none', borderRadius:8, padding: isDesktop ? '6px 13px' : '5px 9px', color: isDesktop ? DA.black : 'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0, alignSelf:'center', marginLeft: isDesktop ? 10 : 0, fontWeight:800 }}>
-            <Ic n="bld" s={isDesktop ? 14 : 14}/>
-            <span style={{ fontSize: isDesktop ? 12 : 11, fontWeight:800 }}>Niveaux</span>
-          </button>
-
-        </div>
-
-        {/* Tabs mobile uniquement — pleine largeur */}
-        {!isDesktop && (
-          <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:8 }}>
-            <div style={{ display:'flex' }}>
+            {/* Centre : tabs */}
+            <div style={{ display:'flex', alignItems:'stretch' }}>
               {[
                 { k:'visite',  n:'bld', l:'Visite' },
                 { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
               ].map(t => (
                 <button key={t.k} onClick={() => setTab(t.k)}
-                  style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'0 22px', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
                   <Ic n={t.n} s={15}/>{t.l}
                 </button>
               ))}
             </div>
+
+            {/* Droite : visite label + Niveaux */}
+            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:8 }}>
+              {(() => {
+                const v = visites.find(vv => vv.id === selectedVisiteId);
+                if (!v) return null;
+                return editingVisiteLabel === v.id ? (
+                  <input autoFocus value={visitLabelVal}
+                    onChange={e => setVisitLabelVal(e.target.value)}
+                    onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
+                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px' }}
+                  />
+                ) : (
+                  <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
+                    style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:6, padding:'4px 9px', color:'rgba(255,255,255,0.75)', fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4, maxWidth:220, overflow:'hidden' }}>
+                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v.label ?? 'Visite'}</span>
+                    {v.dateVisite && <span style={{ opacity:0.5, fontWeight:500, flexShrink:0 }}>· {formatDate(v.dateVisite)}</span>}
+                  </button>
+                );
+              })()}
+              <button onClick={() => setModal({ t:'niveaux' })}
+                style={{ background:'white', border:'none', borderRadius:8, padding:'6px 13px', color:DA.black, cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontWeight:800 }}>
+                <Ic n="bld" s={14}/>
+                <span style={{ fontSize:12, fontWeight:800 }}>Niveaux</span>
+              </button>
+            </div>
+
           </div>
+        ) : (
+          /* ── Mobile : 2 lignes ── */
+          <>
+            <div style={{ padding:'8px 12px 0', display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+              </div>
+              {(() => {
+                const v = visites.find(vv => vv.id === selectedVisiteId);
+                if (!v) return null;
+                return editingVisiteLabel === v.id ? (
+                  <input autoFocus value={visitLabelVal}
+                    onChange={e => setVisitLabelVal(e.target.value)}
+                    onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
+                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px' }}
+                  />
+                ) : (
+                  <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
+                    style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:6, padding:'3px 8px', color:'rgba(255,255,255,0.75)', fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4, maxWidth:130, overflow:'hidden' }}>
+                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v.label ?? 'Visite'}</span>
+                    {v.dateVisite && <span style={{ opacity:0.5, fontWeight:500, flexShrink:0 }}>· {formatDate(v.dateVisite)}</span>}
+                  </button>
+                );
+              })()}
+              <button onClick={() => setModal({ t:'niveaux' })}
+                style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 9px', color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                <Ic n="bld" s={14}/>
+                <span style={{ fontSize:11, fontWeight:700 }}>Niveaux</span>
+              </button>
+            </div>
+            <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:8 }}>
+              <div style={{ display:'flex' }}>
+                {[
+                  { k:'visite',  n:'bld', l:'Visite' },
+                  { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
+                ].map(t => (
+                  <button key={t.k} onClick={() => setTab(t.k)}
+                    style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+                    <Ic n={t.n} s={15}/>{t.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
       </div>
 
