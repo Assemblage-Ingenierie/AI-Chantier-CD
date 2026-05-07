@@ -4,8 +4,8 @@
   "description": "Rapports de visite de chantier",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#E30513",
+  "background_color": "#222222",
+  "theme_color": "#222222",
   "orientation": "portrait-primary",
   "icons": [
     {
