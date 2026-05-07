@@ -181,6 +181,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
   const [undoToast, setUndoToast] = useState(null); // { label, onUndo }
   const undoTimerRef = useRef(null);
+  const annotatorRef = useRef(null);
 
   const formatDate = (d) => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
@@ -189,21 +190,50 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   // --- Annotator photo plein écran (depuis la liste visite) ---
   if (modal?.t === 'photoAnnot') {
     const { item, locId, photoIdx } = modal;
+    const validPhotos = (item.photos || []).filter(p => p.data);
     const ph = item.photos?.[photoIdx];
+
+    const switchToPhoto = (newRealIdx) => {
+      const annotation = annotatorRef.current?.getAnnotation();
+      const updatedItem = annotation
+        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated } : p) }
+        : item;
+      if (annotation) patchItem(locId, updatedItem);
+      setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
+    };
+
     return (
-      <Annotator
-        bgImage={ph?.data}
-        savedPaths={ph?.annotations || []}
-        onSave={(paths, exported) => {
-          const updatedItem = {
-            ...item,
-            photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported } : p),
-          };
-          patchItem(locId, updatedItem);
-          setModal(null);
-        }}
-        onClose={() => setModal(null)}
-      />
+      <>
+        <Annotator
+          ref={annotatorRef}
+          bgImage={ph?.data}
+          savedPaths={ph?.annotations || []}
+          onSave={(paths, exported) => {
+            const updatedItem = {
+              ...item,
+              _photosHydrated: true,
+              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+            };
+            patchItem(locId, updatedItem);
+            setModal(null);
+          }}
+          onClose={() => setModal(null)}
+        />
+        {validPhotos.length > 1 && (
+          <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.85)', padding:'8px 12px', display:'flex', gap:6, justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
+            {validPhotos.map((p, vi) => {
+              const realIdx = (item.photos || []).indexOf(p);
+              const isActive = realIdx === photoIdx;
+              return (
+                <img key={vi} src={p.annotated || p.data} alt=""
+                  onClick={() => !isActive && switchToPhoto(realIdx)}
+                  style={{ width:52, height:52, objectFit:'cover', borderRadius:6, cursor: isActive ? 'default' : 'pointer', border:`2px solid ${isActive ? 'white' : 'transparent'}`, opacity: isActive ? 1 : 0.55, transition:'all 0.1s' }}
+                />
+              );
+            })}
+          </div>
+        )}
+      </>
     );
   }
 
@@ -277,36 +307,22 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             <span style={{ fontSize:11, fontWeight:700 }}>Niveaux</span>
           </button>
 
-          {/* Tabs inline — desktop uniquement */}
-          {isDesktop && (
-            <div style={{ display:'flex', flexShrink:0, borderRadius:8, overflow:'hidden', border:'1px solid rgba(255,255,255,0.12)', marginLeft:4 }}>
-              {[
-                { k:'visite',  n:'bld', l:'Visite' },
-                { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
-              ].map(t => (
-                <button key={t.k} onClick={() => setTab(t.k)}
-                  style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 14px', fontSize:12, fontWeight:700, border:'none', background: tab===t.k ? 'rgba(255,255,255,0.15)' : 'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.4)', cursor:'pointer', transition:'all 0.15s' }}>
-                  <Ic n={t.n} s={13}/>{t.l}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Tabs — mobile uniquement, en bas du header */}
-        {!isDesktop && (
-          <div style={{ display:'flex', marginTop:8, borderTop:'1px solid rgba(255,255,255,0.08)' }}>
+        {/* Tabs Visite / Rapport — pleine largeur, centrés, sur leur propre rangée */}
+        <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop: isDesktop ? 10 : 8 }}>
+          <div style={{ maxWidth:1400, margin:'0 auto', padding:'0 14px', display:'flex' }}>
             {[
               { k:'visite',  n:'bld', l:'Visite' },
               { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
             ].map(t => (
               <button key={t.k} onClick={() => setTab(t.k)}
-                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'10px 0', fontSize:13, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.4)', cursor:'pointer', transition:'all 0.15s' }}>
-                <Ic n={t.n} s={14}/>{t.l}
+                style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding: isDesktop ? '12px 0' : '10px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
+                <Ic n={t.n} s={15}/>{t.l}
               </button>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Corps scrollable ── */}
