@@ -234,11 +234,11 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                           return (
                           <div key={pi} style={{ position:'relative', flexShrink:0 }}>
                             <img src={ph.annotated || ph.data} alt=""
-                              onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi, item }); }}
+                              onClick={e => { e.stopPropagation(); if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } }}
                               style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block' }}/>
                             {!isDesktop && pi === shown.length - 1 && extra > 0 && (
                               <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
-                                onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
+                                onClick={e => { e.stopPropagation(); if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } }}>
                                 <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
                               </div>
                             )}

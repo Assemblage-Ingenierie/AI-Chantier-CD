@@ -761,20 +761,25 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 }
 
 // ── Hook scale adaptatif ───────────────────────────────────────────────────
-function usePreviewScale(containerRef) {
+// Mesure le scrollRef (pas containerRef) pour inclure la largeur de la barre de défilement.
+// useLayoutEffect → mesure synchrone avant le premier paint, évite le flash.
+function usePreviewScale(scrollRef) {
   const [info, setInfo] = useState({ scale: 1, cw: 0 });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const update = () => {
-      if (!containerRef.current) return;
-      const cw = containerRef.current.clientWidth;
+      if (!scrollRef.current) return;
+      const cw = scrollRef.current.clientWidth; // clientWidth exclut la scrollbar ✓
       const ratio = (cw - 32) / PW;
-      setInfo({ scale: ratio < 1 ? ratio : 1, cw });
+      setInfo(prev => {
+        const scale = ratio < 1 ? ratio : 1;
+        return (prev.scale === scale && prev.cw === cw) ? prev : { scale, cw };
+      });
     };
     update();
     const ro = new ResizeObserver(update);
-    if (containerRef.current) ro.observe(containerRef.current);
+    if (scrollRef.current) ro.observe(scrollRef.current);
     return () => ro.disconnect();
-  }, [containerRef]);
+  }, [scrollRef]);
   return info;
 }
 
@@ -825,9 +830,13 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
-  const { scale, cw } = usePreviewScale(containerRef);
-  // Horizontal margin so scaled pages are always centered regardless of panel width
-  const marginH = Math.max(0, (cw - PW * scale) / 2);
+  // scrollRef passed so we measure the actual scrollable area (excludes scrollbar width)
+  const { scale, cw } = usePreviewScale(scrollRef);
+  // translateX centers the PW element inside the scroll area without touching flex alignment
+  const tx = cw > 0 ? Math.max(0, (cw - PW * scale) / 2) : 0;
+  const pagesTransform = scale < 1
+    ? `translateX(${tx}px) scale(${scale})`
+    : tx > 0 ? `translateX(${tx}px)` : 'none';
 
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
   const hasTableau    = includeTableauRecap && recapItems.length > 0;
@@ -908,7 +917,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'flex-start', paddingBottom:20, position:'relative' }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'block', paddingBottom:20, position:'relative' }}>
 
         {/* ── Couche de mesure invisible — position:absolute la sort du flux flex pour ne pas causer de débordement horizontal ── */}
         <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
@@ -925,8 +934,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
             ))}
           </div>
         </div>
-        {/* Conteneur scalé — marginH calculé pour un centrage exact même si la fenêtre est plus étroite que PW */}
-        <div style={{ width: PW, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', marginLeft: marginH, marginRight: marginH, transformOrigin:'top left', transform: scale < 1 ? `scale(${scale})` : 'none' }}>
+        {/* Conteneur scalé — translateX centre géométriquement, indépendant du flex/scroll */}
+        <div style={{ width: PW, display:'flex', flexDirection:'column', alignItems:'center', transformOrigin:'top left', transform: pagesTransform }}>
 
         {/* ── PAGE DE GARDE ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
