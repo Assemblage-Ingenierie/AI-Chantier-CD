@@ -105,20 +105,20 @@ export default function ChantierAI({ profile, onLogout }) {
     <div style={{ display:'flex',flexDirection:'column',height:'100vh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
 
       {/* Header */}
-      <div style={{ background:DA.black,padding:'10px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
+      <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
-          {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:28,objectFit:'contain' }}/>}
+          {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>}
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (
-            <button onClick={() => setShowAdmin(true)} style={{ background:'rgba(255,255,255,0.1)',border:'none',color:'rgba(255,255,255,0.7)',fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>Admin</button>
+            <button onClick={() => setShowAdmin(true)} style={{ background:DA.redL,border:'none',color:DA.red,fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>Admin</button>
           )}
           {onLogout && (
-            <button onClick={onLogout} style={{ background:'none',border:'1px solid rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.5)',fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
+            <button onClick={onLogout} style={{ background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
           )}
-          <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?'rgba(227,5,19,0.18)':syncStatus==='saving'?'rgba(217,119,6,0.15)':'rgba(255,255,255,0.06)',transition:'background 0.3s' }}>
+          <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?DA.redL:syncStatus==='saving'?'#FEF3C7':DA.grayXL,transition:'background 0.3s' }}>
             {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor,transition:'background 0.3s' }}/>}
-            <span style={{ color:syncStatus==='error'?'#FCA5A5':syncStatus==='saving'?'#FCD34D':'rgba(255,255,255,0.4)',fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>
+            <span style={{ color:syncStatus==='error'?DA.red:syncStatus==='saving'?DA.urgAmb:DA.grayL,fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>
           </div>
         </div>
       </div>
