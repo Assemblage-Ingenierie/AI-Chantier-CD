@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
+import { recoverPhotosFromStorage } from '../../lib/storage.js';
 import { DA } from '../../lib/constants.js';
 
 export default function AdminPanel({ onClose }) {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [recovering, setRecovering] = useState(false);
+  const [recoverResult, setRecoverResult] = useState(null);
 
   const fetchProfiles = async () => {
     setLoading(true); setErr('');
@@ -25,6 +28,13 @@ export default function AdminPanel({ onClose }) {
     const { error } = await sb.from('aichantier_profiles').update({ is_approved: approved }).eq('id', id);
     if (error) setErr(error.message);
     else fetchProfiles();
+  };
+
+  const handleRecover = async () => {
+    setRecovering(true); setRecoverResult(null);
+    const result = await recoverPhotosFromStorage();
+    setRecoverResult(result);
+    setRecovering(false);
   };
 
   const setRole = async (id, role) => {
@@ -50,6 +60,28 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
+
+          {/* Récupération photos */}
+          <div style={{ padding: '14px 0', borderBottom: `1px solid ${DA.border}` }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: DA.black, marginBottom: 6 }}>Récupérer les photos perdues</div>
+            <div style={{ fontSize: 12, color: DA.gray, marginBottom: 10 }}>
+              Scanne tous les fichiers Storage et recrée les enregistrements DB manquants.
+            </div>
+            <button
+              onClick={handleRecover}
+              disabled={recovering}
+              style={{ fontSize: 12, fontWeight: 700, padding: '7px 16px', borderRadius: 8, border: 'none', background: DA.red, color: 'white', cursor: recovering ? 'default' : 'pointer', opacity: recovering ? 0.6 : 1 }}
+            >
+              {recovering ? 'Récupération en cours…' : '🔍 Lancer la récupération'}
+            </button>
+            {recoverResult && (
+              <div style={{ marginTop: 8, fontSize: 12, color: recoverResult.errors.length ? DA.red : DA.urgGrn, fontWeight: 600 }}>
+                {recoverResult.recovered} photo(s) récupérée(s)
+                {recoverResult.errors.length > 0 && ` — ${recoverResult.errors.length} erreur(s) : ${recoverResult.errors.join(', ')}`}
+              </div>
+            )}
+          </div>
+
           {loading && <div style={{ padding: 20, textAlign: 'center', color: DA.gray, fontSize: 13 }}>Chargement...</div>}
           {err && <div style={{ padding: 10, color: DA.red, fontSize: 13 }}>{err}</div>}
           {!loading && profiles.map(p => (

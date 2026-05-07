@@ -427,6 +427,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
     }
 
     const photoRow = {
+      id: ph._id ?? ph.id ?? crypto.randomUUID(), // ID stable → upsert sûr, jamais de perte
       item_id: itemId,
       name: ph.name ?? '',
       storage_url: storageUrl,
@@ -653,27 +654,39 @@ async function saveRemote(ps, dirtyIds = null) {
 
     const fetchedPhotosByItem = groupBy(photosRes?.data || [], 'item_id');
 
-    // Photos : delete + re-insert batch (une seule requête insert au lieu de N)
-    if (itemsWithLocalPhotos.size > 0) {
-      await sb.from('aichantier_item_photos').delete().in('item_id', [...itemsWithLocalPhotos]);
-    }
+    // Photos : UPSERT par ID stable puis delete-orphans (jamais de perte si l'upsert échoue)
     const allPhotoRows = [];
     for (const { itemId, item } of itemRecords) {
       if (!itemsWithLocalPhotos.has(itemId)) continue;
       const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, slug);
       allPhotoRows.push(...photos);
     }
+    const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
+    let photoUpsertOk = false;
     if (allPhotoRows.length > 0) {
-      const { error } = await sb.from('aichantier_item_photos').insert(allPhotoRows);
-      const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
+      const { error } = await sb.from('aichantier_item_photos').upsert(allPhotoRows, { onConflict: 'id' });
       if (isAnnotColErr(error)) {
-        // Annotation columns not yet created — retry without them
         const stripped = allPhotoRows.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
-        const { error: e2 } = await sb.from('aichantier_item_photos').insert(stripped);
-        if (e2) errors.push(e2);
-      } else if (error) {
-        errors.push(error);
+        const { error: e2 } = await sb.from('aichantier_item_photos').upsert(stripped, { onConflict: 'id' });
+        if (e2) errors.push(e2); else photoUpsertOk = true;
+      } else if (error) { errors.push(error); }
+      else { photoUpsertOk = true; }
+    } else { photoUpsertOk = true; }
+
+    // Delete orphans uniquement si l'upsert a réussi — jamais avant (évite la perte si insert échoue)
+    if (photoUpsertOk) {
+      const keptIdsByItem = new Map();
+      for (const row of allPhotoRows) {
+        if (!keptIdsByItem.has(row.item_id)) keptIdsByItem.set(row.item_id, []);
+        keptIdsByItem.get(row.item_id).push(row.id);
       }
+      await Promise.all([...itemsWithLocalPhotos].map(itemId => {
+        const keptIds = keptIdsByItem.get(itemId) ?? [];
+        if (keptIds.length === 0) {
+          return sb.from('aichantier_item_photos').delete().eq('item_id', itemId);
+        }
+        return sb.from('aichantier_item_photos').delete().eq('item_id', itemId).not('id', 'in', `(${keptIds.join(',')})`);
+      }));
     }
 
     await plansPromise;
@@ -807,4 +820,47 @@ function showSyncWarning(firstError) {
 
   // Auto-dismiss après 15s
   setTimeout(() => { if (document.getElementById(id)) el.remove(); }, 15000);
+}
+
+// Récupère les photos perdues : liste les fichiers existants dans Storage et recrée
+// les enregistrements DB manquants. Retourne { recovered, errors }.
+export async function recoverPhotosFromStorage() {
+  const sb = await getSupabase();
+  let recovered = 0;
+  const errs = [];
+  try {
+    const { data: chantiers, error: cErr } = await sb.from('aichantier_chantiers').select('id,nom');
+    if (cErr) throw cErr;
+    for (const chantier of (chantiers ?? [])) {
+      const slug = `${slugify(chantier.nom)}_${String(chantier.id).slice(0, 8)}`;
+      const { data: topLevel } = await sb.storage.from('photos').list(slug);
+      for (const entry of (topLevel ?? [])) {
+        if (entry.id !== null) continue; // skip files, only folders
+        if (entry.name === 'cover') continue;
+        const itemId = entry.name;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemId)) continue;
+        // Vérifier que l'item existe encore en DB
+        const { count: ic } = await sb.from('aichantier_localisation_items').select('id', { count: 'exact', head: true }).eq('id', itemId);
+        if (!ic) continue;
+        // Récupérer les photos déjà connues pour cet item
+        const { data: existingPhotos } = await sb.from('aichantier_item_photos').select('storage_url').eq('item_id', itemId);
+        const existingPaths = new Set((existingPhotos ?? []).map(p => p.storage_url));
+        // Lister les fichiers dans ce dossier
+        const { data: files } = await sb.storage.from('photos').list(`${slug}/${itemId}`);
+        let si = (existingPhotos ?? []).length;
+        for (const file of (files ?? [])) {
+          if (!file.name || file.id === null) continue; // skip sub-folders
+          if (file.name.includes('_annot')) continue; // skip annotation composites
+          const storagePath = `${slug}/${itemId}/${file.name}`;
+          if (existingPaths.has(storagePath)) { si++; continue; }
+          const { error: iErr } = await sb.from('aichantier_item_photos').insert({
+            item_id: itemId, name: file.name, storage_url: storagePath, sort_order: si++,
+          });
+          if (iErr) errs.push(`${storagePath}: ${iErr.message}`);
+          else recovered++;
+        }
+      }
+    }
+  } catch (e) { errs.push(e.message); }
+  return { recovered, errors: errs };
 }

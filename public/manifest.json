@@ -1,6 +1,6 @@
 {
-  "name": "ChantierAI — Assemblage Ingénierie",
-  "short_name": "ChantierAI",
+  "name": "AIchantier — Assemblage Ingénierie",
+  "short_name": "AIchantier",
   "description": "Rapports de visite de chantier",
   "start_url": "/",
   "display": "standalone",
