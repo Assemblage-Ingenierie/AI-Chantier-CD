@@ -126,7 +126,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   });
 
   useEffect(() => { vtRef.current = vt; }, [vt]);
-  useEffect(() => { setVt({ z: 1, px: 0, py: 0 }); vtRef.current = { z: 1, px: 0, py: 0 }; }, [bgImage]);
+  useEffect(() => {
+    setVt({ z: 1, px: 0, py: 0 });
+    vtRef.current = { z: 1, px: 0, py: 0 };
+    setPaths(savedPaths || []); // reset annotations quand la photo change
+    setSelTextIdx(null);
+  }, [bgImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Exposer getAnnotation() pour auto-save depuis le parent (navigation entre photos)
   useImperativeHandle(ref, () => ({
@@ -194,6 +199,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   useEffect(() => {
     if (!bgImage) return;
+    setBgOk(false); // masque le canvas pendant le chargement → évite l'écran noir
     const load = async () => {
       // Convertir les URLs distantes en data URL pour éviter le "tainted canvas"
       let src = bgImage;
