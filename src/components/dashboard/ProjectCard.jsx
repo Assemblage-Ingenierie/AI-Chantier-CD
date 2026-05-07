@@ -21,7 +21,13 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
   const toggleMenu = (e) => {
     if (menuOpen === p.id) { setMenuOpen(null); setMenuPos(null); return; }
     const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    const menuH = 180; // hauteur approximative du menu
+    const spaceBelow = window.innerHeight - rect.bottom - 4;
+    if (spaceBelow < menuH) {
+      setMenuPos({ bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right });
+    } else {
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
     setMenuOpen(p.id);
   };
 
@@ -76,7 +82,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
             <Ic n="dts" s={18}/>
           </button>
           {menuOpen === p.id && menuPos && (
-            <div style={{ position:'fixed',top:menuPos.top,right:menuPos.right,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:9999,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ position:'fixed',...(menuPos.top != null ? {top:menuPos.top} : {bottom:menuPos.bottom}),right:menuPos.right,background:DA.white,borderRadius:12,boxShadow:'0 8px 32px rgba(0,0,0,0.18)',zIndex:9999,minWidth:190,border:`1px solid ${DA.border}`,overflow:'hidden' }} onClick={(e) => e.stopPropagation()}>
               <button onClick={() => { onEdit(p); setMenuOpen(null); }} style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}><Ic n="edt" s={15}/> Modifier</button>
               <div style={{ borderTop:`1px solid ${DA.border}` }}/>
               {!arc

@@ -19,8 +19,17 @@ function mdToHtml(text) {
 function isHtml(text) {
   return text && (
     text.includes('<strong>') || text.includes('<em>') ||
-    text.includes('<u>') || text.includes('<br')
+    text.includes('<u>') || text.includes('<br') ||
+    text.includes('<b>') || text.includes('<i>')
   );
+}
+
+// Normalise les balises <b>/<i> (insérées par execCommand) vers <strong>/<em>
+function normalizeHtmlOutput(html) {
+  if (!html) return html;
+  return html
+    .replace(/<b>/gi, '<strong>').replace(/<\/b>/gi, '</strong>')
+    .replace(/<i>/gi, '<em>').replace(/<\/i>/gi, '</em>');
 }
 
 export function normalizeToHtml(text) {
@@ -73,7 +82,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (isComposing.current) return;
     const el = editorRef.current;
     isTyping.current = true;
-    if (el) onChange(el.innerHTML);
+    if (el) onChange(normalizeHtmlOutput(el.innerHTML));
   };
 
   // Empêcher les collages avec mise en forme complexe
@@ -116,7 +125,7 @@ const RichTextArea = forwardRef(function RichTextArea(
         onFocus={onFocus}
         onBlur={e => {
           isTyping.current = false;
-          if (editorRef.current) onChange(editorRef.current.innerHTML);
+          if (editorRef.current) onChange(normalizeHtmlOutput(editorRef.current.innerHTML));
           onBlur?.(e);
         }}
         style={{

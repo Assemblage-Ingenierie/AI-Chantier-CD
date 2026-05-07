@@ -361,7 +361,6 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
           <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,flexShrink:0 }}>
             {[
               { k:'pen',    n:'pen',  lbl:'Dessin'  },
-              { k:'eraser', n:'eras', lbl:'Gomme'   },
               { k:'text',   n:'txt',  lbl:'Texte'   },
               { k:'symbol', n:'sym',  lbl:'Symbole' },
             ].map(t => (

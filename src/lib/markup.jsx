@@ -4,15 +4,16 @@ import React from 'react';
 function isHtml(text) {
   return text && (
     text.includes('<strong>') || text.includes('<em>') ||
-    text.includes('<u>') || text.includes('<br')
+    text.includes('<u>') || text.includes('<br') ||
+    text.includes('<b>') || text.includes('<i>')
   );
 }
 
-// Rendu React depuis HTML simple (strong/em/u/br) — pas de dangerouslySetInnerHTML
+// Rendu React depuis HTML simple (strong/b/em/i/u/br) — pas de dangerouslySetInnerHTML
 function renderHtml(html) {
   if (!html) return null;
-  // Parser les balises inline qu'on génère (strong, em, u, br)
-  const HTAG = /(<strong>|<\/strong>|<em>|<\/em>|<u>|<\/u>|<br\s*\/?>)/gi;
+  // Parser les balises inline (strong+b, em+i, u, br)
+  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>)/gi;
   const parts = html.split(HTAG);
   const result = [];
   const stack = []; // balises ouvertes
@@ -21,10 +22,10 @@ function renderHtml(html) {
     const p = parts[i];
     if (!p) continue;
     const lower = p.toLowerCase().replace(/\s*\/\s*>$/, '>');
-    if (lower === '<strong>') { stack.push('strong'); continue; }
-    if (lower === '</strong>') { stack.pop(); continue; }
-    if (lower === '<em>') { stack.push('em'); continue; }
-    if (lower === '</em>') { stack.pop(); continue; }
+    if (lower === '<strong>' || lower === '<b>') { stack.push('strong'); continue; }
+    if (lower === '</strong>' || lower === '</b>') { stack.pop(); continue; }
+    if (lower === '<em>' || lower === '<i>') { stack.push('em'); continue; }
+    if (lower === '</em>' || lower === '</i>') { stack.pop(); continue; }
     if (lower === '<u>') { stack.push('u'); continue; }
     if (lower === '</u>') { stack.pop(); continue; }
     if (lower === '<br>' || lower === '<br/>') {

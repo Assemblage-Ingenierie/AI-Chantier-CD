@@ -43,7 +43,8 @@ const CW  = PW - 2 * MX; // 522px largeur contenu
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
-const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
+const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs (uniquement aux frontières de zone)
+const ITEM_GAP    = 5;  // marginBottom entre blocs non-zone (pas de BreakControl)
 const CHUNK_CHARS = 2500; // max chars per text chunk — only split genuinely long texts
 
 // Découpe un long commentaire en morceaux aux limites de paragraphes
@@ -157,11 +158,17 @@ function buildPages(allBlocks, ppl, breaks, heights) {
 
   for (const block of allBlocks) {
     const bh  = (heights && heights[block.id]) || estimateBlockH(block, ppl);
-    const gap = blocks.length > 0 ? BREAK_CTL_H : 0;
+    // BreakControl (36px) only renders before zone blocks (not the first block on a page).
+    // Other blocks only have a 5px marginBottom gap between them.
+    const gap = blocks.length > 0
+      ? ITEM_GAP + (block.type === 'zone' ? BREAK_CTL_H : 0)
+      : 0;
     if (breaks.has(block.id)) flush();
     if (usedH + gap + bh > AVAIL_H && blocks.length > 0) flush();
     blocks.push(block);
-    usedH += (blocks.length > 1 ? BREAK_CTL_H : 0) + bh;
+    usedH += blocks.length > 1
+      ? ITEM_GAP + (block.type === 'zone' ? BREAK_CTL_H : 0) + bh
+      : bh;
   }
   flush();
 
