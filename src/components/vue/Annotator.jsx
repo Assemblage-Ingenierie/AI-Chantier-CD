@@ -171,17 +171,34 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
 
   useEffect(() => {
     if (!bgImage) return;
-    const img = new window.Image();
-    img.onload = () => {
-      const cv = cvRef.current;
-      if (!cv) return;
-      cv.width = img.naturalWidth;
-      cv.height = img.naturalHeight;
-      bgRef.current = img;
-      setBgOk(true);
+    const load = async () => {
+      // Convertir les URLs distantes en data URL pour éviter le "tainted canvas"
+      let src = bgImage;
+      if (!bgImage.startsWith('data:')) {
+        try {
+          const resp = await fetch(bgImage);
+          const blob = await resp.blob();
+          src = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
+          });
+        } catch { /* garder l'URL d'origine en fallback */ }
+      }
+      const img = new window.Image();
+      img.onload = () => {
+        const cv = cvRef.current;
+        if (!cv) return;
+        cv.width = img.naturalWidth;
+        cv.height = img.naturalHeight;
+        bgRef.current = img;
+        setBgOk(true);
+      };
+      img.onerror = () => setBgOk(true);
+      img.src = src;
     };
-    img.onerror = () => setBgOk(true);
-    img.src = bgImage;
+    load();
   }, [bgImage]);
 
   const getXY = (e, cv) => {
@@ -360,6 +377,11 @@ export default function Annotator({ bgImage, savedPaths, onSave, onClose, photos
             ))}
           </div>
           <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
+            <button onClick={onClose}
+              style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}
+              title="Annuler">
+              <Ic n="x" s={16}/>
+            </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
               style={{ padding:'7px 10px',borderRadius:8,background:'#333',color:DA.grayL,lineHeight:0 }}>
               <Ic n="und" s={16}/>

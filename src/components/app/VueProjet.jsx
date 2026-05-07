@@ -167,6 +167,27 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
     : null;
 
+  // --- Annotator photo plein écran (depuis la liste visite) ---
+  if (modal?.t === 'photoAnnot') {
+    const { item, locId, photoIdx } = modal;
+    const ph = item.photos?.[photoIdx];
+    return (
+      <Annotator
+        bgImage={ph?.data}
+        savedPaths={ph?.annotations || []}
+        onSave={(paths, exported) => {
+          const updatedItem = {
+            ...item,
+            photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+          };
+          patchItem(locId, updatedItem);
+          setModal(null);
+        }}
+        onClose={() => setModal(null)}
+      />
+    );
+  }
+
   // --- Annotator plein écran ---
   if (modal?.t === 'annotate') {
     const loc = visitProjet.localisations.find(l => l.id === modal.locId);
@@ -331,6 +352,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate }) {
                                 setModal({ t:'item', locId:loc.id, item });
                               }}
                               onDelete={itemId => deleteItem(loc.id, itemId)}
+                              onAnnotatePhoto={(item, photoIdx) => setModal({ t:'photoAnnot', item, locId:loc.id, photoIdx })}
                             />
                             {/* Plan thumbnail shortcut */}
                             {loc.planBg ? (

@@ -5,7 +5,7 @@ import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 
-export default function SortList({ items, onReorder, onEdit, onDelete }) {
+export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [lightbox, setLightbox]         = useState(null);
 
@@ -214,7 +214,10 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                     return (
                       <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}
                         onClick={e => e.stopPropagation()}>
-                        {shown.map((ph, pi) => (
+                        {shown.map((ph, pi) => {
+                          // trouver l'index réel dans item.photos (pas dans validPhotos)
+                          const realIdx = (item.photos || []).indexOf(ph);
+                          return (
                           <div key={pi} style={{ position:'relative', flexShrink:0 }}>
                             <img src={ph.annotated || ph.data} alt=""
                               onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
@@ -225,8 +228,17 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
                                 <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
                               </div>
                             )}
+                            {onAnnotatePhoto && (
+                              <button
+                                onClick={e => { e.stopPropagation(); onAnnotatePhoto(item, realIdx); }}
+                                title="Annoter"
+                                style={{ position:'absolute', bottom:4, right:4, background: ph.annotations?.length ? DA.red : 'rgba(0,0,0,0.55)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 24, height: isDesktop ? 28 : 24, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                                <Ic n="pen" s={isDesktop ? 13 : 11}/>
+                              </button>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     );
                   }
