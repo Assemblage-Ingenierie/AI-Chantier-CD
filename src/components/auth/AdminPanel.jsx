@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
-import { recoverPhotosFromStorage, cleanupDuplicatePhotos } from '../../lib/storage.js';
+import { recoverPhotosFromStorage } from '../../lib/storage.js';
 import { DA } from '../../lib/constants.js';
 
 export default function AdminPanel({ onClose }) {
@@ -9,8 +9,6 @@ export default function AdminPanel({ onClose }) {
   const [err, setErr] = useState('');
   const [recovering, setRecovering] = useState(false);
   const [recoverResult, setRecoverResult] = useState(null);
-  const [cleaning, setCleaning] = useState(false);
-  const [cleanResult, setCleanResult] = useState(null);
 
   const fetchProfiles = async () => {
     setLoading(true); setErr('');
@@ -39,14 +37,7 @@ export default function AdminPanel({ onClose }) {
     setRecovering(false);
   };
 
-  const handleCleanup = async () => {
-    setCleaning(true); setCleanResult(null);
-    const deleted = await cleanupDuplicatePhotos();
-    setCleanResult(deleted);
-    setCleaning(false);
-  };
-
-  const setRole = async (id, role) => {
+const setRole = async (id, role) => {
     const sb = await getSupabase();
     const { error } = await sb.from('aichantier_profiles').update({ role }).eq('id', id);
     if (error) setErr(error.message);
@@ -70,24 +61,7 @@ export default function AdminPanel({ onClose }) {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
 
-          {/* Nettoyage doublons */}
-          <div style={{ padding: '14px 0', borderBottom: `1px solid ${DA.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: DA.black, marginBottom: 6 }}>Supprimer les doublons de photos</div>
-            <div style={{ fontSize: 12, color: DA.gray, marginBottom: 10 }}>
-              Détecte et supprime les photos dupliquées (même fichier inséré plusieurs fois). À faire en premier.
-            </div>
-            <button onClick={handleCleanup} disabled={cleaning}
-              style={{ fontSize: 12, fontWeight: 700, padding: '7px 16px', borderRadius: 8, border: 'none', background: DA.urgAmb, color: 'white', cursor: cleaning ? 'default' : 'pointer', opacity: cleaning ? 0.6 : 1 }}>
-              {cleaning ? 'Nettoyage…' : '🧹 Nettoyer les doublons'}
-            </button>
-            {cleanResult !== null && (
-              <div style={{ marginTop: 8, fontSize: 12, color: DA.urgGrn, fontWeight: 600 }}>
-                {cleanResult} doublon(s) supprimé(s) — rechargez la page pour voir le résultat.
-              </div>
-            )}
-          </div>
-
-          {/* Récupération photos */}
+{/* Récupération photos */}
           <div style={{ padding: '14px 0', borderBottom: `1px solid ${DA.border}` }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: DA.black, marginBottom: 6 }}>Récupérer les photos perdues</div>
             <div style={{ fontSize: 12, color: DA.gray, marginBottom: 10 }}>

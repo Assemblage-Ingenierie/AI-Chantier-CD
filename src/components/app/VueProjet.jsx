@@ -373,6 +373,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                               }}
                               onDelete={itemId => deleteItem(loc.id, itemId)}
                               onAnnotatePhoto={(item, photoIdx) => setModal({ t:'photoAnnot', item, locId:loc.id, photoIdx })}
+                              onDeletePhoto={(item, photoIdx) => {
+                                const updated = { ...item, photos: item.photos.filter((_,i) => i !== photoIdx), _photosHydrated: true };
+                                patchItem(loc.id, updated);
+                              }}
                             />
                             {/* Plan banner — même DA desktop/mobile, plan en `contain` pour tout voir */}
                             {loc.planBg ? (

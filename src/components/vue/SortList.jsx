@@ -5,7 +5,7 @@ import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 
-export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto }) {
+export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [lightbox, setLightbox]         = useState(null);
 
@@ -241,6 +241,14 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                                 onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
                                 <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
                               </div>
+                            )}
+                            {onDeletePhoto && (
+                              <button
+                                onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); }}
+                                title="Supprimer"
+                                style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                                <Ic n="x" s={isDesktop ? 12 : 10}/>
+                              </button>
                             )}
                             {onAnnotatePhoto && (
                               <button
