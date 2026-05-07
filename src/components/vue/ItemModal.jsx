@@ -33,6 +33,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState('');
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
@@ -302,6 +304,53 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     Promise.all(filtered.map(compressPhoto))
       .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done.filter(Boolean)] })))
       .finally(() => setCompressing(false));
+  };
+
+  const analyzePhotos = async () => {
+    const validPhotos = form.photos.filter(ph => ph.data);
+    if (!validPhotos.length || analyzing) return;
+    setAnalyzing(true);
+    setAnalyzeError('');
+    try {
+      const imageContent = validPhotos.slice(0, 4).map(ph => {
+        const [header, b64] = ph.data.split(',');
+        const mediaType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+        return { type:'image', source:{ type:'base64', media_type:mediaType, data:b64 } };
+      });
+      const result = await callAIProxy({
+        feature: 'photoAnalysis',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        system: `Tu es un ingénieur structure et bâtiment expérimenté (20 ans de terrain en France).
+Analyse les photos de chantier et rédige un constat de désordre professionnel.
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni explication :
+{
+  "titre": "titre court (5-8 mots max) décrivant précisément le désordre",
+  "urgence": "haute" | "moyenne" | "basse",
+  "commentaire": "texte structuré décrivant : 1) le désordre observé (nature, localisation, étendue) 2) le diagnostic probable (cause, pathologie) 3) les préconisations techniques (DTU/normes si applicable, travaux à réaliser)"
+}`,
+        messages: [{
+          role: 'user',
+          content: [
+            ...imageContent,
+            { type:'text', text:'Analyse ces photos de chantier et génère le constat de désordre JSON.' }
+          ]
+        }]
+      });
+      const raw = result.content?.[0]?.text || '';
+      const jsonStr = raw.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(jsonStr);
+      setForm(f => ({
+        ...f,
+        titre:      parsed.titre     || f.titre,
+        commentaire: parsed.commentaire || f.commentaire,
+        urgence:    parsed.urgence   || f.urgence,
+      }));
+    } catch (e) {
+      setAnalyzeError(e.message || 'Erreur analyse');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   if (annotatingPhotoIdx !== null) {
@@ -586,6 +635,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
               <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
               <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+                {form.photos.filter(ph => ph.data).length > 0 && (
+                  <button onClick={analyzePhotos} disabled={analyzing || compressing}
+                    style={{ fontSize:13,border:`1.5px solid #7C3AED`,padding:'8px 12px',borderRadius:8,background: analyzing ? '#EDE9FE' : '#F5F3FF',color:'#7C3AED',display:'flex',alignItems:'center',gap:5,cursor: analyzing ? 'wait' : 'pointer',fontWeight:600,opacity: compressing ? 0.5 : 1 }}>
+                    {analyzing ? <><Ic n="spn" s={13}/> Analyse…</> : <><Ic n="eye" s={13}/> Analyser</>}
+                  </button>
+                )}
                 <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
                   <Ic n="img" s={14}/> Galerie
                 </button>
@@ -594,6 +649,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 </button>
               </div>
             </div>
+            {analyzeError && (
+              <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#FFF1F2',border:'1px solid #FECDD3',borderRadius:8,marginBottom:8,fontSize:12,color:'#BE123C' }}>
+                <Ic n="x" s={12}/> {analyzeError}
+              </div>
+            )}
             {form.photos.length > 0 ? (
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
                 {form.photos.map((ph, i) => (
