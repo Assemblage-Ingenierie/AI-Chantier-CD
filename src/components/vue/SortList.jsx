@@ -185,86 +185,61 @@ export default function SortList({ items, onReorder, onEdit, onDelete }) {
 
               {/* ── Content ── */}
               <div style={{ flex:1, minWidth:0 }}>
-                {/* Top row: text + (mobile: photos right, desktop: nothing yet) */}
-                <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
-                    {item.commentaire && (
-                      <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
-                    )}
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 8 : 6, flexWrap:'wrap' }}>
-                      <Badge level={item.urgence}/>
-                      <span style={{ display:'flex', alignItems:'center', gap:3 }}>
-                        <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
-                          e.stopPropagation();
-                          const keys = Object.keys(SUIVI);
-                          const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
-                          onEdit({ ...item, suivi: next, _quickSuivi: true });
-                        }}/>
-                        <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
-                      </span>
-                    </div>
+                {/* Text block — toujours pleine largeur */}
+                <div>
+                  <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
+                  {item.commentaire && (
+                    <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
+                  )}
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 8 : 6, flexWrap:'wrap' }}>
+                    <Badge level={item.urgence}/>
+                    <span style={{ display:'flex', alignItems:'center', gap:3 }}>
+                      <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
+                        e.stopPropagation();
+                        const keys = Object.keys(SUIVI);
+                        const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
+                        onEdit({ ...item, suivi: next, _quickSuivi: true });
+                      }}/>
+                      <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
+                    </span>
                   </div>
-
-                  {/* Mobile: compact 2x2 photo grid to the right */}
-                  {!isDesktop && (() => {
-                    const validPhotos = (item.photos || []).filter(ph => ph.data);
-                    if (validPhotos.length) {
-                      const shown = validPhotos.slice(0, 4);
-                      const extra = validPhotos.length - shown.length;
-                      return (
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
-                          {shown.map((ph, pi) => (
-                            <div key={pi} style={{ position:'relative' }}>
-                              <img src={ph.data} alt=""
-                                onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                                style={{ width:64, height:64, objectFit:'cover', borderRadius:6, border:`1px solid ${DA.border}`, display:'block', cursor:'pointer' }}/>
-                              {pi === shown.length - 1 && extra > 0 && (
-                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
-                                  onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
-                                  <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-                    if (!item._photosHydrated && (item.photos||[]).length > 0) return (
-                      <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 64px)', gap:3, flexShrink:0 }}>
-                        {(item.photos||[]).slice(0,4).map((_,pi) => (
-                          <div key={pi} style={{ width:64, height:64, borderRadius:6, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
-                        ))}
-                      </div>
-                    );
-                    return null;
-                  })()}
                 </div>
 
-                {/* Desktop: large photos in a row below the text */}
-                {isDesktop && (() => {
+                {/* Photos — toujours en dessous du texte (mobile + desktop) */}
+                {(() => {
                   const validPhotos = (item.photos || []).filter(ph => ph.data);
                   if (validPhotos.length) {
+                    const shown = isDesktop ? validPhotos : validPhotos.slice(0, 4);
+                    const extra = validPhotos.length - shown.length;
                     return (
-                      <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap' }}
+                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}
                         onClick={e => e.stopPropagation()}>
-                        {validPhotos.map((ph, pi) => (
-                          <img key={pi} src={ph.data} alt=""
-                            onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
-                            style={{ height:160, width:'auto', maxWidth:240, objectFit:'cover', borderRadius:10, border:`1px solid ${DA.border}`, cursor:'pointer', flexShrink:0, display:'block' }}/>
+                        {shown.map((ph, pi) => (
+                          <div key={pi} style={{ position:'relative', flexShrink:0 }}>
+                            <img src={ph.data} alt=""
+                              onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}
+                              style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block' }}/>
+                            {!isDesktop && pi === shown.length - 1 && extra > 0 && (
+                              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+                                onClick={e => { e.stopPropagation(); setLightbox({ photos: validPhotos, idx: pi }); }}>
+                                <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     );
                   }
                   if (!item._photosHydrated && (item.photos||[]).length > 0) return (
-                    <div style={{ display:'flex', gap:10, marginTop:14 }}>
+                    <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10 }}>
                       {(item.photos||[]).slice(0,4).map((_,pi) => (
-                        <div key={pi} style={{ height:160, width:200, borderRadius:10, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
+                        <div key={pi} style={{ height: isDesktop ? 160 : 90, width: isDesktop ? 200 : 120, borderRadius: isDesktop ? 10 : 6, background:'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)', backgroundSize:'200% 100%', animation:'shimmer 1.2s infinite', flexShrink:0 }}/>
                       ))}
                     </div>
                   );
                   return null;
                 })()}
+
               </div>
 
               {(confirmDelId === item.id
