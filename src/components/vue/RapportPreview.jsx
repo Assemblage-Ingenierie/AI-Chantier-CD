@@ -77,7 +77,8 @@ function estimateBlockH(block, ppl) {
   let h = mode === 'cont' ? 20 : 52;
   if (mode !== 'photos' && txt) h += Math.ceil(txt.length / 65) * 16;
   if (mode !== 'text' && mode !== 'cont') {
-    const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
+    // Pour les blocs-rangée (photoCount défini) on calcule exactement 1 rangée
+    const nPh = block.photoCount ?? Math.min((item.photos || []).filter(p => p.data).length, 6);
     if (nPh > 0) {
       const cols  = Math.min(ppl, 3);
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
@@ -89,9 +90,11 @@ function estimateBlockH(block, ppl) {
 
 // Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination).
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
-// • Les photos sont un bloc séparé (mode:'photos') pour permettre les sauts de page
-function flattenBlocks(locs, plansEnFin) {
+// • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
+//   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
+function flattenBlocks(locs, plansEnFin, ppl = 2) {
   const blocks = [];
+  const cols   = Math.min(ppl, 3);
   for (const loc of locs) {
     const items = (loc.items || []).filter(i => i.titre);
     if (!items.length) continue;
@@ -103,22 +106,34 @@ function flattenBlocks(locs, plansEnFin) {
       const comment = item.commentaire?.trim() || '';
       const chunks  = splitComment(comment);
 
+      // Texte (un ou plusieurs blocs)
       if (chunks.length > 1) {
-        // Commentaire long → plusieurs blocs-paragraphes + bloc-photos séparé
         chunks.forEach((chunk, idx) => {
           blocks.push({ type:'item', id: idx === 0 ? item.id : `${item.id}_c${idx}`,
             item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
             textContent:chunk, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
         });
-        if (photos.length > 0)
-          blocks.push({ type:'item', id:`${item.id}_ph`, item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-      } else if (photos.length > 0 && comment) {
-        // Texte court + photos → texte seul puis photos (coupage possible)
+      } else if (comment) {
         blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'text', textContent:comment, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-        blocks.push({ type:'item', id:`${item.id}_ph`, item, locId:loc.id, mode:'photos', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-      } else {
+      } else if (!photos.length) {
+        // Aucun commentaire, aucune photo → bloc vide mais avec titre/badges
         blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
       }
+
+      // Photos : une rangée (cols photos) = un bloc → s'insèrent ligne par ligne dans le flux
+      if (photos.length > 0) {
+        for (let s = 0; s < photos.length; s += cols) {
+          const count = Math.min(cols, photos.length - s);
+          blocks.push({
+            type:'item',
+            id: s === 0 ? `${item.id}_ph` : `${item.id}_ph${s}`,
+            item, locId:loc.id, mode:'photos',
+            photoStart: s, photoCount: count,
+            vpPhotoOffset: photoOffset + s, hasViewpoints:hasVP,
+          });
+        }
+      }
+
       photoOffset += photos.length;
     }
     if (!plansEnFin) {
@@ -218,13 +233,18 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent }) {
-  const photos = (item.photos || []).filter(p => p.data);
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount }) {
+  const allPhotos = (item.photos || []).filter(p => p.data);
+  // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
+  const photos = (photoStart != null)
+    ? allPhotos.slice(photoStart, photoStart + (photoCount ?? ppl))
+    : allPhotos;
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
   const commentToShow = textContent ?? item.commentaire;
   const showHeader   = mode !== 'photos' && mode !== 'cont';
-  const showContHdr  = mode === 'cont' || mode === 'photos';
+  // Les rangées de photos après la première (photoStart > 0) n'affichent pas de bandeau répété
+  const showContHdr  = mode === 'cont' || (mode === 'photos' && (photoStart == null || photoStart === 0));
   const showComment  = mode !== 'photos' && commentToShow;
   const showPhotos   = mode !== 'text' && mode !== 'cont' && photos.length > 0;
   return (
@@ -276,7 +296,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Photos */}
       {showPhotos && (
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
-          {photos.slice(0, 6).map((ph, pi) => (
+          {photos.map((ph, pi) => (
             <div key={pi} style={{ position:'relative' }}>
               <img src={ph.annotated || ph.data} alt=""
                 style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
@@ -741,7 +761,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
   );
 
   // ── Mesure des hauteurs réelles ──────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin), [locs, plansEnFin]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl), [locs, plansEnFin, ppl]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -867,7 +887,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount}/>
                 }
               </div>
             ))}
@@ -923,6 +943,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                             onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                             vpPhotoOffset={block.vpPhotoOffset ?? 0}
                             hasViewpoints={block.hasViewpoints ?? false}
+                            photoStart={block.photoStart}
+                            photoCount={block.photoCount}
                           />
                       }
                     </div>
