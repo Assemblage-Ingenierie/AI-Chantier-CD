@@ -43,6 +43,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef();
+  const savedSelRef = useRef({ s: 0, e: 0 }); // dernière sélection connue (mobile-safe)
 
   // Auto-grow textarea
   useLayoutEffect(() => {
@@ -441,7 +442,11 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
   const wrapSel = (before, after) => {
     const el = textareaRef.current;
     if (!el) return;
-    // Read directly from DOM element (always in sync, even on controlled inputs)
+    // Sur mobile, tapper un bouton peut faire perdre le focus → restaurer la sélection sauvegardée
+    if (document.activeElement !== el) {
+      el.focus();
+      el.setSelectionRange(savedSelRef.current.s, savedSelRef.current.e);
+    }
     const s = el.selectionStart, e = el.selectionEnd;
     const text = el.value;
     const sel = text.slice(s, e);
@@ -565,7 +570,10 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
             <textarea ref={textareaRef} value={form.commentaire || ''} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))}
               placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
               style={{ width:'100%',border:`1px solid ${recording ? DA.red : DA.border}`,borderRadius:'0 0 8px 8px',padding:'12px 14px',fontSize:15,outline:'none',resize:'vertical',boxSizing:'border-box',fontFamily:'inherit',lineHeight:1.7,minHeight: isDesktop ? 260 : 90,overflow:'auto',textAlign: form.commentaireAlign||'left' }}
-              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => { if (!recording) e.target.style.borderColor=DA.border; }}
+              onFocus={e => e.target.style.borderColor=DA.red}
+              onBlur={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; if (!recording) e.target.style.borderColor=DA.border; }}
+              onSelect={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; }}
+              onKeyUp={e => { savedSelRef.current = { s: e.target.selectionStart, e: e.target.selectionEnd }; }}
               onKeyDown={e => {
                 if (!e.ctrlKey && !e.metaKey) return;
                 if (e.key === 'b' || e.key === 'B') { e.preventDefault(); wrapSel('**','**'); }

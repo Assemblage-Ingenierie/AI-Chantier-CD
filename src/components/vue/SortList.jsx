@@ -202,10 +202,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                 {/* Text block — toujours pleine largeur */}
                 <div>
                   <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
-                  {item.commentaire && (
-                    <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
-                  )}
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 8 : 6, flexWrap:'wrap' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
                     <Badge level={item.urgence}/>
                     <span style={{ display:'flex', alignItems:'center', gap:3 }}>
                       <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
@@ -217,6 +214,9 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                       <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
                     </span>
                   </div>
+                  {item.commentaire && (
+                    <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
+                  )}
                 </div>
 
                 {/* Photos — toujours en dessous du texte (mobile + desktop) */}
