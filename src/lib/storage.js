@@ -269,6 +269,7 @@ export async function loadProjectPhotos(itemIds) {
       id:          ph.id,
       item_id:     ph.item_id,
       name:        ph.name,
+      storage_url: ph.storage_url ?? null,
       data:        ph._path          ? (signedMap[ph._path]          ?? null) : null,
       annotated:   ph._annotatedPath ? (signedMap[ph._annotatedPath] ?? null) : null,
       annotations: hasAnnotCols ? (ph.annotations ?? null) : null,

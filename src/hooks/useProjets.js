@@ -303,7 +303,15 @@ export function useProjets(onSyncStatus) {
               ...item,
               _photosHydrated: true,
               photos: photosMap[item.id]
-                ? photosMap[item.id].map(ph => ({ name: ph.name ?? '', data: ph.data ?? null, _id: ph.id, _legacy: ph._legacy ?? false }))
+                ? photosMap[item.id].map(ph => ({
+                    name:        ph.name ?? '',
+                    data:        ph.data ?? null,
+                    storage_url: ph.storage_url ?? null,
+                    annotated:   ph.annotated ?? null,
+                    annotations: ph.annotations ?? null,
+                    _id:         ph.id,
+                    _legacy:     ph._legacy ?? false,
+                  }))
                 : [],
             })),
           })),
