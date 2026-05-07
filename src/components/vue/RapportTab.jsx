@@ -135,22 +135,39 @@ export default function RapportTab({ projet, onUpdate }) {
 
   const pageBreaks = projet.rapportPageBreaks || [];
 
+  // Génère un résumé court du commentaire pour pré-remplir la solution
+  const shortSolution = (comment) => {
+    if (!comment) return '';
+    const clean = comment.replace(/\n+/g, ' ').trim();
+    if (clean.length <= 90) return clean;
+    const cut = clean.lastIndexOf(' ', 90);
+    return clean.slice(0, cut > 20 ? cut : 90) + '…';
+  };
+
   const recapRows = useMemo(() => {
     if (projet.includeTableauRecap === false) return [];
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
     const ovMap = new Map((projet.tableauRecap || []).map(r => [r.itemId, r]));
-    return localisations.flatMap(loc =>
+    // Lignes issues des items (hors "fait" et hors "excluded")
+    const itemRows = localisations.flatMap(loc =>
       (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
         const ov = ovMap.get(i.id) || {};
+        if (ov.excluded) return null;
         return {
           itemId: i.id,
-          locNom:  'zone'     in ov ? ov.zone     : (loc.nom          || ''),
-          titre:   'titre'    in ov ? ov.titre    : (i.titre           || ''),
-          urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence        || 'basse'),
-          solution:'solution' in ov ? ov.solution : '',
+          isCustom: false,
+          locNom:  'zone'     in ov ? ov.zone     : (loc.nom     || ''),
+          titre:   'titre'    in ov ? ov.titre    : (i.titre      || ''),
+          urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence   || 'basse'),
+          solution:'solution' in ov ? ov.solution : shortSolution(i.commentaire),
         };
-      })
+      }).filter(Boolean)
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
+    // Lignes personnalisées ajoutées manuellement
+    const customRows = (projet.tableauRecap || [])
+      .filter(r => r.isCustom)
+      .map(r => ({ itemId: r.itemId, isCustom: true, locNom: r.zone || '', titre: r.titre || '', urgence: r.urgence || 'basse', solution: r.solution || '' }));
+    return [...itemRows, ...customRows];
   }, [localisations, projet.includeTableauRecap, projet.tableauRecap]);
 
   const updateRecapField = useCallback((itemId, field, value) => {
@@ -160,6 +177,26 @@ export default function RapportTab({ projet, onUpdate }) {
       ? curr.map(r => r.itemId === itemId ? { ...r, [field]: value } : r)
       : [...curr, { itemId, [field]: value }]
     });
+  }, [projet.tableauRecap, onUpdate]);
+
+  const deleteRecapRow = useCallback((itemId, isCustom) => {
+    const curr = projet.tableauRecap || [];
+    if (isCustom) {
+      onUpdate({ tableauRecap: curr.filter(r => r.itemId !== itemId) });
+    } else {
+      // Marque comme excluded (pas physiquement supprimé pour permettre le retour)
+      const has = curr.some(r => r.itemId === itemId);
+      onUpdate({ tableauRecap: has
+        ? curr.map(r => r.itemId === itemId ? { ...r, excluded: true } : r)
+        : [...curr, { itemId, excluded: true }]
+      });
+    }
+  }, [projet.tableauRecap, onUpdate]);
+
+  const addCustomRow = useCallback(() => {
+    const id = 'custom_' + crypto.randomUUID();
+    const curr = projet.tableauRecap || [];
+    onUpdate({ tableauRecap: [...curr, { itemId: id, isCustom: true, zone: '', titre: '', urgence: 'basse', solution: '' }] });
   }, [projet.tableauRecap, onUpdate]);
   const togglePageBreak = (id) => {
     const curr = projet.rapportPageBreaks || [];
@@ -441,73 +478,66 @@ export default function RapportTab({ projet, onUpdate }) {
             {projet.includeTableauRecap !== false && recapRows.length === 0 && (
               <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0 22px' }}>Aucune observation non terminée</p>
             )}
-            {projet.includeTableauRecap !== false && recapRows.length > 0 && (
+            {projet.includeTableauRecap !== false && (
               <div style={{ marginTop:8 }}>
-                <p style={{ fontSize:9.5, color:DA.gray, margin:'0 0 6px', fontStyle:'italic' }}>
-                  Solution pré-remplie depuis les commentaires — modifiable ici
-                </p>
-                <div style={{ border:`1px solid ${DA.border}`, borderRadius:8, overflow:'hidden' }}>
-                  {filteredRecapRows.map((row, i) => {
-                    const u = URGENCE[row.urgence] || URGENCE.basse;
-                    return (
-                      <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < filteredRecapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
-                        <div style={{ background:u.dot }}/>
-                        <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:5 }}>
-                          {/* Zone */}
-                          <div>
-                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Zone</label>
-                            <input
-                              value={row.locNom}
-                              onChange={e => updateRecapField(row.itemId, 'zone', e.target.value)}
-                              placeholder="Zone / localisation…"
-                              style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}
-                            />
-                          </div>
-                          {/* Désordre */}
-                          <div>
-                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Désordre</label>
-                            <input
-                              value={row.titre}
-                              onChange={e => updateRecapField(row.itemId, 'titre', e.target.value)}
-                              placeholder="Désordre…"
-                              style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}
-                            />
-                          </div>
-                          {/* Urgence */}
-                          <div>
-                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Urgence</label>
-                            <div style={{ display:'flex', gap:4 }}>
-                              {['haute','moyenne','basse'].map(lvl => {
-                                const uu = URGENCE[lvl];
-                                const active = row.urgence === lvl;
-                                return (
-                                  <button key={lvl} onClick={() => updateRecapField(row.itemId, 'urgence', lvl)}
-                                    style={{ flex:1, padding:'3px 0', borderRadius:5, fontSize:9, fontWeight:700, cursor:'pointer',
-                                      border:`1.5px solid ${active ? uu.border : DA.border}`,
-                                      background: active ? uu.bg : 'white',
-                                      color: active ? uu.text : DA.grayL }}>
-                                    {uu.label}
-                                  </button>
-                                );
-                              })}
+                {recapRows.length > 0 && (
+                  <div style={{ border:`1px solid ${DA.border}`, borderRadius:8, overflow:'hidden', marginBottom:6 }}>
+                    {filteredRecapRows.map((row, i) => {
+                      const u = URGENCE[row.urgence] || URGENCE.basse;
+                      return (
+                        <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < filteredRecapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
+                          <div style={{ background:u.dot }}/>
+                          <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:5 }}>
+                            {/* Header ligne avec bouton supprimer */}
+                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                              <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic' }}>{row.isCustom ? 'Ligne personnalisée' : 'Auto'}</span>
+                              <button onClick={() => deleteRecapRow(row.itemId, row.isCustom)}
+                                title="Supprimer cette ligne du tableau"
+                                style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:14, lineHeight:1, padding:'0 2px', display:'flex', alignItems:'center' }}>
+                                ×
+                              </button>
+                            </div>
+                            {/* Zone */}
+                            <div>
+                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Zone</label>
+                              <input value={row.locNom} onChange={e => updateRecapField(row.itemId, 'zone', e.target.value)} placeholder="Zone…"
+                                style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}/>
+                            </div>
+                            {/* Désordre */}
+                            <div>
+                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Désordre</label>
+                              <input value={row.titre} onChange={e => updateRecapField(row.itemId, 'titre', e.target.value)} placeholder="Désordre…"
+                                style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}/>
+                            </div>
+                            {/* Urgence */}
+                            <div>
+                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Urgence</label>
+                              <div style={{ display:'flex', gap:4 }}>
+                                {['haute','moyenne','basse'].map(lvl => {
+                                  const uu = URGENCE[lvl]; const active = row.urgence === lvl;
+                                  return <button key={lvl} onClick={() => updateRecapField(row.itemId, 'urgence', lvl)}
+                                    style={{ flex:1, padding:'3px 0', borderRadius:5, fontSize:9, fontWeight:700, cursor:'pointer', border:`1.5px solid ${active ? uu.border : DA.border}`, background: active ? uu.bg : 'white', color: active ? uu.text : DA.grayL }}>
+                                    {uu.label}</button>;
+                                })}
+                              </div>
+                            </div>
+                            {/* Solution */}
+                            <div>
+                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Solution</label>
+                              <textarea value={row.solution} onChange={e => updateRecapField(row.itemId, 'solution', e.target.value)}
+                                placeholder="Solution / action corrective…" rows={2}
+                                style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}/>
                             </div>
                           </div>
-                          {/* Solution */}
-                          <div>
-                            <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Solution</label>
-                            <textarea
-                              value={row.solution}
-                              onChange={e => updateRecapField(row.itemId, 'solution', e.target.value)}
-                              placeholder="Solution / action corrective…"
-                              rows={2}
-                              style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}
-                            />
-                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <button onClick={addCustomRow}
+                  style={{ width:'100%', padding:'7px 0', borderRadius:7, border:`1.5px dashed ${DA.border}`, background:'white', color:DA.gray, fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                  + Ajouter une ligne personnalisée
+                </button>
               </div>
             )}
           </div>

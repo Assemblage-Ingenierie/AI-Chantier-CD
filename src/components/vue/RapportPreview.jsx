@@ -44,7 +44,7 @@ const CW  = PW - 2 * MX; // 522px largeur contenu
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs
-const CHUNK_CHARS = 600; // max chars per text chunk before splitting into multiple blocks
+const CHUNK_CHARS = 1400; // max chars per text chunk — only split genuinely long texts
 
 // Découpe un long commentaire en morceaux aux limites de paragraphes
 function splitComment(comment, maxChars = CHUNK_CHARS) {
@@ -255,11 +255,11 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
           </div>
         </div>
       )}
-      {/* Bannière de continuation (suite texte ou photos) */}
+      {/* Bandeau de continuation minimal — titre en petit + label suite/photos */}
       {showContHdr && (
-        <div style={{ background:'#F5F5F5', padding:'3px 9px', display:'flex', alignItems:'center', gap:6 }}>
-          <span style={{ fontSize:9, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
-          <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? 'photos' : 'suite'}</span>
+        <div style={{ background:'#F9F9F9', borderBottom:`1px solid ${DA.border}`, padding:'2px 9px', display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:8, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
+          <span style={{ fontSize:7.5, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? '↳ photos' : '↳ suite'}</span>
           {onEdit && (
             <button onClick={onEdit} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }} title="Modifier">
               <Ic n="pen" s={10}/>
@@ -856,7 +856,7 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'auto', background:'#555', display:'flex', flexDirection:'column', alignItems:'center', paddingBottom:20 }}>
 
         {/* ── Couche de mesure invisible — height:0 overflow:hidden = en flux normal, offsetHeight fiable ── */}
         <div style={{ height:0, overflow:'hidden', flexShrink:0, width:PW }}>
@@ -897,9 +897,16 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
               />
               <div ref={el => { pageRefs.current[pi + 1] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  {pageBlocks.map((block, bi) => (
+                  {pageBlocks.map((block, bi) => {
+                    // Pas de BreakControl entre les morceaux d'un même item (cont/photos)
+                    const prevBlock = pageBlocks[bi - 1];
+                    const isContinuation = bi > 0
+                      && block.item
+                      && prevBlock?.item?.id === block.item.id
+                      && (block.mode === 'cont' || block.mode === 'photos');
+                    return (
                     <div key={block.id}>
-                      {bi > 0 && (
+                      {bi > 0 && !isContinuation && (
                         <BreakControl
                           id={block.id}
                           active={breaks.has(block.id)}
@@ -918,7 +925,8 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                           />
                       }
                     </div>
-                  ))}
+                    );
+                  })}
                 </A4Card>
               </div>
             </React.Fragment>
