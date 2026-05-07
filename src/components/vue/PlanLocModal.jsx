@@ -76,7 +76,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                   return (
                     <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,transition:'all 0.15s',overflow:'hidden' }}>
                       {/* Zone cliquable = sélection */}
-                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setAnnot(null); setConfirmDelId(null); }}
+                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setConfirmDelId(null); }}
                         style={{ flex:1,display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',minWidth:0 }}>
                         {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
                         <div style={{ flex:1,minWidth:0 }}>
@@ -105,7 +105,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                         )}
                         {onDeletePlan && (confirmDelId === pl.id ? (
                           <>
-                            <button onClick={() => { if (sel) { setPlanBg(null); setPlanData(null); setAnnot(null); } onDeletePlan(pl.id); setConfirmDelId(null); }}
+                            <button onClick={() => { if (sel) { setPlanBg(null); setPlanData(null); } onDeletePlan(pl.id); setConfirmDelId(null); }}
                               style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer' }}>Oui</button>
                             <button onClick={() => setConfirmDelId(null)}
                               style={{ padding:'4px 6px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:5,fontSize:11,cursor:'pointer' }}>Non</button>
