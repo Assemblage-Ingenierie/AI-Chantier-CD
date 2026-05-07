@@ -306,17 +306,49 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       .finally(() => setCompressing(false));
   };
 
+  const toResizedBase64 = async (src) => {
+    // If remote URL, fetch and convert to data URL first
+    let dataUrl = src;
+    if (!src.startsWith('data:')) {
+      const resp = await fetch(src);
+      const blob = await resp.blob();
+      dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+    }
+    // Resize to max 800px via canvas
+    return new Promise((res, rej) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX = 800;
+        const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        res(cv.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = rej;
+      img.src = dataUrl;
+    });
+  };
+
   const analyzePhotos = async () => {
     const validPhotos = form.photos.filter(ph => ph.data);
     if (!validPhotos.length || analyzing) return;
     setAnalyzing(true);
     setAnalyzeError('');
     try {
-      const imageContent = validPhotos.slice(0, 4).map(ph => {
-        const [header, b64] = ph.data.split(',');
+      const imageContent = await Promise.all(validPhotos.slice(0, 4).map(async ph => {
+        const dataUrl = await toResizedBase64(ph.data);
+        const [header, b64] = dataUrl.split(',');
         const mediaType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
         return { type:'image', source:{ type:'base64', media_type:mediaType, data:b64 } };
-      });
+      }));
       const result = await callAIProxy({
         feature: 'photoAnalysis',
         model: 'claude-sonnet-4-6',
