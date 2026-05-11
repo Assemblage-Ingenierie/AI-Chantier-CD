@@ -331,72 +331,131 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   doc.addPage(); y = 18; hdr();
 
   const renderItems = (items, hasViewpoints = false) => {
+    const LB = 3.5; // largeur barre gauche urgence (mm)
+    const TX = ML + LB + 4; // x de début du texte dans l'item
+    const TW = CW - LB - 8; // largeur du texte
     let photoOff = 0;
+
     items.forEach(item => {
       if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
-      const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
-      const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
-      const cLines = item.commentaire ? doc.splitTextToSize(stripMarkup(item.commentaire), CW - 14) : [];
-      const phRows = item.photos?.length ? Math.ceil(Math.min(item.photos.length, 6) / 3) : 0;
-      pb(14 + cLines.length * 4.5 + phRows * 30 + 4 + (suiviTxt ? 6 : 0));
 
-      // Bandeau titre
-      doc.setFillColor(...LG); doc.roundedRect(ML, y, CW, 10, 1.5, 1.5, 'F');
-      doc.setFillColor(...urgColor); doc.circle(ML + 5.5, y + 5, 2.5, 'F');
-      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-      doc.text(doc.splitTextToSize(item.titre, CW - 40)[0], ML + 11, y + 6.5);
-      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...urgColor);
-      doc.text(URGENCE[item.urgence]?.label ?? item.urgence, W - MR, y + 6.5, { align: 'right' });
-      doc.setTextColor(0, 0, 0); y += 12;
+      const urgColor   = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
+      const urgLabel   = URGENCE[item.urgence]?.label ?? item.urgence;
+      const urgBgRgb   = item.urgence === 'haute' ? [254,226,226] : item.urgence === 'moyenne' ? [255,251,235] : [240,253,244];
+      const urgBdRgb   = item.urgence === 'haute' ? [252,165,165] : item.urgence === 'moyenne' ? [253,230,138] : [134,239,172];
+      const suiviTxt   = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
 
-      // Badge suivi
-      if (suiviTxt) {
-        const sv = SUIVI[item.suivi];
-        const sc = sv.dot;
-        const rgb = [parseInt(sc.slice(1,3),16), parseInt(sc.slice(3,5),16), parseInt(sc.slice(5,7),16)];
-        const tw = doc.getTextWidth('Suivi : ' + suiviTxt) + 10;
-        doc.setFillColor(245, 245, 245); doc.roundedRect(ML + 4, y, tw, 5, 1, 1, 'F');
-        doc.setFillColor(...rgb); doc.circle(ML + 8, y + 2.5, 1.5, 'F');
-        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80);
-        doc.text('Suivi : ' + suiviTxt, ML + 11, y + 3.8);
-        doc.setTextColor(0, 0, 0); y += 7;
+      // Mesures
+      const titleLines = doc.splitTextToSize(item.titre || '—', TW);
+      const tLH        = 4.5; // interline titre
+      const hdrH       = titleLines.length * tLH + 7; // gris header
+      const svH        = suiviTxt ? 7 : 0;
+      const cLines     = item.commentaire
+        ? doc.splitTextToSize(stripMarkup(item.commentaire), TW)
+        : [];
+      const txtH       = cLines.length ? cLines.length * 4.2 + 5 : 0;
+
+      const cols       = Math.max(1, Math.min(photosParLigne, 3));
+      const validPh    = (item.photos || []).filter(p => p.data);
+      const maxPh      = cols <= 2 ? 4 : 6;
+      const showPh     = validPh.slice(0, maxPh);
+      const phW        = (CW - LB - 6 - (cols - 1) * 2) / cols;
+      const phH_       = phW * 0.75; // ratio 4:3
+      const phRows     = showPh.length ? Math.ceil(showPh.length / cols) : 0;
+      const phtH       = phRows > 0 ? phRows * (phH_ + 2) + 4 : 0;
+
+      const itemH = hdrH + svH + txtH + phtH + 3;
+      pb(itemH + 5);
+
+      // ── 1. Corps blanc
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(ML, y, CW, itemH, 1.5, 1.5, 'F');
+
+      // ── 2. Header gris clair
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(ML, y, CW, hdrH, 1.5, 1.5, 'F');
+      // fond blanc en bas du header pour masquer les coins arrondis inférieurs
+      doc.rect(ML, y + hdrH - 2, CW, 2, 'F');
+
+      // ── 3. Barre urgence gauche (pleine hauteur item)
+      doc.setFillColor(...urgColor);
+      doc.rect(ML, y + 1.5, LB, itemH - 3, 'F');
+
+      // ── 4. Séparateur header / body
+      if (svH + txtH + phtH > 0) {
+        doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15);
+        doc.line(ML + LB, y + hdrH, ML + CW, y + hdrH);
       }
 
-      // Commentaire
+      // ── 5. Titre
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text(titleLines, TX, y + 4.5);
+
+      // ── 6. Petit dot + badge urgence (dans le header, sous le titre)
+      const badgeY = y + titleLines.length * tLH + 1.5;
+      doc.setFillColor(...urgColor);
+      doc.circle(TX + 1, badgeY + 1.8, 1.5, 'F');
+      const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
+      doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgBdRgb); doc.setLineWidth(0.15);
+      doc.roundedRect(TX + 5, badgeY, urgBadgeW, 4, 1, 1, 'FD');
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...urgColor);
+      doc.text(urgLabel, TX + 8, badgeY + 2.8);
+      doc.setTextColor(0, 0, 0);
+
+      let cy = y + hdrH;
+
+      // ── 7. Badge suivi (sous header)
+      if (suiviTxt) {
+        const sv  = SUIVI[item.suivi];
+        const sc  = sv.dot;
+        const rgb = [parseInt(sc.slice(1,3),16), parseInt(sc.slice(3,5),16), parseInt(sc.slice(5,7),16)];
+        const tw  = doc.getTextWidth('Suivi : ' + suiviTxt) + 10;
+        cy += 1;
+        doc.setFillColor(248, 248, 248); doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15);
+        doc.roundedRect(TX, cy, tw, 5, 1, 1, 'FD');
+        doc.setFillColor(...rgb); doc.circle(TX + 4, cy + 2.5, 1.5, 'F');
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80);
+        doc.text('Suivi : ' + suiviTxt, TX + 7, cy + 3.8);
+        doc.setTextColor(0, 0, 0);
+        cy += 7;
+      }
+
+      // ── 8. Commentaire (pleine largeur)
       if (cLines.length) {
         doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(50, 60, 80);
-        doc.text(cLines, ML + 4, y + 1);
-        y += cLines.length * 4.5 + 2; doc.setTextColor(0, 0, 0);
+        doc.text(cLines, TX, cy + 4.5);
+        cy += cLines.length * 4.2 + 2;
+        doc.setTextColor(0, 0, 0);
       }
 
-      // Photos
-      if (item.photos?.length) {
-        const maxPh = photosParLigne <= 2 ? 4 : 6;
-        const cols = Math.max(1, Math.min(photosParLigne, 3));
-        const show = item.photos.slice(0, maxPh);
-        const pw = (CW - 4 - (cols - 1) * 2) / cols;
-        const ph = pw * 0.65;
+      // ── 9. Photos
+      if (showPh.length) {
+        cy += 2;
         let validInItem = 0;
-        show.forEach((p, pi) => {
-          if (!p.data) return;
-          const px = ML + 4 + (pi % cols) * (pw + 2);
-          const py2 = y + Math.floor(pi / cols) * (ph + 2);
-          try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, pw, ph, undefined, 'FAST'); } catch {}
-          doc.setDrawColor(...GR); doc.setLineWidth(0.15); doc.rect(px, py2, pw, ph);
+        showPh.forEach((p, pi) => {
+          const px  = ML + LB + 2 + (pi % cols) * (phW + 2);
+          const py2 = cy + Math.floor(pi / cols) * (phH_ + 2);
+          try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
+          doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.15); doc.rect(px, py2, phW, phH_);
           if (hasViewpoints) {
             const vLabel = `V${photoOff + validInItem + 1}`;
-            doc.setFillColor(...RD);
-            doc.roundedRect(px + 0.5, py2 + 0.5, 7.5, 4.5, 1, 1, 'F');
-            doc.setFontSize(5.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
-            doc.text(vLabel, px + 1.2, py2 + 3.7);
+            doc.setFillColor(255, 255, 255); doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.1);
+            doc.roundedRect(px + 1, py2 + 1, 7.5, 4, 1, 1, 'FD');
+            doc.setFontSize(5.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+            doc.text(vLabel, px + 4.75, py2 + 3.8, { align: 'center' });
             doc.setTextColor(0, 0, 0);
           }
           validInItem++;
         });
         photoOff += validInItem;
-        y += Math.ceil(show.length / cols) * (ph + 2) + 2;
+        cy += phRows * (phH_ + 2) + 2;
       }
-      y += 4;
+
+      // ── 10. Bordure extérieure (dessinée en dernier pour couvrir les fills internes)
+      doc.setFillColor(); doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
+      doc.roundedRect(ML, y, CW, itemH, 1.5, 1.5, 'D');
+
+      y += itemH + 4;
     });
   };
 
@@ -404,11 +463,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const items = loc.items || [];
     if (!items.length) return;
     if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(18); }
-    doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-    doc.text(loc.nom.toUpperCase(), ML + 6, y + 7);
-    doc.setTextColor(0, 0, 0); y += 14;
+    doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
+    doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
+    doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+    doc.text(loc.nom.toUpperCase(), ML + 8, y + 6.3);
+    doc.setTextColor(0, 0, 0); y += 13;
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     renderItems(items, hasVP);
 
@@ -419,10 +478,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const ih      = CW * 0.58;
         const hasLeg  = (loc.planAnnotations?.paths || []).some(p => p.type === 'symbol');
         pb(22 + ih + (hasLeg ? 20 : 6));
-        doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
-        doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
-        doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-        doc.text(`PLAN — ${loc.nom.toUpperCase()}`, ML + 6, y + 7);
+        doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
+        doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
+        doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+        doc.text(`PLAN — ${loc.nom.toUpperCase()}`, ML + 8, y + 6.3);
         doc.setTextColor(0, 0, 0); y += 12;
         try {
           const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
@@ -458,11 +517,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
     if (recapRows.length > 0) {
       doc.addPage(); y = 18; hdr();
-      doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 10, 2, 2, 'F');
-      doc.setFillColor(...RD); doc.rect(ML, y, 3, 10, 'F');
-      doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-      doc.text('TABLEAU RÉCAPITULATIF', ML + 6, y + 7);
-      doc.setTextColor(0, 0, 0); y += 14;
+      doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
+      doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+      doc.text('TABLEAU RÉCAPITULATIF', ML + 8, y + 6.3);
+      doc.setTextColor(0, 0, 0); y += 13;
 
       // colonnes : bande | zone | désordre | solution | urgence
       const colW = [6, 28, 48, 64, 28];
@@ -542,10 +601,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     planLocs.forEach(loc => {
       doc.addPage(); hdr();
       let ay = 18;
-      doc.setFillColor(...BK); doc.roundedRect(ML, ay, CW, 10, 2, 2, 'F');
-      doc.setFillColor(...RD); doc.rect(ML, ay, 3, 10, 'F');
-      doc.setTextColor(...WH); doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-      doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 6, ay + 7);
+      doc.setFillColor(...BK); doc.roundedRect(ML, ay, CW, 9, 1.5, 1.5, 'F');
+      doc.setFillColor(...RD); doc.rect(ML, ay + 1.5, 3.5, 6, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+      doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 8, ay + 6.3);
       doc.setTextColor(0, 0, 0); ay += 14;
       const planImg = planImages[loc.id];
       try {
