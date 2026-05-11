@@ -166,15 +166,17 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // ── Fonctions utilitaires ────────────────────────────────────────────────────
 
   const hdr = () => {
-    doc.setFillColor(...BK); doc.rect(0, 0, W, 10, 'F');
-    doc.setFillColor(...RD); doc.rect(0, 0, 3, 10, 'F');
+    // Header blanc minimaliste
+    doc.setFillColor(255, 255, 255); doc.rect(0, 0, W, 10, 'F');
+    doc.setFillColor(...RD); doc.rect(0, 0, 2.5, 10, 'F');
+    doc.setDrawColor(230, 230, 230); doc.setLineWidth(0.2); doc.line(0, 10, W, 10);
     if (logoDataUrl) {
-      try { doc.addImage(logoDataUrl, 'PNG', ML + 3, 1.8, 30, 6.5, undefined, 'FAST'); } catch {}
+      try { doc.addImage(logoDataUrl, 'PNG', ML + 2, 1.5, 28, 7, undefined, 'FAST'); } catch {}
     } else {
-      doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
-      doc.text('AI CHANTIER', ML + 3, 6.5);
+      doc.setTextColor(...RD); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
+      doc.text('Assemblage Ingénierie', ML + 4, 6.5);
     }
-    doc.setTextColor(200, 200, 200); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
+    doc.setTextColor(170, 170, 170); doc.setFontSize(6); doc.setFont('helvetica', 'normal');
     doc.text(`${projet.nom} · ${today}`, W - MR, 6.5, { align: 'right' });
     doc.setTextColor(0, 0, 0);
   };
@@ -330,105 +332,108 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   doc.addPage(); y = 18; hdr();
 
+  // Helper hex→RGB
+  const hx = c => [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
+
+  // Zone/plan section header minimaliste
+  const secHdr = (label) => {
+    doc.setFillColor(247, 247, 247);
+    doc.rect(ML, y, CW, 8, 'F');
+    doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3, 5, 'F');
+    doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15); doc.rect(ML, y, CW, 8);
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30);
+    doc.text(label.toUpperCase(), ML + 8, y + 5.5);
+    doc.setTextColor(0, 0, 0); y += 11;
+  };
+
   const renderItems = (items, hasViewpoints = false) => {
-    const LB = 3.5; // largeur barre gauche urgence (mm)
-    const TX = ML + LB + 4; // x de début du texte dans l'item
-    const TW = CW - LB - 8; // largeur du texte
+    // Contraintes strictes pour que le texte ne déborde jamais
+    const LB = 3;                   // barre gauche (mm)
+    const TX = ML + LB + 4;        // x texte = 25mm
+    const RX = W - MR - 4;        // x droite max = 188mm
+    const TW = RX - TX;            // largeur texte = 163mm
+    const TW_TTL = TW - 24;       // réservation label urgence à droite
     let photoOff = 0;
 
     items.forEach(item => {
       if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
 
-      const urgColor   = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
-      const urgLabel   = URGENCE[item.urgence]?.label ?? item.urgence;
-      const urgBgRgb   = item.urgence === 'haute' ? [254,226,226] : item.urgence === 'moyenne' ? [255,251,235] : [240,253,244];
-      const urgBdRgb   = item.urgence === 'haute' ? [252,165,165] : item.urgence === 'moyenne' ? [253,230,138] : [134,239,172];
-      const suiviTxt   = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
+      const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
+      const urgLabel = URGENCE[item.urgence]?.label ?? item.urgence;
+      const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
 
       // Mesures
-      const titleLines = doc.splitTextToSize(item.titre || '—', TW);
-      const tLH        = 4.5; // interline titre
-      const hdrH       = titleLines.length * tLH + 7; // gris header
-      const svH        = suiviTxt ? 7 : 0;
+      const titleLines = doc.splitTextToSize(item.titre || '—', TW_TTL);
       const cLines     = item.commentaire
         ? doc.splitTextToSize(stripMarkup(item.commentaire), TW)
         : [];
-      const txtH       = cLines.length ? cLines.length * 4.2 + 5 : 0;
+      const tLH  = 4.5;
+      const cLH  = 4.0;
+      const hdrH = titleLines.length * tLH + 4;
+      const svH  = suiviTxt ? 7 : 0;
+      const txtH = cLines.length ? cLines.length * cLH + 5 : 0;
 
-      const cols       = Math.max(1, Math.min(photosParLigne, 3));
-      const validPh    = (item.photos || []).filter(p => p.data);
-      const maxPh      = cols <= 2 ? 4 : 6;
-      const showPh     = validPh.slice(0, maxPh);
-      const phW        = (CW - LB - 6 - (cols - 1) * 2) / cols;
-      const phH_       = phW * 0.75; // ratio 4:3
-      const phRows     = showPh.length ? Math.ceil(showPh.length / cols) : 0;
-      const phtH       = phRows > 0 ? phRows * (phH_ + 2) + 4 : 0;
+      const cols    = Math.max(1, Math.min(photosParLigne, 3));
+      const validPh = (item.photos || []).filter(p => p.data);
+      const maxPh   = cols <= 2 ? 4 : 6;
+      const showPh  = validPh.slice(0, maxPh);
+      const phW     = (CW - LB - 4 - (cols - 1) * 2) / cols;
+      const phH_    = phW * 0.75;
+      const phRows  = showPh.length ? Math.ceil(showPh.length / cols) : 0;
+      const phtH    = phRows > 0 ? phRows * (phH_ + 2) + 4 : 0;
+      const itemH   = hdrH + svH + txtH + phtH + 4;
 
-      const itemH = hdrH + svH + txtH + phtH + 3;
-      pb(itemH + 5);
+      pb(itemH + 4);
 
-      // ── 1. Corps blanc
+      // Fond blanc + bordure légère
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(ML, y, CW, itemH, 1.5, 1.5, 'F');
+      doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
+      doc.roundedRect(ML, y, CW, itemH, 1, 1, 'FD');
 
-      // ── 2. Header gris clair
-      doc.setFillColor(245, 245, 245);
-      doc.roundedRect(ML, y, CW, hdrH, 1.5, 1.5, 'F');
-      // fond blanc en bas du header pour masquer les coins arrondis inférieurs
-      doc.rect(ML, y + hdrH - 2, CW, 2, 'F');
-
-      // ── 3. Barre urgence gauche (pleine hauteur item)
+      // Barre urgence gauche (sans cercle)
       doc.setFillColor(...urgColor);
-      doc.rect(ML, y + 1.5, LB, itemH - 3, 'F');
+      doc.rect(ML, y + 1, LB, itemH - 2, 'F');
 
-      // ── 4. Séparateur header / body
-      if (svH + txtH + phtH > 0) {
-        doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15);
-        doc.line(ML + LB, y + hdrH, ML + CW, y + hdrH);
-      }
-
-      // ── 5. Titre
-      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      // Titre
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20);
       doc.text(titleLines, TX, y + 4.5);
 
-      // ── 6. Petit dot + badge urgence (dans le header, sous le titre)
-      const badgeY = y + titleLines.length * tLH + 1.5;
-      doc.setFillColor(...urgColor);
-      doc.circle(TX + 1, badgeY + 1.8, 1.5, 'F');
-      const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
-      doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgBdRgb); doc.setLineWidth(0.15);
-      doc.roundedRect(TX + 5, badgeY, urgBadgeW, 4, 1, 1, 'FD');
-      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...urgColor);
-      doc.text(urgLabel, TX + 8, badgeY + 2.8);
+      // Label urgence — texte seul, aligné à droite
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...urgColor);
+      doc.text(urgLabel, RX, y + 4.5, { align: 'right' });
       doc.setTextColor(0, 0, 0);
+
+      // Séparateur fin si contenu sous le titre
+      if (svH + txtH + phtH > 0) {
+        doc.setDrawColor(235, 235, 235); doc.setLineWidth(0.1);
+        doc.line(ML + LB + 1, y + hdrH, ML + CW - 1, y + hdrH);
+      }
 
       let cy = y + hdrH;
 
-      // ── 7. Badge suivi (sous header)
+      // Badge suivi (sans cercle)
       if (suiviTxt) {
-        const sv  = SUIVI[item.suivi];
-        const sc  = sv.dot;
-        const rgb = [parseInt(sc.slice(1,3),16), parseInt(sc.slice(3,5),16), parseInt(sc.slice(5,7),16)];
-        const tw  = doc.getTextWidth('Suivi : ' + suiviTxt) + 10;
-        cy += 1;
-        doc.setFillColor(248, 248, 248); doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15);
-        doc.roundedRect(TX, cy, tw, 5, 1, 1, 'FD');
-        doc.setFillColor(...rgb); doc.circle(TX + 4, cy + 2.5, 1.5, 'F');
-        doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(80, 80, 80);
-        doc.text('Suivi : ' + suiviTxt, TX + 7, cy + 3.8);
+        const sv     = SUIVI[item.suivi];
+        const dotRgb = hx(sv.dot);
+        const bgRgb  = hx(sv.bg);
+        cy += 1.5;
+        doc.setFillColor(...bgRgb); doc.setDrawColor(...dotRgb); doc.setLineWidth(0.15);
+        doc.roundedRect(TX, cy, doc.getTextWidth(suiviTxt) + 8, 4.5, 1, 1, 'FD');
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...dotRgb);
+        doc.text(suiviTxt, TX + 4, cy + 3.2);
         doc.setTextColor(0, 0, 0);
         cy += 7;
       }
 
-      // ── 8. Commentaire (pleine largeur)
+      // Commentaire — largeur contrainte à TW
       if (cLines.length) {
-        doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(50, 60, 80);
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(55, 60, 75);
         doc.text(cLines, TX, cy + 4.5);
-        cy += cLines.length * 4.2 + 2;
+        cy += cLines.length * cLH + 3;
         doc.setTextColor(0, 0, 0);
       }
 
-      // ── 9. Photos
+      // Photos
       if (showPh.length) {
         cy += 2;
         let validInItem = 0;
@@ -436,13 +441,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           const px  = ML + LB + 2 + (pi % cols) * (phW + 2);
           const py2 = cy + Math.floor(pi / cols) * (phH_ + 2);
           try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
-          doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.15); doc.rect(px, py2, phW, phH_);
+          doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.1); doc.rect(px, py2, phW, phH_);
           if (hasViewpoints) {
             const vLabel = `V${photoOff + validInItem + 1}`;
             doc.setFillColor(255, 255, 255); doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.1);
-            doc.roundedRect(px + 1, py2 + 1, 7.5, 4, 1, 1, 'FD');
-            doc.setFontSize(5.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
-            doc.text(vLabel, px + 4.75, py2 + 3.8, { align: 'center' });
+            doc.roundedRect(px + 1, py2 + 1, 7, 3.5, 0.8, 0.8, 'FD');
+            doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
+            doc.text(vLabel, px + 4.5, py2 + 3.5, { align: 'center' });
             doc.setTextColor(0, 0, 0);
           }
           validInItem++;
@@ -451,23 +456,15 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         cy += phRows * (phH_ + 2) + 2;
       }
 
-      // ── 10. Bordure extérieure (dessinée en dernier pour couvrir les fills internes)
-      doc.setFillColor(); doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
-      doc.roundedRect(ML, y, CW, itemH, 1.5, 1.5, 'D');
-
-      y += itemH + 4;
+      y += itemH + 3;
     });
   };
 
   localisations.forEach(loc => {
     const items = loc.items || [];
     if (!items.length) return;
-    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(18); }
-    doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
-    doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
-    doc.text(loc.nom.toUpperCase(), ML + 8, y + 6.3);
-    doc.setTextColor(0, 0, 0); y += 13;
+    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(14); }
+    secHdr(loc.nom);
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     renderItems(items, hasVP);
 
@@ -478,11 +475,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const ih      = CW * 0.58;
         const hasLeg  = (loc.planAnnotations?.paths || []).some(p => p.type === 'symbol');
         pb(22 + ih + (hasLeg ? 20 : 6));
-        doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
-        doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
-        doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
-        doc.text(`PLAN — ${loc.nom.toUpperCase()}`, ML + 8, y + 6.3);
-        doc.setTextColor(0, 0, 0); y += 12;
+        secHdr(`Plan — ${loc.nom}`);
         try {
           const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
@@ -517,55 +510,45 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
     if (recapRows.length > 0) {
       doc.addPage(); y = 18; hdr();
-      doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 9, 1.5, 1.5, 'F');
-      doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3.5, 6, 'F');
-      doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
-      doc.text('TABLEAU RÉCAPITULATIF', ML + 8, y + 6.3);
-      doc.setTextColor(0, 0, 0); y += 13;
+      secHdr('Tableau récapitulatif');
 
       // colonnes : bande | zone | désordre | solution | urgence
-      const colW = [6, 28, 48, 64, 28];
-      const colX = [ML, ML+6, ML+34, ML+82, ML+146];
+      // Colonnes (sans bande couleur) : barre | zone | désordre | solution | urgence
+      const LBR  = 3;
+      const TXR  = ML + LBR + 3;
+      const colW = [30, 52, 68, 21];
+      const colX = [TXR, TXR + 30, TXR + 82, TXR + 150];
 
-      doc.setFillColor(50, 50, 50); doc.rect(ML, y, CW, 8, 'F');
-      doc.setTextColor(...WH); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
-      [null, 'ZONE', 'DÉSORDRE', 'SOLUTION / ACTION CORRECTIVE', 'URGENCE'].forEach((t, i) => {
-        if (t) doc.text(t, colX[i] + 2, y + 5.5);
+      // En-tête tableau
+      doc.setFillColor(40, 40, 40); doc.roundedRect(ML, y, CW, 7, 1, 1, 'F');
+      doc.setTextColor(...WH); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
+      ['ZONE', 'DÉSORDRE', 'SOLUTION / ACTION', 'URGENCE'].forEach((t, i) => {
+        doc.text(t, colX[i], y + 4.8);
       });
-      doc.setTextColor(0, 0, 0); y += 9;
+      doc.setTextColor(0, 0, 0); y += 8;
 
       recapRows.forEach((row, i) => {
         const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
         const urgLabel = URGENCE[row.urgence]?.label ?? row.urgence;
-        const zoneLines  = doc.splitTextToSize(row.locNom || '—', colW[1] - 3);
-        const titreLines = doc.splitTextToSize(row.titre   || '—', colW[2] - 3);
-        const solLines   = doc.splitTextToSize(row.solution || '—', colW[3] - 3);
-        const rowH = Math.max(zoneLines.length, titreLines.length, solLines.length) * 4.5 + 8;
+        const zoneLines  = doc.splitTextToSize(row.locNom || '—', colW[0] - 3);
+        const titreLines = doc.splitTextToSize(row.titre   || '—', colW[1] - 3);
+        const solLines   = doc.splitTextToSize(row.solution || '—', colW[2] - 3);
+        const rowH = Math.max(zoneLines.length, titreLines.length, solLines.length) * 4.0 + 7;
         pb(rowH + 2);
 
         const bg = i % 2 === 0 ? 249 : 255;
         doc.setFillColor(bg, bg, bg); doc.rect(ML, y, CW, rowH, 'F');
-        doc.setFillColor(...urgColor); doc.rect(colX[0], y, colW[0], rowH, 'F');
-        doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15); doc.rect(ML, y, CW, rowH);
+        doc.setFillColor(...urgColor); doc.rect(ML, y + 1, LBR, rowH - 2, 'F');
+        doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.1); doc.rect(ML, y, CW, rowH);
 
-        // Zone
-        doc.setTextColor(50, 50, 50); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(zoneLines, colX[1] + 2, y + 5);
-
-        // Désordre
-        doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-        doc.text(titreLines, colX[2] + 2, y + 5);
-
-        // Solution
-        doc.setTextColor(50, 50, 50); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(solLines, colX[3] + 2, y + 5);
-
-        // Urgence badge
-        const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
-        doc.setFillColor(...(row.urgence === 'haute' ? [254,226,226] : row.urgence === 'moyenne' ? [255,251,235] : [240,253,244]));
-        doc.roundedRect(colX[4] + 1, y + rowH/2 - 3.5, urgBadgeW, 7, 1.5, 1.5, 'F');
-        doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-        doc.text(urgLabel, colX[4] + 4, y + rowH/2 + 1);
+        doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(zoneLines, colX[0], y + 5);
+        doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+        doc.text(titreLines, colX[1], y + 5);
+        doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(solLines, colX[2], y + 5);
+        doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+        doc.text(urgLabel, colX[3], y + 5);
 
         doc.setTextColor(0, 0, 0); y += rowH + 1;
       });
@@ -599,13 +582,9 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   if (plansEnFin) {
     const planLocs = localisations.filter(l => planImages[l.id]);
     planLocs.forEach(loc => {
-      doc.addPage(); hdr();
-      let ay = 18;
-      doc.setFillColor(...BK); doc.roundedRect(ML, ay, CW, 9, 1.5, 1.5, 'F');
-      doc.setFillColor(...RD); doc.rect(ML, ay + 1.5, 3.5, 6, 'F');
-      doc.setTextColor(...WH); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
-      doc.text(`PLAN ANNOTÉ — ${loc.nom.toUpperCase()}`, ML + 8, ay + 6.3);
-      doc.setTextColor(0, 0, 0); ay += 14;
+      doc.addPage(); y = 18; hdr();
+      secHdr(`Plan annoté — ${loc.nom}`);
+      let ay = y;
       const planImg = planImages[loc.id];
       try {
         const ih  = CW * 0.58;
