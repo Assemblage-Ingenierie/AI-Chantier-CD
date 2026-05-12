@@ -80,6 +80,7 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
+  const [cutMode, setCutMode] = useState(false);
   const previewRef = useRef();
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [panelW, setPanelW] = useState(() => {
@@ -326,6 +327,17 @@ export default function RapportTab({ projet, onUpdate }) {
               Organisé par zone / observation — prêt pour Drive
             </p>
           )}
+
+          {/* Bouton ciseaux — mode coupe pagination */}
+          <button
+            onClick={() => setCutMode(v => !v)}
+            style={{ width:'100%', padding:'9px 0', borderRadius:10, fontSize:12, fontWeight:700,
+              border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
+              background: cutMode ? '#FFF0F0' : 'white',
+              color: cutMode ? DA.red : DA.black,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer' }}>
+            ✂ {cutMode ? "Mode coupe actif — cliquez dans l'aperçu" : 'Créer un saut de page'}
+          </button>
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
@@ -579,6 +591,8 @@ export default function RapportTab({ projet, onUpdate }) {
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}
         panelOpen={panelOpen}
+        cutMode={cutMode}
+        onCutModeChange={setCutMode}
       />
     </div>
   );

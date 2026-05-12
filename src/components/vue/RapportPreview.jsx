@@ -382,15 +382,6 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
           Plan — {loc.nom}
         </span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
-          {onAnnotScaleChange && paths?.length > 0 && (
-            <>
-              <span style={{ fontSize:8, color:'rgba(255,255,255,0.45)', whiteSpace:'nowrap' }}>Légendes</span>
-              <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
-                onChange={e => onAnnotScaleChange(parseFloat(e.target.value))}
-                style={{ width:64, accentColor:DA.red, cursor:'pointer' }}/>
-              <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.8)', minWidth:28 }}>{annotScale.toFixed(1)}×</span>
-            </>
-          )}
           {paths?.length > 0 && (
             <span style={{ fontSize:8, color:'rgba(255,255,255,0.5)' }}>
               {paths.length} annotation{paths.length > 1 ? 's' : ''}
@@ -759,7 +750,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, cutMode = false, onCutModeChange }, ref) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -840,6 +831,40 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     scrollRef.current.scrollBy({ top: elTop - ctop - 16, behavior: 'smooth' });
   }, [totalPages]);
 
+  // ── Mode coupe (curseur ciseau) ─────────────────────────────────────────────
+  const [cutLineY, setCutLineY] = useState(null);
+  const [cutTargetId, setCutTargetId] = useState(null);
+
+  const handleCutMouseMove = useCallback((e) => {
+    if (!cutMode) return;
+    const blockEls = scrollRef.current?.querySelectorAll('[data-block-cut="true"]');
+    if (!blockEls?.length) return;
+    let bestEl = null, bestDist = Infinity;
+    for (const el of blockEls) {
+      const dist = Math.abs(el.getBoundingClientRect().top - e.clientY);
+      if (dist < bestDist) { bestDist = dist; bestEl = el; }
+    }
+    if (bestEl) {
+      setCutLineY(bestEl.getBoundingClientRect().top);
+      setCutTargetId(bestEl.dataset.blockId);
+    }
+  }, [cutMode]);
+
+  const handleCutClick = useCallback(() => {
+    if (!cutMode || !cutTargetId) return;
+    onTogglePageBreak(cutTargetId);
+    onCutModeChange?.(false);
+    setCutLineY(null); setCutTargetId(null);
+  }, [cutMode, cutTargetId, onTogglePageBreak, onCutModeChange]);
+
+  // Quitter le mode coupe avec Echap
+  useEffect(() => {
+    if (!cutMode) return;
+    const onKey = (e) => { if (e.key === 'Escape') { onCutModeChange?.(false); setCutLineY(null); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cutMode, onCutModeChange]);
+
   // ── Impression navigateur (preview = PDF pixel-perfect) ────────────────────
   useImperativeHandle(ref, () => ({
     print: () => {
@@ -884,7 +909,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 </head><body>${pagesHtml}</body></html>`);
 
       win.document.close();
-      win.addEventListener('load', () => setTimeout(() => { win.focus(); win.print(); }, 300));
+      // Imprimer dès que les fonts sont prêtes (< 1.5s) ou après timeout absolu
+      const doPrint = () => { try { win.focus(); win.print(); } catch {} };
+      Promise.race([
+        win.document.fonts?.ready ?? Promise.resolve(),
+        new Promise(r => setTimeout(r, 1500)),
+      ]).then(doPrint);
     }
   }));
 
@@ -899,7 +929,16 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }
 
   return (
-    <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
+      {/* Ligne de coupe flottante (mode ciseau) */}
+      {cutMode && cutLineY !== null && (
+        <div style={{ position:'fixed', top:cutLineY - 1, left:scrollRef.current?.getBoundingClientRect().left ?? 0, right:0, height:2, pointerEvents:'none', zIndex:9999,
+          background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}>
+          <div style={{ position:'absolute', left:16, top:-12, background:'#E30513', color:'white', fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:4 }}>
+            ✂ Cliquer pour insérer un saut de page — Échap pour annuler
+          </div>
+        </div>
+      )}
 
       {/* ── Barre de navigation pages ── */}
       <div style={{ background:'#1e1e1e', padding:'7px 10px', display:'flex', alignItems:'center', gap:8, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
@@ -935,7 +974,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       </div>
 
       {/* ── Zone défilante ── */}
-      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative' }}>
+      <div ref={scrollRef}
+        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'crosshair' : 'default' }}
+        onMouseMove={cutMode ? handleCutMouseMove : undefined}
+        onClick={cutMode ? handleCutClick : undefined}
+      >
 
         {/* ── Couche de mesure invisible ── */}
         <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
@@ -997,9 +1040,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         && (block.mode === 'cont' || block.mode === 'photos'))
                       || prevBlock?.type === 'zone'
                     );
-                    const showBreakCtl = bi > 0 && !isContinuation;
+                    const showBreakCtl = bi > 0 && !isContinuation && block.type === 'zone';
                     return (
-                    <div key={block.id}>
+                    <div key={block.id} data-block-id={block.id} data-block-cut={bi > 0 && !isContinuation ? 'true' : undefined}>
                       {showBreakCtl && (
                         <div data-print="hide">
                           <BreakControl
