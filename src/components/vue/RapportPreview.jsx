@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
@@ -469,11 +469,11 @@ function A4Card({ children, projet, pageNum, totalPages }) {
       </div>
       {/* Zone de débordement (visible si overflow) */}
       {overflow > 0 && (
-        <div style={{ position:'absolute', top:PH, left:0, right:0, bottom:0, pointerEvents:'none', zIndex:1,
+        <div data-print="hide" style={{ position:'absolute', top:PH, left:0, right:0, bottom:0, pointerEvents:'none', zIndex:1,
           background:'repeating-linear-gradient(45deg,rgba(227,5,19,0.05),rgba(227,5,19,0.05) 8px,rgba(255,255,255,0) 8px,rgba(255,255,255,0) 16px)' }}/>
       )}
       {/* Marqueur de fin de page A4 */}
-      <div style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:3 }}>
+      <div data-print="hide" style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:3 }}>
         <div style={{ borderTop:`3px solid ${DA.red}`, display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
           <div style={{ background:DA.red, color:'white', fontSize:8, fontWeight:800, padding:'3px 12px',
             borderRadius:'0 0 6px 6px', letterSpacing:0.3, whiteSpace:'nowrap',
@@ -781,7 +781,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-export default function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen }, ref) {
   const ppl    = photosParLigne ?? 2;
   const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
   const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -861,6 +861,52 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
     const ctop  = scrollRef.current.getBoundingClientRect().top;
     scrollRef.current.scrollBy({ top: elTop - ctop - 16, behavior: 'smooth' });
   }, [totalPages]);
+
+  // ── Impression navigateur (preview = PDF pixel-perfect) ────────────────────
+  useImperativeHandle(ref, () => ({
+    print: () => {
+      const pages = pageRefs.current.filter(Boolean);
+      if (!pages.length) return;
+
+      const win = window.open('', '_blank');
+      if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
+
+      const pagesHtml = pages.map(el => {
+        const clone = el.cloneNode(true);
+        // Supprimer les éléments UI non imprimables
+        clone.querySelectorAll('[data-print="hide"]').forEach(e => e.remove());
+        // Convertir les canvas (icônes de légende) en images
+        clone.querySelectorAll('canvas').forEach(canvas => {
+          try {
+            const img = document.createElement('img');
+            img.src = canvas.toDataURL();
+            img.style.cssText = canvas.style.cssText;
+            canvas.parentNode?.replaceChild(img, canvas);
+          } catch {}
+        });
+        clone.style.marginTop = '0';
+        return `<div class="pdf-page">${clone.innerHTML}</div>`;
+      }).join('\n');
+
+      // CSS : 1px CSS = 1/96 inch, 1mm = 3.7795px → PW=630px = 166.7mm.
+      // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.
+      win.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Rapport PDF</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: white; }
+  .pdf-page { width: 630px; height: 891px; overflow: hidden; position: relative; display: block; page-break-after: always; break-after: page; }
+  .pdf-page:last-child { page-break-after: avoid; break-after: avoid; }
+  @media screen { body { background: #555; display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 16px; } .pdf-page { box-shadow: 0 2px 20px rgba(0,0,0,0.35); } }
+  @media print { html { zoom: 1.2597; } body { background: white; padding: 0; } .pdf-page { box-shadow: none; } }
+</style>
+</head><body>${pagesHtml}</body></html>`);
+
+      win.document.close();
+      win.addEventListener('load', () => setTimeout(() => { win.focus(); win.print(); }, 300));
+    }
+  }));
 
   if (!pages.length) {
     return (
@@ -953,11 +999,13 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
                   {/* Bouton de suppression en haut si ce saut de page est forcé */}
                   {firstForced && firstBlock && (
-                    <TopBreakControl
-                      id={firstId}
-                      zoneName={firstBlock.type === 'zone' ? firstBlock.loc?.nom : firstBlock.item?.titre}
-                      onToggle={onTogglePageBreak}
-                    />
+                    <div data-print="hide">
+                      <TopBreakControl
+                        id={firstId}
+                        zoneName={firstBlock.type === 'zone' ? firstBlock.loc?.nom : firstBlock.item?.titre}
+                        onToggle={onTogglePageBreak}
+                      />
+                    </div>
                   )}
                   {pageBlocks.map((block, bi) => {
                     // Pas de BreakControl entre les morceaux d'un même item (cont/photos)
@@ -973,12 +1021,14 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
                     return (
                     <div key={block.id}>
                       {showBreakCtl && (
-                        <BreakControl
-                          id={block.id}
-                          active={breaks.has(block.id)}
-                          zoneName={block.loc?.nom}
-                          onToggle={onTogglePageBreak}
-                        />
+                        <div data-print="hide">
+                          <BreakControl
+                            id={block.id}
+                            active={breaks.has(block.id)}
+                            zoneName={block.loc?.nom}
+                            onToggle={onTogglePageBreak}
+                          />
+                        </div>
                       )}
                       {block.type === 'zone'
                         ? <ZoneHeader loc={block.loc} />
@@ -1068,4 +1118,6 @@ export default function RapportPreview({ projet, localisations, photosParLigne, 
       </div>
     </div>
   );
-}
+});
+
+export default RapportPreview;
