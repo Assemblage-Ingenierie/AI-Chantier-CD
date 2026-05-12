@@ -550,12 +550,22 @@ function A4Card({ children, projet, pageNum, totalPages }) {
   return (
     <div ref={cardRef} style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      {/* Padding-bottom réserve la place pour le footer absolument positionné */}
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>{children}</div>
-      {/* Footer toujours ancré au bas de la page A4, même si le contenu est court */}
+      {/* Footer ancré à PH - FTR même si contenu déborde */}
       <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
         <PageFtr pageNum={pageNum} totalPages={totalPages}/>
       </div>
+      {/* Indicateur visuel de débordement — masqué à l'impression */}
+      {overflow > 0 && (
+        <>
+          <div data-print="hide" style={{ position:'absolute', left:0, right:0, top:PH - FTR - MB, borderTop:'2px dashed #F97316', zIndex:6, pointerEvents:'none' }}>
+            <div style={{ background:'#F97316', color:'white', fontSize:7, fontWeight:800, padding:'2px 8px', display:'inline-flex', alignItems:'center', gap:4, borderRadius:'0 0 4px 4px', letterSpacing:0.3, whiteSpace:'nowrap' }}>
+              ⚠ Dépasse la page A4 ({Math.round(overflow)}px) — utiliser ✂ Saut de page
+            </div>
+          </div>
+          <div data-print="hide" style={{ position:'absolute', left:0, right:0, top:PH - FTR - MB, bottom:0, background:'rgba(249,115,22,0.06)', pointerEvents:'none', zIndex:5 }}/>
+        </>
+      )}
     </div>
   );
 }
@@ -1190,8 +1200,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             ))}
           </div>
         </div>
-        {/* zoom CSS réduit visuellement ET en layout → margin:auto centre parfaitement */}
-        <div style={{ width: PW, margin:'0 auto', zoom: scale, display:'flex', flexDirection:'column', alignItems:'center' }}>
+        {/* Centré sur la largeur totale du viewport (pas seulement la zone preview) */}
+        <div style={{ width: PW, marginLeft:`calc(max(10px, 50vw - ${panelW}px - ${Math.round(PW * scale / 2)}px))`, marginRight:0, zoom: scale, display:'flex', flexDirection:'column', alignItems:'center' }}>
 
         {/* ── PAGE DE GARDE ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
