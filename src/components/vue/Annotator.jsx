@@ -151,7 +151,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         : exportSizeMultiplier * annotScale;
       drawAnnotationPaths(ectx, paths, exportScale);
       ectx.restore();
-      return { paths, annotated: ec.toDataURL('image/jpeg', 0.88) };
+      return { paths, annotated: ec.toDataURL('image/jpeg', 0.88), annotW: cv.width, annotH: cv.height };
     },
   }), [paths, annotScale, exportSizeMultiplier]);
 
@@ -424,7 +424,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             </button>
             <button onClick={() => {
               const cv = cvRef.current;
-              if (!cv || !bgRef.current) { onSave(paths, null); onClose(); return; }
+              if (!cv || !bgRef.current) { onSave(paths, null, null); onClose(); return; }
               // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
               const EW = Math.min(cv.width, 1400);
               const EH = Math.round(cv.height * EW / cv.width);
@@ -440,7 +440,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 : exportSizeMultiplier * annotScale;
               drawAnnotationPaths(ectx, paths, exportScale);
               ectx.restore();
-              onSave(paths, ec.toDataURL('image/jpeg', 0.88));
+              onSave(paths, ec.toDataURL('image/jpeg', 0.88), { w: cv.width, h: cv.height });
               onClose();
             }}
               style={{ padding:'8px 14px',borderRadius:8,background:DA.red,color:'white',

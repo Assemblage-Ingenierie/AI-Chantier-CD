@@ -375,7 +375,7 @@ export default function RapportTab({ projet, onUpdate }) {
           {/* Taille des annotations sur plans */}
           <div>
             <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
-              Taille des légendes sur plans
+              Taille des annotations
             </label>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
@@ -388,7 +388,7 @@ export default function RapportTab({ projet, onUpdate }) {
               )}
             </div>
             <p style={{ fontSize:9.5, color:DA.grayL, margin:'3px 0 0', fontStyle:'italic' }}>
-              Affecte l'aperçu, le PDF et l'annotateur
+              Affecte les marqueurs sur plans et photos (légende fixe)
             </p>
           </div>
 

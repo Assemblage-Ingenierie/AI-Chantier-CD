@@ -405,10 +405,10 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
       <Annotator
         bgImage={ph?.data}
         savedPaths={ph?.annotations || []}
-        onSave={(paths, exported) => {
+        onSave={(paths, exported, dims) => {
           setForm(f => ({
             ...f,
-            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h } : p),
           }));
           setAnnotatingPhotoIdx(null);
         }}
