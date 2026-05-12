@@ -80,6 +80,7 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 
 export default function RapportTab({ projet, onUpdate }) {
   const [exporting, setExporting] = useState(false);
+  const previewRef = useRef();
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [panelW, setPanelW] = useState(() => {
     const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
@@ -203,27 +204,8 @@ export default function RapportTab({ projet, onUpdate }) {
     onUpdate({ rapportPageBreaks: curr.includes(id) ? curr.filter(x => x !== id) : [...curr, id] });
   };
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      await exportPdf({
-        projet,
-        localisations,
-        photosParLigne:       projet.photosParLigne ?? 2,
-        rapportPageBreaks:    projet.rapportPageBreaks || [],
-        plansEnFin:           projet.plansEnFin ?? false,
-        includeTableauRecap:  projet.includeTableauRecap !== false,
-        tableauRecap:         projet.tableauRecap || [],
-        annotScale,
-        includeConclusion:    projet.includeConclusion ?? false,
-        conclusion:           projet.conclusion ?? '',
-        conclusionAlign:      projet.conclusionAlign ?? 'left',
-      });
-    } catch (e) {
-      console.error('Export PDF:', e);
-      alert('Erreur lors de la génération du PDF : ' + (e.message || e));
-    }
-    setExporting(false);
+  const handleExport = () => {
+    previewRef.current?.print();
   };
 
   const [zipping, setZipping] = useState(false);
@@ -317,14 +299,14 @@ export default function RapportTab({ projet, onUpdate }) {
         <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:6 }}>
           <button
             onClick={handleExport}
-            disabled={exporting || allItems.length === 0}
+            disabled={allItems.length === 0}
             style={{ width:'100%', padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
-              cursor: exporting || allItems.length === 0 ? 'not-allowed' : 'pointer',
-              background: exporting || allItems.length === 0 ? DA.grayL : DA.red,
+              cursor: allItems.length === 0 ? 'not-allowed' : 'pointer',
+              background: allItems.length === 0 ? DA.grayL : DA.red,
               color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
               boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
-            {exporting ? <Ic n="spn" s={14}/> : <Ic n="fil" s={14}/>}
-            {exporting ? 'Génération…' : allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
+            <Ic n="fil" s={14}/>
+            {allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
           </button>
 
           {/* ZIP photos */}
@@ -580,6 +562,7 @@ export default function RapportTab({ projet, onUpdate }) {
 
       {/* ── Panneau droit : aperçu A4 ── */}
       <RapportPreview
+        ref={previewRef}
         projet={projet}
         localisations={localisations}
         photosParLigne={projet.photosParLigne ?? 2}
