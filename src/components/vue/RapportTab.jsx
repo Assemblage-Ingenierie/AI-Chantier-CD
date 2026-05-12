@@ -137,13 +137,21 @@ export default function RapportTab({ projet, onUpdate }) {
 
   const pageBreaks = projet.rapportPageBreaks || [];
 
-  // Génère un résumé court du commentaire pour pré-remplir la solution
+  // Nettoie le commentaire : supprime HTML, markdown, puis tronque
   const shortSolution = (comment) => {
     if (!comment) return '';
-    const clean = comment.replace(/\n+/g, ' ').trim();
-    if (clean.length <= 90) return clean;
-    const cut = clean.lastIndexOf(' ', 90);
-    return clean.slice(0, cut > 20 ? cut : 90) + '…';
+    const clean = comment
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+      .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\n+/g, ' ')
+      .trim();
+    if (clean.length <= 70) return clean;
+    const cut = clean.lastIndexOf(' ', 70);
+    return clean.slice(0, cut > 20 ? cut : 70) + '…';
   };
 
   const recapRows = useMemo(() => {
@@ -158,17 +166,18 @@ export default function RapportTab({ projet, onUpdate }) {
         return {
           itemId: i.id,
           isCustom: false,
-          locNom:  'zone'     in ov ? ov.zone     : (loc.nom     || ''),
-          titre:   'titre'    in ov ? ov.titre    : (i.titre      || ''),
-          urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence   || 'basse'),
-          solution:'solution' in ov ? ov.solution : shortSolution(i.commentaire),
+          locNom:   'zone'     in ov ? ov.zone     : (loc.nom     || ''),
+          titre:    'titre'    in ov ? ov.titre    : (i.titre      || ''),
+          urgence:  'urgence'  in ov ? ov.urgence  : (i.urgence   || 'basse'),
+          solution: 'solution' in ov ? ov.solution : shortSolution(i.commentaire),
+          commentaire: i.commentaire || '',
         };
       }).filter(Boolean)
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
     // Lignes personnalisées ajoutées manuellement
     const customRows = (projet.tableauRecap || [])
       .filter(r => r.isCustom)
-      .map(r => ({ itemId: r.itemId, isCustom: true, locNom: r.zone || '', titre: r.titre || '', urgence: r.urgence || 'basse', solution: r.solution || '' }));
+      .map(r => ({ itemId: r.itemId, isCustom: true, locNom: r.zone || '', titre: r.titre || '', urgence: r.urgence || 'basse', solution: r.solution || '', commentaire: '' }));
     return [...itemRows, ...customRows];
   }, [localisations, projet.includeTableauRecap, projet.tableauRecap]);
 

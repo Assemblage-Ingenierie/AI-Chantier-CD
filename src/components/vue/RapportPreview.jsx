@@ -328,7 +328,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, annotScale }) {
+function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
   const cvRef = useRef();
   const deferredScale = React.useDeferredValue(annotScale);
   useEffect(() => {
@@ -338,9 +338,10 @@ function PhotoAnnotCanvas({ photo, annotScale }) {
     cv.height = photo.annotH || Math.round(photo.annotW * 0.75);
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, cv.width, cv.height);
-    const sizeScale = Math.max(0.5, photo.annotW / 1400) * deferredScale;
+    // Scale calée pour que les marqueurs aient la même taille visuelle que sur les plans
+    const sizeScale = (photo.annotW * ppl / 1400) * deferredScale;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, photo.annotW, photo.annotH, deferredScale]);
+  }, [photo.annotations, photo.annotW, photo.annotH, deferredScale, ppl]);
   if (!photo.annotations?.length || !photo.annotW) return null;
   return <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>;
 }
@@ -424,7 +425,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
               <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
                 <img src={hasLivePaths ? ph.data : (ph.annotated || ph.data)} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
-                {hasLivePaths && <PhotoAnnotCanvas photo={ph} annotScale={annotScale}/>}
+                {hasLivePaths && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
                 {hasViewpoints && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                     V{vpPhotoOffset + pi + 1}
@@ -811,9 +812,12 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
     if (!onUpdateRecap) return;
     setLoadingAI(row.itemId); setAiErr(null);
     try {
-      const prompt = `En 1-2 phrases courtes, propose une solution ou action corrective concrète pour ce désordre de bâtiment.\nZone : ${row.locNom}\nDésordre : ${row.titre}`;
-      const d = await callAIProxy({ feature: 'solution_recap', model: 'gemini-2.0-flash-lite', max_tokens: 200, messages: [{ role:'user', content: prompt }] });
-      const sol = d.content?.[0]?.text?.trim();
+      const ctx = row.commentaire
+        ? `\nContexte de l'observation : ${row.commentaire.replace(/<[^>]+>/g,'').replace(/\*{1,3}/g,'').slice(0, 300)}`
+        : '';
+      const prompt = `Désordre en bâtiment — Zone : ${row.locNom}, Désordre : ${row.titre}.${ctx}\n\nDonne uniquement la solution technique en 6 mots maximum, en français, sans markdown, sans ponctuation finale.`;
+      const d = await callAIProxy({ feature: 'solution_recap', model: 'gemini-2.0-flash-lite', max_tokens: 60, messages: [{ role:'user', content: prompt }] });
+      const sol = d.content?.[0]?.text?.trim().replace(/^["']|["']$/g,'').replace(/\.$/, '');
       if (sol) onUpdateRecap(row.itemId, 'solution', sol);
     } catch(e) { setAiErr(e.message); }
     setLoadingAI(null);
@@ -853,16 +857,18 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
                 <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4 }}>{row.locNom || '—'}</div>
               )}
               {isEditable ? (
-                <input value={row.titre} onChange={e => onUpdateRecap(row.itemId, 'titre', e.target.value)}
-                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0 }}/>
+                <textarea value={row.titre} onChange={e => onUpdateRecap(row.itemId, 'titre', e.target.value)}
+                  rows={Math.max(1, Math.ceil((row.titre||'').length / 22))}
+                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
               ) : (
                 <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
               )}
               {isEditable ? (
                 <div style={{ display:'flex', gap:3, alignItems:'flex-start' }}>
                   <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
-                    rows={2} placeholder="Solution…"
-                    style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none' }}/>
+                    rows={Math.max(2, Math.ceil((row.solution||'').length / 28))}
+                    placeholder="Solution…"
+                    style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
                   <button data-print="hide" onClick={() => genSolution(row)} disabled={loadingAI === row.itemId} title="Générer avec l'IA"
                     style={{ background:'none', border:`1px solid ${DA.border}`, borderRadius:3, padding:'1px 4px', cursor:'pointer', fontSize:9, color:DA.grayL, flexShrink:0, lineHeight:1.2 }}>
                     {loadingAI === row.itemId ? '…' : '⚡'}
