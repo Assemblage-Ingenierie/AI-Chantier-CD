@@ -93,7 +93,7 @@ function estimateBlockH(block, ppl) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-function flattenBlocks(locs, plansEnFin, ppl = 2) {
+function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
   const blocks = [];
   const cols   = Math.min(ppl, 3);
   for (const loc of locs) {
@@ -105,20 +105,37 @@ function flattenBlocks(locs, plansEnFin, ppl = 2) {
     for (const item of items) {
       const photos  = (item.photos || []).filter(p => p.data);
       const comment = item.commentaire?.trim() || '';
-      const chunks  = splitComment(comment);
 
-      // Texte (un ou plusieurs blocs)
-      if (chunks.length > 1) {
-        chunks.forEach((chunk, idx) => {
-          blocks.push({ type:'item', id: idx === 0 ? item.id : `${item.id}_c${idx}`,
-            item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
-            textContent:chunk, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+      // Découpage texte : manuel (paraBreaks) sinon automatique (splitComment)
+      const paras = comment ? comment.split(/\n{2,}/).map(p => p.trim()).filter(Boolean) : [];
+      const hasManualSplit = paras.some((_, i) => paraBreaks.has(`${item.id}_p${i}`));
+
+      let textChunks;
+      if (hasManualSplit) {
+        const segs = []; let cur = [];
+        paras.forEach((p, i) => {
+          cur.push(p);
+          if (paraBreaks.has(`${item.id}_p${i}`) && i < paras.length - 1) {
+            segs.push(cur.join('\n\n')); cur = [];
+          }
         });
-      } else if (comment) {
-        blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'text', textContent:comment, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
-      } else if (!photos.length) {
-        // Aucun commentaire, aucune photo → bloc vide mais avec titre/badges
-        blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+        if (cur.length) segs.push(cur.join('\n\n'));
+        textChunks = segs.map((text, idx) => ({ text, id: idx === 0 ? item.id : `${item.id}_pms${idx}` }));
+      } else {
+        const auto = splitComment(comment);
+        textChunks = auto.map((text, idx) => ({ text, id: idx === 0 ? item.id : `${item.id}_c${idx}` }));
+      }
+
+      // Blocs texte
+      if (comment || !photos.length) {
+        textChunks.forEach(({ text, id }, idx) => {
+          if (text) {
+            blocks.push({ type:'item', id, item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
+              textContent:text, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+          } else if (idx === 0 && !photos.length) {
+            blocks.push({ type:'item', id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+          }
+        });
       }
 
       // Photos : une rangée (cols photos) = un bloc → s'insèrent ligne par ligne dans le flux
@@ -254,6 +271,41 @@ function TopBreakControl({ id, zoneName, onToggle }) {
   );
 }
 
+// CutZone — séparateur interactif entre blocs (visible uniquement en mode coupe)
+function CutZone({ blockId, active, onCut }) {
+  const [hov, setHov] = useState(false);
+  if (!active) return null;
+  return (
+    <div data-print="hide"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onClick={(e) => { e.stopPropagation(); onCut(blockId); }}
+      style={{ height: hov ? 22 : 10, position:'relative', cursor:'crosshair', transition:'height 0.1s', flexShrink:0, zIndex:50 }}>
+      <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:20, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.2, transition:'opacity 0.15s', background: hov ? 'rgba(227,5,19,0.05)' : 'transparent' }}>
+        <div style={{ background:'#E30513', color:'white', padding:'2px 8px', fontSize:13, flexShrink:0, lineHeight:1 }}>✂</div>
+        <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
+        {hov && <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Couper ici</div>}
+      </div>
+    </div>
+  );
+}
+
+// ParaCutZone — séparateur de paragraphes dans un bloc texte (mode coupe)
+function ParaCutZone({ paraId, onCut }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div data-print="hide"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onClick={(e) => { e.stopPropagation(); onCut(paraId); }}
+      style={{ height: hov ? 18 : 6, position:'relative', cursor:'crosshair', transition:'height 0.1s', margin:'1px -9px', zIndex:50 }}>
+      <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:16, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.2, transition:'opacity 0.15s' }}>
+        <div style={{ background:'#E30513', color:'white', padding:'1px 6px', fontSize:11, flexShrink:0, lineHeight:1 }}>✂</div>
+        <div style={{ flex:1, height:1.5, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 6px,transparent 6px,transparent 10px)' }}/>
+        {hov && <div style={{ background:'#E30513', color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', flexShrink:0, whiteSpace:'nowrap' }}>Couper le texte ici</div>}
+      </div>
+    </div>
+  );
+}
+
 function ZoneHeader({ loc }) {
   return (
     <div style={{ background:DA.black, borderRadius:3, padding:'5px 10px', marginBottom:5, display:'flex', alignItems:'center', gap:6 }}>
@@ -263,7 +315,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount }) {
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
   const photos = (photoStart != null)
@@ -320,7 +372,17 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Commentaire */}
       {showComment && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
-          {renderMarkup(commentToShow)}
+          {cutMode && onParaCut && (() => {
+            const ps = (commentToShow || '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+            if (ps.length < 2) return renderMarkup(commentToShow);
+            return ps.map((para, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <ParaCutZone paraId={`${item.id}_p${i - 1}`} onCut={onParaCut}/>}
+                {renderMarkup(para)}
+              </React.Fragment>
+            ));
+          })()}
+          {(!cutMode || !onParaCut) && renderMarkup(commentToShow)}
         </div>
       )}
       {/* Photos */}
@@ -751,9 +813,23 @@ function usePreviewScale(scrollRef) {
 
 // ── Composant principal ────────────────────────────────────────────────────
 const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, cutMode = false, onCutModeChange }, ref) {
-  const ppl    = photosParLigne ?? 2;
-  const breaks = useMemo(() => new Set(pageBreaks || []), [pageBreaks]);
-  const locs   = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+  const ppl  = photosParLigne ?? 2;
+  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+
+  // breaks effectifs = breaks manuels + breaks dérivés des découpages de paragraphes
+  const paraBreaks = useMemo(() =>
+    new Set((pageBreaks || []).filter(id => /_p\d+$/.test(id))),
+  [pageBreaks]);
+  const breaks = useMemo(() => {
+    const s = new Set(pageBreaks || []);
+    for (const id of (pageBreaks || [])) {
+      if (/_p\d+$/.test(id)) {
+        const base = id.replace(/_p\d+$/, '');
+        for (let i = 1; i <= 9; i++) s.add(`${base}_pms${i}`);
+      }
+    }
+    return s;
+  }, [pageBreaks]);
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const planLocs = useMemo(
@@ -762,7 +838,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   );
 
   // ── Mesure des hauteurs réelles ──────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl), [locs, plansEnFin, ppl]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks), [locs, plansEnFin, ppl, paraBreaks]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -796,8 +872,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
-  const cutBlockElsRef = useRef({}); // { [blockId]: domElement } pour le mode coupe
-  // scrollRef passed so we measure the actual scrollable area (excludes scrollbar width)
   const scale = usePreviewScale(scrollRef);
 
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
@@ -832,31 +906,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     scrollRef.current.scrollBy({ top: elTop - ctop - 16, behavior: 'smooth' });
   }, [totalPages]);
 
-  // ── Mode coupe (curseur ciseau) ─────────────────────────────────────────────
-  const [cutSnap, setCutSnap] = useState(null); // { y, id } | null
-
-  const handleCutMouseMove = useCallback((e) => {
-    if (!cutMode) return;
-    const els = Object.values(cutBlockElsRef.current);
-    if (!els.length) return;
-    let bestEl = null, bestDist = Infinity;
-    for (const el of els) {
-      const top = el.getBoundingClientRect().top;
-      const dist = Math.abs(top - e.clientY);
-      if (dist < bestDist) { bestDist = dist; bestEl = el; }
-    }
-    if (bestEl) setCutSnap({ y: bestEl.getBoundingClientRect().top, id: bestEl.dataset.blockId });
-  }, [cutMode]);
-
-  const handleCutClick = useCallback(() => {
-    if (!cutMode || !cutSnap) return;
-    onTogglePageBreak(cutSnap.id);
+  // ── Mode coupe — callback commun pour CutZone et ParaCutZone ──────────────
+  const handleCut = useCallback((id) => {
+    onTogglePageBreak(id);
     onCutModeChange?.(false);
-    setCutSnap(null);
-  }, [cutMode, cutSnap, onTogglePageBreak, onCutModeChange]);
+  }, [onTogglePageBreak, onCutModeChange]);
 
   useEffect(() => {
-    if (!cutMode) { setCutSnap(null); return; }
+    if (!cutMode) return;
     const onKey = (e) => { if (e.key === 'Escape') onCutModeChange?.(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -927,18 +984,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   return (
     <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
-      {/* ── Ligne de coupe mode ciseau ── */}
-      {cutMode && cutSnap && (() => {
-        const sr = scrollRef.current?.getBoundingClientRect();
-        if (!sr) return null;
-        return (
-          <div data-print="hide" style={{ position:'fixed', top:cutSnap.y - 10, left:sr.left, width:sr.width, height:20, pointerEvents:'none', zIndex:10000, display:'flex', alignItems:'center' }}>
-            <div style={{ background:'#E30513', color:'white', padding:'3px 7px 3px 9px', fontSize:14, flexShrink:0, lineHeight:1 }}>✂</div>
-            <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
-            <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'3px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Cliquer ici · Échap pour annuler</div>
-          </div>
-        );
-      })()}
+      {/* Bandeau mode coupe */}
+      {cutMode && (
+        <div data-print="hide" style={{ background:'#E30513', color:'white', padding:'5px 14px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          ✂ Survolez les tirets pour choisir l'endroit — cliquez pour couper — Échap pour annuler
+        </div>
+      )}
 
       {/* ── Barre de navigation pages ── */}
       <div style={{ background:'#1e1e1e', padding:'7px 10px', display:'flex', alignItems:'center', gap:8, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
@@ -975,10 +1026,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
       {/* ── Zone défilante ── */}
       <div ref={scrollRef}
-        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'crosshair' : 'default' }}
-        onMouseMove={cutMode ? handleCutMouseMove : undefined}
-        onMouseLeave={cutMode ? () => setCutSnap(null) : undefined}
-        onClick={cutMode ? handleCutClick : undefined}
+        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative' }}
       >
 
         {/* ── Couche de mesure invisible ── */}
@@ -1032,27 +1080,28 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     </div>
                   )}
                   {pageBlocks.map((block, bi) => {
-                    // Tout bloc sauf le tout premier (pi=0,bi=0) est un point de coupe valide
                     const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
-                    <div key={block.id}
-                      data-block-id={block.id}
-                      ref={isCutCandidate ? (el => { if (el) cutBlockElsRef.current[block.id] = el; else delete cutBlockElsRef.current[block.id]; }) : undefined}
-                    >
-                      {block.type === 'zone'
-                        ? <ZoneHeader loc={block.loc} />
-                        : block.type === 'plan'
-                        ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
-                        : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
-                            textContent={block.textContent}
-                            onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
-                            vpPhotoOffset={block.vpPhotoOffset ?? 0}
-                            hasViewpoints={block.hasViewpoints ?? false}
-                            photoStart={block.photoStart}
-                            photoCount={block.photoCount}
-                          />
-                      }
-                    </div>
+                    <React.Fragment key={block.id}>
+                      <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
+                      <div>
+                        {block.type === 'zone'
+                          ? <ZoneHeader loc={block.loc} />
+                          : block.type === 'plan'
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
+                          : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
+                              textContent={block.textContent}
+                              onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
+                              vpPhotoOffset={block.vpPhotoOffset ?? 0}
+                              hasViewpoints={block.hasViewpoints ?? false}
+                              photoStart={block.photoStart}
+                              photoCount={block.photoCount}
+                              cutMode={cutMode}
+                              onParaCut={handleCut}
+                            />
+                        }
+                      </div>
+                    </React.Fragment>
                     );
                   })}
                 </A4Card>
