@@ -202,7 +202,22 @@ export default function RapportTab({ projet, onUpdate }) {
   }, [projet.tableauRecap, onUpdate]);
   const togglePageBreak = (id) => {
     const curr = projet.rapportPageBreaks || [];
-    onUpdate({ rapportPageBreaks: curr.includes(id) ? curr.filter(x => x !== id) : [...curr, id] });
+    if (curr.includes(id)) {
+      onUpdate({ rapportPageBreaks: curr.filter(x => x !== id) });
+      return;
+    }
+    // _pmsN = bloc dérivé d'une coupure de texte — résoudre vers le vrai break _pN stocké
+    const pmsMatch = id.match(/^(.+)_pms(\d+)$/);
+    if (pmsMatch) {
+      const base = pmsMatch[1];
+      const n = parseInt(pmsMatch[2]);
+      const pBreaks = curr
+        .filter(x => { const m = x.match(/^(.+)_p(\d+)$/); return m && m[1] === base; })
+        .sort((a, b) => parseInt(a.match(/_p(\d+)$/)[1]) - parseInt(b.match(/_p(\d+)$/)[1]));
+      const target = pBreaks[n - 1];
+      if (target) { onUpdate({ rapportPageBreaks: curr.filter(x => x !== target) }); return; }
+    }
+    onUpdate({ rapportPageBreaks: [...curr, id] });
   };
 
   const handleExport = () => {
