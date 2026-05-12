@@ -114,6 +114,123 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
   return y + totalH + 3;
 }
 
+
+// Analyse HTML/markdown en segments typés [{text, bold, italic, underline}]
+function parseSegments(text) {
+  if (!text) return [];
+  const segs = [];
+  const push = (t, b, it, u) => {
+    t.split('\n').forEach((line, i) => {
+      if (i > 0) segs.push({ text: '\n', bold: b, italic: it, underline: u });
+      if (line) segs.push({ text: line, bold: b, italic: it, underline: u });
+    });
+  };
+  const hasHtml = /<(strong|\/strong|b|\/b|em|\/em|i|\/i|u|\/u|br)[\s/>]/i.test(text);
+  if (hasHtml) {
+    const TAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>)/gi;
+    const parts = text.split(TAG);
+    const stack = [];
+    for (const p of parts) {
+      if (!p) continue;
+      const lo = p.toLowerCase().replace(/<br\s*\/?>/, '<br>').trim();
+      if (lo === '<strong>' || lo === '<b>') { stack.push('b'); continue; }
+      if (lo === '</strong>' || lo === '</b>') { const i = stack.lastIndexOf('b'); if (i >= 0) stack.splice(i, 1); continue; }
+      if (lo === '<em>' || lo === '<i>') { stack.push('i'); continue; }
+      if (lo === '</em>' || lo === '</i>') { const i = stack.lastIndexOf('i'); if (i >= 0) stack.splice(i, 1); continue; }
+      if (lo === '<u>') { stack.push('u'); continue; }
+      if (lo === '</u>') { const i = stack.lastIndexOf('u'); if (i >= 0) stack.splice(i, 1); continue; }
+      if (lo === '<br>') { segs.push({ text: '\n', bold: false, italic: false, underline: false }); continue; }
+      push(p, stack.includes('b'), stack.includes('i'), stack.includes('u'));
+    }
+  } else {
+    const MD = /(\*\*[^*\n]+\*\*|__[^_\n]+__|_[^_\n]+_|\*[^*\n]+\*)/g;
+    let last = 0, m;
+    while ((m = MD.exec(text)) !== null) {
+      if (m.index > last) push(text.slice(last, m.index), false, false, false);
+      const s = m[0];
+      if (s.startsWith('**')) push(s.slice(2, -2), true, false, false);
+      else if (s.startsWith('__')) push(s.slice(2, -2), false, false, true);
+      else push(s.slice(1, -1), false, true, false);
+      last = m.index + s.length;
+    }
+    if (last < text.length) push(text.slice(last), false, false, false);
+  }
+  return segs;
+}
+
+// Rendu texte riche jsPDF avec bold/italic/underline inline + word-wrap
+// measureOnly=true → retourne juste le nombre de lignes sans dessiner
+function jsPdfRichText(doc, rawText, x, y, maxW, fontSize, lineH, rgbColor, measureOnly) {
+  doc.setFontSize(fontSize);
+  const text = (rawText || '').replace(/—/g, ' - ');
+  const segs = parseSegments(text);
+  if (!segs.length) return 0;
+
+  // Tokeniser en mots
+  const tokens = [];
+  for (const seg of segs) {
+    if (seg.text === '\n') { tokens.push({ br: true }); continue; }
+    seg.text.split(' ').forEach((w, i) => {
+      if (i > 0) tokens.push({ sp: true });
+      if (w) tokens.push({ w, bold: seg.bold, italic: seg.italic, underline: seg.underline });
+    });
+  }
+
+  // Mesurer chaque token
+  doc.setFont('helvetica', 'normal');
+  const spW = doc.getTextWidth(' ');
+  const measured = tokens.map(t => {
+    if (t.br || t.sp) return t;
+    const font = t.bold ? (t.italic ? 'bolditalic' : 'bold') : t.italic ? 'italic' : 'normal';
+    doc.setFont('helvetica', font);
+    return { ...t, width: doc.getTextWidth(t.w) };
+  });
+  doc.setFont('helvetica', 'normal');
+
+  // Construire les lignes
+  const lines = [[]];
+  let lw = 0;
+  for (const t of measured) {
+    if (t.br) { lines.push([]); lw = 0; continue; }
+    if (t.sp) {
+      if (lw > 0) { lines[lines.length - 1].push({ sp: true, width: spW }); lw += spW; }
+      continue;
+    }
+    if (lw + t.width > maxW && lw > 0) {
+      const cur = lines[lines.length - 1];
+      if (cur.length && cur[cur.length - 1].sp) cur.pop();
+      lines.push([]); lw = 0;
+    }
+    lines[lines.length - 1].push(t);
+    lw += t.width;
+  }
+  const last = lines[lines.length - 1];
+  if (last.length && last[last.length - 1].sp) last.pop();
+
+  if (measureOnly) { doc.setFont('helvetica', 'normal'); return lines.length; }
+
+  // Dessiner
+  let cy = y;
+  for (const line of lines) {
+    let cx = x;
+    for (const tok of line) {
+      if (tok.sp) { cx += tok.width; continue; }
+      const font = tok.bold ? (tok.italic ? 'bolditalic' : 'bold') : tok.italic ? 'italic' : 'normal';
+      doc.setFont('helvetica', font);
+      doc.setTextColor(...rgbColor);
+      doc.text(tok.w, cx, cy);
+      if (tok.underline) {
+        doc.setDrawColor(...rgbColor); doc.setLineWidth(0.15);
+        doc.line(cx, cy + 0.8, cx + tok.width, cy + 0.8);
+      }
+      cx += tok.width;
+    }
+    cy += lineH;
+  }
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(0, 0, 0);
+  return lines.length;
+}
+
 /**
  * Génère et télécharge le rapport PDF A4 du compte-rendu de visite.
  * @param {{ projet, localisations, tableauRecap, photosParLigne }} opts
@@ -358,8 +475,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const renderItems = (items, hasViewpoints = false) => {
     const TX  = ML + 5;      // x texte = 23mm
     const RX  = W - MR - 4; // x droite max = 188mm
-    // jsPDF Helvetica sous-estime les chars français de ~15% → marge agressive
-    const TW  = CW - 36;    // 138mm → texte finit à 161mm, bien dans le cadre
+    const TW  = CW - 28;    // 146mm — équilibre espace/sécurité anti-overflow jsPDF
     let photoOff = 0;
 
     items.forEach(item => {
@@ -370,16 +486,18 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
 
       const rawTitle = (item.titre || '-').replace(/—/g, ' - ');
-      const rawComm  = item.commentaire ? stripMarkup(item.commentaire).replace(/—/g, ' - ') : '';
 
       const tLH = 4.5, cLH = 4.2, badgeH = 8;
       doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
       const titleLines = doc.splitTextToSize(rawTitle, TW);
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
-      const cLines = rawComm ? doc.splitTextToSize(rawComm, TW) : [];
+
+      // Hauteur commentaire via rendu rich text (exact)
+      const richLines = item.commentaire
+        ? jsPdfRichText(doc, item.commentaire, TX, 0, TW, 7.5, cLH, [60, 65, 80], true)
+        : 0;
 
       const hdrH = badgeH + titleLines.length * tLH + 4;
-      const txtH = cLines.length ? cLines.length * cLH + 6 : 0;
+      const txtH = richLines ? richLines * cLH + 6 : 0;
       const cols    = Math.max(1, Math.min(photosParLigne, 3));
       const validPh = (item.photos || []).filter(p => p.data);
       const maxPh   = cols <= 2 ? 4 : 6;
@@ -440,13 +558,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.line(TX, cy - 1, ML + CW - 4, cy - 1);
       }
 
-      // ── Commentaire ──────────────────────────────────────────────────────────
-      if (cLines.length) {
+      // ── Commentaire avec formatage rich text (bold/italic/underline) ─────────
+      if (item.commentaire) {
         cy += 1;
-        doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 65, 80);
-        doc.text(cLines, TX, cy + 3.5);
-        cy += cLines.length * cLH + 4;
-        doc.setTextColor(0, 0, 0);
+        const n = jsPdfRichText(doc, item.commentaire, TX, cy + 3.5, TW, 7.5, cLH, [60, 65, 80]);
+        cy += n * cLH + 4;
       }
 
       y = cy + 4; // avancer y après la carte texte
