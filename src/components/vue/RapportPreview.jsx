@@ -467,25 +467,30 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
         <img src={renderedImg} alt={`Plan ${loc.nom}`}
           style={{ width:'100%', display:'block', objectFit:'contain' }}/>
       )}
-      {showLegend && (
-        <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
-          <div style={{ fontSize:10, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:8 }}>Légende</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'6px 20px' }}>
-            {legendSy.map(s => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:DA.gray }}>
-                <SymbolIcon sym={s} size={24}/>
-                {s.label}
-              </div>
-            ))}
-            {hasViewpoints && (
-              <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:13, color:DA.gray }}>
-                <ViewpointIcon size={24}/>
-                Vue photo
-              </div>
-            )}
+      {showLegend && (() => {
+        const sc = Math.max(0.5, Math.min(2, annotScale));
+        const iconSz = Math.round(18 * sc);
+        const fz = Math.max(7, Math.round(10 * sc));
+        return (
+          <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
+            <div style={{ fontSize:Math.max(7, Math.round(8 * sc)), fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:`4px ${Math.round(14 * sc)}px` }}>
+              {legendSy.map(s => (
+                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:fz, color:DA.gray }}>
+                  <SymbolIcon sym={s} size={iconSz}/>
+                  {s.label}
+                </div>
+              ))}
+              {hasViewpoints && (
+                <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:fz, color:DA.gray }}>
+                  <ViewpointIcon size={iconSz}/>
+                  Vue photo
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
