@@ -328,7 +328,24 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut }) {
+function PhotoAnnotCanvas({ photo, annotScale }) {
+  const cvRef = useRef();
+  const deferredScale = React.useDeferredValue(annotScale);
+  useEffect(() => {
+    const cv = cvRef.current;
+    if (!cv || !photo.annotations?.length || !photo.annotW) return;
+    cv.width  = photo.annotW;
+    cv.height = photo.annotH || Math.round(photo.annotW * 0.75);
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const sizeScale = Math.max(0.5, photo.annotW / 1400) * deferredScale;
+    drawAnnotationPaths(ctx, photo.annotations, sizeScale);
+  }, [photo.annotations, photo.annotW, photo.annotH, deferredScale]);
+  if (!photo.annotations?.length || !photo.annotW) return null;
+  return <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>;
+}
+
+function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1 }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
   const photos = (photoStart != null)
@@ -401,17 +418,21 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Photos */}
       {showPhotos && (
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
-          {photos.map((ph, pi) => (
-            <div key={pi} style={{ position:'relative' }}>
-              <img src={ph.annotated || ph.data} alt=""
-                style={{ width:'100%', aspectRatio:'4/3', objectFit:'cover', borderRadius:2, display:'block' }}/>
-              {hasViewpoints && (
-                <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
-                  V{vpPhotoOffset + pi + 1}
-                </div>
-              )}
-            </div>
-          ))}
+          {photos.map((ph, pi) => {
+            const hasLivePaths = ph.annotations?.length > 0 && ph.annotW;
+            return (
+              <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
+                <img src={hasLivePaths ? ph.data : (ph.annotated || ph.data)} alt=""
+                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+                {hasLivePaths && <PhotoAnnotCanvas photo={ph} annotScale={annotScale}/>}
+                {hasViewpoints && (
+                  <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
+                    V{vpPhotoOffset + pi + 1}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -423,6 +444,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
   const paths    = loc.planAnnotations?.paths;
   const planBg   = loc.planBg;
   const [renderedImg, setRenderedImg] = useState(null);
+  const deferredAnnotScale = React.useDeferredValue(annotScale);
 
   useEffect(() => {
     if (!planBg) { setRenderedImg(exported || null); return; }
@@ -434,15 +456,15 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
+      const sizeScale = Math.max(0.5, cv.width / 1400) * deferredAnnotScale;
       drawAnnotationPaths(ctx, paths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
     el.onerror = () => setRenderedImg(exported || planBg);
     el.src = planBg;
-  }, [exported, paths, planBg, annotScale]);
+  }, [exported, paths, planBg, deferredAnnotScale]);
 
-  // Légende : symboles + viewpoints
+  // Légende : symboles + viewpoints — taille fixe indépendante du slider
   const usedIds       = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
   const legendSy      = SYMBOLS.filter(s => usedIds.has(s.id));
   const hasViewpoints = (paths || []).some(p => p.type === 'viewpoint');
@@ -468,30 +490,25 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
         <img src={renderedImg} alt={`Plan ${loc.nom}`}
           style={{ width:'100%', display:'block', objectFit:'contain' }}/>
       )}
-      {showLegend && (() => {
-        const sc = Math.max(0.5, Math.min(2, annotScale));
-        const iconSz = Math.round(18 * sc);
-        const fz = Math.max(7, Math.round(10 * sc));
-        return (
-          <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
-            <div style={{ fontSize:Math.max(7, Math.round(8 * sc)), fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
-            <div style={{ display:'flex', flexWrap:'wrap', gap:`4px ${Math.round(14 * sc)}px` }}>
-              {legendSy.map(s => (
-                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:fz, color:DA.gray }}>
-                  <SymbolIcon sym={s} size={iconSz}/>
-                  {s.label}
-                </div>
-              ))}
-              {hasViewpoints && (
-                <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:fz, color:DA.gray }}>
-                  <ViewpointIcon size={iconSz}/>
-                  Vue photo
-                </div>
-              )}
-            </div>
+      {showLegend && (
+        <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
+          <div style={{ fontSize:8, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 14px' }}>
+            {legendSy.map(s => (
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:DA.gray }}>
+                <SymbolIcon sym={s} size={16}/>
+                {s.label}
+              </div>
+            ))}
+            {hasViewpoints && (
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:DA.gray }}>
+                <ViewpointIcon size={16}/>
+                Vue photo
+              </div>
+            )}
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }
@@ -1158,7 +1175,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
             ))}
@@ -1218,6 +1235,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               photoCount={block.photoCount}
                               cutMode={cutMode}
                               onParaCut={handleCut}
+                              annotScale={annotScale}
                             />
                         }
                       </div>
