@@ -832,35 +832,36 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [totalPages]);
 
   // ── Mode coupe (curseur ciseau) ─────────────────────────────────────────────
-  const [cutLineY, setCutLineY] = useState(null);
-  const [cutTargetId, setCutTargetId] = useState(null);
+  const [cutSnap, setCutSnap] = useState(null);   // { y, id } snap line position
+  const [cutMousePos, setCutMousePos] = useState(null); // { x, y } cursor position
 
   const handleCutMouseMove = useCallback((e) => {
     if (!cutMode) return;
+    setCutMousePos({ x: e.clientX, y: e.clientY });
     const blockEls = scrollRef.current?.querySelectorAll('[data-block-cut="true"]');
     if (!blockEls?.length) return;
     let bestEl = null, bestDist = Infinity;
     for (const el of blockEls) {
-      const dist = Math.abs(el.getBoundingClientRect().top - e.clientY);
+      const top = el.getBoundingClientRect().top;
+      const dist = Math.abs(top - e.clientY);
       if (dist < bestDist) { bestDist = dist; bestEl = el; }
     }
     if (bestEl) {
-      setCutLineY(bestEl.getBoundingClientRect().top);
-      setCutTargetId(bestEl.dataset.blockId);
+      setCutSnap({ y: bestEl.getBoundingClientRect().top, id: bestEl.dataset.blockId });
     }
   }, [cutMode]);
 
   const handleCutClick = useCallback(() => {
-    if (!cutMode || !cutTargetId) return;
-    onTogglePageBreak(cutTargetId);
+    if (!cutMode || !cutSnap) return;
+    onTogglePageBreak(cutSnap.id);
     onCutModeChange?.(false);
-    setCutLineY(null); setCutTargetId(null);
-  }, [cutMode, cutTargetId, onTogglePageBreak, onCutModeChange]);
+    setCutSnap(null); setCutMousePos(null);
+  }, [cutMode, cutSnap, onTogglePageBreak, onCutModeChange]);
 
   // Quitter le mode coupe avec Echap
   useEffect(() => {
-    if (!cutMode) return;
-    const onKey = (e) => { if (e.key === 'Escape') { onCutModeChange?.(false); setCutLineY(null); } };
+    if (!cutMode) { setCutSnap(null); setCutMousePos(null); return; }
+    const onKey = (e) => { if (e.key === 'Escape') { onCutModeChange?.(false); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [cutMode, onCutModeChange]);
@@ -930,14 +931,25 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   return (
     <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
-      {/* Ligne de coupe flottante (mode ciseau) */}
-      {cutMode && cutLineY !== null && (
-        <div style={{ position:'fixed', top:cutLineY - 1, left:scrollRef.current?.getBoundingClientRect().left ?? 0, right:0, height:2, pointerEvents:'none', zIndex:9999,
-          background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}>
-          <div style={{ position:'absolute', left:16, top:-12, background:'#E30513', color:'white', fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:4 }}>
-            ✂ Cliquer pour insérer un saut de page — Échap pour annuler
-          </div>
-        </div>
+      {/* ── Overlays mode ciseau ── */}
+      {cutMode && cutMousePos && (
+        <>
+          {/* Icône ✂ qui remplace le curseur souris */}
+          <div data-print="hide" style={{ position:'fixed', top:cutMousePos.y - 14, left:cutMousePos.x - 6, pointerEvents:'none', zIndex:10001, fontSize:22, lineHeight:1, userSelect:'none', transform:'rotate(-45deg)', filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>✂</div>
+          {/* Ligne pointillée snappée sur la frontière la plus proche */}
+          {cutSnap !== null && (() => {
+            const sr = scrollRef.current?.getBoundingClientRect();
+            if (!sr) return null;
+            return (
+              <div data-print="hide" style={{ position:'fixed', top:cutSnap.y - 1, left:sr.left, width:sr.width, height:0, pointerEvents:'none', zIndex:10000,
+                borderTop:'2px dashed #E30513' }}>
+                <div style={{ position:'absolute', right:10, top:-18, background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap' }}>
+                  Cliquer ici · Échap pour annuler
+                </div>
+              </div>
+            );
+          })()}
+        </>
       )}
 
       {/* ── Barre de navigation pages ── */}
@@ -975,8 +987,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
       {/* ── Zone défilante ── */}
       <div ref={scrollRef}
-        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'crosshair' : 'default' }}
+        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'none' : 'default' }}
         onMouseMove={cutMode ? handleCutMouseMove : undefined}
+        onMouseLeave={cutMode ? () => { setCutMousePos(null); setCutSnap(null); } : undefined}
         onClick={cutMode ? handleCutClick : undefined}
       >
 
@@ -1031,28 +1044,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     </div>
                   )}
                   {pageBlocks.map((block, bi) => {
-                    // Pas de BreakControl entre les morceaux d'un même item (cont/photos)
-                    // BreakControl uniquement aux frontières de zone (block.type === 'zone')
-                    // pour éviter le bruit visuel entre chaque item
                     const prevBlock = pageBlocks[bi - 1];
                     const isContinuation = bi > 0 && (
                       (block.item && prevBlock?.item?.id === block.item.id
                         && (block.mode === 'cont' || block.mode === 'photos'))
                       || prevBlock?.type === 'zone'
                     );
-                    const showBreakCtl = bi > 0 && !isContinuation && block.type === 'zone';
                     return (
                     <div key={block.id} data-block-id={block.id} data-block-cut={bi > 0 && !isContinuation ? 'true' : undefined}>
-                      {showBreakCtl && (
-                        <div data-print="hide">
-                          <BreakControl
-                            id={block.id}
-                            active={breaks.has(block.id)}
-                            zoneName={block.loc?.nom}
-                            onToggle={onTogglePageBreak}
-                          />
-                        </div>
-                      )}
                       {block.type === 'zone'
                         ? <ZoneHeader loc={block.loc} />
                         : block.type === 'plan'
