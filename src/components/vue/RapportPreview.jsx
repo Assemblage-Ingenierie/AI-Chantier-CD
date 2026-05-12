@@ -928,7 +928,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
 
@@ -1025,8 +1025,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // ── Mode coupe — callback commun pour CutZone et ParaCutZone ──────────────
   const handleCut = useCallback((id) => {
     onTogglePageBreak(id);
-    onCutModeChange?.(false);
-  }, [onTogglePageBreak, onCutModeChange]);
+  }, [onTogglePageBreak]);
 
   useEffect(() => {
     if (!cutMode) return;
@@ -1103,12 +1102,16 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       {/* Bandeau mode coupe */}
       {cutMode && (
         <div data-print="hide" style={{ background:'#E30513', color:'white', padding:'5px 14px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-          ✂ Survolez les tirets pour choisir l'endroit — cliquez pour couper — Échap pour annuler
+          <span style={{ flex:1 }}>✂ Cliquez sur les tirets pour couper — mode persistant</span>
+          <button onClick={() => onCutModeChange?.(false)}
+            style={{ background:'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.4)', borderRadius:6, color:'white', fontSize:10, fontWeight:700, padding:'3px 10px', cursor:'pointer', flexShrink:0 }}>
+            Terminer ✕
+          </button>
         </div>
       )}
 
       {/* ── Barre de navigation pages ── */}
-      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', alignItems:'center', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', alignItems:'center', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)', position:'relative' }}>
         {/* Gauche : Paramètres */}
         <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
           {onTogglePanel && (
@@ -1122,8 +1125,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             </button>
           )}
         </div>
-        {/* Centre : navigation pages */}
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        {/* Centre : navigation pages — centré sur la largeur totale du viewport */}
+        <div style={{ position:'absolute', left:`calc(50vw - ${panelOpen ? panelW : 0}px)`, transform:'translateX(-50%)', display:'flex', alignItems:'center', gap:6 }}>
           <button
             onClick={() => scrollToPage(currentPage - 1)}
             disabled={currentPage <= 1}
@@ -1140,22 +1143,22 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             ›
           </button>
         </div>
-        {/* Droite : export */}
+        {/* Droite : export — Photos d'abord, PDF ensuite */}
         <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+          {onExportPhotos && totalPhotos > 0 && (
+            <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
+                background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
+              {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
+              <span>Photos ({totalPhotos})</span>
+            </button>
+          )}
           {onExportPdf && (
             <button onClick={onExportPdf} data-print="hide"
               style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
                 background: DA.red, color:'white', fontSize:11, fontWeight:700 }}>
               <Ic n="fil" s={12}/>
               <span>PDF</span>
-            </button>
-          )}
-          {onExportPhotos && totalPhotos > 0 && (
-            <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
-                background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
-              {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
-              <span>ZIP ({totalPhotos})</span>
             </button>
           )}
         </div>
