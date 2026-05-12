@@ -406,7 +406,6 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       // ── Ligne de badges : urgence (pill colorée) + suivi (pill colorée) ──────
       // Badge urgence
       const urgBgRgb = urgColor === RD ? [254, 226, 226] : urgColor === AM ? [255, 247, 237] : [220, 252, 231];
-      const urgTxtW  = doc.setFontSize(6.5) || doc.getTextWidth(urgLabel);
       doc.setFontSize(6.5);
       const urgBadgeW = doc.getTextWidth(urgLabel) + 7;
       doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgColor); doc.setLineWidth(0.2);
