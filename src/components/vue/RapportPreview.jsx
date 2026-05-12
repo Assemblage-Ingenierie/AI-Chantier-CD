@@ -796,6 +796,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
+  const cutBlockElsRef = useRef({}); // { [blockId]: domElement } pour le mode coupe
   // scrollRef passed so we measure the actual scrollable area (excludes scrollbar width)
   const scale = usePreviewScale(scrollRef);
 
@@ -832,36 +833,31 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [totalPages]);
 
   // ── Mode coupe (curseur ciseau) ─────────────────────────────────────────────
-  const [cutSnap, setCutSnap] = useState(null);   // { y, id } snap line position
-  const [cutMousePos, setCutMousePos] = useState(null); // { x, y } cursor position
+  const [cutSnap, setCutSnap] = useState(null); // { y, id } | null
 
   const handleCutMouseMove = useCallback((e) => {
     if (!cutMode) return;
-    setCutMousePos({ x: e.clientX, y: e.clientY });
-    const blockEls = scrollRef.current?.querySelectorAll('[data-block-cut="true"]');
-    if (!blockEls?.length) return;
+    const els = Object.values(cutBlockElsRef.current);
+    if (!els.length) return;
     let bestEl = null, bestDist = Infinity;
-    for (const el of blockEls) {
+    for (const el of els) {
       const top = el.getBoundingClientRect().top;
       const dist = Math.abs(top - e.clientY);
       if (dist < bestDist) { bestDist = dist; bestEl = el; }
     }
-    if (bestEl) {
-      setCutSnap({ y: bestEl.getBoundingClientRect().top, id: bestEl.dataset.blockId });
-    }
+    if (bestEl) setCutSnap({ y: bestEl.getBoundingClientRect().top, id: bestEl.dataset.blockId });
   }, [cutMode]);
 
   const handleCutClick = useCallback(() => {
     if (!cutMode || !cutSnap) return;
     onTogglePageBreak(cutSnap.id);
     onCutModeChange?.(false);
-    setCutSnap(null); setCutMousePos(null);
+    setCutSnap(null);
   }, [cutMode, cutSnap, onTogglePageBreak, onCutModeChange]);
 
-  // Quitter le mode coupe avec Echap
   useEffect(() => {
-    if (!cutMode) { setCutSnap(null); setCutMousePos(null); return; }
-    const onKey = (e) => { if (e.key === 'Escape') { onCutModeChange?.(false); } };
+    if (!cutMode) { setCutSnap(null); return; }
+    const onKey = (e) => { if (e.key === 'Escape') onCutModeChange?.(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [cutMode, onCutModeChange]);
@@ -931,26 +927,18 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   return (
     <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
-      {/* ── Overlays mode ciseau ── */}
-      {cutMode && cutMousePos && (
-        <>
-          {/* Icône ✂ qui remplace le curseur souris */}
-          <div data-print="hide" style={{ position:'fixed', top:cutMousePos.y - 14, left:cutMousePos.x - 6, pointerEvents:'none', zIndex:10001, fontSize:22, lineHeight:1, userSelect:'none', transform:'rotate(-45deg)', filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.4))' }}>✂</div>
-          {/* Ligne pointillée snappée sur la frontière la plus proche */}
-          {cutSnap !== null && (() => {
-            const sr = scrollRef.current?.getBoundingClientRect();
-            if (!sr) return null;
-            return (
-              <div data-print="hide" style={{ position:'fixed', top:cutSnap.y - 1, left:sr.left, width:sr.width, height:0, pointerEvents:'none', zIndex:10000,
-                borderTop:'2px dashed #E30513' }}>
-                <div style={{ position:'absolute', right:10, top:-18, background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 8px', borderRadius:4, whiteSpace:'nowrap' }}>
-                  Cliquer ici · Échap pour annuler
-                </div>
-              </div>
-            );
-          })()}
-        </>
-      )}
+      {/* ── Ligne de coupe mode ciseau ── */}
+      {cutMode && cutSnap && (() => {
+        const sr = scrollRef.current?.getBoundingClientRect();
+        if (!sr) return null;
+        return (
+          <div data-print="hide" style={{ position:'fixed', top:cutSnap.y - 10, left:sr.left, width:sr.width, height:20, pointerEvents:'none', zIndex:10000, display:'flex', alignItems:'center' }}>
+            <div style={{ background:'#E30513', color:'white', padding:'3px 7px 3px 9px', fontSize:14, flexShrink:0, lineHeight:1 }}>✂</div>
+            <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
+            <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'3px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Cliquer ici · Échap pour annuler</div>
+          </div>
+        );
+      })()}
 
       {/* ── Barre de navigation pages ── */}
       <div style={{ background:'#1e1e1e', padding:'7px 10px', display:'flex', alignItems:'center', gap:8, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
@@ -987,9 +975,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
       {/* ── Zone défilante ── */}
       <div ref={scrollRef}
-        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'none' : 'default' }}
+        style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#555', paddingBottom:20, position:'relative', cursor: cutMode ? 'crosshair' : 'default' }}
         onMouseMove={cutMode ? handleCutMouseMove : undefined}
-        onMouseLeave={cutMode ? () => { setCutMousePos(null); setCutSnap(null); } : undefined}
+        onMouseLeave={cutMode ? () => setCutSnap(null) : undefined}
         onClick={cutMode ? handleCutClick : undefined}
       >
 
@@ -1044,14 +1032,13 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     </div>
                   )}
                   {pageBlocks.map((block, bi) => {
-                    const prevBlock = pageBlocks[bi - 1];
-                    const isContinuation = bi > 0 && (
-                      (block.item && prevBlock?.item?.id === block.item.id
-                        && (block.mode === 'cont' || block.mode === 'photos'))
-                      || prevBlock?.type === 'zone'
-                    );
+                    // Tout bloc sauf le tout premier (pi=0,bi=0) est un point de coupe valide
+                    const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
-                    <div key={block.id} data-block-id={block.id} data-block-cut={bi > 0 && !isContinuation ? 'true' : undefined}>
+                    <div key={block.id}
+                      data-block-id={block.id}
+                      ref={isCutCandidate ? (el => { if (el) cutBlockElsRef.current[block.id] = el; else delete cutBlockElsRef.current[block.id]; }) : undefined}
+                    >
                       {block.type === 'zone'
                         ? <ZoneHeader loc={block.loc} />
                         : block.type === 'plan'
