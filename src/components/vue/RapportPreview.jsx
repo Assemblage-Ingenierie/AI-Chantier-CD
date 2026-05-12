@@ -467,28 +467,6 @@ function A4Card({ children, projet, pageNum, totalPages }) {
       <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
         <PageFtr pageNum={pageNum} totalPages={totalPages}/>
       </div>
-      {/* Zone de débordement (visible si overflow) */}
-      {overflow > 0 && (
-        <div data-print="hide" style={{ position:'absolute', top:PH, left:0, right:0, bottom:0, pointerEvents:'none', zIndex:1,
-          background:'repeating-linear-gradient(45deg,rgba(227,5,19,0.05),rgba(227,5,19,0.05) 8px,rgba(255,255,255,0) 8px,rgba(255,255,255,0) 16px)' }}/>
-      )}
-      {/* Marqueur de fin de page A4 */}
-      <div data-print="hide" style={{ position:'absolute', top:PH, left:0, right:0, pointerEvents:'none', zIndex:3 }}>
-        <div style={{ borderTop:`3px solid ${DA.red}`, display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
-          <div style={{ background:DA.red, color:'white', fontSize:8, fontWeight:800, padding:'3px 12px',
-            borderRadius:'0 0 6px 6px', letterSpacing:0.3, whiteSpace:'nowrap',
-            display:'flex', alignItems:'center', gap:5 }}>
-            {overflow > 0 ? (
-              <>
-                <span>⚠</span>
-                <span>Dépasse la limite A4 de {Math.round(overflow / S)} mm — utilisez ✂ Couper ici ci-dessus</span>
-              </>
-            ) : (
-              <span>Fin de la page A4</span>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -892,9 +870,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.
       win.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>Rapport PDF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 portrait; margin: 0; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
   html, body { margin: 0; padding: 0; background: white; }
   .pdf-page { width: 630px; height: 891px; overflow: hidden; position: relative; display: block; page-break-after: always; break-after: page; }
   .pdf-page:last-child { page-break-after: avoid; break-after: avoid; }
@@ -1017,7 +997,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         && (block.mode === 'cont' || block.mode === 'photos'))
                       || prevBlock?.type === 'zone'
                     );
-                    const showBreakCtl = bi > 0 && !isContinuation && block.type === 'zone';
+                    const showBreakCtl = bi > 0 && !isContinuation;
                     return (
                     <div key={block.id}>
                       {showBreakCtl && (
