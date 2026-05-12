@@ -68,6 +68,17 @@ function splitComment(comment, maxChars = CHUNK_CHARS) {
   return chunks.length > 1 ? chunks : [comment];
 }
 
+// Découpe un texte en segments coupables : paragraphes > lignes > phrases
+function splitTextSegs(text) {
+  if (!text) return [text ?? ''];
+  const byDouble = text.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+  if (byDouble.length > 1) return byDouble;
+  const bySingle = text.split(/\n/).map(s => s.trim()).filter(Boolean);
+  if (bySingle.length > 1) return bySingle;
+  const bySentence = text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+  return bySentence.length > 1 ? bySentence : [text];
+}
+
 // Estimation fallback (utilisée uniquement si la mesure DOM n'est pas encore dispo)
 function estimateBlockH(block, ppl) {
   if (block.type === 'zone') return 42;
@@ -107,7 +118,8 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
       const comment = item.commentaire?.trim() || '';
 
       // Découpage texte : manuel (paraBreaks) sinon automatique (splitComment)
-      const paras = comment ? comment.split(/\n{2,}/).map(p => p.trim()).filter(Boolean) : [];
+      const paras = comment ? splitTextSegs(comment) : [];
+      const joinSep = /\n{2,}/.test(comment) ? '\n\n' : /\n/.test(comment) ? '\n' : ' ';
       const hasManualSplit = paras.some((_, i) => paraBreaks.has(`${item.id}_p${i}`));
 
       let textChunks;
@@ -116,10 +128,10 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
         paras.forEach((p, i) => {
           cur.push(p);
           if (paraBreaks.has(`${item.id}_p${i}`) && i < paras.length - 1) {
-            segs.push(cur.join('\n\n')); cur = [];
+            segs.push(cur.join(joinSep)); cur = [];
           }
         });
-        if (cur.length) segs.push(cur.join('\n\n'));
+        if (cur.length) segs.push(cur.join(joinSep));
         textChunks = segs.map((text, idx) => ({ text, id: idx === 0 ? item.id : `${item.id}_pms${idx}` }));
       } else {
         const auto = splitComment(comment);
@@ -279,8 +291,8 @@ function CutZone({ blockId, active, onCut }) {
     <div data-print="hide"
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       onClick={(e) => { e.stopPropagation(); onCut(blockId); }}
-      style={{ height: hov ? 22 : 10, position:'relative', cursor:'crosshair', transition:'height 0.1s', flexShrink:0, zIndex:50 }}>
-      <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:20, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.2, transition:'opacity 0.15s', background: hov ? 'rgba(227,5,19,0.05)' : 'transparent' }}>
+      style={{ height:22, position:'relative', cursor:'crosshair', flexShrink:0, zIndex:50 }}>
+      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
         <div style={{ background:'#E30513', color:'white', padding:'2px 8px', fontSize:13, flexShrink:0, lineHeight:1 }}>✂</div>
         <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
         {hov && <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Couper ici</div>}
@@ -289,15 +301,15 @@ function CutZone({ blockId, active, onCut }) {
   );
 }
 
-// ParaCutZone — séparateur de paragraphes dans un bloc texte (mode coupe)
+// ParaCutZone — séparateur de segments texte dans un bloc (mode coupe)
 function ParaCutZone({ paraId, onCut }) {
   const [hov, setHov] = useState(false);
   return (
     <div data-print="hide"
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       onClick={(e) => { e.stopPropagation(); onCut(paraId); }}
-      style={{ height: hov ? 18 : 6, position:'relative', cursor:'crosshair', transition:'height 0.1s', margin:'1px -9px', zIndex:50 }}>
-      <div style={{ position:'absolute', left:0, right:0, top:'50%', transform:'translateY(-50%)', height:16, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.2, transition:'opacity 0.15s' }}>
+      style={{ height:18, position:'relative', cursor:'crosshair', margin:'1px -9px', zIndex:50 }}>
+      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
         <div style={{ background:'#E30513', color:'white', padding:'1px 6px', fontSize:11, flexShrink:0, lineHeight:1 }}>✂</div>
         <div style={{ flex:1, height:1.5, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 6px,transparent 6px,transparent 10px)' }}/>
         {hov && <div style={{ background:'#E30513', color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', flexShrink:0, whiteSpace:'nowrap' }}>Couper le texte ici</div>}
@@ -373,7 +385,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {showComment && (
         <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
           {cutMode && onParaCut && (() => {
-            const ps = (commentToShow || '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+            const ps = splitTextSegs(commentToShow || '');
             if (ps.length < 2) return renderMarkup(commentToShow);
             return ps.map((para, i) => (
               <React.Fragment key={i}>
