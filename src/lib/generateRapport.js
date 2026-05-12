@@ -356,9 +356,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   };
 
   const renderItems = (items, hasViewpoints = false) => {
-    const TX  = ML + 5;            // x texte = 23mm (pas de barre gauche)
-    const RX  = W - MR - 4;       // x droite max = 188mm
-    const TW  = CW - 20;          // largeur texte conservative = 154mm (évite overflow accents français)
+    const TX  = ML + 5;      // x texte = 23mm
+    const RX  = W - MR - 4; // x droite max = 188mm
+    // jsPDF Helvetica sous-estime les chars français de ~15% → marge agressive
+    const TW  = CW - 36;    // 138mm → texte finit à 161mm, bien dans le cadre
     let photoOff = 0;
 
     items.forEach(item => {
@@ -368,22 +369,17 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const urgLabel = URGENCE[item.urgence]?.label ?? item.urgence;
       const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
 
-      // Pré-traitement : remplacer tiret cadratin pour éviter overflow jsPDF
       const rawTitle = (item.titre || '-').replace(/—/g, ' - ');
-      const rawComm  = item.commentaire
-        ? stripMarkup(item.commentaire).replace(/—/g, ' - ')
-        : '';
+      const rawComm  = item.commentaire ? stripMarkup(item.commentaire).replace(/—/g, ' - ') : '';
 
-      const tLH  = 4.5;
-      const cLH  = 4.2;
+      const tLH = 4.5, cLH = 4.2, badgeH = 8;
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
+      const titleLines = doc.splitTextToSize(rawTitle, TW);
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
+      const cLines = rawComm ? doc.splitTextToSize(rawComm, TW) : [];
 
-      // Hauteur badges (urgence + suivi sur même ligne)
-      const badgeH = 8;
-      const titleLines = doc.splitTextToSize(rawTitle, TW - 26); // place pour badge urgence droite
-      const cLines     = rawComm ? doc.splitTextToSize(rawComm, TW) : [];
-      const hdrH  = badgeH + titleLines.length * tLH + 3;
-      const txtH  = cLines.length ? cLines.length * cLH + 5 : 0;
-
+      const hdrH = badgeH + titleLines.length * tLH + 4;
+      const txtH = cLines.length ? cLines.length * cLH + 6 : 0;
       const cols    = Math.max(1, Math.min(photosParLigne, 3));
       const validPh = (item.photos || []).filter(p => p.data);
       const maxPh   = cols <= 2 ? 4 : 6;
@@ -392,39 +388,41 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const phH_    = phW * 0.75;
       const phRows  = showPh.length ? Math.ceil(showPh.length / cols) : 0;
       const phtH    = phRows > 0 ? phRows * (phH_ + 2) + 6 : 0;
-      const itemH   = hdrH + txtH + phtH + 4;
+      const textCardH = hdrH + txtH + 4;
 
-      pb(itemH + 4);
+      // Saut de page : garantir au moins l'entête de l'item
+      pb(Math.min(hdrH + 16, H - 18 - 13));
 
-      // Fond blanc + bordure légère
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
-      doc.roundedRect(ML, y, CW, itemH, 1.5, 1.5, 'FD');
+      // Fond carte texte (clippé à la page si le texte est très long)
+      const cardDrawH = Math.min(textCardH, H - 13 - y);
+      if (cardDrawH > 3) {
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
+        doc.roundedRect(ML, y, CW, cardDrawH, 1.5, 1.5, 'FD');
+      }
 
       let cy = y + 3;
 
-      // ── Ligne de badges : urgence (pill colorée) + suivi (pill colorée) ──────
-      // Badge urgence
+      // ── Badges DROITE : urgence (le plus à droite) puis suivi ────────────────
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
       const urgBgRgb = urgColor === RD ? [254, 226, 226] : urgColor === AM ? [255, 247, 237] : [220, 252, 231];
-      doc.setFontSize(6.5);
       const urgBadgeW = doc.getTextWidth(urgLabel) + 7;
+      let bx = RX - urgBadgeW;
       doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgColor); doc.setLineWidth(0.2);
-      doc.roundedRect(TX, cy, urgBadgeW, 5, 1.2, 1.2, 'FD');
-      doc.setFont('helvetica', 'bold'); doc.setTextColor(...urgColor);
-      doc.text(urgLabel, TX + urgBadgeW / 2, cy + 3.5, { align: 'center' });
+      doc.roundedRect(bx, cy, urgBadgeW, 5, 1.2, 1.2, 'FD');
+      doc.setTextColor(...urgColor);
+      doc.text(urgLabel, bx + urgBadgeW / 2, cy + 3.5, { align: 'center' });
       doc.setTextColor(0, 0, 0);
 
-      // Badge suivi (si présent), à côté du badge urgence
       if (suiviTxt) {
-        const sv      = SUIVI[item.suivi];
-        const dotRgb  = hx(sv.dot);
-        const bgRgb   = hx(sv.bg);
-        const sX      = TX + urgBadgeW + 3;
+        const sv = SUIVI[item.suivi];
+        const dotRgb = hx(sv.dot), bgRgb = hx(sv.bg);
         const sBadgeW = doc.getTextWidth(suiviTxt) + 7;
+        bx -= sBadgeW + 3;
         doc.setFillColor(...bgRgb); doc.setDrawColor(...dotRgb); doc.setLineWidth(0.2);
-        doc.roundedRect(sX, cy, sBadgeW, 5, 1.2, 1.2, 'FD');
+        doc.roundedRect(bx, cy, sBadgeW, 5, 1.2, 1.2, 'FD');
         doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...dotRgb);
-        doc.text(suiviTxt, sX + sBadgeW / 2, cy + 3.5, { align: 'center' });
+        doc.text(suiviTxt, bx + sBadgeW / 2, cy + 3.5, { align: 'center' });
         doc.setTextColor(0, 0, 0);
       }
 
@@ -436,8 +434,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       cy += titleLines.length * tLH + 3;
       doc.setTextColor(0, 0, 0);
 
-      // Séparateur fin si commentaire ou photos
-      if (txtH + phtH > 0) {
+      // Séparateur fin
+      if (txtH > 0) {
         doc.setDrawColor(238, 238, 238); doc.setLineWidth(0.1);
         doc.line(TX, cy - 1, ML + CW - 4, cy - 1);
       }
@@ -451,13 +449,19 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setTextColor(0, 0, 0);
       }
 
-      // ── Photos ───────────────────────────────────────────────────────────────
+      y = cy + 4; // avancer y après la carte texte
+
+      // ── Photos : page break si elles dépassent ───────────────────────────────
       if (showPh.length) {
-        cy += 2;
+        if (y + phtH > H - 13) { doc.addPage(); y = 18; hdr(); }
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
+        doc.roundedRect(ML, y, CW, phtH, 1.5, 1.5, 'FD');
+
         let validInItem = 0;
         showPh.forEach((p, pi) => {
           const px  = ML + 3 + (pi % cols) * (phW + 2);
-          const py2 = cy + Math.floor(pi / cols) * (phH_ + 2);
+          const py2 = y + 3 + Math.floor(pi / cols) * (phH_ + 2);
           try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
           doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.1); doc.rect(px, py2, phW, phH_);
           if (hasViewpoints) {
@@ -471,16 +475,18 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           validInItem++;
         });
         photoOff += validInItem;
+        y += phtH + 3;
       }
 
-      y += itemH + 3;
+      y += 3; // espacement inter-items
     });
   };
 
   localisations.forEach(loc => {
     const items = loc.items || [];
     if (!items.length) return;
-    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(14); }
+    // pb(50) : garantit entête zone + début premier item sur la même page
+    if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(50); }
     secHdr(loc.nom);
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     renderItems(items, hasVP);
