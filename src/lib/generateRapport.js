@@ -283,17 +283,16 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // ── Fonctions utilitaires ────────────────────────────────────────────────────
 
   const hdr = () => {
-    // Header blanc minimaliste
-    doc.setFillColor(255, 255, 255); doc.rect(0, 0, W, 10, 'F');
+    // Header sombre — identique à la preview (HdrBar dark)
+    doc.setFillColor(...BK); doc.rect(0, 0, W, 10, 'F');
     doc.setFillColor(...RD); doc.rect(0, 0, 2.5, 10, 'F');
-    doc.setDrawColor(230, 230, 230); doc.setLineWidth(0.2); doc.line(0, 10, W, 10);
     if (logoDataUrl) {
       try { doc.addImage(logoDataUrl, 'PNG', ML + 2, 1.5, 28, 7, undefined, 'FAST'); } catch {}
     } else {
-      doc.setTextColor(...RD); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...WH); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
       doc.text('Assemblage Ingénierie', ML + 4, 6.5);
     }
-    doc.setTextColor(170, 170, 170); doc.setFontSize(6); doc.setFont('helvetica', 'normal');
+    doc.setTextColor(180, 180, 180); doc.setFontSize(6); doc.setFont('helvetica', 'normal');
     doc.text(`${projet.nom} · ${today}`, W - MR, 6.5, { align: 'right' });
     doc.setTextColor(0, 0, 0);
   };
@@ -461,13 +460,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // Helper hex→RGB
   const hx = c => [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
 
-  // Zone/plan section header minimaliste
+  // Entête de zone — bandeau noir + barre rouge, texte blanc (identique preview)
   const secHdr = (label) => {
-    doc.setFillColor(247, 247, 247);
-    doc.rect(ML, y, CW, 8, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, y + 1.5, 3, 5, 'F');
-    doc.setDrawColor(225, 225, 225); doc.setLineWidth(0.15); doc.rect(ML, y, CW, 8);
-    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 30, 30);
+    doc.setFillColor(...BK); doc.rect(ML, y, CW, 8, 'F');
+    doc.setFillColor(...RD); doc.rect(ML, y, 3, 8, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
     doc.text(label.toUpperCase(), ML + 8, y + 5.5);
     doc.setTextColor(0, 0, 0); y += 11;
   };
@@ -475,7 +472,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const renderItems = (items, hasViewpoints = false) => {
     const TX  = ML + 5;      // x texte = 23mm
     const RX  = W - MR - 4; // x droite max = 188mm
-    const TW  = CW - 28;    // 146mm — équilibre espace/sécurité anti-overflow jsPDF
+    const TW  = CW - 22;    // 152mm — texte large, marge sécurité anti-overflow accents
     let photoOff = 0;
 
     items.forEach(item => {
@@ -639,40 +636,54 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         .map(i => {
           const ov = ovMap.get(i.id) || {};
           return {
-            locNom:  'zone'     in ov ? ov.zone     : (loc.nom       || ''),
-            titre:   'titre'    in ov ? ov.titre    : (i.titre        || ''),
-            urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence     || 'basse'),
-            solution:'solution' in ov ? ov.solution : (i.commentaire || ''),
+            locNom:  'zone'     in ov ? ov.zone     : (loc.nom   || ''),
+            titre:   'titre'    in ov ? ov.titre    : (i.titre    || ''),
+            urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence  || 'basse'),
+            solution:'solution' in ov ? ov.solution : '',
           };
         })
     ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
     if (recapRows.length > 0) {
       doc.addPage(); y = 18; hdr();
-      secHdr('Tableau récapitulatif');
 
-      // colonnes : bande | zone | désordre | solution | urgence
-      // Colonnes (sans bande couleur) : barre | zone | désordre | solution | urgence
-      const LBR  = 3;
-      const TXR  = ML + LBR + 3;
-      const colW = [30, 52, 68, 21];
-      const colX = [TXR, TXR + 30, TXR + 82, TXR + 150];
+      // Titre section avec compteur (comme la preview)
+      doc.setFillColor(...RD); doc.rect(ML, y, 3, 14, 'F');
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text('TABLEAU RÉCAPITULATIF', ML + 7, y + 6);
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
+      doc.text(`${recapRows.length} point${recapRows.length > 1 ? 's' : ''} à traiter`, ML + 7, y + 12);
+      doc.setTextColor(0, 0, 0); y += 18;
 
-      // En-tête tableau
-      doc.setFillColor(40, 40, 40); doc.roundedRect(ML, y, CW, 7, 1, 1, 'F');
+      // Colonnes calées dans CW (identiques grille preview: 5px|70px|1fr|1.5fr|65px)
+      const LBR   = 3;
+      const cZone = ML + LBR + 4;  // 25mm
+      const wZone = 30;
+      const cDes  = cZone + wZone + 3;  // 58mm
+      const wDes  = 48;
+      const cSol  = cDes + wDes + 3;   // 109mm
+      const wSol  = 54;
+      const cUrg  = ML + CW - 4;       // 188mm (bord droit badge)
+
+      // En-tête noir
+      doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 7, 1, 1, 'F');
       doc.setTextColor(...WH); doc.setFontSize(6); doc.setFont('helvetica', 'bold');
-      ['ZONE', 'DÉSORDRE', 'SOLUTION / ACTION', 'URGENCE'].forEach((t, i) => {
-        doc.text(t, colX[i], y + 4.8);
-      });
+      doc.text('ZONE', cZone, y + 4.8);
+      doc.text('DÉSORDRE', cDes, y + 4.8);
+      doc.text('SOLUTION / ACTION', cSol, y + 4.8);
+      doc.text('URGENCE', cUrg, y + 4.8, { align: 'right' });
       doc.setTextColor(0, 0, 0); y += 8;
 
       recapRows.forEach((row, i) => {
         const urgColor = row.urgence === 'haute' ? RD : row.urgence === 'moyenne' ? AM : GN;
+        const urgBg    = row.urgence === 'haute' ? [254,226,226] : row.urgence === 'moyenne' ? [255,247,237] : [220,252,231];
         const urgLabel = URGENCE[row.urgence]?.label ?? row.urgence;
-        const zoneLines  = doc.splitTextToSize(row.locNom || '—', colW[0] - 3);
-        const titreLines = doc.splitTextToSize(row.titre   || '—', colW[1] - 3);
-        const solLines   = doc.splitTextToSize(row.solution || '—', colW[2] - 3);
-        const rowH = Math.max(zoneLines.length, titreLines.length, solLines.length) * 4.0 + 7;
+
+        const zoneLines  = doc.splitTextToSize(row.locNom || '—', wZone);
+        const titreLines = doc.splitTextToSize(row.titre  || '—', wDes);
+        const solLines   = row.solution ? doc.splitTextToSize(row.solution, wSol) : [];
+        const textRows   = Math.max(zoneLines.length, titreLines.length, solLines.length || 1);
+        const rowH = textRows * 4.2 + 6;
         pb(rowH + 2);
 
         const bg = i % 2 === 0 ? 249 : 255;
@@ -680,14 +691,23 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         doc.setFillColor(...urgColor); doc.rect(ML, y + 1, LBR, rowH - 2, 'F');
         doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.1); doc.rect(ML, y, CW, rowH);
 
-        doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(zoneLines, colX[0], y + 5);
+        const baseY = y + 5;
+        doc.setTextColor(100, 100, 100); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(zoneLines, cZone, baseY);
         doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-        doc.text(titreLines, colX[1], y + 5);
-        doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-        doc.text(solLines, colX[2], y + 5);
-        doc.setTextColor(...urgColor); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-        doc.text(urgLabel, colX[3], y + 5);
+        doc.text(titreLines, cDes, baseY);
+        if (solLines.length) {
+          doc.setTextColor(80, 80, 80); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+          doc.text(solLines, cSol, baseY);
+        }
+
+        // Badge urgence pill (comme preview : fond coloré + texte)
+        doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
+        const pillW = Math.min(doc.getTextWidth(urgLabel) + 6, 22);
+        doc.setFillColor(...urgBg); doc.setDrawColor(...urgColor); doc.setLineWidth(0.15);
+        doc.roundedRect(cUrg - pillW, y + rowH / 2 - 2.5, pillW, 5, 1, 1, 'FD');
+        doc.setTextColor(...urgColor);
+        doc.text(urgLabel, cUrg - pillW / 2, y + rowH / 2 + 1, { align: 'center' });
 
         doc.setTextColor(0, 0, 0); y += rowH + 1;
       });
