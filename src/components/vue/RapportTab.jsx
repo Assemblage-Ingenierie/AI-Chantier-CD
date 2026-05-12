@@ -282,14 +282,6 @@ export default function RapportTab({ projet, onUpdate }) {
     localisations.flatMap(l => l.items || []).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
   [localisations]);
 
-  const [search, setSearch] = useState('');
-  const filteredRecapRows = search.trim()
-    ? recapRows.filter(r =>
-        r.titre.toLowerCase().includes(search.toLowerCase()) ||
-        r.locNom.toLowerCase().includes(search.toLowerCase())
-      )
-    : recapRows;
-
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
@@ -311,67 +303,7 @@ export default function RapportTab({ projet, onUpdate }) {
           </div>
         )}
 
-        {/* Boutons Export en haut — toujours visibles */}
-        <div style={{ padding:'10px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:6 }}>
-          <button
-            onClick={handleExport}
-            disabled={allItems.length === 0}
-            style={{ width:'100%', padding:'11px 0', borderRadius:10, fontSize:13, fontWeight:800, border:'none',
-              cursor: allItems.length === 0 ? 'not-allowed' : 'pointer',
-              background: allItems.length === 0 ? DA.grayL : DA.red,
-              color:'white', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-              boxShadow: allItems.length > 0 ? '0 3px 10px rgba(227,5,19,0.3)' : 'none' }}>
-            <Ic n="fil" s={14}/>
-            {allItems.length === 0 ? 'Aucune observation' : 'Exporter PDF'}
-          </button>
-
-          {/* ZIP photos */}
-          <button
-            onClick={handleExportPhotos}
-            disabled={zipping || totalPhotos === 0}
-            style={{ width:'100%', padding:'9px 0', borderRadius:10, fontSize:12, fontWeight:700, border:'none',
-              cursor: zipping || totalPhotos === 0 ? 'not-allowed' : 'pointer',
-              background: zipping || totalPhotos === 0 ? DA.grayXL : '#1D4ED8',
-              color: totalPhotos === 0 ? DA.grayL : 'white',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-            {zipping ? <Ic n="spn" s={13}/> : <Ic n="dl" s={13}/>}
-            {zipping ? 'Compression…' : totalPhotos === 0 ? 'Aucune photo' : `Télécharger photos ZIP (${totalPhotos})`}
-          </button>
-          {totalPhotos > 0 && (
-            <p style={{ fontSize:9, color:DA.grayL, margin:0, textAlign:'center', fontStyle:'italic' }}>
-              Organisé par zone / observation — prêt pour Drive
-            </p>
-          )}
-
-          {/* Bouton ciseaux — mode coupe pagination */}
-          <button
-            onClick={() => setCutMode(v => !v)}
-            style={{ width:'100%', padding:'9px 0', borderRadius:10, fontSize:12, fontWeight:700,
-              border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
-              background: cutMode ? '#FFF0F0' : 'white',
-              color: cutMode ? DA.red : DA.black,
-              display:'flex', alignItems:'center', justifyContent:'center', gap:8, cursor:'pointer' }}>
-            ✂ {cutMode ? "Mode coupe actif — cliquez dans l'aperçu" : 'Créer un saut de page'}
-          </button>
-        </div>
-
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
-
-          {/* Recherche */}
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', background:DA.grayXL, borderRadius:10, border:`1px solid ${DA.border}` }}>
-            <Ic n="txt" s={15}/>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Filtrer les observations…"
-              style={{ flex:1, border:'none', outline:'none', fontSize:14, color:DA.black, background:'transparent', fontFamily:'inherit' }}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex' }}>
-                <Ic n="x" s={13}/>
-              </button>
-            )}
-          </div>
 
           {/* Intervenants */}
           <ParticipantsEditor
@@ -460,18 +392,26 @@ export default function RapportTab({ projet, onUpdate }) {
             </p>
           </div>
 
-          {/* Sauts de page actifs */}
-          {pageBreaks.length > 0 && (
-            <div style={{ background:'#FFF0F0', border:`1px solid #FCA5A5`, borderRadius:10, padding:10 }}>
-              <p style={{ fontSize:10, fontWeight:700, color:DA.red, margin:'0 0 6px' }}>
-                {pageBreaks.length} saut{pageBreaks.length > 1 ? 's' : ''} de page forcé{pageBreaks.length > 1 ? 's' : ''}
-              </p>
+          {/* Sauts de page — bouton + compteur fusionnés */}
+          <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
+            <button
+              onClick={() => setCutMode(v => !v)}
+              style={{ flex:1, padding:'8px 0', borderRadius:8, fontSize:11, fontWeight:700,
+                border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
+                background: cutMode ? '#FFF0F0' : 'white',
+                color: cutMode ? DA.red : DA.black,
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6, cursor:'pointer' }}>
+              ✂ {cutMode ? "Mode coupe actif" : 'Saut de page'}
+            </button>
+            {pageBreaks.length > 0 && (
               <button onClick={() => onUpdate({ rapportPageBreaks: [] })}
-                style={{ fontSize:10, color:DA.red, background:'none', border:`1px solid #FCA5A5`, borderRadius:6, padding:'3px 8px', cursor:'pointer', fontWeight:600 }}>
-                Tout effacer
+                style={{ padding:'8px 10px', borderRadius:8, fontSize:10, fontWeight:700,
+                  border:`1px solid #FCA5A5`, background:'#FFF0F0', color:DA.red, cursor:'pointer',
+                  display:'flex', alignItems:'center', gap:4, flexShrink:0, whiteSpace:'nowrap' }}>
+                {pageBreaks.length} ✕
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Tableau récapitulatif */}
           <div>
@@ -484,70 +424,10 @@ export default function RapportTab({ projet, onUpdate }) {
               />
               <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Tableau récapitulatif</span>
             </label>
-            {projet.includeTableauRecap !== false && recapRows.length === 0 && (
-              <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0 22px' }}>Aucune observation non terminée</p>
-            )}
             {projet.includeTableauRecap !== false && (
-              <div style={{ marginTop:8 }}>
-                {recapRows.length > 0 && (
-                  <div style={{ border:`1px solid ${DA.border}`, borderRadius:8, overflow:'hidden', marginBottom:6 }}>
-                    {filteredRecapRows.map((row, i) => {
-                      const u = URGENCE[row.urgence] || URGENCE.basse;
-                      return (
-                        <div key={row.itemId} style={{ display:'grid', gridTemplateColumns:'4px 1fr', borderBottom: i < filteredRecapRows.length - 1 ? `1px solid ${DA.border}` : 'none', background: i%2===0 ? DA.grayXL : 'white' }}>
-                          <div style={{ background:u.dot }}/>
-                          <div style={{ padding:'7px 8px', display:'flex', flexDirection:'column', gap:5 }}>
-                            {/* Header ligne avec bouton supprimer */}
-                            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                              <span style={{ fontSize:8, color:DA.grayL, fontStyle:'italic' }}>{row.isCustom ? 'Ligne personnalisée' : 'Auto'}</span>
-                              <button onClick={() => deleteRecapRow(row.itemId, row.isCustom)}
-                                title="Supprimer cette ligne du tableau"
-                                style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:14, lineHeight:1, padding:'0 2px', display:'flex', alignItems:'center' }}>
-                                ×
-                              </button>
-                            </div>
-                            {/* Zone */}
-                            <div>
-                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Zone</label>
-                              <input value={row.locNom} onChange={e => updateRecapField(row.itemId, 'zone', e.target.value)} placeholder="Zone…"
-                                style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}/>
-                            </div>
-                            {/* Désordre */}
-                            <div>
-                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Désordre</label>
-                              <input value={row.titre} onChange={e => updateRecapField(row.itemId, 'titre', e.target.value)} placeholder="Désordre…"
-                                style={{ width:'100%', fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', fontFamily:'inherit', color:DA.black, background:'white', boxSizing:'border-box' }}/>
-                            </div>
-                            {/* Urgence */}
-                            <div>
-                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Urgence</label>
-                              <div style={{ display:'flex', gap:4 }}>
-                                {['haute','moyenne','basse'].map(lvl => {
-                                  const uu = URGENCE[lvl]; const active = row.urgence === lvl;
-                                  return <button key={lvl} onClick={() => updateRecapField(row.itemId, 'urgence', lvl)}
-                                    style={{ flex:1, padding:'3px 0', borderRadius:5, fontSize:9, fontWeight:700, cursor:'pointer', border:`1.5px solid ${active ? uu.border : DA.border}`, background: active ? uu.bg : 'white', color: active ? uu.text : DA.grayL }}>
-                                    {uu.label}</button>;
-                                })}
-                              </div>
-                            </div>
-                            {/* Solution */}
-                            <div>
-                              <label style={{ fontSize:8, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, display:'block', marginBottom:2 }}>Solution</label>
-                              <textarea value={row.solution} onChange={e => updateRecapField(row.itemId, 'solution', e.target.value)}
-                                placeholder="Solution / action corrective…" rows={2}
-                                style={{ fontSize:10, border:`1px solid ${DA.border}`, borderRadius:5, padding:'4px 6px', outline:'none', resize:'vertical', fontFamily:'inherit', color:DA.black, lineHeight:1.4, background:'white', boxSizing:'border-box', width:'100%' }}/>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <button onClick={addCustomRow}
-                  style={{ width:'100%', padding:'7px 0', borderRadius:7, border:`1.5px dashed ${DA.border}`, background:'white', color:DA.gray, fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-                  + Ajouter une ligne personnalisée
-                </button>
-              </div>
+              <p style={{ fontSize:10, color:DA.grayL, margin:'3px 0 0 22px', fontStyle:'italic' }}>
+                Modifiable directement dans l'aperçu →
+              </p>
             )}
           </div>
 
@@ -563,12 +443,9 @@ export default function RapportTab({ projet, onUpdate }) {
               <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Ajouter une conclusion</span>
             </label>
             {(projet.includeConclusion ?? false) && (
-              <ConclusionEditor
-                value={projet.conclusion ?? ''}
-                align={projet.conclusionAlign ?? 'left'}
-                onChange={v => onUpdate({ conclusion: v })}
-                onAlignChange={a => onUpdate({ conclusionAlign: a })}
-              />
+              <p style={{ fontSize:10, color:DA.grayL, margin:'3px 0 0 22px', fontStyle:'italic' }}>
+                Modifiable directement dans l'aperçu →
+              </p>
             )}
           </div>
         </div>
@@ -608,6 +485,16 @@ export default function RapportTab({ projet, onUpdate }) {
         panelOpen={panelOpen}
         cutMode={cutMode}
         onCutModeChange={setCutMode}
+        onExportPdf={handleExport}
+        onExportPhotos={handleExportPhotos}
+        totalPhotos={totalPhotos}
+        zipping={zipping}
+        recapRows={recapRows}
+        onUpdateRecap={updateRecapField}
+        onDeleteRecap={deleteRecapRow}
+        onAddCustomRow={addCustomRow}
+        onUpdateConclusion={v => onUpdate({ conclusion: v })}
+        onUpdateConclusionAlign={a => onUpdate({ conclusionAlign: a })}
       />
     </div>
   );

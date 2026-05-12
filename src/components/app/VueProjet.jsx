@@ -44,6 +44,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
   const [editingVisiteLabel, setEditingVisiteLabel] = useState(null);
   const [visitLabelVal, setVisitLabelVal] = useState('');
+  const [editingProjetNom, setEditingProjetNom] = useState(false);
+  const [projetNomVal, setProjetNomVal] = useState('');
 
   // Si le projet change (chargement async), synchro la visite sélectionnée
   useEffect(() => {
@@ -264,7 +266,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
         {isDesktop ? (
           /* ── Desktop : 3 colonnes [gauche | tabs centrés | droite] sur une ligne ── */
-          <div style={{ display:'flex', alignItems:'stretch', minHeight:52, padding:'0 16px' }}>
+          <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:52, padding:'0 16px' }}>
 
             {/* Gauche : retour + nom projet */}
             <div style={{ flex:1, display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
@@ -274,13 +276,25 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
               </button>
               <div style={{ minWidth:0 }}>
-                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                {editingProjetNom ? (
+                  <input autoFocus value={projetNomVal}
+                    onChange={e => setProjetNomVal(e.target.value)}
+                    onBlur={() => { const t = projetNomVal.trim(); if (t) onUpdate({ nom: t }); setEditingProjetNom(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingProjetNom(false); }}
+                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:15, fontWeight:800, padding:'3px 7px', width: Math.max(120, projetNomVal.length * 9) + 'px' }}
+                  />
+                ) : (
+                  <button onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>
+                    <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration:'underline dotted rgba(255,255,255,0.3)', textUnderlineOffset:3 }}>{projet.nom}</p>
+                  </button>
+                )}
                 {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
             </div>
 
             {/* Centre : tabs */}
-            <div style={{ display:'flex', alignItems:'stretch', gap:4, padding:'0 8px' }}>
+            <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'stretch', gap:4, padding:'0 8px', height:'100%' }}>
               {[
                 { k:'visite',  n:'bld', l:'Visite' },
                 { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
@@ -293,7 +307,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             </div>
 
             {/* Droite : visite label + Niveaux */}
-            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:8 }}>
+            <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
                 if (!v) return null;
@@ -312,11 +326,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                   </button>
                 );
               })()}
-              <button onClick={() => setModal({ t:'niveaux' })}
-                style={{ background:'white', border:'none', borderRadius:8, padding:'6px 13px', color:DA.black, cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontWeight:800 }}>
-                <Ic n="bld" s={14}/>
-                <span style={{ fontSize:12, fontWeight:800 }}>Niveaux</span>
-              </button>
+              {tab !== 'rapport' && (
+                <button onClick={() => setModal({ t:'niveaux' })}
+                  style={{ background:'white', border:'none', borderRadius:8, padding:'6px 13px', color:DA.black, cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontWeight:800 }}>
+                  <Ic n="bld" s={14}/>
+                  <span style={{ fontSize:12, fontWeight:800 }}>Niveaux</span>
+                </button>
+              )}
             </div>
 
           </div>
@@ -345,11 +361,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                   </button>
                 );
               })()}
-              <button onClick={() => setModal({ t:'niveaux' })}
-                style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 9px', color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
-                <Ic n="bld" s={14}/>
-                <span style={{ fontSize:11, fontWeight:700 }}>Niveaux</span>
-              </button>
+              {tab !== 'rapport' && (
+                <button onClick={() => setModal({ t:'niveaux' })}
+                  style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 9px', color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                  <Ic n="bld" s={14}/>
+                  <span style={{ fontSize:11, fontWeight:700 }}>Niveaux</span>
+                </button>
+              )}
             </div>
             <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:8 }}>
               <div style={{ display:'flex' }}>
