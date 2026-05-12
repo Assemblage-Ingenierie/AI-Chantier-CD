@@ -392,26 +392,16 @@ export default function RapportTab({ projet, onUpdate }) {
             </p>
           </div>
 
-          {/* Sauts de page — bouton + compteur fusionnés */}
-          <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
-            <button
-              onClick={() => setCutMode(v => !v)}
-              style={{ flex:1, padding:'8px 0', borderRadius:8, fontSize:11, fontWeight:700,
-                border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
-                background: cutMode ? '#FFF0F0' : 'white',
-                color: cutMode ? DA.red : DA.black,
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6, cursor:'pointer' }}>
-              ✂ {cutMode ? "Mode coupe actif" : 'Saut de page'}
-            </button>
-            {pageBreaks.length > 0 && (
-              <button onClick={() => onUpdate({ rapportPageBreaks: [] })}
-                style={{ padding:'8px 10px', borderRadius:8, fontSize:10, fontWeight:700,
-                  border:`1px solid #FCA5A5`, background:'#FFF0F0', color:DA.red, cursor:'pointer',
-                  display:'flex', alignItems:'center', gap:4, flexShrink:0, whiteSpace:'nowrap' }}>
-                {pageBreaks.length} ✕
-              </button>
-            )}
-          </div>
+          {/* Sauts de page */}
+          <button
+            onClick={() => setCutMode(v => !v)}
+            style={{ padding:'8px 0', borderRadius:8, fontSize:11, fontWeight:700,
+              border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
+              background: cutMode ? '#FFF0F0' : 'white',
+              color: cutMode ? DA.red : DA.black,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:6, cursor:'pointer' }}>
+            ✂ {cutMode ? "Mode coupe actif" : 'Saut de page'}
+          </button>
 
           {/* Tableau récapitulatif */}
           <div>
@@ -483,6 +473,7 @@ export default function RapportTab({ projet, onUpdate }) {
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}
         panelOpen={panelOpen}
+        panelW={isMobile ? 0 : panelW}
         cutMode={cutMode}
         onCutModeChange={setCutMode}
         onExportPdf={handleExport}
