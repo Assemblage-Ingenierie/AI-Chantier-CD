@@ -321,9 +321,8 @@ function ParaCutZone({ paraId, onCut }) {
 
 function ZoneHeader({ loc }) {
   return (
-    <div style={{ background:DA.black, borderRadius:3, padding:'5px 10px', marginBottom:5, display:'flex', alignItems:'center', gap:6 }}>
-      <div style={{ width:3, height:16, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-      <span style={{ fontSize:10, fontWeight:800, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>{loc.nom}</span>
+    <div style={{ borderBottom:`2px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+      <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loc.nom}</span>
     </div>
   );
 }
@@ -364,9 +363,9 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       {/* En-tête normal (titre + badges) */}
       {showHeader && (
-        <div style={{ background:'#F5F5F5', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3 }}>
+        <div style={{ background:'#F7F7F7', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3, borderBottom:`1px solid ${DA.border}` }}>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ fontSize:10, fontWeight:700, color:DA.black, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+            <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
             {onEdit && (
               <button onClick={onEdit}
                 style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
@@ -376,12 +375,11 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
             )}
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ width:6, height:6, borderRadius:'50%', background:urg.dot, flexShrink:0 }}/>
-            <span style={{ fontSize:8, fontWeight:700, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+            <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap', letterSpacing:'0.04em' }}>
               {urg.label}
             </span>
             {suivi && (
-              <span style={{ fontSize:8, fontWeight:700, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
+              <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
                 ↩ {suivi.label}
               </span>
             )}
@@ -391,8 +389,8 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       {/* Bandeau de continuation minimal — titre en petit + label suite/photos */}
       {showContHdr && (
         <div style={{ background:'#F9F9F9', borderBottom:`1px solid ${DA.border}`, padding:'2px 9px', display:'flex', alignItems:'center', gap:6 }}>
-          <span style={{ fontSize:8, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
-          <span style={{ fontSize:7.5, color:DA.grayL, fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? '↳ photos' : '↳ suite'}</span>
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
+          <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? '↳ photos' : '↳ suite'}</span>
           {onEdit && (
             <button onClick={onEdit} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }} title="Modifier">
               <Ic n="pen" s={10}/>
@@ -402,7 +400,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
       )}
       {/* Commentaire */}
       {showComment && (
-        <div style={{ padding:'5px 9px', fontSize:10, color:'#333', lineHeight:1.55 }}>
+        <div style={{ padding:'5px 9px', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, textAlign:'justify', hyphens:'auto' }}>
           {cutMode && onParaCut && (() => {
             const ps = splitTextSegs(commentToShow || '');
             if (ps.length < 2) return renderMarkup(commentToShow);
@@ -474,14 +472,13 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
   if (!renderedImg && !planBg) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
-      <div style={{ background:DA.black, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
-        <div style={{ width:3, height:12, background:DA.red, borderRadius:1, flexShrink:0 }}/>
-        <span style={{ fontSize:9, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>
+      <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
+        <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>
           Plan — {loc.nom}
         </span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
           {paths?.length > 0 && (
-            <span style={{ fontSize:8, color:'rgba(255,255,255,0.5)' }}>
+            <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
               {paths.length} annotation{paths.length > 1 ? 's' : ''}
             </span>
           )}
@@ -492,17 +489,17 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
           style={{ width:'100%', display:'block', objectFit:'contain' }}/>
       )}
       {showLegend && (
-        <div style={{ padding:'8px 12px 10px', background:'#f9f9f9', borderTop:`2px solid ${DA.red}` }}>
-          <div style={{ fontSize:8, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.8, marginBottom:6 }}>Légende</div>
+        <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
+          <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
           <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 14px' }}>
             {legendSy.map(s => (
-              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:DA.gray }}>
+              <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
                 <SymbolIcon sym={s} size={16}/>
                 {s.label}
               </div>
             ))}
             {hasViewpoints && (
-              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:DA.gray }}>
+              <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
                 <ViewpointIcon size={16}/>
                 Vue photo
               </div>
@@ -518,12 +515,11 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
 function HdrBar({ projet, dateStr }) {
   const logoUrl = useBrandingLogo();
   return (
-    <div style={{ height:HDR, background:DA.black, display:'flex', alignItems:'center', padding:`0 ${MX}px`, position:'relative' }}>
-      <div style={{ position:'absolute', left:0, top:0, bottom:0, width:3, background:DA.red }}/>
+    <div style={{ height:HDR, background:'white', display:'flex', alignItems:'center', padding:`0 ${MX}px`, borderBottom:`1px solid ${DA.red}` }}>
       {logoUrl && <img src={logoUrl} alt="AI"
-        style={{ height:16, objectFit:'contain', opacity:0.9, flexShrink:0 }}/>}
+        style={{ height:14, objectFit:'contain', flexShrink:0, filter:'brightness(0) saturate(100%) invert(8%) sepia(97%) saturate(6570%) hue-rotate(352deg) brightness(96%) contrast(110%)' }}/>}
       <span style={{ flex:1 }}/>
-      <span style={{ fontSize:6, color:'rgba(255,255,255,0.35)' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
+      <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', letterSpacing:'0.03em' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
     </div>
   );
 }
@@ -548,7 +544,7 @@ function A4Card({ children, projet, pageNum, totalPages }) {
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : new Date().toLocaleDateString('fr-FR');
   return (
-    <div ref={cardRef} style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', minHeight:PH }}>
+    <div ref={cardRef} style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', minHeight:PH, fontFamily:"'Open Sans', sans-serif" }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>{children}</div>
       {/* Footer ancré à PH - FTR même si contenu déborde */}
@@ -625,31 +621,31 @@ function CoverPage({ projet, pageNum, totalPages }) {
   const DARK_H = Math.round(PH * 0.30);
 
   return (
-    <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+    <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:"'Open Sans', sans-serif" }}>
 
       {/* ── Partie sombre : photo + titre ── */}
-      <div style={{ height:DARK_H, background:DA.black, position:'relative', overflow:'hidden', flexShrink:0 }}>
+      <div style={{ height:DARK_H, background:'#1a1a1a', position:'relative', overflow:'hidden', flexShrink:0 }}>
         {projet.photo && (
           <img src={projet.photo} alt=""
-            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.3 }}/>
+            style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:0.28 }}/>
         )}
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
         {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie"
-          style={{ position:'absolute', top:MX, right:MX, height:24, objectFit:'contain' }}/>}
-        <div style={{ position:'absolute', bottom:MX, left:MX+4 }}>
-          <div style={{ fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1.5, textTransform:'uppercase', marginBottom:6 }}>
+          style={{ position:'absolute', top:MX, right:MX, height:22, objectFit:'contain', opacity:0.9 }}/>}
+        <div style={{ position:'absolute', bottom:MX, left:MX + 10 }}>
+          <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'rgba(255,255,255,0.45)', letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:8 }}>
             Compte-rendu de visite
           </div>
-          <div style={{ fontSize:22, fontWeight:800, color:'white', lineHeight:1.2 }}>{projet.nom}</div>
+          <div style={{ fontSize:22, fontFamily:"'Open Sans', sans-serif", fontWeight:500, color:'white', lineHeight:1.05, letterSpacing:'-0.015em' }}>{projet.nom}</div>
           {(projet.visiteNom || dateStr) && (
-            <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:8 }}>
-              <div style={{ width:3, height:20, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-              <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:2, height:24, background:DA.red, flexShrink:0 }}/>
+              <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
                 {projet.visiteNom && (
-                  <span style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.92)', letterSpacing:0.3 }}>{projet.visiteNom}</span>
+                  <span style={{ fontSize:13, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'rgba(255,255,255,0.9)', letterSpacing:'0.01em' }}>{projet.visiteNom}</span>
                 )}
                 {dateStr && (
-                  <span style={{ fontSize:11, fontWeight:500, color:'rgba(255,255,255,0.6)', letterSpacing:0.2 }}>Visite du {dateStr}</span>
+                  <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'rgba(255,255,255,0.5)', letterSpacing:'0.04em' }}>● Visite du {dateStr}</span>
                 )}
               </div>
             </div>
@@ -662,15 +658,14 @@ function CoverPage({ projet, pageNum, totalPages }) {
 
         {infoRows.length > 0 && (
           <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-              <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-              <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Présentation du projet</span>
+            <div style={{ borderBottom:`1pt solid #000`, paddingBottom:5, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Présentation du projet</span>
             </div>
-            <div style={{ background:DA.grayXL, borderRadius:6, padding:'8px 10px', border:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', gap:5 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
               {infoRows.map(([k, v]) => (
-                <div key={k} style={{ display:'flex', fontSize:9 }}>
-                  <span style={{ color:DA.gray, fontWeight:700, width:90, flexShrink:0 }}>{k}</span>
-                  <span style={{ color:DA.black }}>{v}</span>
+                <div key={k} style={{ display:'flex', fontSize:9, fontFamily:"'Open Sans', sans-serif" }}>
+                  <span style={{ color:DA.red, fontWeight:400, width:90, flexShrink:0, letterSpacing:'0.04em' }}>{k}</span>
+                  <span style={{ color:'#000', fontWeight:400 }}>{v}</span>
                 </div>
               ))}
             </div>
@@ -679,44 +674,42 @@ function CoverPage({ projet, pageNum, totalPages }) {
 
         {participants.length > 0 && (
           <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-              <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-              <span style={{ fontSize:8, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>
+            <div style={{ borderBottom:`1pt solid #000`, paddingBottom:5, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>
                 Intervenants ({participants.length})
               </span>
             </div>
-            <div style={{ display:'flex', alignItems:'center', background:DA.black, borderRadius:'4px 4px 0 0', padding:'5px 0' }}>
-              <div style={{ width:24, flexShrink:0 }}/>
+            <div style={{ display:'flex', alignItems:'center', background:'#F2F2F2', borderTop:`1pt solid #000`, borderBottom:`1pt solid #000`, padding:'4px 0' }}>
+              <div style={{ width:20, flexShrink:0 }}/>
               <div style={{ flex:1, display:'flex', minWidth:0 }}>
-                <div style={{ flex:'0 0 36%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:8 }}>NOM / POSTE</div>
-                <div style={{ flex:'0 0 22%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>TÉLÉPHONE</div>
-                <div style={{ flex:'0 0 28%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', paddingRight:4 }}>EMAIL</div>
-                <div style={{ flex:'0 0 14%', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.7)', textAlign:'right', paddingRight:6 }}>PRÉSENCE</div>
+                <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE</div>
+                <div style={{ flex:'0 0 22%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>TÉLÉPHONE</div>
+                <div style={{ flex:'0 0 28%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>EMAIL</div>
+                <div style={{ flex:'0 0 14%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textAlign:'right', paddingRight:6, letterSpacing:'0.06em' }}>PRÉSENCE</div>
               </div>
             </div>
             {participants.map((pt, i) => {
               const isPresent = !pt.presence || pt.presence === 'present';
-              const bg = i % 2 === 0 ? DA.grayXL : 'white';
               return (
-                <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', background:bg, borderBottom:`1px solid ${DA.border}` }}>
-                  <div style={{ width:24, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', borderBottom:`1px solid #DFE4E8` }}>
+                  <div style={{ width:20, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                     {pt.isAssemblage
-                      ? <span style={{ fontSize:6, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', border:`1px solid #FECACA` }}>A!</span>
-                      : <div style={{ width:5, height:5, borderRadius:'50%', background:'#bbb' }}/>
+                      ? <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:DA.red, background:'#FFF0F0', borderRadius:2, padding:'1px 3px', border:`1px solid #FECACA` }}>A!</span>
+                      : <div style={{ width:4, height:4, borderRadius:'50%', background:'#bbb' }}/>
                     }
                   </div>
                   <div style={{ flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
                     <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
-                      <div style={{ fontSize:8.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
-                      {pt.poste && <div style={{ fontSize:7.5, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
+                      <div style={{ fontSize:8.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                      {pt.poste && <div style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
                     </div>
-                    <div style={{ flex:'0 0 22%', fontSize:8, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
-                    <div style={{ flex:'0 0 28%', fontSize:7.5, color:DA.gray, paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
+                    <div style={{ flex:'0 0 22%', fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
+                    <div style={{ flex:'0 0 28%', fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
                     <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
-                      <span style={{ fontSize:7.5, fontWeight:700,
+                      <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600,
                         color: isPresent ? '#16A34A' : DA.red,
                         background: isPresent ? '#DCFCE7' : '#FEE2E2',
-                        borderRadius:4, padding:'1px 5px' }}>
+                        borderRadius:3, padding:'1px 5px' }}>
                         {isPresent ? 'Présent' : 'Absent'}
                       </span>
                     </div>
@@ -736,16 +729,16 @@ function CoverPage({ projet, pageNum, totalPages }) {
 // ── Pied de page commun (toutes les pages) ────────────────────────────────
 function PageFtr({ pageNum, totalPages }) {
   return (
-    <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, flexShrink:0, display:'flex', alignItems:'center', padding:`0 ${MX}px`, gap:6 }}>
+    <div style={{ height:FTR, background:'white', borderTop:`1px solid #DFE4E8`, flexShrink:0, display:'flex', alignItems:'center', padding:`0 ${MX}px`, gap:6 }}>
       <div style={{ flex:1, display:'flex', flexDirection:'column', gap:1.5, minWidth:0 }}>
-        <span style={{ fontSize:5, color:'#c8c8c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           Assemblage Ingénierie · S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris · contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87
         </span>
-        <span style={{ fontSize:5, color:'#c8c8c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100
         </span>
       </div>
-      <span style={{ fontSize:6, color:DA.grayL, flexShrink:0 }}>{pageNum} / {totalPages}</span>
+      <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', flexShrink:0 }}>{pageNum} / {totalPages}</span>
     </div>
   );
 }
@@ -759,12 +752,11 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
   ];
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif" }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
-          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-          <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Conclusion</span>
+        <div style={{ borderBottom:`1pt solid #000`, paddingBottom:5, marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Conclusion</span>
           {isEditable && onUpdateConclusionAlign && (
             <div data-print="hide" style={{ display:'flex', gap:3, marginLeft:'auto' }}>
               {ALIGNS.map(a => (
@@ -785,19 +777,15 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
             onChange={e => onUpdateConclusion(e.target.value)}
             placeholder="Saisissez votre conclusion…"
             rows={8}
-            style={{ width:'100%', fontSize:9, color:DA.black, lineHeight:1.7, border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
+            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'#F2F2F2', boxSizing:'border-box', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
           />
         ) : (
-          <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60, textAlign: conclusionAlign }}>
-            {conclusion ? renderMarkup(conclusion) : <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
+          <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'#F2F2F2', minHeight:60, textAlign: conclusionAlign }}>
+            {conclusion ? renderMarkup(conclusion) : <span style={{ color:'#4D4D4D', fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
           </div>
         )}
       </div>
-      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
-      </div>
+      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
     </div>
   );
 }
@@ -837,28 +825,27 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
   const isEditable = !!onUpdateRecap;
 
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif" }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
-          <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Tableau récapitulatif</span>
-          <span style={{ fontSize:8, color:DA.grayL }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
+        <div style={{ borderBottom:`1pt solid #000`, paddingBottom:5, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tableau récapitulatif</span>
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
         </div>
         {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
         {/* En-tête */}
-        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:6 }}>
+        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', background:'#F2F2F2', borderTop:`1pt solid #000`, borderBottom:`1pt solid #000`, padding:'4px 8px', gap:6 }}>
           <div/>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Zone</span>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre</span>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Solution</span>
-          <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Urgence</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Zone</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Désordre</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Solution</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Urgence</span>
           {isEditable && <div data-print="hide"/>}
         </div>
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
+            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
               <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
               {isEditable ? (
                 <input value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
@@ -914,11 +901,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
           </button>
         )}
       </div>
-      <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
-        <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
-        <span style={{ flex:1 }}/>
-        <span style={{ fontSize:6, color:DA.grayL }}>{pageNum} / {totalPages}</span>
-      </div>
+      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
     </div>
   );
 }
