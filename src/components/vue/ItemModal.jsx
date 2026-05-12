@@ -291,7 +291,18 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     r.readAsDataURL(file);
   });
 
-  const readFiles = files => {
+  const autoSaveToDevice = ({ data, name }) => {
+    try {
+      const a = document.createElement('a');
+      a.href = data;
+      a.download = name || `chantier_${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch { /* ignore */ }
+  };
+
+  const readFiles = (files, fromCamera = false) => {
     const filtered = Array.from(files).filter(f => {
       if (f.size > 25 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 25 Mo)`); return false; }
       return true;
@@ -299,7 +310,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     if (!filtered.length) return;
     setCompressing(true);
     Promise.all(filtered.map(compressPhoto))
-      .then(done => setForm(prev => ({ ...prev, photos: [...prev.photos, ...done.filter(Boolean)] })))
+      .then(done => {
+        const valid = done.filter(Boolean);
+        setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
+        if (fromCamera) valid.forEach(autoSaveToDevice);
+      })
       .finally(() => setCompressing(false));
   };
 
@@ -442,7 +457,7 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
     <>
       <input ref={gallRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => readFiles(e.target.files)}/>
       <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
-        onChange={e => { if (e.target.files?.length) readFiles(e.target.files); setTimeout(() => { if(camRef.current) camRef.current.value=''; }, 200); }}/>
+        onChange={e => { if (e.target.files?.length) readFiles(e.target.files, true); setTimeout(() => { if(camRef.current) camRef.current.value=''; }, 200); }}/>
     </>
   );
 
