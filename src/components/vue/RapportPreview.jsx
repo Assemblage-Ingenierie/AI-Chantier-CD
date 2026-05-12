@@ -5,6 +5,7 @@ import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
+import { callAIProxy } from '../../lib/aiProxy.js';
 
 function SymbolIcon({ sym, size = 14 }) {
   const ref = useRef();
@@ -723,10 +724,12 @@ function PageFtr({ pageNum, totalPages }) {
 
 
 // ── Page conclusion ────────────────────────────────────────────────────────
-function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages }) {
-  const dateStr = projet.dateVisite
-    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
-    : null;
+function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages, onUpdateConclusion, onUpdateConclusionAlign }) {
+  const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
+  const isEditable = !!onUpdateConclusion;
+  const ALIGNS = [
+    { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
+  ];
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
@@ -734,10 +737,33 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
           <div style={{ width:3, height:14, background:DA.red, borderRadius:2, flexShrink:0 }}/>
           <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Conclusion</span>
+          {isEditable && onUpdateConclusionAlign && (
+            <div data-print="hide" style={{ display:'flex', gap:3, marginLeft:'auto' }}>
+              {ALIGNS.map(a => (
+                <button key={a.k} onClick={() => onUpdateConclusionAlign(a.k)}
+                  style={{ width:22, height:22, borderRadius:4, fontSize:11, cursor:'pointer',
+                    border:`1.5px solid ${conclusionAlign===a.k ? DA.red : DA.border}`,
+                    background: conclusionAlign===a.k ? DA.redL : 'white',
+                    color: conclusionAlign===a.k ? DA.red : DA.gray }}>
+                  {a.sym}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60, textAlign:conclusionAlign }}>
-          {conclusion ? renderMarkup(conclusion) : <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
-        </div>
+        {isEditable ? (
+          <textarea
+            value={conclusion || ''}
+            onChange={e => onUpdateConclusion(e.target.value)}
+            placeholder="Saisissez votre conclusion…"
+            rows={8}
+            style={{ width:'100%', fontSize:9, color:DA.black, lineHeight:1.7, border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
+          />
+        ) : (
+          <div style={{ fontSize:9, color:DA.black, lineHeight:1.7, whiteSpace:'pre-wrap', border:`1px solid ${DA.border}`, borderRadius:6, padding:'10px 12px', background:DA.grayXL, minHeight:60, textAlign: conclusionAlign }}>
+            {conclusion ? renderMarkup(conclusion) : <span style={{ color:DA.grayL, fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
+          </div>
+        )}
       </div>
       <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
         <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
@@ -749,26 +775,35 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
 }
 
 // ── Tableau récapitulatif ──────────────────────────────────────────────────
-function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap }) {
+function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
+  // Use passed recapRows when available (interactive preview), otherwise compute
   const ovMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
-  const rows = localisations.flatMap(loc =>
-    (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
-      const ov = ovMap.get(i.id) || {};
-      return {
-        locNom:  'zone'     in ov ? ov.zone     : (loc.nom       || ''),
-        titre:   'titre'    in ov ? ov.titre    : (i.titre        || ''),
-        urgence: 'urgence'  in ov ? ov.urgence  : (i.urgence     || 'basse'),
-        solution:'solution' in ov ? ov.solution : '',
-      };
-    })
-  ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
+  const rows = recapRows && recapRows.length >= 0 && onUpdateRecap
+    ? recapRows
+    : localisations.flatMap(loc =>
+        (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
+          const ov = ovMap.get(i.id) || {};
+          return { locNom: 'zone' in ov ? ov.zone : (loc.nom || ''), titre: 'titre' in ov ? ov.titre : (i.titre || ''), urgence: 'urgence' in ov ? ov.urgence : (i.urgence || 'basse'), solution: 'solution' in ov ? ov.solution : '' };
+        })
+      ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
-  const dateStr = projet.dateVisite
-    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
-    : null;
+  const [loadingAI, setLoadingAI] = useState(null);
+  const [aiErr, setAiErr] = useState(null);
+  const genSolution = async (row) => {
+    if (!onUpdateRecap) return;
+    setLoadingAI(row.itemId); setAiErr(null);
+    try {
+      const prompt = `En 1-2 phrases courtes, propose une solution ou action corrective concrète pour ce désordre de bâtiment.\nZone : ${row.locNom}\nDésordre : ${row.titre}`;
+      const d = await callAIProxy({ feature: 'solution_recap', model: 'gemini-2.0-flash-lite', max_tokens: 200, messages: [{ role:'user', content: prompt }] });
+      const sol = d.content?.[0]?.text?.trim();
+      if (sol) onUpdateRecap(row.itemId, 'solution', sol);
+    } catch(e) { setAiErr(e.message); }
+    setLoadingAI(null);
+  };
 
-  const cols = '5px 70px 1fr 1.5fr 65px';
+  const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
+  const isEditable = !!onUpdateRecap;
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0 }}>
@@ -779,25 +814,72 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
           <span style={{ fontSize:9, fontWeight:800, color:DA.black, textTransform:'uppercase', letterSpacing:0.8 }}>Tableau récapitulatif</span>
           <span style={{ fontSize:8, color:DA.grayL }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:cols, background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:6 }}>
+        {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
+        {/* En-tête */}
+        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', background:DA.black, borderRadius:'4px 4px 0 0', padding:'4px 8px', gap:6 }}>
           <div/>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Zone</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Désordre</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Solution</span>
           <span style={{ fontSize:7, fontWeight:700, color:'white', textTransform:'uppercase', letterSpacing:0.5 }}>Urgence</span>
+          {isEditable && <div data-print="hide"/>}
         </div>
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:cols, gap:6, padding:'5px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
-              <div style={{ width:5, background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
-              <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4 }}>{row.locNom || '—'}</div>
-              <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
-              <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
-              <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap', alignSelf:'start' }}>{u.label}</span>
+            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid ${DA.border}`, background: i % 2 === 0 ? DA.grayXL : 'white', alignItems:'start' }}>
+              <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
+              {isEditable ? (
+                <input value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
+                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0 }}/>
+              ) : (
+                <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4 }}>{row.locNom || '—'}</div>
+              )}
+              {isEditable ? (
+                <input value={row.titre} onChange={e => onUpdateRecap(row.itemId, 'titre', e.target.value)}
+                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0 }}/>
+              ) : (
+                <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
+              )}
+              {isEditable ? (
+                <div style={{ display:'flex', gap:3, alignItems:'flex-start' }}>
+                  <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
+                    rows={2} placeholder="Solution…"
+                    style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none' }}/>
+                  <button data-print="hide" onClick={() => genSolution(row)} disabled={loadingAI === row.itemId} title="Générer avec l'IA"
+                    style={{ background:'none', border:`1px solid ${DA.border}`, borderRadius:3, padding:'1px 4px', cursor:'pointer', fontSize:9, color:DA.grayL, flexShrink:0, lineHeight:1.2 }}>
+                    {loadingAI === row.itemId ? '…' : '⚡'}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
+              )}
+              {isEditable ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                  {['haute','moyenne','basse'].map(lvl => {
+                    const uu = URGENCE[lvl]; const active = row.urgence === lvl;
+                    return <button key={lvl} onClick={() => onUpdateRecap(row.itemId, 'urgence', lvl)}
+                      style={{ padding:'1px 3px', borderRadius:3, fontSize:6, fontWeight:700, cursor:'pointer', border:`1px solid ${active ? uu.border : DA.border}`, background: active ? uu.bg : 'white', color: active ? uu.text : DA.grayL }}>
+                      {uu.label}
+                    </button>;
+                  })}
+                </div>
+              ) : (
+                <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap', alignSelf:'start' }}>{u.label}</span>
+              )}
+              {isEditable && (
+                <button data-print="hide" onClick={() => onDeleteRecap(row.itemId, row.isCustom)}
+                  style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:13, lineHeight:1, padding:0, alignSelf:'start' }}>×</button>
+              )}
             </div>
           );
         })}
+        {isEditable && (
+          <button data-print="hide" onClick={onAddCustomRow}
+            style={{ width:'100%', marginTop:4, padding:'5px 0', borderRadius:4, border:`1.5px dashed ${DA.border}`, background:'white', color:DA.grayL, fontSize:9, fontWeight:600, cursor:'pointer' }}>
+            + Ajouter une ligne
+          </button>
+        )}
       </div>
       <div style={{ height:FTR, background:'#F9F9F9', borderTop:`1px solid ${DA.border}`, display:'flex', alignItems:'center', padding:`0 ${MX}px` }}>
         <span style={{ fontSize:6, color:DA.grayL }}>aichantier.app</span>
@@ -829,7 +911,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, cutMode = false, onCutModeChange }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
 
@@ -1009,24 +1091,26 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       )}
 
       {/* ── Barre de navigation pages ── */}
-      <div style={{ background:'#1e1e1e', padding:'7px 10px', display:'flex', alignItems:'center', gap:8, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        {/* Bouton Paramètres — toujours visible */}
-        {onTogglePanel && (
-          <button
-            onClick={onTogglePanel}
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer', flexShrink:0, transition:'all 0.15s',
-              background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
-              color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)',
-            }}>
-            <Ic n="sld" s={13}/>
-            <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
-          </button>
-        )}
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', alignItems:'center', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        {/* Gauche : Paramètres */}
+        <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
+          {onTogglePanel && (
+            <button
+              onClick={onTogglePanel}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
+                color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)' }}>
+              <Ic n="sld" s={13}/>
+              <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
+            </button>
+          )}
+        </div>
+        {/* Centre : navigation pages */}
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
           <button
             onClick={() => scrollToPage(currentPage - 1)}
             disabled={currentPage <= 1}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
             ‹
           </button>
           <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5, minWidth:70, textAlign:'center' }}>
@@ -1035,9 +1119,28 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           <button
             onClick={() => scrollToPage(currentPage + 1)}
             disabled={currentPage >= totalPages}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1, flexShrink:0 }}>
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
             ›
           </button>
+        </div>
+        {/* Droite : export */}
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+          {onExportPdf && (
+            <button onClick={onExportPdf} data-print="hide"
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                background: DA.red, color:'white', fontSize:11, fontWeight:700 }}>
+              <Ic n="fil" s={12}/>
+              <span>PDF</span>
+            </button>
+          )}
+          {onExportPhotos && totalPhotos > 0 && (
+            <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
+                background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
+              {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
+              <span>ZIP ({totalPhotos})</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1135,7 +1238,17 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
-                <TableauRecapPage localisations={localisations} projet={projet} pageNum={pageNum} totalPages={totalPages} tableauRecap={tableauRecap}/>
+                <TableauRecapPage
+                  localisations={localisations}
+                  projet={projet}
+                  pageNum={pageNum}
+                  totalPages={totalPages}
+                  tableauRecap={tableauRecap}
+                  recapRows={recapRows}
+                  onUpdateRecap={onUpdateRecap}
+                  onDeleteRecap={onDeleteRecap}
+                  onAddCustomRow={onAddCustomRow}
+                />
               </div>
             </>
           );
@@ -1149,7 +1262,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
-                <ConclusionPage conclusion={conclusion} conclusionAlign={conclusionAlign} projet={projet} pageNum={pageNum} totalPages={totalPages}/>
+                <ConclusionPage
+                  conclusion={conclusion}
+                  conclusionAlign={conclusionAlign}
+                  projet={projet}
+                  pageNum={pageNum}
+                  totalPages={totalPages}
+                  onUpdateConclusion={onUpdateConclusion}
+                  onUpdateConclusionAlign={onUpdateConclusionAlign}
+                />
               </div>
             </>
           );
