@@ -377,12 +377,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   let py = DARK_H + 10;
 
   if (infoRows.length > 0) {
-    doc.setFillColor(...RD); doc.rect(ML, py, 3, 14, 'F');
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-    doc.text('PRÉSENTATION DU PROJET', ML + 7, py + 6);
-    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-    doc.text(`${infoRows.length} info${infoRows.length > 1 ? 's' : ''}`, ML + 7, py + 12);
-    doc.setTextColor(0, 0, 0); py += 18;
+    doc.setFillColor(...RD); doc.roundedRect(ML, py + 0.5, 1, 5, 0.3, 0.3, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+    doc.text('PRÉSENTATION DU PROJET', ML + 4, py + 4.3);
+    doc.setTextColor(0, 0, 0); py += 9;
 
     doc.setFillColor(...LG); doc.setDrawColor(...BK); doc.setLineWidth(0.15);
     doc.roundedRect(ML, py, CW, infoRows.length * 8 + 4, 2, 2, 'FD');
@@ -397,12 +395,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   }
 
   if (participants.length > 0) {
-    doc.setFillColor(...RD); doc.rect(ML, py, 3, 14, 'F');
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-    doc.text('INTERVENANTS', ML + 7, py + 6);
-    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-    doc.text(`${participants.length} intervenant${participants.length > 1 ? 's' : ''}`, ML + 7, py + 12);
-    doc.setTextColor(0, 0, 0); py += 18;
+    doc.setFillColor(...RD); doc.roundedRect(ML, py + 0.5, 1, 5, 0.3, 0.3, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+    doc.text(`INTERVENANTS (${participants.length})`, ML + 4, py + 4.3);
+    doc.setTextColor(0, 0, 0); py += 9;
 
     // Colonnes bien cadrées dans CW
     const cNom   = ML + 8;
@@ -460,41 +456,45 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // Helper hex→RGB
   const hx = c => [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
 
-  // Entête de zone — bandeau noir + barre rouge, texte blanc (identique preview)
+  // Entête de zone — bandeau noir + barre rouge fine (identique preview ZoneHeader)
   const secHdr = (label) => {
-    doc.setFillColor(...BK); doc.rect(ML, y, CW, 8, 'F');
-    doc.setFillColor(...RD); doc.rect(ML, y, 3, 8, 'F');
+    doc.setFillColor(...BK); doc.roundedRect(ML, y, CW, 8.5, 1, 1, 'F');
+    // Barre rouge fine : 1mm × 5.5mm centrée (preview: width:3px=1mm, height:16px=5.3mm)
+    doc.setFillColor(...RD); doc.roundedRect(ML + 3, y + 1.5, 1, 5.5, 0.3, 0.3, 'F');
     doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
-    doc.text(label.toUpperCase(), ML + 8, y + 5.5);
-    doc.setTextColor(0, 0, 0); y += 11;
+    doc.text(label.toUpperCase(), ML + 7, y + 5.6);
+    doc.setTextColor(0, 0, 0); y += 10;
   };
 
   const renderItems = (items, hasViewpoints = false) => {
-    const TX  = ML + 5;      // x texte = 23mm
-    const RX  = W - MR - 4; // x droite max = 188mm
-    const TW  = CW - 22;    // 152mm — texte large, marge sécurité anti-overflow accents
+    const TX   = ML + 4;      // x texte gauche (4mm padding, preview: 9px=3mm)
+    const TW   = CW - 20;     // 154mm — texte large avec marge sécurité anti-overflow
+    const GRAY = [245, 245, 245]; // #F5F5F5 — header gris comme preview ItemBlock
+    const BDR  = [228, 228, 228]; // border gris clair
+    const tLH  = 4.2, cLH = 4.2;
     let photoOff = 0;
 
     items.forEach(item => {
       if (pageBreaksSet.has(item.id)) { doc.addPage(); y = 18; hdr(); }
 
-      const urgColor = item.urgence === 'haute' ? RD : item.urgence === 'moyenne' ? AM : GN;
-      const urgLabel = URGENCE[item.urgence]?.label ?? item.urgence;
-      const suiviTxt = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi]?.label : '';
+      const urgU     = URGENCE[item.urgence] || URGENCE.basse;
+      const urgColor = hx(urgU.dot);
+      const urgBgRgb = hx(urgU.bg);
+      const urgBdRgb = hx(urgU.border);
+      const urgLabel = urgU.label;
+      const suiviU   = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
 
       const rawTitle = (item.titre || '-').replace(/—/g, ' - ');
 
-      const tLH = 4.5, cLH = 4.2, badgeH = 8;
-      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold');
-      const titleLines = doc.splitTextToSize(rawTitle, TW);
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+      const titleLines = doc.splitTextToSize(rawTitle, TW - 2);
 
-      // Hauteur commentaire via rendu rich text (exact)
+      // Mesure commentaire
       const richLines = item.commentaire
-        ? jsPdfRichText(doc, item.commentaire, TX, 0, TW, 7.5, cLH, [60, 65, 80], true)
+        ? jsPdfRichText(doc, item.commentaire, TX, 0, TW, 7.5, cLH, [51, 51, 51], true)
         : 0;
 
-      const hdrH = badgeH + titleLines.length * tLH + 4;
-      const txtH = richLines ? richLines * cLH + 6 : 0;
+      // Dimensions photos
       const cols    = Math.max(1, Math.min(photosParLigne, 3));
       const validPh = (item.photos || []).filter(p => p.data);
       const maxPh   = cols <= 2 ? 4 : 6;
@@ -503,73 +503,84 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const phH_    = phW * 0.75;
       const phRows  = showPh.length ? Math.ceil(showPh.length / cols) : 0;
       const phtH    = phRows > 0 ? phRows * (phH_ + 2) + 6 : 0;
-      const textCardH = hdrH + txtH + 4;
 
-      // Saut de page : garantir au moins l'entête de l'item
-      pb(Math.min(hdrH + 16, H - 18 - 13));
+      // Hauteur card header gris: padding(2) + titre + gap(2) + badge row(4) + padding(2)
+      const cardHdrH = 2 + titleLines.length * tLH + 2 + 4 + 2;
+      // Hauteur body commentaire
+      const txtH     = richLines > 0 ? 2 + richLines * cLH + 3 : 0;
+      const totalCardH = cardHdrH + txtH + 1;
 
-      // Fond carte texte (clippé à la page si le texte est très long)
-      const cardDrawH = Math.min(textCardH, H - 13 - y);
-      if (cardDrawH > 3) {
-        doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
-        doc.roundedRect(ML, y, CW, cardDrawH, 1.5, 1.5, 'FD');
+      // Saut de page : au moins le header de la carte doit tenir
+      pb(Math.min(cardHdrH + 16, H - 18 - 13));
+
+      const cardDrawH = Math.min(totalCardH, H - 13 - y);
+
+      // ── Dessin carte : border arrondie blanche ────────────────────────────────
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(...BDR); doc.setLineWidth(0.15);
+      doc.roundedRect(ML, y, CW, cardDrawH, 1.3, 1.3, 'FD');
+
+      // Header gris (rectangle inset pour ne pas couvrir les coins arrondis)
+      const grayH = Math.min(cardHdrH, cardDrawH - 0.3);
+      doc.setFillColor(...GRAY);
+      doc.rect(ML + 0.15, y + 0.15, CW - 0.3, grayH - 0.15, 'F');
+      // Re-dessine la bordure sur le dessus du gris (pour restaurer les coins arrondis)
+      doc.setDrawColor(...BDR); doc.setLineWidth(0.15);
+      doc.roundedRect(ML, y, CW, cardDrawH, 1.3, 1.3, 'D');
+
+      let cy = y + 2;
+
+      // ── Titre (gras) ─────────────────────────────────────────────────────────
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20);
+      doc.text(titleLines, TX, cy + 3.2);
+      cy += titleLines.length * tLH + 2;
+
+      // ── Badges GAUCHE : dot + urgence + suivi (identique preview) ────────────
+      doc.setFontSize(6); doc.setFont('helvetica', 'bold');
+      // Dot cercle coloré
+      doc.setFillColor(...urgColor);
+      doc.circle(TX + 1, cy + 2, 1, 'F');
+      // Badge urgence
+      const urgBadgeW = doc.getTextWidth(urgLabel) + 6;
+      const badgeY    = cy + 0.3;
+      doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgBdRgb); doc.setLineWidth(0.18);
+      doc.roundedRect(TX + 4, badgeY, urgBadgeW, 3.5, 0.8, 0.8, 'FD');
+      doc.setTextColor(...hx(urgU.text));
+      doc.text(urgLabel, TX + 4 + urgBadgeW / 2, badgeY + 2.6, { align: 'center' });
+      let nextBadgeX = TX + 4 + urgBadgeW + 3;
+
+      // Badge suivi (si présent)
+      if (suiviU) {
+        const svBgRgb = hx(suiviU.bg), svBdRgb = hx(suiviU.border), svTxRgb = hx(suiviU.text);
+        const sBadgeW = doc.getTextWidth(suiviU.label) + 6;
+        doc.setFillColor(...svBgRgb); doc.setDrawColor(...svBdRgb); doc.setLineWidth(0.18);
+        doc.roundedRect(nextBadgeX, badgeY, sBadgeW, 3.5, 0.8, 0.8, 'FD');
+        doc.setFontSize(6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...svTxRgb);
+        doc.text(suiviU.label, nextBadgeX + sBadgeW / 2, badgeY + 2.6, { align: 'center' });
       }
+      cy += 6; // badge row (4mm) + bottom padding (2mm) = fin du header gris
 
-      let cy = y + 3;
-
-      // ── Badges DROITE : urgence (le plus à droite) puis suivi ────────────────
-      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold');
-      const urgBgRgb = urgColor === RD ? [254, 226, 226] : urgColor === AM ? [255, 247, 237] : [220, 252, 231];
-      const urgBadgeW = doc.getTextWidth(urgLabel) + 7;
-      let bx = RX - urgBadgeW;
-      doc.setFillColor(...urgBgRgb); doc.setDrawColor(...urgColor); doc.setLineWidth(0.2);
-      doc.roundedRect(bx, cy, urgBadgeW, 5, 1.2, 1.2, 'FD');
-      doc.setTextColor(...urgColor);
-      doc.text(urgLabel, bx + urgBadgeW / 2, cy + 3.5, { align: 'center' });
-      doc.setTextColor(0, 0, 0);
-
-      if (suiviTxt) {
-        const sv = SUIVI[item.suivi];
-        const dotRgb = hx(sv.dot), bgRgb = hx(sv.bg);
-        const sBadgeW = doc.getTextWidth(suiviTxt) + 7;
-        bx -= sBadgeW + 3;
-        doc.setFillColor(...bgRgb); doc.setDrawColor(...dotRgb); doc.setLineWidth(0.2);
-        doc.roundedRect(bx, cy, sBadgeW, 5, 1.2, 1.2, 'FD');
-        doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...dotRgb);
-        doc.text(suiviTxt, bx + sBadgeW / 2, cy + 3.5, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-      }
-
-      cy += badgeH;
-
-      // ── Titre ────────────────────────────────────────────────────────────────
-      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(20, 20, 20);
-      doc.text(titleLines, TX, cy);
-      cy += titleLines.length * tLH + 3;
-      doc.setTextColor(0, 0, 0);
-
-      // Séparateur fin
+      // Séparateur header / body (si commentaire)
       if (txtH > 0) {
-        doc.setDrawColor(238, 238, 238); doc.setLineWidth(0.1);
-        doc.line(TX, cy - 1, ML + CW - 4, cy - 1);
+        doc.setDrawColor(...BDR); doc.setLineWidth(0.15);
+        doc.line(ML + 0.15, cy, ML + CW - 0.15, cy);
+        cy += 2;
       }
 
-      // ── Commentaire avec formatage rich text (bold/italic/underline) ─────────
+      // ── Commentaire rich text ──────────────────────────────────────────────────
       if (item.commentaire) {
-        cy += 1;
-        const n = jsPdfRichText(doc, item.commentaire, TX, cy + 3.5, TW, 7.5, cLH, [60, 65, 80]);
+        const n = jsPdfRichText(doc, item.commentaire, TX, cy + 3.2, TW, 7.5, cLH, [51, 51, 51]);
         cy += n * cLH + 4;
       }
 
-      y = cy + 4; // avancer y après la carte texte
+      y = cy + 3;
 
-      // ── Photos : page break si elles dépassent ───────────────────────────────
+      // ── Photos (carte séparée) ────────────────────────────────────────────────
       if (showPh.length) {
         if (y + phtH > H - 13) { doc.addPage(); y = 18; hdr(); }
         doc.setFillColor(255, 255, 255);
-        doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.15);
-        doc.roundedRect(ML, y, CW, phtH, 1.5, 1.5, 'FD');
+        doc.setDrawColor(...BDR); doc.setLineWidth(0.15);
+        doc.roundedRect(ML, y, CW, phtH + 1, 1.3, 1.3, 'FD');
 
         let validInItem = 0;
         showPh.forEach((p, pi) => {
@@ -588,10 +599,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           validInItem++;
         });
         photoOff += validInItem;
-        y += phtH + 3;
+        y += phtH + 4;
       }
 
-      y += 3; // espacement inter-items
+      doc.setTextColor(0, 0, 0);
+      y += 2; // espacement inter-items (preview marginBottom:5px=1.7mm)
     });
   };
 
@@ -647,13 +659,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     if (recapRows.length > 0) {
       doc.addPage(); y = 18; hdr();
 
-      // Titre section avec compteur (comme la preview)
-      doc.setFillColor(...RD); doc.rect(ML, y, 3, 14, 'F');
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-      doc.text('TABLEAU RÉCAPITULATIF', ML + 7, y + 6);
+      // Titre section avec compteur (barre fine identique preview)
+      doc.setFillColor(...RD); doc.roundedRect(ML, y + 0.5, 1, 5, 0.3, 0.3, 'F');
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+      doc.text('TABLEAU RÉCAPITULATIF', ML + 4, y + 4.3);
       doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-      doc.text(`${recapRows.length} point${recapRows.length > 1 ? 's' : ''} à traiter`, ML + 7, y + 12);
-      doc.setTextColor(0, 0, 0); y += 18;
+      doc.text(`${recapRows.length} point${recapRows.length > 1 ? 's' : ''} à traiter`, ML + 4 + doc.getTextWidth('TABLEAU RÉCAPITULATIF') + 4, y + 4.3);
+      doc.setTextColor(0, 0, 0); y += 10;
 
       // Colonnes calées dans CW (identiques grille preview: 5px|70px|1fr|1.5fr|65px)
       const LBR   = 3;
@@ -718,12 +730,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   if (includeConclusion && conclusion?.trim()) {
     doc.addPage(); hdr(); let cy = 18;
-    doc.setFillColor(...RD); doc.rect(ML, cy, 3, 14, 'F');
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
-    doc.text('CONCLUSION', ML + 7, cy + 6);
-    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR);
-    doc.text(today, ML + 7, cy + 12);
-    doc.setTextColor(0, 0, 0); cy += 18;
+    doc.setFillColor(...RD); doc.roundedRect(ML, cy + 0.5, 1, 5, 0.3, 0.3, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(0, 0, 0);
+    doc.text('CONCLUSION', ML + 4, cy + 4.3);
+    doc.setTextColor(0, 0, 0); cy += 10;
     doc.setFillColor(...LG); doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.2);
     const conclusionText = stripMarkup(conclusion.trim());
     const lines = doc.splitTextToSize(conclusionText, CW - 10);
