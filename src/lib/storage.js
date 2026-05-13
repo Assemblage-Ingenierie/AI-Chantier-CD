@@ -360,7 +360,7 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
       const blob = await resp.blob();
       const ext = (row.name || 'photo').replace(/.*\./, '') || 'jpg';
       const path = `${row.item_id}/${id}.${ext}`;
-      const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+      const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true, cacheControl: '31536000' });
       if (upErr) { console.warn('Storage upload error:', upErr); continue; }
       // Store path (not public URL) + retourner signed URL pour affichage immédiat
       await sb.from('aichantier_item_photos').update({ storage_url: path, data: null }).eq('id', id);
@@ -379,9 +379,11 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, b
   try {
     const resp = await fetch(base64);
     const blob = await resp.blob();
-    const ext = (name || 'photo').replace(/.*\./, '') || 'jpg';
+    const rawExt = (name || 'photo').replace(/.*\./, '') || 'webp';
+    const ext = rawExt === 'webp' ? 'webp' : rawExt === 'jpg' || rawExt === 'jpeg' ? 'jpg' : rawExt;
+    const contentType = blob.type || (ext === 'webp' ? 'image/webp' : 'image/jpeg');
     const path = `${projectSlug}/${itemId}/${Date.now()}_${photoIndex}.${ext}`;
-    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType, upsert: true, cacheControl: '31536000' });
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
