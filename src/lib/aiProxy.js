@@ -17,9 +17,10 @@ export async function callAIProxy(params) {
   const { data: { session } } = await sb.auth.getSession();
   const token = session?.access_token;
 
-  // Combiner le signal venant du composant (annulation manuelle) avec un timeout 30s
+  // Combiner le signal venant du composant (annulation manuelle) avec un timeout 60s
+  // (aligné sur le maxDuration de la function Vercel — 60s — pour ne pas couper avant elle)
   const timeoutCtrl = new AbortController();
-  const timer = setTimeout(() => timeoutCtrl.abort(), 30000);
+  const timer = setTimeout(() => timeoutCtrl.abort(), 60000);
   const externalSignal = params._signal;
   delete params._signal;
 
@@ -43,7 +44,7 @@ export async function callAIProxy(params) {
     });
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error('Timeout IA (30s) — réessaie');
+    if (e.name === 'AbortError') throw new Error('Timeout IA (60s) — réessaie');
     throw new Error(`Erreur réseau : ${e.message}`);
   }
   clearTimeout(timer);

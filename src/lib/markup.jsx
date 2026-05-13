@@ -1,22 +1,47 @@
 import React from 'react';
 
-// Détecte si le contenu est du HTML (nouveau format) ou du markdown (legacy)
+// Décode les entités HTML courantes dans les segments texte
+function decodeEntities(s) {
+  if (!s) return s;
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+// Détecte si le contenu est du HTML (nouveau format) ou du markdown (legacy).
+// Inclut les balises de saut de ligne insérées par contenteditable (div/p).
 function isHtml(text) {
   return text && (
     text.includes('<strong>') || text.includes('<em>') ||
     text.includes('<u>') || text.includes('<br') ||
-    text.includes('<b>') || text.includes('<i>')
+    text.includes('<b>') || text.includes('<i>') ||
+    text.includes('<div') || text.includes('<p>') || text.includes('<p ') ||
+    text.includes('&gt;') || text.includes('&lt;') || text.includes('&amp;') ||
+    text.includes('&nbsp;')
   );
 }
 
-// Rendu React depuis HTML simple (strong/b/em/i/u/br) — pas de dangerouslySetInnerHTML
+// Rendu React depuis HTML simple — pas de dangerouslySetInnerHTML.
+// Gère : strong/b, em/i, u (inline) ; br/div/p (sauts de ligne).
 function renderHtml(html) {
   if (!html) return null;
-  // Parser les balises inline (strong+b, em+i, u, br)
-  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>)/gi;
+  // Parser : balises inline (strong/b/em/i/u) + balises bloc (br/div/p, ouvrantes ET fermantes)
+  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>)/gi;
   const parts = html.split(HTAG);
   const result = [];
   const stack = []; // balises ouvertes
+  let pendingBreak = false; // saut de ligne en attente (div/p ouvrant ou fermant)
+
+  const flushBreak = () => {
+    if (pendingBreak) {
+      result.push(<br key={`br-pend-${result.length}`}/>);
+      pendingBreak = false;
+    }
+  };
 
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
@@ -30,15 +55,25 @@ function renderHtml(html) {
     if (lower === '</u>') { stack.pop(); continue; }
     if (lower === '<br>' || lower === '<br/>') {
       result.push(<br key={`br-${i}`}/>);
+      pendingBreak = false;
       continue;
     }
-    // Texte brut — appliquer les balises ouvertes
-    const lines = p.split('\n');
+    // Balises bloc (div/p) — chaque ouvrante OU fermante marque un saut de ligne.
+    // On colle un seul <br/> par "boundary" pour éviter les doublons (</div><div>).
+    if (lower.startsWith('<div') || lower.startsWith('</div') ||
+        lower.startsWith('<p') || lower.startsWith('</p')) {
+      // Premier saut : on note pendingBreak ; consécutif : on collapse (déjà en attente).
+      if (result.length > 0) pendingBreak = true;
+      continue;
+    }
+    // Texte brut — décoder entités + appliquer balises ouvertes + insérer <br/> en attente
+    const decoded = decodeEntities(p);
+    const lines = decoded.split('\n');
     lines.forEach((line, li) => {
-      if (li > 0) result.push(<br key={`nl-${i}-${li}`}/>);
+      if (li > 0) { result.push(<br key={`nl-${i}-${li}`}/>); pendingBreak = false; }
       if (!line) return;
+      flushBreak();
       let node = line;
-      // Appliquer stack de haut en bas (innermost first)
       for (let s = stack.length - 1; s >= 0; s--) {
         const tag = stack[s];
         if (tag === 'strong') node = <strong key={`${i}-${li}-s${s}`}>{node}</strong>;
@@ -87,10 +122,13 @@ export function renderMarkup(text) {
 export function stripMarkup(text) {
   if (!text) return '';
   if (isHtml(text)) {
-    return text
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
-      .replace(/<[^>]+>/g, '');
+    return decodeEntities(
+      text
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(div|p)>/gi, '\n')
+        .replace(/<(div|p)[^>]*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+    ).replace(/\n{3,}/g, '\n\n'); // collapse les sauts multiples
   }
   return text
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
