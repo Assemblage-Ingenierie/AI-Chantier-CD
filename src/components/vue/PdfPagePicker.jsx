@@ -33,7 +33,7 @@ export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
           const cv = document.createElement('canvas');
           cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
           await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-          const thumb = cv.toDataURL('image/jpeg', 0.7);
+          const thumb = cv.toDataURL('image/webp', 0.7);
           cv.width = 0; cv.height = 0;
           if (!cancelled) { arr.push({ num: i, thumb }); setPages([...arr]); }
         }
