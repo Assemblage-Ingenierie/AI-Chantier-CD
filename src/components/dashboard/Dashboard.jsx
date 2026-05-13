@@ -15,7 +15,7 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
-  const byName = (a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base', numeric: true });
+  const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base', numeric: true });
   const actifs   = projets.filter(p => p.statut !== 'archive').sort(byName);
   const archives = projets.filter(p => p.statut === 'archive').sort(byName);
   const stats = [
