@@ -295,7 +295,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     try {
       const a = document.createElement('a');
       a.href = data;
-      a.download = name || `chantier_${Date.now()}.jpg`;
+      a.download = name || `chantier_${Date.now()}.webp`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

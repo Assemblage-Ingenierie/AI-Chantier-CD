@@ -479,12 +479,12 @@ async function saveRemote(ps, dirtyIds = null) {
     );
 
     const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
-    const newCoverPath = `${slug}/cover/${p.id}.jpg`;
+    const newCoverPath = `${slug}/cover/${p.id}.webp`;
 
     // Migrer la photo couverture si c'est encore un base64 → Storage
     let coverPhotoUrl = p.photo ?? null;
     if (coverPhotoUrl?.startsWith('data:')) {
-      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.jpg', coverPhotoUrl);
+      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.webp', coverPhotoUrl);
       if (uploaded) coverPhotoUrl = uploaded;
     }
 
