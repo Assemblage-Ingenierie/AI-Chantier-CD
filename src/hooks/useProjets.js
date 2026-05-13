@@ -110,6 +110,7 @@ export function useProjets(onSyncStatus) {
   const savingRef = useRef(false);
   const historyRef = useRef([]);
   const dirtyIds = useRef(new Set());
+  const deletedIds = useRef(new Set());
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
@@ -156,19 +157,27 @@ export function useProjets(onSyncStatus) {
       if (savingRef.current) return;
       savingRef.current = true;
       const ids = new Set(dirtyIds.current);
+      const delIds = new Set(deletedIds.current);
       dirtyIds.current.clear();
-      const ok = await saveData(projets, onSyncStatus, ids);
+      deletedIds.current.clear();
+      const ok = await saveData(projets, onSyncStatus, ids, delIds);
       if (!ok) {
         dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
+        deletedIds.current = new Set([...delIds, ...deletedIds.current]);
         // Auto-retry after 15s — covers brief mobile network drops without user action
         clearTimeout(retryRef.current);
         retryRef.current = setTimeout(async () => {
-          if (savingRef.current || !dirtyIds.current.size) return;
+          if (savingRef.current || (!dirtyIds.current.size && !deletedIds.current.size)) return;
           savingRef.current = true;
           const retryIds = new Set(dirtyIds.current);
+          const retryDelIds = new Set(deletedIds.current);
           dirtyIds.current.clear();
-          const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds);
-          if (!retryOk) dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
+          deletedIds.current.clear();
+          const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds, retryDelIds);
+          if (!retryOk) {
+            dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
+            deletedIds.current = new Set([...retryDelIds, ...deletedIds.current]);
+          }
           savingRef.current = false;
         }, 15000);
       }
@@ -209,7 +218,7 @@ export function useProjets(onSyncStatus) {
     const flush = () => {
       if (!userModified.current) return;
       clearTimeout(debounceRef.current);
-      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
+      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current), new Set(deletedIds.current));
     };
     let hiddenAt = null;
     const onVisibility = () => {
@@ -245,7 +254,7 @@ export function useProjets(onSyncStatus) {
 
   const deleteProjet = (id) => {
     pushHistory();
-    // Pas de dirtyIds ici — la suppression est gérée par le diff _lastRemoteIds
+    deletedIds.current.add(id);
     userModified.current = true;
     setProjets((ps) => ps.filter((p) => p.id !== id));
   };
@@ -318,90 +327,39 @@ export function useProjets(onSyncStatus) {
         })),
       };
     }));
-
-    // Migration background : legacy base64 → Storage
-    const legacyPhotoIds = [];
-    Object.values(photosMap).forEach(photos => {
-      photos.forEach(ph => { if (ph._legacy && ph.id) legacyPhotoIds.push(ph.id); });
-    });
-    if (legacyPhotoIds.length > 0) {
-      migratePhotosToStorage(legacyPhotoIds).then(migrated => {
-        if (!Object.keys(migrated).length) return;
-        setProjets(ps => ps.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            visites: (p.visites || []).map(v => ({
-              ...v,
-              localisations: (v.localisations || []).map(loc => ({
-                ...loc,
-                items: (loc.items || []).map(item => ({
-                  ...item,
-                  photos: (item.photos || []).map(ph => ({
-                    ...ph,
-                    data: (ph._id && migrated[ph._id]) ? migrated[ph._id] : ph.data,
-                    _legacy: (ph._id && migrated[ph._id]) ? false : ph._legacy,
-                  })),
-                })),
-              })),
-            })),
-          };
-        }));
-      }).catch(e => console.warn('Background migration error:', e));
-    }
   };
 
   const hydratePlans = async (projectId) => {
-    const plansMap = await hydratePlansRemote(projectId);
-    if (!plansMap || !Object.keys(plansMap).length) return;
-    setProjets(ps => ps.map(p => {
-      if (p.id !== projectId) return p;
-      return {
-        ...p,
-        visites: (p.visites || []).map(v => ({
-          ...v,
-          localisations: (v.localisations || []).map(loc => {
-            const plan = plansMap[loc.id];
-            if (!plan) return loc;
-            return { ...loc, planBg: plan.planBg, planData: plan.planData };
-          }),
-        })),
-      };
-    }));
+    const projet = projetsRef.current.find(p => p.id === projectId);
+    if (!projet) return;
+    const updated = await hydratePlansRemote(projet);
+    if (!updated) return;
+    setProjets(ps => ps.map(p => p.id === projectId ? updated : p));
   };
 
   const hydratePlanLibrary = async (projectId) => {
-    const plansMap = await hydratePlanLibraryRemote(projectId);
-    if (!plansMap || !Object.keys(plansMap).length) return;
-    setProjets(ps => ps.map(p => {
-      if (p.id !== projectId) return p;
-      return {
-        ...p,
-        planLibrary: (p.planLibrary || []).map(pl => {
-          const fetched = plansMap[pl.id];
-          if (!fetched) return pl;
-          return { ...pl, bg: fetched.bg ?? pl.bg, data: fetched.data ?? pl.data };
-        }),
-      };
-    }));
+    const projet = projetsRef.current.find(p => p.id === projectId);
+    if (!projet) return;
+    const updated = await hydratePlanLibraryRemote(projet);
+    if (!updated) return;
+    setProjets(ps => ps.map(p => p.id === projectId ? updated : p));
   };
 
   const undo = useCallback(() => {
-    if (!historyRef.current.length) return false;
     const prev = historyRef.current[historyRef.current.length - 1];
+    if (!prev) return;
     historyRef.current = historyRef.current.slice(0, -1);
     userModified.current = true;
     // Marquer dirty les projets qui diffèrent entre l'état actuel et l'état restauré
-    const currMap = new Map(projetsRef.current.map(p => [p.id, p]));
+    const currentById = new Map(projetsRef.current.map(p => [p.id, p]));
     for (const p of prev) {
-      const curr = currMap.get(p.id);
-      if (!curr || curr.updatedAt !== p.updatedAt) dirtyIds.current.add(p.id);
+      const cur = currentById.get(p.id);
+      if (!cur || cur.updatedAt !== p.updatedAt) dirtyIds.current.add(p.id);
     }
     setProjets(prev);
-    return true;
   }, []);
 
-  const canUndo = () => historyRef.current.length > 0;
+  const canUndo = useCallback(() => historyRef.current.length > 0, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo };
 }
