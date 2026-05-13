@@ -190,7 +190,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     const switchToPhoto = (newRealIdx) => {
       const annotation = annotatorRef.current?.getAnnotation();
       const updatedItem = annotation
-        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated } : p) }
+        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH } : p) }
         : item;
       if (annotation) patchItem(locId, updatedItem);
       setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
@@ -202,11 +202,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           ref={annotatorRef}
           bgImage={ph?.data}
           savedPaths={ph?.annotations || []}
-          onSave={(paths, exported) => {
+          onSave={(paths, exported, dims) => {
             const updatedItem = {
               ...item,
               _photosHydrated: true,
-              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h } : p),
             };
             patchItem(locId, updatedItem);
             setModal(null);
@@ -252,13 +252,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
-      {/* ── Header projet ── */}
       <div style={{ background:DA.black, flexShrink:0 }}>
 
         {isDesktop ? (
           <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:52, padding:'0 16px' }}>
 
-            {/* Gauche : retour + nom projet */}
             <div style={{ flex:1, display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
               <button onClick={onBack}
                 style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
@@ -283,7 +281,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               </div>
             </div>
 
-            {/* Centre : tabs */}
             <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'stretch', gap:4, padding:'0 8px', height:'100%' }}>
               {[
                 { k:'visite',  n:'bld', l:'Visite' },
@@ -296,7 +293,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               ))}
             </div>
 
-            {/* Droite : visite label + Niveaux */}
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
@@ -375,7 +371,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
         )}
       </div>
 
-      {/* ── Corps scrollable ── */}
       <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto', background: tab === 'visite' ? '#E8E8E8' : undefined }}>
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
