@@ -170,19 +170,30 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
       {/* Liste */}
       <div ref={wrapperRef} style={{ flex:1, overflowY:'auto', background:'#E8E8E8' }}>
-        <div style={{ maxWidth:860, margin:'0 auto', padding:'14px 14px', display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ maxWidth:860, margin:'0 auto', padding:'20px 16px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+
+        {/* Titre de section */}
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', padding:'0 4px 6px', borderBottom:`2px solid ${DA.red}`, marginBottom:2 }}>
+          <div>
+            <p style={{ fontSize:11, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:1.2, margin:0 }}>Historique des visites</p>
+            <p style={{ fontSize:22, fontWeight:900, color:DA.black, margin:'2px 0 0', letterSpacing:-0.5 }}>{visites.length} visite{visites.length !== 1 ? 's' : ''}</p>
+          </div>
+          <p style={{ fontSize:11, color:DA.grayL, margin:0, fontStyle:'italic' }}>
+            Glisser pour réorganiser
+          </p>
+        </div>
 
         {visites.length === 0 && (
-          <div style={{ background:'white', borderRadius:12, padding:'48px 24px', textAlign:'center', border:`1px solid ${DA.border}` }}>
-            <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
-              <Ic n="fil" s={24}/>
+          <div style={{ background:'white', borderRadius:14, padding:'56px 24px', textAlign:'center', border:`1px solid ${DA.border}`, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
+            <div style={{ width:60, height:60, borderRadius:14, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 18px', color:DA.red }}>
+              <Ic n="fil" s={30}/>
             </div>
-            <p style={{ fontWeight:700, fontSize:15, color:DA.black, margin:'0 0 6px' }}>Aucune visite</p>
-            <p style={{ color:DA.gray, fontSize:12, margin:0 }}>Créez la première visite pour commencer.</p>
+            <p style={{ fontWeight:800, fontSize:17, color:DA.black, margin:'0 0 8px' }}>Aucune visite</p>
+            <p style={{ color:DA.gray, fontSize:13, margin:0 }}>Créez la première visite pour commencer.</p>
           </div>
         )}
 
-        <div ref={listRef} style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        <div ref={listRef} style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {visites.map((v, i) => {
             const obsCount   = (v.localisations || []).flatMap(l => l.items || []).length;
             const urgCount   = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
@@ -190,6 +201,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             const isDragging = dragIdx === i;
             const isOver     = overIdx === i && dragIdx !== i;
             const isEditing  = editingId === v.id;
+            const visiteNum  = i + 1;
 
             return (
               <div key={v.id}
@@ -201,85 +213,128 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                 style={{
                   display:'flex', alignItems:'stretch', gap:0,
                   background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
-                  borderRadius: 10,
+                  borderRadius: 14,
                   border: `1px solid ${isOver ? DA.red : DA.border}`,
-                  boxShadow: isDragging ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
-                  borderLeft: isEditing ? `3px solid ${DA.red}` : undefined,
+                  boxShadow: isDragging ? 'none' : '0 2px 12px rgba(0,0,0,0.08)',
                   overflow: 'hidden',
                   opacity: isDragging ? 0.45 : 1,
-                  transition:'background 0.08s, opacity 0.08s',
+                  transition:'background 0.08s, opacity 0.08s, box-shadow 0.15s',
                 }}>
 
-                {/* Poignée drag */}
-                <div
-                  onTouchStart={e => onGripTouchStart(e, i)}
-                  onClick={e => e.stopPropagation()}
-                  style={{ flexShrink:0, display:'flex', alignItems:'center', padding:'0 6px 0 10px', cursor:'grab', color:'#ccc', touchAction:'none' }}>
-                  <Ic n="grp" s={16}/>
+                {/* Bande latérale colorée avec numéro */}
+                <div style={{
+                  flexShrink:0,
+                  width:60,
+                  background:`linear-gradient(180deg, ${DA.red}, #B91C1C)`,
+                  display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                  color:'white',
+                  padding:'10px 0',
+                }}>
+                  <span style={{ fontSize:9, fontWeight:700, opacity:0.85, letterSpacing:1, textTransform:'uppercase' }}>Visite</span>
+                  <span style={{ fontSize:32, fontWeight:900, lineHeight:1, marginTop:2 }}>{visiteNum}</span>
+                  <div
+                    onTouchStart={e => onGripTouchStart(e, i)}
+                    onClick={e => e.stopPropagation()}
+                    style={{ marginTop:8, cursor:'grab', color:'rgba(255,255,255,0.55)', touchAction:'none', padding:'4px 6px' }}>
+                    <Ic n="grp" s={14}/>
+                  </div>
                 </div>
 
                 {/* Zone tap → ouvre la visite (cachée en mode édition) */}
                 {!isEditing ? (
                   <div onClick={() => onSelectVisite(v.id)}
-                    style={{ flex:1, display:'flex', alignItems:'center', gap:12, padding:'14px 10px 14px 6px', cursor:'pointer', minWidth:0 }}>
-                    <div style={{ width:40, height:40, borderRadius:10, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, color:DA.red }}>
-                      <Ic n="fil" s={18}/>
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontWeight:700, fontSize:15, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v.label || 'Visite'}</p>
-                      <p style={{ fontSize:12, color:v.dateVisite ? DA.gray : DA.grayL, margin:'3px 0 0', fontStyle: v.dateVisite ? 'normal' : 'italic' }}>
+                    style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap:8, padding:'18px 16px', cursor:'pointer', minWidth:0 }}>
+
+                    {/* Titre */}
+                    <p style={{ fontWeight:800, fontSize:17, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3 }}>{v.label || `Visite ${visiteNum}`}</p>
+
+                    {/* Date avec icône */}
+                    <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                      <span style={{
+                        display:'inline-flex', alignItems:'center', justifyContent:'center',
+                        width:24, height:24, borderRadius:6, background:DA.grayXL, border:`1px solid ${DA.border}`,
+                        fontSize:12, lineHeight:1,
+                      }} aria-hidden="true">
+                        📅
+                      </span>
+                      <p style={{
+                        fontSize:13, color:v.dateVisite ? DA.black : DA.grayL, margin:0,
+                        fontWeight:v.dateVisite ? 600 : 400,
+                        fontStyle: v.dateVisite ? 'normal' : 'italic',
+                      }}>
                         {formatDate(v.dateVisite)}
                       </p>
-                      {(zonesCount > 0 || obsCount > 0 || urgCount > 0) && (
-                        <div style={{ display:'flex', gap:5, marginTop:5, flexWrap:'wrap' }}>
-                          {zonesCount > 0 && <span style={{ fontSize:11, color:DA.grayL, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:20, padding:'2px 8px' }}>{zonesCount} zone{zonesCount > 1 ? 's' : ''}</span>}
-                          {obsCount > 0 && <span style={{ fontSize:11, color:DA.grayL, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:20, padding:'2px 8px', display:'inline-flex', alignItems:'center', gap:3 }}><Ic n="pin" s={9}/> {obsCount} obs</span>}
-                          {urgCount > 0 && <span style={{ fontSize:11, color:DA.red, background:DA.redL, border:`1px solid rgba(185,28,28,0.15)`, borderRadius:20, padding:'2px 8px', fontWeight:700 }}>⚠ {urgCount} urgente{urgCount > 1 ? 's' : ''}</span>}
-                        </div>
-                      )}
                     </div>
+
+                    {/* Tags */}
+                    {(zonesCount > 0 || obsCount > 0 || urgCount > 0) && (
+                      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:2 }}>
+                        {zonesCount > 0 && (
+                          <span style={{ fontSize:11, color:DA.gray, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:6, padding:'3px 9px', display:'inline-flex', alignItems:'center', gap:4, fontWeight:600 }}>
+                            <Ic n="pin" s={10}/> {zonesCount} zone{zonesCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {obsCount > 0 && (
+                          <span style={{ fontSize:11, color:DA.gray, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:6, padding:'3px 9px', display:'inline-flex', alignItems:'center', gap:4, fontWeight:600 }}>
+                            <Ic n="cam" s={10}/> {obsCount} obs
+                          </span>
+                        )}
+                        {urgCount > 0 && (
+                          <span style={{ fontSize:11, color:DA.red, background:DA.redL, border:`1px solid rgba(185,28,28,0.25)`, borderRadius:6, padding:'3px 9px', fontWeight:800, display:'inline-flex', alignItems:'center', gap:4 }}>
+                            ⚠ {urgCount} urgente{urgCount > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* Mode édition */
-                  <div style={{ flex:1, padding:'12px 10px', minWidth:0 }} onClick={e => e.stopPropagation()}>
-                    <p style={{ fontSize:10, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 6px' }}>Nom de la visite</p>
+                  <div style={{ flex:1, padding:'18px 16px', minWidth:0 }} onClick={e => e.stopPropagation()}>
+                    <p style={{ fontSize:10, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:1, margin:'0 0 6px' }}>Nom de la visite</p>
                     <input
                       autoFocus
                       value={v.label || ''}
                       onChange={e => patchVisite(v.id, { label: e.target.value })}
-                      style={{ width:'100%', fontSize:15, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'8px 10px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:10 }}
+                      placeholder="Ex: Diagnostic structure"
+                      style={{ width:'100%', fontSize:16, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:12 }}
                     />
-                    <p style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 6px' }}>Date</p>
+                    <p style={{ fontSize:10, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:1, margin:'0 0 6px' }}>Date</p>
                     <input
                       type="date"
                       value={v.dateVisite || ''}
                       onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
-                      style={{ fontSize:14, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'8px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
+                      style={{ fontSize:15, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
                     />
                     <button onClick={() => setEditingId(null)}
-                      style={{ marginTop:10, width:'100%', padding:'9px 0', background:DA.red, color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-                      <Ic n="chk" s={13}/> Valider
+                      style={{ marginTop:14, width:'100%', padding:'11px 0', background:DA.red, color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, boxShadow:'0 2px 8px rgba(227,5,19,0.3)' }}>
+                      <Ic n="chk" s={14}/> Valider
                     </button>
                   </div>
                 )}
 
                 {/* Actions droite */}
-                <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, padding:'0 10px 0 4px' }} onClick={e => e.stopPropagation()}>
+                <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'12px 12px 12px 6px', borderLeft:`1px solid ${DA.grayXL}` }} onClick={e => e.stopPropagation()}>
                   <button onClick={() => setEditingId(isEditing ? null : v.id)}
-                    style={{ padding:'6px 7px', background: isEditing ? DA.redL : 'none', border: isEditing ? `1px solid #FCA5A5` : 'none', color: isEditing ? DA.red : '#bbb', cursor:'pointer', borderRadius:7, display:'flex', alignItems:'center', transition:'all 0.1s' }}
-                    onMouseEnter={e => { if (!isEditing) e.currentTarget.style.color = DA.black; }}
-                    onMouseLeave={e => { if (!isEditing) e.currentTarget.style.color = '#bbb'; }}>
-                    <Ic n="pen" s={14}/>
+                    title={isEditing ? 'Fermer' : 'Modifier'}
+                    style={{ width:34, height:34, padding:0, background: isEditing ? DA.redL : DA.grayXL, border: isEditing ? `1px solid #FCA5A5` : `1px solid ${DA.border}`, color: isEditing ? DA.red : DA.gray, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                    onMouseEnter={e => { if (!isEditing) { e.currentTarget.style.background = DA.redL; e.currentTarget.style.color = DA.red; e.currentTarget.style.borderColor = '#FCA5A5'; } }}
+                    onMouseLeave={e => { if (!isEditing) { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.gray; e.currentTarget.style.borderColor = DA.border; } }}>
+                    <Ic n="pen" s={15}/>
                   </button>
                   {visites.length > 1 && (
                     <button onClick={e => deleteVisite(e, v.id)}
-                      style={{ padding:'6px 7px', background:'none', border:'none', color:'#ccc', cursor:'pointer', borderRadius:7, display:'flex', alignItems:'center' }}
-                      onMouseEnter={e => e.currentTarget.style.color = DA.red}
-                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
-                      <Ic n="del" s={14}/>
+                      title="Supprimer"
+                      style={{ width:34, height:34, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = DA.red; e.currentTarget.style.borderColor = '#FCA5A5'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.grayL; e.currentTarget.style.borderColor = DA.border; }}>
+                      <Ic n="del" s={15}/>
                     </button>
                   )}
-                  {!isEditing && <span style={{ color:'#ccc', display:'flex', alignItems:'center', transform:'rotate(-90deg)' }}><Ic n="chv" s={15}/></span>}
+                  {!isEditing && (
+                    <span style={{ color:DA.grayL, display:'flex', alignItems:'center', justifyContent:'center', width:34, height:24, transform:'rotate(-90deg)' }}>
+                      <Ic n="chv" s={16}/>
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -287,8 +342,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         </div>
 
         <button onClick={addVisite}
-          style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
-          <Ic n="plus" s={16}/> Nouvelle visite
+          style={{ width:'100%', padding:'18px 20px', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontSize:16, fontWeight:800, color:'white', background:`linear-gradient(135deg, ${DA.red}, #B91C1C)`, border:'none', borderRadius:14, cursor:'pointer', boxShadow:'0 4px 16px rgba(227,5,19,0.35)', letterSpacing:0.3, marginTop:4 }}>
+          <Ic n="plus" s={18}/> Nouvelle visite
         </button>
 
         </div>
