@@ -259,7 +259,7 @@ export async function loadProjectPhotos(itemIds) {
     ])];
     const signedMap = {};
     if (allPaths.length > 0) {
-      const { data: signed } = await sb.storage.from('photos').createSignedUrls(allPaths, 3600);
+      const { data: signed } = await sb.storage.from('photos').createSignedUrls(allPaths, 604800);
       for (const s of (signed ?? [])) {
         if (s.signedUrl) signedMap[s.path] = s.signedUrl;
       }
@@ -302,7 +302,7 @@ export async function hydrateChantierPhotos(chantierIds) {
     }
     if (!paths.length) return result;
 
-    const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 3600);
+    const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 604800);
     if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); return result; }
     (signed ?? []).forEach((s, idx) => {
       const id = pathToId[paths[idx]];
@@ -360,11 +360,11 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
       const blob = await resp.blob();
       const ext = (row.name || 'photo').replace(/.*\./, '') || 'jpg';
       const path = `${row.item_id}/${id}.${ext}`;
-      const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+      const { error: upErr } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true, cacheControl: '31536000' });
       if (upErr) { console.warn('Storage upload error:', upErr); continue; }
       // Store path (not public URL) + retourner signed URL pour affichage immédiat
       await sb.from('aichantier_item_photos').update({ storage_url: path, data: null }).eq('id', id);
-      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, 3600);
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, 604800);
       result[id] = signed?.signedUrl ?? null;
     } catch (e) { console.warn('migratePhotosToStorage error for', id, e); }
   }
@@ -381,7 +381,7 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, b
     const blob = await resp.blob();
     const ext = (name || 'photo').replace(/.*\./, '') || 'jpg';
     const path = `${projectSlug}/${itemId}/${Date.now()}_${photoIndex}.${ext}`;
-    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true, cacheControl: '31536000' });
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
