@@ -443,27 +443,41 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
   return result;
 }
 
-async function saveRemote(ps, dirtyIds = null) {
+async function saveRemote(ps, dirtyIds = null, deletedIds = null) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
   const { data: { user } } = await sb.auth.getUser();
   const uid = user?.id ?? null;
   const errors = [];
 
-  // Skip projets sans id (état corrompu — sinon Supabase renvoie 23502)
-  const ghosts = ps.filter(p => !p.id);
-  if (ghosts.length > 0) console.warn('saveRemote: ignoring', ghosts.length, 'projet(s) without id');
-  ps = ps.filter(p => p.id);
+  // Skip projets sans id pour l'upsert (sinon 23502) — mais NE PAS les retirer de
+  // memIds (sinon le diff de suppression croit qu'il faut effacer le projet remote
+  // correspondant). Les ghosts seront re-synchronisés au prochain reload.
+  const validPs = ps.filter(p => p.id);
+  if (validPs.length !== ps.length) console.warn('saveRemote: ignoring', ps.length - validPs.length, 'projet(s) without id (upsert skipped, not deleted)');
 
-  const memIds = new Set(ps.map(p => p.id));
+  const memIds = new Set(ps.map(p => p.id).filter(Boolean));
   if (_lastRemoteIds !== null) {
-    const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
+    const toDelete = (deletedIds && deletedIds.size > 0)
+      ? [..._lastRemoteIds].filter(id => deletedIds.has(id))
+      : [..._lastRemoteIds].filter(id => !memIds.has(id));
+
+    // Garde anti-catastrophe : refuser un mass-delete (>1 projet OU >50% du remote)
+    // sauf si suppressions explicitement marquées via deletedIds.
+    const explicitDel = deletedIds && deletedIds.size > 0;
+    const safeCap = Math.max(1, Math.floor(_lastRemoteIds.size * 0.5));
+    if (!explicitDel && toDelete.length > safeCap) {
+      console.error('saveRemote: refusing mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — local state likely stale');
+      errors.push({ message: `Sync interrompu : suppression suspecte de ${toDelete.length} projet(s). Rechargez la page.`, code: 'SAFETY_MASS_DELETE' });
+      return errors;
+    }
     if (toDelete.length > 0) {
       const { error } = await sb.from('aichantier_chantiers').delete().in('id', toDelete);
       if (error) errors.push(error);
     }
   }
-  _lastRemoteIds = new Set(ps.map(p => p.id));
+  _lastRemoteIds = new Set(ps.map(p => p.id).filter(Boolean));
+  ps = validPs;
 
   // Sauvegarder uniquement les projets modifiés (évite timeout sur gros volumes)
   const toSave = dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps;
@@ -750,11 +764,11 @@ export function saveLocalCache(ps) {
   } catch {}
 }
 
-export async function saveData(ps, onStatus, dirtyIds = null) {
+export async function saveData(ps, onStatus, dirtyIds = null, deletedIds = null) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
-    const errors = await saveRemote(ps, dirtyIds);
+    const errors = await saveRemote(ps, dirtyIds, deletedIds);
     const ok = errors.length === 0;
     onStatus?.(ok ? 'ok' : 'error');
     if (!ok) showSyncWarning(errors[0]);
