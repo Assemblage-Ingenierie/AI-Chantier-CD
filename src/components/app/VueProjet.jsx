@@ -331,7 +331,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
               </button>
               <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
@@ -395,115 +396,23 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 </div>
               ) : (
                 <>
-                  {visitProjet.localisations.map((loc, locIdx) => {
-                    const items    = loc.items || [];
-                    const isOpen   = openLocIds.has(loc.id);
-                    const urgentCount = items.filter(i => i.urgence === 'haute').length;
-                    return (
-                      <div key={loc.id}
-                        draggable
-                        onDragStart={() => { setZoneDragIdx(locIdx); zoneDragDidMove.current = false; }}
-                        onDragEnter={() => { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; }}
-                        onDragEnd={onZoneDragEnd}
-                        onDragOver={e => e.preventDefault()}
-                        style={{
-                          background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : 'white',
-                          borderRadius: 10,
-                          border: `1px solid ${zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.red : DA.border}`,
-                          boxShadow: zoneDragIdx===locIdx ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
-                          overflow: 'hidden',
-                          opacity: zoneDragIdx===locIdx ? 0.45 : 1,
-                          transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
-                        }}>
-                        <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
-                          <div onClick={e => e.stopPropagation()}
-                            style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
-                            <Ic n="grp" s={18}/>
-                          </div>
-                          <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
-                            style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
-                            <Ic n="chv" s={16}/>
-                          </button>
-                          <EditTitle
-                            value={loc.nom}
-                            onSave={nom => patchLoc(loc.id, { nom })}
-                            style={{ fontSize:13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
-                            inputStyle={{ fontSize:13, fontWeight:800, textTransform:'uppercase' }}
-                          />
-                          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-                            {urgentCount > 0 && (
-                              <span style={{ fontSize:12, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'2px 8px', lineHeight:1.6 }}>
-                                {urgentCount} ⚠
-                              </span>
-                            )}
-                            <span style={{ fontSize:13, color:DA.grayL, minWidth:14, textAlign:'center' }}>{items.length}</span>
-                            <button onClick={() => setModal({ t:'plan', locId:loc.id })}
-                              style={{ padding:'7px 9px', border:`1px solid ${loc.planBg ? DA.red : DA.border}`, background:loc.planBg ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:loc.planBg ? DA.red : DA.grayL }}>
-                              <Ic n="map" s={15}/>
-                            </button>
-                            <button onClick={() => deleteLoc(loc.id, loc.nom)}
-                              style={{ padding:'7px 8px', border:'none', background:'none', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
-                              onMouseEnter={e => e.currentTarget.style.color = DA.red}
-                              onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
-                              <Ic n="del" s={16}/>
-                            </button>
-                          </div>
-                        </div>
-                        {isOpen && (
-                          <div style={{ borderTop:`1px solid ${DA.border}` }}>
-                            <SortList
-                              items={items}
-                              onReorder={ordered => patchLoc(loc.id, { items: ordered })}
-                              onEdit={item => {
-                                if (item?._quickSuivi) { saveItem(loc.id, item); return; }
-                                setModal({ t:'item', locId:loc.id, item });
-                              }}
-                              onDelete={itemId => deleteItem(loc.id, itemId)}
-                              onAnnotatePhoto={(item, photoIdx) => setModal({ t:'photoAnnot', item, locId:loc.id, photoIdx })}
-                              onDeletePhoto={(item, photoIdx) => {
-                                const updated = { ...item, photos: item.photos.filter((_,i) => i !== photoIdx), _photosHydrated: true };
-                                patchItem(loc.id, updated);
-                              }}
-                            />
-                            {loc.planBg ? (
-                              <button
-                                onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
-                                style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#f4f4f4' }}>
-                                <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
-                                  style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-                                <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>
-                                {loc.planAnnotations?.paths?.length > 0 && (
-                                  <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
-                                    <Ic n="pen" s={10}/> {loc.planAnnotations.paths.length} annotation{loc.planAnnotations.paths.length > 1 ? 's' : ''}
-                                  </div>
-                                )}
-                                <div style={{ position:'absolute', bottom:0, left:0, right:0, padding: isDesktop ? '10px 16px' : '8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                                  <div>
-                                    <p style={{ margin:0, fontSize: isDesktop ? 14 : 13, fontWeight:800, color:'white', letterSpacing:0.2 }}>Plan de zone</p>
-                                    <p style={{ margin:'2px 0 0', fontSize: isDesktop ? 11 : 10, color:'rgba(255,255,255,0.65)' }}>
-                                      {loc.planAnnotations?.paths?.length > 0 ? 'Toucher pour modifier' : 'Toucher pour annoter'}
-                                    </p>
-                                  </div>
-                                  <div style={{ background:DA.red, color:'white', borderRadius:8, padding: isDesktop ? '7px 14px' : '6px 12px', fontSize: isDesktop ? 12 : 11, fontWeight:700, display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
-                                    <Ic n="pen" s={isDesktop ? 13 : 12}/> Annoter
-                                  </div>
-                                </div>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setModal({ t:'niveaux' })}
-                                style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 14px', background:DA.grayXL, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12 }}>
-                                <Ic n="map" s={13}/> Assigner un plan à cette zone
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  <SortList
+                    locs={visitProjet.localisations}
+                    openLocIds={openLocIds}
+                    onToggleLoc={toggleLoc}
+                    onAddLoc={addLoc}
+                    onDeleteLoc={deleteLoc}
+                    onMoveLoc={moveZone}
+                    onPatchLoc={patchLoc}
+                    onSaveItem={saveItem}
+                    onDeleteItem={deleteItem}
+                    onOpenAnnot={(locId, form) => setModal({ t:'annotate', locId, form })}
+                    onOpenPhotoAnnot={(locId, item, photoIdx) => setModal({ t:'photoAnnot', item, locId, photoIdx })}
+                    onOpenPlanLoc={(locId) => setModal({ t:'planLoc', locId })}
+                  />
                   <button onClick={addLoc}
                     style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
-                    <Ic n="plus" s={16}/> Ajouter une zone
+                    <Ic n="pls" s={18}/> Ajouter une zone
                   </button>
                 </>
               )}
@@ -511,77 +420,54 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           )}
 
           {tab === 'rapport' && (
-            <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} />
+            <RapportTab
+              projet={visitProjet}
+              onUpdate={onUpdateVisit}
+            />
           )}
+
         </div>
       </div>
 
-      {undoToast && (
-        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
-          <span>{undoToast.label}</span>
-          <button onClick={() => { undoToast.onUndo(); setUndoToast(null); clearTimeout(undoTimerRef.current); }}
-            style={{ background:DA.red, color:'white', border:'none', borderRadius:7, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-            Annuler
-          </button>
-          <button onClick={() => setUndoToast(null)} style={{ background:'rgba(255,255,255,0.1)', border:'none', color:'rgba(255,255,255,0.6)', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontSize:11 }}>×</button>
-        </div>
-      )}
-
-      {modal?.t === 'item' && (() => {
-        const loc      = visitProjet.localisations.find(l => l.id === modal.locId);
-        const initItem = modal.savedForm ?? modal.item;
-        return (
-          <ItemModal
-            key={modal.savedForm ? 'annotated' : 'normal'}
-            item={initItem}
-            planBg={loc?.planBg ?? null}
-            planAnnotations={initItem?.planAnnotations ?? null}
-            onClose={() => setModal(null)}
-            onSave={form => { saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
-            onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
-          />
-        );
-      })()}
-
-      {modal?.t === 'plan' && (() => {
-        const loc = visitProjet.localisations.find(l => l.id === modal.locId);
-        return (
-          <PlanLocModal
-            loc={loc}
-            items={loc?.items || []}
-            planLibrary={projet.planLibrary || []}
-            autoAnnot={!!modal.autoAnnot}
-            onClose={() => setModal(null)}
-            onSave={({ planBg, planData, planAnnotations }) => {
-              const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
-              const planChanged = prevLoc?.planBg !== planBg;
-              patchLoc(modal.locId, { planBg, planData, planAnnotations, _planDirty: planChanged });
-              setModal(null);
-            }}
-            onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
-            onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
-          />
-        );
-      })()}
-
-      {modal?.t === 'planLib' && (
-        <PlanLibraryModal
-          planLibrary={projet.planLibrary || []}
-          onAdd={plans => onUpdate({ planLibrary: [...(projet.planLibrary || []), ...(Array.isArray(plans) ? plans : [plans])] })}
-          onDelete={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
-          onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+      {modal?.t === 'item' && (
+        <ItemModal
+          item={modal.item}
+          planBg={visitProjet.localisations.find(l => l.id === modal.locId)?.planBg}
+          planAnnotations={visitProjet.localisations.find(l => l.id === modal.locId)?.planAnnotations}
           onClose={() => setModal(null)}
+          onSave={(form) => { saveItem(modal.locId, form); setModal(null); }}
+          onOpenAnnot={(form) => setModal({ t:'annotate', locId:modal.locId, form, savedForm:form })}
         />
       )}
-
+      {modal?.t === 'planLoc' && (
+        <PlanLocModal
+          loc={visitProjet.localisations.find(l => l.id === modal.locId)}
+          planLibrary={projet.planLibrary || []}
+          onClose={() => setModal(null)}
+          onSave={(patch) => { patchLoc(modal.locId, patch); setModal(null); }}
+          onOpenPlanLibrary={() => setModal({ ...modal, t:'planLibrary' })}
+        />
+      )}
+      {modal?.t === 'planLibrary' && (
+        <PlanLibraryModal
+          planLibrary={projet.planLibrary || []}
+          onClose={() => setModal({ ...modal, t:'planLoc' })}
+          onSave={(lib) => onUpdate({ planLibrary: lib })}
+        />
+      )}
       {modal?.t === 'niveaux' && (
         <NiveauxModal
           localisations={visitProjet.localisations}
-          planLibrary={projet.planLibrary || []}
-          onChange={newLocs => onUpdateVisit({ localisations: newLocs })}
           onClose={() => setModal(null)}
-          onOpenPlanLib={() => setModal({ t:'planLib' })}
+          onApply={(locs) => { onUpdateVisit({ localisations: locs }); setModal(null); }}
         />
+      )}
+
+      {undoToast && (
+        <div style={{ position:'fixed', bottom:72, left:'50%', transform:'translateX(-50%)', background:'rgba(30,30,30,0.95)', color:'white', padding:'10px 16px', borderRadius:10, fontSize:13, fontWeight:600, boxShadow:'0 4px 20px rgba(0,0,0,0.3)', zIndex:9999, display:'flex', alignItems:'center', gap:10, maxWidth:'90vw' }}>
+          <span style={{ flex:1 }}>{undoToast.label}</span>
+          <button onClick={() => { undoToast.onUndo(); setUndoToast(null); }} style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:6, color:'white', fontSize:12, fontWeight:700, padding:'4px 10px', cursor:'pointer', flexShrink:0 }}>Annuler</button>
+        </div>
       )}
     </div>
   );
