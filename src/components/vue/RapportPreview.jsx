@@ -242,56 +242,63 @@ function BreakControl({ id, active, onToggle, zoneName }) {
 
 // TopBreakControl — shown at the TOP of a page when its first block has a forced break
 // Allows users to remove the break directly from within the page
+// Rendu hors flux (position:absolute) pour ne pas fausser la pagination visuelle.
 function TopBreakControl({ id, zoneName, onToggle }) {
   const [hover, setHover] = useState(false);
   return (
-    <div onClick={() => onToggle(id)}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ margin:`0 -9px ${6}px`, display:'flex', alignItems:'center', gap:10, padding:'7px 14px',
-        background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
-        borderBottom:'2px solid rgba(255,255,255,0.2)' }}>
-      <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
-      <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
-        Saut de page forcé{zoneName ? ` avant « ${zoneName} »` : ''} — cliquer pour retirer et laisser fluer naturellement
-      </span>
-      <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
-        background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
-        × Annuler le saut
-      </span>
+    <div style={{ position:'relative', height:0, overflow:'visible' }}>
+      <div onClick={() => onToggle(id)}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        style={{ position:'absolute', top:-32, left:-9, right:-9, display:'flex', alignItems:'center', gap:10, padding:'7px 14px',
+          background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
+          borderBottom:'2px solid rgba(255,255,255,0.2)', zIndex:40 }}>
+        <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
+        <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
+          Saut de page forcé{zoneName ? ` avant « ${zoneName} »` : ''} — cliquer pour retirer et laisser fluer naturellement
+        </span>
+        <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
+          background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
+          × Annuler le saut
+        </span>
+      </div>
     </div>
   );
 }
 
 // CutZone — séparateur interactif entre blocs (visible uniquement en mode coupe)
+// Rendu hors flux (height:0) pour ne pas fausser la pagination visuelle.
 function CutZone({ blockId, active, onCut }) {
   const [hov, setHov] = useState(false);
   if (!active) return null;
   return (
-    <div data-print="hide"
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onClick={(e) => { e.stopPropagation(); onCut(blockId); }}
-      style={{ height:22, position:'relative', cursor:'crosshair', flexShrink:0, zIndex:50 }}>
-      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
-        <div style={{ background:'#E30513', color:'white', padding:'2px 8px', fontSize:13, flexShrink:0, lineHeight:1 }}>✂</div>
-        <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
-        {hov && <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Couper ici</div>}
+    <div data-print="hide" style={{ position:'relative', height:0, overflow:'visible' }}>
+      <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+        onClick={(e) => { e.stopPropagation(); onCut(blockId); }}
+        style={{ position:'absolute', top:-11, left:0, right:0, height:22, cursor:'crosshair', flexShrink:0, zIndex:50 }}>
+        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
+          <div style={{ background:'#E30513', color:'white', padding:'2px 8px', fontSize:13, flexShrink:0, lineHeight:1 }}>✂</div>
+          <div style={{ flex:1, height:2, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 8px,transparent 8px,transparent 14px)' }}/>
+          {hov && <div style={{ background:'#E30513', color:'white', fontSize:8, fontWeight:800, padding:'2px 9px', flexShrink:0, whiteSpace:'nowrap' }}>Couper ici</div>}
+        </div>
       </div>
     </div>
   );
 }
 
 // ParaCutZone — séparateur de segments texte dans un bloc (mode coupe)
+// Rendu hors flux (height:0) pour ne pas fausser la pagination visuelle.
 function ParaCutZone({ paraId, onCut }) {
   const [hov, setHov] = useState(false);
   return (
-    <div data-print="hide"
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onClick={(e) => { e.stopPropagation(); onCut(paraId); }}
-      style={{ height:18, position:'relative', cursor:'crosshair', margin:'1px -9px', zIndex:50 }}>
-      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
-        <div style={{ background:'#E30513', color:'white', padding:'1px 6px', fontSize:11, flexShrink:0, lineHeight:1 }}>✂</div>
-        <div style={{ flex:1, height:1.5, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 6px,transparent 6px,transparent 10px)' }}/>
-        {hov && <div style={{ background:'#E30513', color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', flexShrink:0, whiteSpace:'nowrap' }}>Couper le texte ici</div>}
+    <div data-print="hide" style={{ position:'relative', height:0, overflow:'visible' }}>
+      <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+        onClick={(e) => { e.stopPropagation(); onCut(paraId); }}
+        style={{ position:'absolute', top:-9, left:-9, right:-9, height:18, cursor:'crosshair', zIndex:50 }}>
+        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', opacity: hov ? 1 : 0.5, transition:'opacity 0.12s', background: hov ? 'rgba(227,5,19,0.07)' : 'transparent' }}>
+          <div style={{ background:'#E30513', color:'white', padding:'1px 6px', fontSize:11, flexShrink:0, lineHeight:1 }}>✂</div>
+          <div style={{ flex:1, height:1.5, background:'repeating-linear-gradient(90deg,#E30513 0,#E30513 6px,transparent 6px,transparent 10px)' }}/>
+          {hov && <div style={{ background:'#E30513', color:'white', fontSize:7, fontWeight:800, padding:'1px 8px', flexShrink:0, whiteSpace:'nowrap' }}>Couper le texte ici</div>}
+        </div>
       </div>
     </div>
   );

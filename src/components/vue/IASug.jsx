@@ -54,7 +54,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, 45000);
+    }, 65000);
     return () => clearTimeout(t);
   }, [step]);
 
@@ -149,12 +149,29 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
   const loading = step === 'photos' || step === 'suggest';
 
   return (
-    <div style={{ marginTop: 8 }}>
+    <div style={{ marginTop: 10 }}>
       <button
         onClick={open ? handleClose : ask}
         disabled={loading}
-        style={{ fontSize: 11, border: `1px solid ${open ? '#059669' : DA.border}`, borderRadius: 20, padding: '3px 10px', background: open ? '#ECFDF5' : 'white', color: open ? '#059669' : DA.gray, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Ic n="spk" s={10}/> {open ? 'Fermer IA' : 'Suggestions IA'}
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          border: 'none',
+          borderRadius: 10,
+          padding: '9px 16px',
+          background: open
+            ? 'linear-gradient(135deg,#6D28D9,#8B5CF6)'
+            : 'linear-gradient(135deg,#7C3AED,#A855F7)',
+          color: 'white',
+          cursor: loading ? 'wait' : 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          boxShadow: '0 2px 8px rgba(124,58,237,0.35)',
+          letterSpacing: 0.2,
+        }}>
+        <span style={{ fontSize: 15, lineHeight: 1 }}>✨</span>
+        {open ? 'Fermer IA' : 'Générer avec IA'}
       </button>
 
       {open && (

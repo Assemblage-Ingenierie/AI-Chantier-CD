@@ -16,7 +16,7 @@ function resolveModel(requested) {
   return allowed.includes(requested) ? requested : DEFAULT_MODEL;
 }
 
-async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 30000) {
+async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
   let { res: upstream, timedOut, err } = await callClaude(model, payload, anthropicKey, maxTokens);
 
   if (timedOut) {
-    return res.status(504).json({ error: 'Timeout IA (30s) — réessaie' });
+    return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
   }
 
   let data;

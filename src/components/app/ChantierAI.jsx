@@ -11,6 +11,9 @@ import VueProjet from './VueProjet.jsx';
 import VisitesScreen from './VisitesScreen.jsx';
 
 export default function ChantierAI({ profile, onLogout }) {
+  // Logo wordmark complet — utiliser le PNG HD local pour éviter qu'un fichier
+  // Supabase incorrect (e.g. sigle uploadé sur le path du logo) ne casse le header.
+  const headerLogoUrl = '/logo_Ai_rouge_HD.png';
   const logoUrl = useBrandingLogo();
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
@@ -120,7 +123,7 @@ export default function ChantierAI({ profile, onLogout }) {
       {/* Header — caché sur mobile quand dans un projet */}
       {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
-          {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>}
+          <img src={headerLogoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (
