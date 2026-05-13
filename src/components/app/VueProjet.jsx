@@ -284,7 +284,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'stretch', gap:4, padding:'0 8px', height:'100%' }}>
               {[
                 { k:'visite',  n:'bld', l:'Visite' },
-                { k:'rapport', n:'fil', l: 'Rapport' + (totalItems > 0 ? ' (' + totalItems + ')' : '') },
+                { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
               ].map(t => (
                 <button key={t.k} onClick={() => setTab(t.k)}
                   style={{ display:'flex', alignItems:'center', gap:7, padding:'0 28px', fontSize:15, fontWeight:700, border:'none', borderBottom:`3px solid ${tab===t.k ? 'white' : 'transparent'}`, background: tab===t.k ? 'rgba(255,255,255,0.08)' : 'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.5)', cursor:'pointer', transition:'all 0.15s', borderRadius:'6px 6px 0 0' }}>
@@ -331,8 +331,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
               </button>
               <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
-                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
+                <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
               </div>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
@@ -364,7 +363,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               <div style={{ display:'flex' }}>
                 {[
                   { k:'visite',  n:'bld', l:'Visite' },
-                  { k:'rapport', n:'fil', l: 'Rapport' + (totalItems > 0 ? ' (' + totalItems + ')' : '') },
+                  { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
                 ].map(t => (
                   <button key={t.k} onClick={() => setTab(t.k)}
                     style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>

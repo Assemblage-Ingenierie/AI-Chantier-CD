@@ -443,30 +443,21 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
   return result;
 }
 
-async function saveRemote(ps, dirtyIds = null, deletedIds = null) {
+async function saveRemote(ps, dirtyIds = null) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
   const { data: { user } } = await sb.auth.getUser();
   const uid = user?.id ?? null;
   const errors = [];
 
-  // Skip projets sans id pour l'upsert (sinon 23502). La protection contre la
-  // suppression catastrophique de projets remote est assurée par le safety cap
-  // ci-dessous, pas par le filtrage côté ps.
-  const validPs = ps.filter(p => p.id);
-  if (validPs.length !== ps.length) console.warn('saveRemote: ignoring', ps.length - validPs.length, 'projet(s) without id (upsert skipped)');
-
   const memIds = new Set(ps.map(p => p.id).filter(Boolean));
   if (_lastRemoteIds !== null) {
-    const toDelete = (deletedIds && deletedIds.size > 0)
-      ? [..._lastRemoteIds].filter(id => deletedIds.has(id))
-      : [..._lastRemoteIds].filter(id => !memIds.has(id));
-
-    // Garde anti-catastrophe : refuser un mass-delete (>1 projet OU >50% du remote)
-    // sauf si suppressions explicitement marquées via deletedIds.
-    const explicitDel = deletedIds && deletedIds.size > 0;
+    const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
+    // Garde anti-catastrophe : refuser un mass-delete (>50% du remote connu).
+    // Évite que des incohérences cache local / DB ne déclenchent une suppression
+    // massive accidentelle (cf. incident 2026-05-13).
     const safeCap = Math.max(1, Math.floor(_lastRemoteIds.size * 0.5));
-    if (!explicitDel && toDelete.length > safeCap) {
+    if (toDelete.length > safeCap) {
       console.error('saveRemote: refusing mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — local state likely stale');
       errors.push({ message: `Sync interrompu : suppression suspecte de ${toDelete.length} projet(s). Rechargez la page.`, code: 'SAFETY_MASS_DELETE' });
       return errors;
@@ -477,7 +468,6 @@ async function saveRemote(ps, dirtyIds = null, deletedIds = null) {
     }
   }
   _lastRemoteIds = new Set(ps.map(p => p.id).filter(Boolean));
-  ps = validPs;
 
   // Sauvegarder uniquement les projets modifiés (évite timeout sur gros volumes)
   const toSave = dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps;
@@ -764,11 +754,11 @@ export function saveLocalCache(ps) {
   } catch {}
 }
 
-export async function saveData(ps, onStatus, dirtyIds = null, deletedIds = null) {
+export async function saveData(ps, onStatus, dirtyIds = null) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
-    const errors = await saveRemote(ps, dirtyIds, deletedIds);
+    const errors = await saveRemote(ps, dirtyIds);
     const ok = errors.length === 0;
     onStatus?.(ok ? 'ok' : 'error');
     if (!ok) showSyncWarning(errors[0]);
