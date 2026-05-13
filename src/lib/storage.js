@@ -450,6 +450,11 @@ async function saveRemote(ps, dirtyIds = null) {
   const uid = user?.id ?? null;
   const errors = [];
 
+  // Skip projets sans id (état corrompu — sinon Supabase renvoie 23502)
+  const ghosts = ps.filter(p => !p.id);
+  if (ghosts.length > 0) console.warn('saveRemote: ignoring', ghosts.length, 'projet(s) without id');
+  ps = ps.filter(p => p.id);
+
   const memIds = new Set(ps.map(p => p.id));
   if (_lastRemoteIds !== null) {
     const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));

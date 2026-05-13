@@ -116,13 +116,18 @@ export function useProjets(onSyncStatus) {
 
   useEffect(() => {
     loadLocalData()
-      .then((d) => { if (d.length) setProjets(d); })
+      .then((d) => {
+        const clean = (d || []).filter(p => p?.id);
+        if (clean.length !== (d?.length ?? 0)) userModified.current = true; // re-save without ghosts
+        if (clean.length) setProjets(clean);
+      })
       .catch(() => {})
       .finally(() => setHydrated(true));
 
     loadData()
       .then((remotePs) => {
         setLoadError(null);
+        remotePs = (remotePs || []).filter(p => p?.id);
         if (!remotePs.length) return;
         if (userModified.current) return;
 
