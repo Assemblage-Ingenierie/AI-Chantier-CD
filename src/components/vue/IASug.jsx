@@ -154,7 +154,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         onClick={open ? handleClose : ask}
         disabled={loading}
         style={{ fontSize: 11, border: `1px solid ${open ? '#059669' : DA.border}`, borderRadius: 20, padding: '3px 10px', background: open ? '#ECFDF5' : 'white', color: open ? '#059669' : DA.gray, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Ic n="spk" s={10}/> {open ? 'Fermer' : 'Analyser'}
+        <Ic n="spk" s={10}/> {open ? 'Fermer IA' : 'Suggestions IA'}
       </button>
 
       {open && (

@@ -87,6 +87,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       const finals = [];
       for (let i = lastFinalIdx.current; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
+          // Pick the alternative with highest confidence
           let best = e.results[i][0];
           for (let a = 1; a < e.results[i].length; a++) {
             if (e.results[i][a].confidence > best.confidence) best = e.results[i][a];
@@ -102,6 +103,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         let txt = finals.filter(Boolean).join(' ');
         if (!txt) return;
 
+        // iOS after restart sometimes resends the full accumulated transcript
+        // (e.g. previous "bonjour" + new "comment" = "bonjour comment").
+        // Strip words already committed this session by comparing word-by-word.
         if (sessionText.current) {
           const rawWords = txt.toLowerCase().split(/\s+/).filter(Boolean);
           const sesWords = sessionText.current.toLowerCase().split(/\s+/).filter(Boolean);
@@ -110,7 +114,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             if (rawWords[i] === sesWords[i]) matched++;
             else break;
           }
-          if (matched === rawWords.length) return;
+          if (matched === rawWords.length) return; // entirely duplicate
           if (matched === sesWords.length && matched > 0) {
             txt = txt.split(/\s+/).slice(matched).join(' ').trim();
           }
@@ -131,6 +135,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     };
 
     r.onerror = (ev) => {
+      // not-allowed = fatal permission error, stop entirely
       if (ev.error === 'not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
@@ -139,11 +144,16 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         setRecording(false);
         return;
       }
+      // All other errors (no-speech, aborted, network, audio-capture…) are non-fatal.
+      // onend always fires after onerror — let onend handle any restart to avoid
+      // starting two concurrent recognition sessions (the "8x repeat" bug).
     };
 
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
+      // iOS/mobile : la reconnaissance s'arrête automatiquement après ~5-10s
+      // Si l'utilisateur tient encore le bouton, on relance immédiatement
       if (recordingRef.current) {
         lastFinalIdx.current = 0;
         restartTimer.current = setTimeout(doRecognize, 150);
@@ -177,11 +187,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const stopDictaphone = () => {
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
-    setRecording(false);
+    setRecording(false);   // feedback immédiat — pas d'attente de onend
     setInterimText('');
-    recogRef.current?.stop();
+    recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
   };
 
+  // Construit des segments diff avec corrections individuellement toggleables
   const buildDiffSegments = (orig, corr) => {
     const wa = orig.split(/(\s+)/);
     const wb = corr.split(/(\s+)/);
@@ -197,6 +208,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
       else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
     }
+    // Grouper en segments : texte neutre ou correction toggleable
     const segs = [];
     let ci = 0, k = 0;
     while (k < tokens.length) {
@@ -358,6 +370,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     { k:'justify', sym:'☰', title:'Justifier' },
   ];
 
+  // Inputs fichiers (hidden)
   const fileInputs = (
     <>
       <input ref={gallRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => readFiles(e.target.files)}/>
@@ -399,8 +412,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
-          {/* Niveau + Suivi */}
+          {/* Niveau + Suivi — une seule ligne */}
           <div style={{ display:'flex',gap:8,marginBottom:14,overflowX:'auto' }}>
+            {/* Groupe Niveau */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
               <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Niveau</span>
               {Object.entries(URGENCE).map(([k, u]) => {
@@ -414,6 +428,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 );
               })}
             </div>
+            {/* Groupe Suivi */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
               <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Suivi</span>
               {Object.entries(SUIVI).map(([k, s]) => {
@@ -429,10 +444,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
           </div>
 
-          {/* Commentaire */}
+          {/* Commentaire — pleine largeur */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
 
+            {/* Toolbar : G/I/S + séparateur + alignements */}
             <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
               {FMT_BTNS.map(btn => (
                 <button key={btn.label} type="button" title={btn.title}
@@ -502,6 +518,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               const activeCount = fixes.filter(s => s.active).length;
               return (
                 <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
+                  {/* Barre d'en-tête */}
                   <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB', gap:8, flexWrap:'wrap' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Corrections proposées</span>
@@ -527,9 +544,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                       </button>
                     </div>
                   </div>
+                  {/* Légende */}
                   <div style={{ background:'#FFFBEB', padding:'5px 12px', borderBottom:'1px solid #FDE68A', fontSize:10, color:'#92400E' }}>
                     Clique sur une correction pour la sélectionner / désélectionner
                   </div>
+                  {/* Texte avec corrections */}
                   <div style={{ padding:'10px 12px', lineHeight:1.9, color:'#1F2937', background:'white' }}>
                     {spellDiff.segments.map((seg, i) => {
                       if (seg.type === 'eq') return <span key={i}>{seg.text}</span>;
@@ -565,7 +584,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             />
           </div>
 
-          {/* Photos */}
+          {/* Photos — pleine largeur */}
           <div style={{ marginBottom:14 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
               <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
