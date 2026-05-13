@@ -34,10 +34,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
   const bumpSync = () => setEditorSyncKey(k => k + 1);
-  const [analyzeError, setAnalyzeError] = useState('');
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
@@ -89,7 +87,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       const finals = [];
       for (let i = lastFinalIdx.current; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          // Pick the alternative with highest confidence
           let best = e.results[i][0];
           for (let a = 1; a < e.results[i].length; a++) {
             if (e.results[i][a].confidence > best.confidence) best = e.results[i][a];
@@ -105,9 +102,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         let txt = finals.filter(Boolean).join(' ');
         if (!txt) return;
 
-        // iOS after restart sometimes resends the full accumulated transcript
-        // (e.g. previous "bonjour" + new "comment" = "bonjour comment").
-        // Strip words already committed this session by comparing word-by-word.
         if (sessionText.current) {
           const rawWords = txt.toLowerCase().split(/\s+/).filter(Boolean);
           const sesWords = sessionText.current.toLowerCase().split(/\s+/).filter(Boolean);
@@ -116,7 +110,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             if (rawWords[i] === sesWords[i]) matched++;
             else break;
           }
-          if (matched === rawWords.length) return; // entirely duplicate
+          if (matched === rawWords.length) return;
           if (matched === sesWords.length && matched > 0) {
             txt = txt.split(/\s+/).slice(matched).join(' ').trim();
           }
@@ -137,7 +131,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     };
 
     r.onerror = (ev) => {
-      // not-allowed = fatal permission error, stop entirely
       if (ev.error === 'not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
@@ -146,16 +139,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         setRecording(false);
         return;
       }
-      // All other errors (no-speech, aborted, network, audio-capture…) are non-fatal.
-      // onend always fires after onerror — let onend handle any restart to avoid
-      // starting two concurrent recognition sessions (the "8x repeat" bug).
     };
 
     r.onend = () => {
       recogRef.current = null;
       setInterimText('');
-      // iOS/mobile : la reconnaissance s'arrête automatiquement après ~5-10s
-      // Si l'utilisateur tient encore le bouton, on relance immédiatement
       if (recordingRef.current) {
         lastFinalIdx.current = 0;
         restartTimer.current = setTimeout(doRecognize, 150);
@@ -189,12 +177,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const stopDictaphone = () => {
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
-    setRecording(false);   // feedback immédiat — pas d'attente de onend
+    setRecording(false);
     setInterimText('');
-    recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
+    recogRef.current?.stop();
   };
 
-  // Construit des segments diff avec corrections individuellement toggleables
   const buildDiffSegments = (orig, corr) => {
     const wa = orig.split(/(\s+)/);
     const wb = corr.split(/(\s+)/);
@@ -210,7 +197,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
       else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
     }
-    // Grouper en segments : texte neutre ou correction toggleable
     const segs = [];
     let ci = 0, k = 0;
     while (k < tokens.length) {
@@ -318,86 +304,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       .finally(() => setCompressing(false));
   };
 
-  const toResizedBase64 = async (src) => {
-    // If remote URL, fetch and convert to data URL first
-    let dataUrl = src;
-    if (!src.startsWith('data:')) {
-      const resp = await fetch(src);
-      const blob = await resp.blob();
-      dataUrl = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result);
-        r.onerror = rej;
-        r.readAsDataURL(blob);
-      });
-    }
-    // Resize to max 800px via canvas
-    return new Promise((res, rej) => {
-      const img = new window.Image();
-      img.onload = () => {
-        const MAX = 800;
-        const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.round(img.naturalWidth * scale);
-        const h = Math.round(img.naturalHeight * scale);
-        const cv = document.createElement('canvas');
-        cv.width = w; cv.height = h;
-        cv.getContext('2d').drawImage(img, 0, 0, w, h);
-        res(cv.toDataURL('image/jpeg', 0.75));
-      };
-      img.onerror = rej;
-      img.src = dataUrl;
-    });
-  };
-
-  const analyzePhotos = async () => {
-    const validPhotos = form.photos.filter(ph => ph.data);
-    if (!validPhotos.length || analyzing) return;
-    setAnalyzing(true);
-    setAnalyzeError('');
-    try {
-      const imageContent = await Promise.all(validPhotos.slice(0, 4).map(async ph => {
-        const dataUrl = await toResizedBase64(ph.data);
-        const [header, b64] = dataUrl.split(',');
-        const mediaType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
-        return { type:'image', source:{ type:'base64', media_type:mediaType, data:b64 } };
-      }));
-      const result = await callAIProxy({
-        feature: 'photoAnalysis',
-        model: 'claude-sonnet-4-6',
-        max_tokens: 600,
-        system: `Tu es un ingénieur bâtiment expérimenté. Sois TRÈS synthétique, 2-3 phrases max en tout.
-N'utilise jamais le tiret médiant (—) ni les tirets longs : utilise la virgule, les deux-points ou la ponctuation normale.
-Réponds UNIQUEMENT avec un objet JSON valide :
-{
-  "titre": "5-7 mots décrivant ce qu'on voit (ou 'Vue générale, RAS' si rien à signaler)",
-  "urgence": "haute"|"moyenne"|"basse",
-  "commentaire": "1-2 phrases max : désordre constaté et action à mener. Si RAS : 'Photo d'illustration, aucun désordre apparent.'"
-}
-Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
-        messages: [{
-          role: 'user',
-          content: [
-            ...imageContent,
-            { type:'text', text:'Analyse ces photos de chantier et génère le constat de désordre JSON.' }
-          ]
-        }]
-      });
-      const raw = result.content?.[0]?.text || '';
-      const jsonStr = raw.replace(/```json\n?|\n?```/g, '').trim();
-      const parsed = JSON.parse(jsonStr);
-      setForm(f => ({
-        ...f,
-        titre:      parsed.titre     || f.titre,
-        commentaire: parsed.commentaire || f.commentaire,
-        urgence:    parsed.urgence   || f.urgence,
-      }));
-      bumpSync();
-    } catch (e) {
-      setAnalyzeError(e.message || 'Erreur analyse');
-    } finally {
-      setAnalyzing(false);
-    }
-  };
 
   if (annotatingPhotoIdx !== null) {
     const ph = form.photos[annotatingPhotoIdx];
@@ -452,7 +358,6 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
     { k:'justify', sym:'☰', title:'Justifier' },
   ];
 
-  // Inputs fichiers (hidden)
   const fileInputs = (
     <>
       <input ref={gallRef} type="file" accept="image/*" multiple style={{ display:'none' }} onChange={e => readFiles(e.target.files)}/>
@@ -494,9 +399,8 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
-          {/* Niveau + Suivi — une seule ligne */}
+          {/* Niveau + Suivi */}
           <div style={{ display:'flex',gap:8,marginBottom:14,overflowX:'auto' }}>
-            {/* Groupe Niveau */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
               <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Niveau</span>
               {Object.entries(URGENCE).map(([k, u]) => {
@@ -510,7 +414,6 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
                 );
               })}
             </div>
-            {/* Groupe Suivi */}
             <div style={{ display:'inline-flex',alignItems:'center',gap:2,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 7px',flexShrink:0 }}>
               <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:4 }}>Suivi</span>
               {Object.entries(SUIVI).map(([k, s]) => {
@@ -526,11 +429,10 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
             </div>
           </div>
 
-          {/* Commentaire — pleine largeur */}
+          {/* Commentaire */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
 
-            {/* Toolbar : G/I/S + séparateur + alignements */}
             <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
               {FMT_BTNS.map(btn => (
                 <button key={btn.label} type="button" title={btn.title}
@@ -600,7 +502,6 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
               const activeCount = fixes.filter(s => s.active).length;
               return (
                 <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
-                  {/* Barre d'en-tête */}
                   <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB', gap:8, flexWrap:'wrap' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Corrections proposées</span>
@@ -626,11 +527,9 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
                       </button>
                     </div>
                   </div>
-                  {/* Légende */}
                   <div style={{ background:'#FFFBEB', padding:'5px 12px', borderBottom:'1px solid #FDE68A', fontSize:10, color:'#92400E' }}>
                     Clique sur une correction pour la sélectionner / désélectionner
                   </div>
-                  {/* Texte avec corrections */}
                   <div style={{ padding:'10px 12px', lineHeight:1.9, color:'#1F2937', background:'white' }}>
                     {spellDiff.segments.map((seg, i) => {
                       if (seg.type === 'eq') return <span key={i}>{seg.text}</span>;
@@ -659,21 +558,18 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
             <IASug
               content={form.titre}
               commentaire={form.commentaire}
-              onApply={text => setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n— ' + text : text }))}
+              photos={form.photos}
+              onApply={text => { setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n' + text : text })); bumpSync(); }}
+              onApplyTitle={title => setForm(f => ({ ...f, titre: title }))}
+              onApplyUrgence={urgence => setForm(f => ({ ...f, urgence }))}
             />
           </div>
 
-          {/* Photos — pleine largeur */}
+          {/* Photos */}
           <div style={{ marginBottom:14 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
               <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
               <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-                {form.photos.filter(ph => ph.data).length > 0 && (
-                  <button onClick={analyzePhotos} disabled={analyzing || compressing}
-                    style={{ fontSize:13,border:`1.5px solid #7C3AED`,padding:'8px 12px',borderRadius:8,background: analyzing ? '#EDE9FE' : '#F5F3FF',color:'#7C3AED',display:'flex',alignItems:'center',gap:5,cursor: analyzing ? 'wait' : 'pointer',fontWeight:600,opacity: compressing ? 0.5 : 1 }}>
-                    {analyzing ? <><Ic n="spn" s={13}/> Analyse…</> : <><Ic n="eye" s={13}/> Analyser</>}
-                  </button>
-                )}
                 <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
                   <Ic n="img" s={14}/> Galerie
                 </button>
@@ -682,11 +578,6 @@ Pas de bullet points, pas de DTU, pas de remplissage. Direct et factuel.`,
                 </button>
               </div>
             </div>
-            {analyzeError && (
-              <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#FFF1F2',border:'1px solid #FECDD3',borderRadius:8,marginBottom:8,fontSize:12,color:'#BE123C' }}>
-                <Ic n="x" s={12}/> {analyzeError}
-              </div>
-            )}
             {form.photos.length > 0 ? (
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
                 {form.photos.map((ph, i) => (

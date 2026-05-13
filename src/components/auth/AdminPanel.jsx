@@ -37,6 +37,14 @@ export default function AdminPanel({ onClose }) {
     setRecovering(false);
   };
 
+  const deleteProfile = async (id, email) => {
+    if (!window.confirm(`Supprimer définitivement "${email}" ?`)) return;
+    const sb = await getSupabase();
+    const { error } = await sb.from('aichantier_profiles').delete().eq('id', id);
+    if (error) setErr(error.message);
+    else fetchProfiles();
+  };
+
 const setRole = async (id, role) => {
     const sb = await getSupabase();
     const { error } = await sb.from('aichantier_profiles').update({ role }).eq('id', id);
@@ -103,6 +111,8 @@ const setRole = async (id, role) => {
                   ? <button onClick={() => setRole(p.id, 'admin')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: `1px solid ${DA.border}`, background: 'white', cursor: 'pointer', color: DA.gray }}>→Admin</button>
                   : <button onClick={() => setRole(p.id, 'user')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: `1px solid ${DA.border}`, background: 'white', cursor: 'pointer', color: DA.gray }}>→User</button>
                 }
+                <button onClick={() => deleteProfile(p.id, p.email || p.id)}
+                  style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: `1px solid #FECDD3`, background: '#FFF1F2', cursor: 'pointer', color: DA.red }}>🗑</button>
               </div>
             </div>
           ))}

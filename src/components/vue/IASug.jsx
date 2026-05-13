@@ -21,155 +21,228 @@ function parseSuggestions(text) {
   return items;
 }
 
-export default function IASug({ content, commentaire, onApply }) {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+const toResized = (dataUrl) => new Promise((res, rej) => {
+  const img = new window.Image();
+  img.onload = () => {
+    const MAX = 800;
+    const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    res(cv.toDataURL('image/jpeg', 0.75));
+  };
+  img.onerror = () => res(dataUrl);
+  img.src = dataUrl;
+});
+
+export default function IASug({ content, commentaire, photos = [], onApply, onApplyTitle, onApplyUrgence }) {
+  const [open, setOpen]             = useState(false);
+  const [step, setStep]             = useState('idle'); // idle | photos | suggest | done | error
+  const [photoResult, setPhotoResult] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
-  const [error, setError] = useState(null);
-  const [applied, setApplied] = useState(new Set());
+  const [error, setError]           = useState(null);
+  const [applied, setApplied]       = useState(new Set());
   const abortRef = useRef(null);
 
-  // Sécurité : si le loading dure plus de 35s, on force l'arrêt
+  const hasPhotos = photos.filter(ph => ph.data).length > 0;
+
   useEffect(() => {
-    if (!loading) return;
+    if (step !== 'photos' && step !== 'suggest') return;
     const t = setTimeout(() => {
       abortRef.current?.abort();
-      abortRef.current = null;
-      setLoading(false);
-      setError('Délai dépassé — vérifie ta connexion et réessaie');
-    }, 35000);
+      setStep('error');
+      setError('Délai dépassé — réessaie');
+    }, 45000);
     return () => clearTimeout(t);
-  }, [loading]);
-
-  const reset = () => {
-    setSuggestions([]);
-    setError(null);
-    setApplied(new Set());
-    setLoading(false);
-  };
+  }, [step]);
 
   const handleClose = () => {
     abortRef.current?.abort();
     abortRef.current = null;
     setOpen(false);
-    reset();
+    setStep('idle');
+    setPhotoResult(null);
+    setSuggestions([]);
+    setError(null);
+    setApplied(new Set());
   };
 
   const ask = async () => {
-    if (loading) return;
+    if (step === 'photos' || step === 'suggest') return;
     abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
-    setLoading(true);
     setOpen(true);
     setError(null);
+    setPhotoResult(null);
     setSuggestions([]);
     setApplied(new Set());
 
+    let photoCtx = null;
+
+    // Step 1: analyze photos if any
+    if (hasPhotos) {
+      setStep('photos');
+      try {
+        const valid = photos.filter(ph => ph.data).slice(0, 4);
+        const imgs = await Promise.all(valid.map(async ph => {
+          const url = await toResized(ph.data);
+          const [hdr, b64] = url.split(',');
+          const mt = hdr.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+          return { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } };
+        }));
+        const r = await callAIProxy({
+          feature: 'photoAnalysis',
+          model: 'claude-sonnet-4-6',
+          max_tokens: 600,
+          system: `Tu es un ingénieur bâtiment. Sois très synthétique (2-3 phrases max). N'utilise jamais le tiret médiant (—). Réponds UNIQUEMENT avec un JSON valide :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases: désordre constaté et action à mener"}`,
+          messages: [{ role: 'user', content: [...imgs, { type: 'text', text: 'Analyse ces photos de chantier.' }] }],
+          _signal: ctrl.signal,
+        });
+        if (ctrl.signal.aborted) return;
+        const raw = r.content?.[0]?.text || '';
+        photoCtx = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim());
+        setPhotoResult(photoCtx);
+      } catch (e) {
+        if (ctrl.signal.aborted) return;
+        // photo analysis failed silently — continue with suggestions only
+      }
+    }
+
+    // Step 2: generate technical suggestions
+    setStep('suggest');
     try {
-      const titre   = (content    || '').slice(0, 300);
-      const texte   = (commentaire || '').slice(0, 2000);
-      const hasText = texte.trim().length > 20;
-      const prompt  = hasText
-        ? `Observation de chantier :
-Titre : "${titre}"
-Commentaire déjà rédigé : "${texte}"
+      const titre  = (content || photoCtx?.titre || '').slice(0, 300);
+      const texte  = (commentaire || '').slice(0, 2000);
+      const photo  = photoCtx?.commentaire ? `Analyse photos: "${photoCtx.commentaire}"` : '';
+      const hasCtx = texte.trim().length > 20 || photo;
 
-Tu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER ce commentaire (entre 3 et 10 selon la richesse du sujet) :
-- préconisations techniques précises (DTU, normes, tolérances chiffrées si applicables)
-- réserves formelles à notifier à l'entreprise
-- points de vigilance pour la prochaine visite
-- actions correctives concrètes
-- essais ou contrôles à demander
-
-Règles absolues :
-- Ne répète JAMAIS ce qui est déjà écrit dans le commentaire
-- Chaque suggestion doit apporter une information nouvelle et utile
-- Sois direct, précis, technique — jamais générique
-- Si le sujet est riche (fissure, infiltration, structure…) génère jusqu'à 10 suggestions
-- Si le sujet est simple, génère seulement ce qui est réellement pertinent (3-5 max)
-Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`
-        : `Observation de chantier : "${titre}"
-
-Tu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes liées à ce désordre spécifique (entre 3 et 10 selon la richesse du sujet) :
-- actions correctives précises avec références DTU/normes si applicable
-- réserves formelles à notifier à l'entreprise
-- points de vigilance et contrôles à effectuer
-- tolérances chiffrées si le désordre le permet
-- essais ou investigations complémentaires éventuels
-
-Règles absolues :
-- Chaque suggestion doit être directement liée au désordre décrit, jamais générique
-- Sois précis et technique — cite des références si pertinent
-- Si le désordre est grave ou complexe, génère jusqu'à 10 suggestions
-- Si simple, génère seulement ce qui est utile (3-5)
-Format strict : "1. texte", "2. texte", etc. Sans intro ni conclusion.`;
+      const prompt = hasCtx
+        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER (3 à 10) :\n- préconisations techniques (DTU, normes, tolérances)\n- réserves formelles à notifier\n- points de vigilance pour la prochaine visite\n- actions correctives concrètes\n- essais ou contrôles à demander\nNe répète JAMAIS ce qui est déjà écrit. Sois direct, précis, technique.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
+        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 10 suggestions techniques liées à ce désordre.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'gemini-2.0-flash-lite',
         max_tokens: 2000,
-        system: 'Tu es expert MOE/BET bâtiment senior, spécialiste des comptes-rendus de visite chantier et de la maîtrise d\'oeuvre d\'exécution. Tu connais parfaitement les DTU, NF EN, règles professionnelles et tolérances de mise en oeuvre. Tu génères des suggestions ultra-précises et contextuelles, jamais vagues ni génériques. N\'utilise jamais le tiret médiant (—) ni les tirets longs : utilise la virgule, les deux-points ou la ponctuation normale.',
+        system: `Tu es expert MOE/BET bâtiment senior. Suggestions ultra-précises et contextuelles, jamais vagues. N'utilise jamais le tiret médiant (—) ni les tirets longs.`,
         messages: [{ role: 'user', content: prompt }],
-        _signal: controller.signal,
+        _signal: ctrl.signal,
       });
-      if (controller.signal.aborted) return;
-      const rawText = d.content?.[0]?.text || '';
-      if (!rawText) throw new Error('Réponse vide du modèle');
-      setSuggestions(parseSuggestions(rawText));
+      if (ctrl.signal.aborted) return;
+      const raw = d.content?.[0]?.text || '';
+      if (!raw) throw new Error('Réponse vide');
+      setSuggestions(parseSuggestions(raw));
+      setStep('done');
     } catch (e) {
-      if (controller.signal.aborted) return;
+      if (ctrl.signal.aborted) return;
       setError(e.message || 'Erreur de connexion');
-    } finally {
-      setLoading(false);
+      setStep('error');
     }
   };
 
-  const handleApply = (sug, i) => {
-    onApply(sug);
-    setApplied(prev => new Set([...prev, i]));
-  };
+  const addApplied = (key) => setApplied(prev => new Set([...prev, key]));
+
+  const loading = step === 'photos' || step === 'suggest';
 
   return (
     <div style={{ marginTop: 8 }}>
       <button
         onClick={open ? handleClose : ask}
-        disabled={loading && !open}
-        style={{ fontSize: 11, border: `1px solid ${open ? '#059669' : DA.border}`, borderRadius: 20, padding: '3px 10px', background: open ? '#ECFDF5' : 'white', color: open ? '#059669' : DA.gray, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-        <Ic n="spk" s={10}/> {open ? 'Fermer IA' : 'Suggestions IA'}
+        disabled={loading}
+        style={{ fontSize: 11, border: `1px solid ${open ? '#059669' : DA.border}`, borderRadius: 20, padding: '3px 10px', background: open ? '#ECFDF5' : 'white', color: open ? '#059669' : DA.gray, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Ic n="spk" s={10}/> {open ? 'Fermer' : 'Analyser'}
       </button>
 
       {open && (
         <div style={{ marginTop: 8, background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: 12 }}>
-          {loading ? (
+          {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#059669' }}>
-                <Ic n="spn" s={12}/> Analyse en cours…
+                <Ic n="spn" s={12}/> {step === 'photos' ? 'Analyse des photos…' : 'Génération des suggestions…'}
               </div>
               <button onClick={handleClose} style={{ fontSize: 11, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Annuler</button>
             </div>
-          ) : error ? (
+          )}
+
+          {step === 'error' && (
             <div style={{ fontSize: 12, color: '#B91C1C' }}>
               {error}
               <button onClick={ask} style={{ marginLeft: 8, fontSize: 11, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Réessayer</button>
             </div>
-          ) : suggestions.length > 0 ? (
+          )}
+
+          {step === 'done' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions techniques — ajoute ce qui te convient</p>
-              {suggestions.map((sug, i) => (
-                <div key={i} style={{ background: applied.has(i) ? '#D1FAE5' : 'white', border: `1px solid ${applied.has(i) ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <span style={{ flex: 1, fontSize: 12, color: '#1e1e2e', lineHeight: 1.5 }}>{sug}</span>
-                  <button
-                    onClick={() => handleApply(sug, i)}
-                    disabled={applied.has(i)}
-                    style={{ flexShrink: 0, background: '#059669', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.5 : 1, minWidth: 60 }}>
-                    {applied.has(i) ? '✓' : 'Ajouter'}
-                  </button>
-                </div>
-              ))}
+
+              {/* Photo analysis block */}
+              {photoResult && (
+                <>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Analyse des photos</p>
+
+                  {photoResult.titre && onApplyTitle && (
+                    <div style={{ background: applied.has('ph_t') ? '#D1FAE5' : 'white', border: `1px solid ${applied.has('ph_t') ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 1 }}>Titre</div>
+                        <span style={{ fontSize: 12, color: '#1e1e2e' }}>{photoResult.titre}</span>
+                      </div>
+                      <button onClick={() => { onApplyTitle(photoResult.titre); addApplied('ph_t'); }} disabled={applied.has('ph_t')}
+                        style={{ flexShrink: 0, background: '#059669', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has('ph_t') ? 'default' : 'pointer', opacity: applied.has('ph_t') ? 0.5 : 1 }}>
+                        {applied.has('ph_t') ? '✓' : 'Appliquer'}
+                      </button>
+                    </div>
+                  )}
+
+                  {photoResult.commentaire && (
+                    <div style={{ background: applied.has('ph_c') ? '#D1FAE5' : 'white', border: `1px solid ${applied.has('ph_c') ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 1 }}>Description</div>
+                        <span style={{ fontSize: 12, color: '#1e1e2e', lineHeight: 1.5 }}>{photoResult.commentaire}</span>
+                      </div>
+                      <button onClick={() => { onApply(photoResult.commentaire); addApplied('ph_c'); }} disabled={applied.has('ph_c')}
+                        style={{ flexShrink: 0, background: '#059669', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has('ph_c') ? 'default' : 'pointer', opacity: applied.has('ph_c') ? 0.5 : 1 }}>
+                        {applied.has('ph_c') ? '✓' : 'Ajouter'}
+                      </button>
+                    </div>
+                  )}
+
+                  {photoResult.urgence && onApplyUrgence && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#059669' }}>Urgence suggérée :</span>
+                      <button onClick={() => { onApplyUrgence(photoResult.urgence); addApplied('ph_u'); }} disabled={applied.has('ph_u')}
+                        style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, border: 'none',
+                          background: photoResult.urgence === 'haute' ? '#FEE2E2' : photoResult.urgence === 'moyenne' ? '#FEF3C7' : '#ECFDF5',
+                          color: photoResult.urgence === 'haute' ? '#991B1B' : photoResult.urgence === 'moyenne' ? '#92400E' : '#065F46',
+                          cursor: applied.has('ph_u') ? 'default' : 'pointer', opacity: applied.has('ph_u') ? 0.5 : 1 }}>
+                        {photoResult.urgence}{applied.has('ph_u') ? ' ✓' : ''}
+                      </button>
+                    </div>
+                  )}
+
+                  {suggestions.length > 0 && <div style={{ height: 1, background: '#A7F3D0', margin: '4px 0' }}/>}
+                </>
+              )}
+
+              {/* Technical suggestions */}
+              {suggestions.length > 0 && (
+                <>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions techniques — ajoute ce qui te convient</p>
+                  {suggestions.map((sug, i) => (
+                    <div key={i} style={{ background: applied.has(i) ? '#D1FAE5' : 'white', border: `1px solid ${applied.has(i) ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 12, color: '#1e1e2e', lineHeight: 1.5 }}>{sug}</span>
+                      <button onClick={() => { onApply(sug); addApplied(i); }} disabled={applied.has(i)}
+                        style={{ flexShrink: 0, background: '#059669', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.5 : 1, minWidth: 60 }}>
+                        {applied.has(i) ? '✓' : 'Ajouter'}
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>
