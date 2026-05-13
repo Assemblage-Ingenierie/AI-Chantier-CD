@@ -42,7 +42,7 @@ const HDR = 10  * S;  // 30px hauteur header
 const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
 
-// ── Hauteur disponible par page A4 (px preview) ────────────────────────────
+// ── Hauteur disponible par page A4 (px preview) ────────────────────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
 const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs (uniquement aux frontières de zone)
 const ITEM_GAP    = 5;  // marginBottom entre blocs non-zone (pas de BreakControl)
@@ -175,7 +175,7 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
   return blocks;
 }
 
-// ── Pagination ─────────────────────────────────────────────────────────────
+// ── Pagination ───────────────────────────────────────────────────────────────────────
 // Ne coupe que sur les sauts forcés (scissors) — jamais automatiquement.
 function buildPages(allBlocks, ppl, breaks, heights) {
   const pages  = [];
@@ -186,7 +186,8 @@ function buildPages(allBlocks, ppl, breaks, heights) {
   };
 
   for (const block of allBlocks) {
-    if (breaks.has(block.id)) flush();
+    // Plans never start a new page — they follow their zone's items
+    if (block.type !== 'plan' && breaks.has(block.id)) flush();
     blocks.push(block);
   }
   flush();
@@ -194,7 +195,7 @@ function buildPages(allBlocks, ppl, breaks, heights) {
   return pages;
 }
 
-// ── Sous-composants ────────────────────────────────────────────────────────
+// ── Sous-composants ──────────────────────────────────────────────────────────────────
 
 // BreakControl — shown at zone boundaries WITHIN a page (suggestions + active removals)
 function BreakControl({ id, active, onToggle, zoneName }) {
@@ -489,13 +490,13 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
   );
 }
 
-// ── Bandeau header commun (logo + titre projet) ─────────────────────────────
+// ── Bandeau header commun (logo + titre projet) ──────────────────────────────────────────
 function HdrBar({ projet, dateStr }) {
-  const logoUrl = useBrandingLogo();
+  const logoUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
   return (
     <div style={{ height:HDR, background:'white', display:'flex', alignItems:'center', padding:`0 ${MX}px`, borderBottom:`1px solid ${DA.red}` }}>
       {logoUrl && <img src={logoUrl} alt="AI"
-        style={{ height:14, objectFit:'contain', flexShrink:0, filter:'brightness(0) saturate(100%) invert(8%) sepia(97%) saturate(6570%) hue-rotate(352deg) brightness(96%) contrast(110%)' }}/>}
+        style={{ height:14, objectFit:'contain', flexShrink:0 }}/>}
       <span style={{ flex:1 }}/>
       <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', letterSpacing:'0.03em' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
     </div>
@@ -583,7 +584,7 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
   );
 }
 
-// ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────
+// ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────────────────
 function CoverPage({ projet, pageNum, totalPages }) {
   const logoUrl = useBrandingLogo();
   const participants = projet.participants || [];
@@ -704,7 +705,7 @@ function CoverPage({ projet, pageNum, totalPages }) {
   );
 }
 
-// ── Pied de page commun (toutes les pages) ────────────────────────────────
+// ── Pied de page commun (toutes les pages) ────────────────────────────────────────────
 function PageFtr({ pageNum, totalPages }) {
   return (
     <div style={{ height:FTR, background:'white', borderTop:`1px solid #DFE4E8`, flexShrink:0, display:'flex', alignItems:'center', padding:`0 ${MX}px`, gap:6 }}>
@@ -722,7 +723,7 @@ function PageFtr({ pageNum, totalPages }) {
 }
 
 
-// ── Page conclusion ────────────────────────────────────────────────────────
+// ── Page conclusion ──────────────────────────────────────────────────────────────────────────
 function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages, onUpdateConclusion, onUpdateConclusionAlign }) {
   const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
   const isEditable = !!onUpdateConclusion;
@@ -768,7 +769,7 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
   );
 }
 
-// ── Tableau récapitulatif ──────────────────────────────────────────────────
+// ── Tableau récapitulatif ─────────────────────────────────────────────────────────────────────────
 function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
   // Use passed recapRows when available (interactive preview), otherwise compute
@@ -884,7 +885,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
   );
 }
 
-// ── Hook scale adaptatif ───────────────────────────────────────────────────
+// ── Hook scale adaptatif ───────────────────────────────────────────────────────────────────────
 // Mesure le scrollRef (pas containerRef) pour inclure la largeur de la barre de défilement.
 // useLayoutEffect → mesure synchrone avant le premier paint, évite le flash.
 function usePreviewScale(scrollRef) {
@@ -904,7 +905,7 @@ function usePreviewScale(scrollRef) {
   return scale;
 }
 
-// ── Composant principal ────────────────────────────────────────────────────
+// ── Composant principal ─────────────────────────────────────────────────────────────────────────
 const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
@@ -930,7 +931,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     [localisations, plansEnFin]
   );
 
-  // ── Mesure des hauteurs réelles ──────────────────────────────────────────
+  // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
   const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks), [locs, plansEnFin, ppl, paraBreaks]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
@@ -999,7 +1000,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     scrollRef.current.scrollBy({ top: elTop - ctop - 16, behavior: 'smooth' });
   }, [totalPages]);
 
-  // ── Mode coupe — callback commun pour CutZone et ParaCutZone ──────────────
+  // ── Mode coupe — callback commun pour CutZone et ParaCutZone ──────────────────────────────
   const handleCut = useCallback((id) => {
     onTogglePageBreak(id);
   }, [onTogglePageBreak]);
@@ -1011,7 +1012,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     return () => window.removeEventListener('keydown', onKey);
   }, [cutMode, onCutModeChange]);
 
-  // ── Impression navigateur (preview = PDF pixel-perfect) ────────────────────
+  // ── Impression navigateur (preview = PDF pixel-perfect) ──────────────────────────────────
   useImperativeHandle(ref, () => ({
     print: () => {
       const pages = pageRefs.current.filter(Boolean);
@@ -1200,7 +1201,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
                     <React.Fragment key={block.id}>
-                      <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
+                      <CutZone blockId={block.id} active={cutMode && isCutCandidate && block.type !== 'plan'} onCut={handleCut}/>
                       <div>
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
