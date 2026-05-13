@@ -450,11 +450,11 @@ async function saveRemote(ps, dirtyIds = null, deletedIds = null) {
   const uid = user?.id ?? null;
   const errors = [];
 
-  // Skip projets sans id pour l'upsert (sinon 23502) — mais NE PAS les retirer de
-  // memIds (sinon le diff de suppression croit qu'il faut effacer le projet remote
-  // correspondant). Les ghosts seront re-synchronisés au prochain reload.
+  // Skip projets sans id pour l'upsert (sinon 23502). La protection contre la
+  // suppression catastrophique de projets remote est assurée par le safety cap
+  // ci-dessous, pas par le filtrage côté ps.
   const validPs = ps.filter(p => p.id);
-  if (validPs.length !== ps.length) console.warn('saveRemote: ignoring', ps.length - validPs.length, 'projet(s) without id (upsert skipped, not deleted)');
+  if (validPs.length !== ps.length) console.warn('saveRemote: ignoring', ps.length - validPs.length, 'projet(s) without id (upsert skipped)');
 
   const memIds = new Set(ps.map(p => p.id).filter(Boolean));
   if (_lastRemoteIds !== null) {
