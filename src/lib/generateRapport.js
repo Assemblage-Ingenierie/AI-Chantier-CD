@@ -1,7 +1,7 @@
 import { ensureJsPDF } from './pdfUtils.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
-import { SYMBOLS, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
+import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
@@ -42,7 +42,7 @@ async function preRenderViewpointIcon() {
 /** Pré-rend chaque symbole dans un canvas 80×80 (assez grand pour les textes sous le symbole). */
 async function preRenderSymbolIcons(symbolIds) {
   const icons = {};
-  for (const sym of SYMBOLS) {
+  for (const sym of getAllSymbols()) {
     if (!symbolIds.has(sym.id)) continue;
     try {
       const cv = document.createElement('canvas');
@@ -61,7 +61,7 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
   const paths = annot?.paths;
   if (!paths?.length) return y;
   const usedIds       = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
-  const legendSy      = SYMBOLS.filter(s => usedIds.has(s.id));
+  const legendSy      = getAllSymbols().filter(s => usedIds.has(s.id));
   const hasViewpoints = paths.some(p => p.type === 'viewpoint');
 
   // Construire la liste unifiée symbol + viewpoint

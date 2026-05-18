@@ -51,7 +51,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       drawVP(ctx, p);
       ctx.restore();
     } else if (p.type === 'symbol') {
-      const sm = SYMBOLS.find(x => x.id === p.symbolId);
+      const sm = getAllSymbols().find(x => x.id === p.symbolId);
       if (sm) {
         ctx.save();
         if (sizeScale !== 1 && p.x != null) {
@@ -65,11 +65,30 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       if (sizeScale !== 1 && p.x != null) {
         ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
       }
-      ctx.font = `bold ${12 + p.size * 2}px Arial`;
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
-      ctx.strokeText(p.text, p.x, p.y);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.text, p.x, p.y);
+      const fs = 12 + p.size * 2;
+      ctx.font = `bold ${fs}px Arial`;
+      const tw = ctx.measureText(p.text).width;
+      const pad = 5;
+      if (p.textMode === 'boxed' || p.textMode === 'arrow') {
+        // Fond blanc + bordure couleur
+        const bx = p.x - pad, by = p.y - fs - 2, bw = tw + pad * 2, bh = fs + pad + 2;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.strokeStyle = p.color; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill(); ctx.stroke();
+        if (p.textMode === 'arrow') {
+          // Petite flèche vers le bas depuis le centre-bas du cadre
+          const ax = p.x + tw / 2, ay = by + bh;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay + 14); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(ax - 5, ay + 9); ctx.lineTo(ax, ay + 14); ctx.lineTo(ax + 5, ay + 9); ctx.stroke();
+        }
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.text, p.x, p.y);
+      } else {
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+        ctx.strokeText(p.text, p.x, p.y);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.text, p.x, p.y);
+      }
       ctx.restore();
     } else if (p.points?.length) {
       ctx.save();
@@ -88,15 +107,46 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
 
 export const SYMBOLS = [
   { id:'fissure_plafond', label:'Fissure plafond', short:'↑PL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('↑PL',x-8,y+15); ctx.fillText('↑PL',x-8,y+15); ctx.restore(); } },
-  { id:'fissure_mur', label:'Fissure mur', short:'MUR', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-8,y-15); ctx.lineTo(x-3,y-6); ctx.lineTo(x+4,y-10); ctx.lineTo(x+7,y+3); ctx.lineTo(x+10,y+15); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('MUR',x-10,y+27); ctx.fillText('MUR',x-10,y+27); ctx.restore(); } },
+  { id:'fissure_mur', label:'Fissure', short:'FIS', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-8,y-15); ctx.lineTo(x-3,y-6); ctx.lineTo(x+4,y-10); ctx.lineTo(x+7,y+3); ctx.lineTo(x+10,y+15); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FIS',x-10,y+27); ctx.fillText('FIS',x-10,y+27); ctx.restore(); } },
   { id:'humidite', label:'Humidité', short:'~H~', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.setLineDash([5,3]); ctx.beginPath(); ctx.ellipse(x,y,22,13,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('~H~',x-12,y+5); ctx.fillText('~H~',x-12,y+5); ctx.restore(); } },
-  { id:'decollement', label:'Décollement', short:'DÉC', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.rect(x-16,y-10,32,20); ctx.stroke(); ctx.setLineDash([3,3]); ctx.beginPath(); ctx.rect(x-11,y-6,22,12); ctx.stroke(); ctx.setLineDash([]); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('DÉC',x-9,y+4); ctx.fillText('DÉC',x-9,y+4); ctx.restore(); } },
   { id:'danger', label:'Danger', short:'!', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.font=`bold ${14+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('!',x-3.5,y+9); ctx.fillText('!',x-3.5,y+9); ctx.restore(); } },
-  { id:'fleche', label:'Flèche', short:'→', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+2; ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x+4,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+4,y); ctx.lineTo(x-5,y-8); ctx.lineTo(x-5,y+8); ctx.closePath(); ctx.fill(); ctx.restore(); } },
   { id:'eclat', label:'Éclatement', short:'ÉCL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
   { id:'nc', label:'Non-conformité', short:'NC', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
   { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
+  { id:'portee', label:'Sens portée', short:'↔', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+2; ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x+20,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x-10,y-7); ctx.lineTo(x-10,y+7); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x+20,y); ctx.lineTo(x+10,y-7); ctx.lineTo(x+10,y+7); ctx.closePath(); ctx.fill(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('PO',x-8,y+20); ctx.fillText('PO',x-8,y+20); ctx.restore(); } },
+  { id:'fontis', label:'Fontis', short:'FT', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.ellipse(x,y+4,18,11,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); for(const dx of [-8,0,8]){ctx.beginPath();ctx.moveTo(x+dx,y-15);ctx.lineTo(x+dx,y-6);ctx.stroke();ctx.beginPath();ctx.moveTo(x+dx-4,y-10);ctx.lineTo(x+dx,y-6);ctx.lineTo(x+dx+4,y-10);ctx.stroke();} ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+22); ctx.fillText('FT',x-5,y+22); ctx.restore(); } },
 ];
+
+// ── Symboles personnalisés (stockés en localStorage, forme auto-générée) ──────
+const CUSTOM_SYMS_KEY = 'chantierai_custom_syms_v1';
+const _CSHAPES = [
+  (ctx,x,y) => { ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.stroke(); },
+  (ctx,x,y) => { ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x+14,y); ctx.lineTo(x,y+18); ctx.lineTo(x-14,y); ctx.closePath(); ctx.stroke(); },
+  (ctx,x,y) => { ctx.beginPath(); ctx.rect(x-14,y-14,28,28); ctx.stroke(); },
+  (ctx,x,y) => { ctx.beginPath(); ctx.moveTo(x-16,y); ctx.lineTo(x+16,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y+16); ctx.stroke(); },
+];
+function _makeCustomDraw(short, shapeIdx) {
+  const shapeFn = _CSHAPES[shapeIdx % _CSHAPES.length];
+  return (ctx, x, y, s, c) => {
+    ctx.save();
+    ctx.strokeStyle = c; ctx.lineWidth = s + 1;
+    shapeFn(ctx, x, y, s, c);
+    ctx.font = `bold ${8 + s}px Arial`;
+    ctx.fillStyle = c; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    const tw = ctx.measureText(short).width;
+    ctx.strokeText(short, x - tw / 2, y + 30); ctx.fillText(short, x - tw / 2, y + 30);
+    ctx.restore();
+  };
+}
+export function loadCustomSymbols() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_SYMS_KEY) || '[]'); } catch { return []; }
+}
+export function getCustomSymbolDefs() {
+  return loadCustomSymbols().map((s, i) => ({ ...s, isCustom: true, draw: _makeCustomDraw(s.short, i) }));
+}
+export function getAllSymbols() {
+  return [...SYMBOLS, ...getCustomSymbolDefs()];
+}
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
 const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
@@ -123,12 +173,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const vtRef     = useRef({ z: 1, px: 0, py: 0 });
   const gestureRef = useRef(null);
 
-  const [annotScale, setAnnotScale] = useState(() => {
+  const [annotScale,  setAnnotScale]  = useState(() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
     // Réinitialiser à 1 si la valeur sauvegardée était > 1.5 (ancien bug où annotScale affectait les tracés)
     if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
     return Math.max(0.3, Math.min(2, v));
   });
+  const [customSyms,  setCustomSyms]  = useState(() => getCustomSymbolDefs());
+  const [newSymName,  setNewSymName]  = useState('');
+  const [showNewSym,  setShowNewSym]  = useState(false);
+  // Modes de texte : 'plain' | 'boxed' | 'arrow'
+  const [textMode,    setTextMode]    = useState('plain');
+
+  const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
   useEffect(() => { vtRef.current = vt; }, [vt]);
   useEffect(() => {
@@ -367,8 +424,28 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   const addText = () => {
     if (!textV.trim() || !textPt) { setTextPt(null); return; }
-    setPaths(prev => [...prev, { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size }]);
+    setPaths(prev => [...prev, { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size, textMode }]);
     setTextPt(null); setTextV('');
+  };
+
+  const addCustomSym = () => {
+    const label = newSymName.trim();
+    if (!label) return;
+    const existing = loadCustomSymbols();
+    const short = label.replace(/\s+/g, '').slice(0, 4).toUpperCase();
+    const entry = { id: 'custom_' + crypto.randomUUID(), label, short, shapeIdx: existing.length };
+    localStorage.setItem(CUSTOM_SYMS_KEY, JSON.stringify([...existing, entry]));
+    const newDefs = getCustomSymbolDefs();
+    setCustomSyms(newDefs);
+    setSym(newDefs[newDefs.length - 1]);
+    setNewSymName(''); setShowNewSym(false);
+  };
+
+  const delCustomSym = (id) => {
+    localStorage.setItem(CUSTOM_SYMS_KEY, JSON.stringify(loadCustomSymbols().filter(s => s.id !== id)));
+    const newDefs = getCustomSymbolDefs();
+    setCustomSyms(newDefs);
+    if (sym?.id === id) setSym(SYMBOLS[0]);
   };
 
   const validPhotos = (photos || []).filter(ph => ph.data).slice(0, 12);
@@ -507,13 +584,56 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
       {/* ── Symbol picker ── */}
       {showSyms && tool === 'symbol' && (
-        <div style={{ background:'#1a1a1a',padding:'8px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333' }}>
-          {SYMBOLS.map(sm => (
-            <button key={sm.id} onClick={() => setSym(sm)}
-              style={{ flexShrink:0,padding:'5px 12px',borderRadius:8,background:sym.id===sm.id?DA.red:'#333',color:sym.id===sm.id?'white':'#ccc',fontSize:12,fontWeight:500,whiteSpace:'nowrap',cursor:'pointer' }}>
-              {sm.label}
+        <div style={{ background:'#1a1a1a',padding:'8px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center' }}>
+          {allSymbols.map(sm => (
+            <div key={sm.id} style={{ position:'relative',flexShrink:0 }}>
+              <button onClick={() => setSym(sm)}
+                style={{ padding:'5px 12px',borderRadius:8,background:sym.id===sm.id?DA.red:'#333',color:sym.id===sm.id?'white':'#ccc',fontSize:12,fontWeight:500,whiteSpace:'nowrap',cursor:'pointer' }}>
+                {sm.label}
+              </button>
+              {sm.isCustom && (
+                <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
+                  style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          {!showNewSym
+            ? <button onClick={() => setShowNewSym(true)}
+                style={{ flexShrink:0,padding:'5px 12px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:12,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF' }}>
+                + Créer
+              </button>
+            : <div style={{ display:'flex',gap:5,alignItems:'center',flexShrink:0 }}>
+                <input autoFocus value={newSymName} onChange={e=>setNewSymName(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter')addCustomSym();if(e.key==='Escape'){setShowNewSym(false);setNewSymName('');}}}
+                  placeholder="Nom du symbole…"
+                  style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',minWidth:120,fontFamily:'inherit' }}/>
+                <button onClick={addCustomSym}
+                  style={{ padding:'4px 10px',background:DA.red,color:'white',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
+                <button onClick={() => {setShowNewSym(false);setNewSymName('');}}
+                  style={{ padding:'4px 7px',background:'#333',color:'#aaa',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>✕</button>
+              </div>
+          }
+        </div>
+      )}
+
+      {/* ── Sélecteur de mode texte (affiché quand outil texte actif) ── */}
+      {tool === 'text' && !selText && (
+        <div style={{ background:'#1a1a1a',padding:'6px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:6,flexShrink:0 }}>
+          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>STYLE</span>
+          {[
+            { k:'plain', lbl:'Texte libre' },
+            { k:'boxed', lbl:'Encadré' },
+            { k:'arrow', lbl:'Encadré + flèche' },
+          ].map(m => (
+            <button key={m.k} onClick={() => setTextMode(m.k)}
+              style={{ padding:'4px 10px',borderRadius:7,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+                background:textMode===m.k?DA.red:'#333',color:textMode===m.k?'white':'#aaa',border:'none' }}>
+              {m.lbl}
             </button>
           ))}
+          <span style={{ fontSize:9,color:'#555',marginLeft:4 }}>Cliquez sur le plan pour placer</span>
         </div>
       )}
 
@@ -526,7 +646,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
             style={{ flex:1,minWidth:80,fontSize:12,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',fontFamily:'inherit' }}
           />
-          <span style={{ fontSize:10,color:'#888',flexShrink:0 }}>Glisser pour déplacer</span>
+          {/* Changer le style du texte sélectionné */}
+          {[{ k:'plain', lbl:'Libre' },{ k:'boxed', lbl:'Cadre' },{ k:'arrow', lbl:'Flèche' }].map(m => (
+            <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,textMode:m.k} : p))}
+              style={{ padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',flexShrink:0,
+                background:(selText.textMode||'plain')===m.k?DA.red:'#333',color:(selText.textMode||'plain')===m.k?'white':'#aaa',border:'none' }}>
+              {m.lbl}
+            </button>
+          ))}
           <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }}
             style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:0,display:'flex',alignItems:'center' }}>
             <Ic n="del" s={13}/>
@@ -566,17 +693,39 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 ×{vt.z.toFixed(1)} ↺
               </button>
             )}
-            {/* Popup placement d'un nouveau texte */}
-            {textPt && (
-              <div style={{ position:'absolute',top:0,left:0,transform:`translate(${textPt.x*(cvRef.current?.clientWidth/cvRef.current?.width||1)}px,${textPt.y*(cvRef.current?.clientHeight/cvRef.current?.height||1)}px)`,zIndex:10 }}>
-                <div style={{ background:'white',borderRadius:8,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',padding:8,display:'flex',gap:6,minWidth:200 }}>
-                  <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addText()}
-                    placeholder="Saisir le texte…" style={{ flex:1,fontSize:13,border:`1px solid ${DA.border}`,borderRadius:6,padding:'4px 8px',outline:'none' }}/>
-                  <button onClick={addText} style={{ background:DA.red,color:'white',borderRadius:6,padding:'4px 8px',fontSize:12,fontWeight:600 }}>OK</button>
-                  <button onClick={() => setTextPt(null)} style={{ color:DA.grayL }}><Ic n="x" s={14}/></button>
+            {/* Popup saisie texte — ancrée au point de clic */}
+            {textPt && (() => {
+              const sx = cvRef.current?.clientWidth  / cvRef.current?.width  || 1;
+              const sy = cvRef.current?.clientHeight / cvRef.current?.height || 1;
+              const px = textPt.x * sx;
+              const py = textPt.y * sy;
+              return (
+                <div style={{ position:'absolute',left:0,top:0,transform:`translate(${px}px,${py}px)`,zIndex:10,pointerEvents:'none' }}>
+                  <div style={{ background:'#1e1e1e',borderRadius:10,boxShadow:'0 6px 28px rgba(0,0,0,0.6)',padding:'10px 12px',display:'flex',flexDirection:'column',gap:8,minWidth:230,pointerEvents:'all',border:'1px solid #333' }}>
+                    {/* Sélecteur de style rapide */}
+                    <div style={{ display:'flex',gap:4 }}>
+                      {[{ k:'plain', lbl:'Libre' },{ k:'boxed', lbl:'Encadré' },{ k:'arrow', lbl:'↓ Flèche' }].map(m => (
+                        <button key={m.k} onClick={() => setTextMode(m.k)}
+                          style={{ flex:1,padding:'4px 0',borderRadius:6,fontSize:10,fontWeight:700,cursor:'pointer',
+                            background:textMode===m.k?DA.red:'#333',color:textMode===m.k?'white':'#aaa',border:'none' }}>
+                          {m.lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display:'flex',gap:6 }}>
+                      <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
+                        placeholder="Saisir le texte…"
+                        style={{ flex:1,fontSize:13,border:'1px solid #444',borderRadius:7,padding:'6px 10px',outline:'none',background:'#111',color:'white',fontFamily:'inherit' }}/>
+                      <button onClick={addText}
+                        style={{ background:DA.red,color:'white',borderRadius:7,padding:'6px 12px',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
+                      <button onClick={() => setTextPt(null)}
+                        style={{ background:'#333',color:'#aaa',borderRadius:7,padding:'6px 8px',fontSize:12,cursor:'pointer',flexShrink:0,border:'none' }}>✕</button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         ) : (
           <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:12,color:DA.grayL }}>

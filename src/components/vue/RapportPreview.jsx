@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup } from '../../lib/markup.jsx';
-import { SYMBOLS, drawAnnotationPaths, drawVP } from './Annotator.jsx';
+import { getAllSymbols, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
@@ -479,7 +479,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
 
   // Légende : symboles + viewpoints — taille fixe indépendante du slider
   const usedIds       = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
-  const legendSy      = SYMBOLS.filter(s => usedIds.has(s.id));
+  const legendSy      = getAllSymbols().filter(s => usedIds.has(s.id));
   const hasViewpoints = (paths || []).some(p => p.type === 'viewpoint');
   const showLegend    = legendSy.length > 0 || hasViewpoints;
 
