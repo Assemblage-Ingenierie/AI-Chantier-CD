@@ -483,7 +483,11 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
   const hasViewpoints = (paths || []).some(p => p.type === 'viewpoint');
   const showLegend    = legendSy.length > 0 || hasViewpoints;
 
-  if (!renderedImg && !planBg) return null;
+  if (!renderedImg && !planBg) return (
+    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden', minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <span style={{ fontSize:10, color:'#aaa' }}>Plan en cours de chargement…</span>
+    </div>
+  );
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>

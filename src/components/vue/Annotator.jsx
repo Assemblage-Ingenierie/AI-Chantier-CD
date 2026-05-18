@@ -38,29 +38,19 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-// Sens portée avec demi-flèches orientables (drag-to-orient)
+// Sens portée avec demi-flèches orientables — les deux branches vont du même côté
 export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const len   = Math.hypot(x2 - x1, y2 - y1);
-  const aLen  = Math.max(10, Math.min(18 + s * 1.5, len * 0.28));
+  const aLen  = Math.max(10, Math.min(16 + s * 1.5, len * 0.28));
+  const wingAngle = angle + Math.PI / 2 - Math.PI / 5; // même côté pour les deux extrémités
   ctx.save();
   ctx.strokeStyle = c; ctx.lineWidth = s + 1;
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  // Demi-flèche à x1 (une seule branche du V)
   ctx.beginPath(); ctx.moveTo(x1, y1);
-  ctx.lineTo(x1 + Math.cos(angle + Math.PI / 5) * aLen, y1 + Math.sin(angle + Math.PI / 5) * aLen);
-  ctx.stroke();
-  // Demi-flèche à x2 (côté opposé)
+  ctx.lineTo(x1 + Math.cos(wingAngle) * aLen, y1 + Math.sin(wingAngle) * aLen); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 + Math.cos(angle + Math.PI - Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI - Math.PI / 5) * aLen);
-  ctx.stroke();
-  // Label au milieu, décalé perpendiculairement
-  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-  const px = -Math.sin(angle) * (12 + s), py = Math.cos(angle) * (12 + s);
-  ctx.font = `bold ${7 + s}px Arial`;
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-  ctx.strokeText('PO', mx + px - 6, my + py);
-  ctx.fillStyle = c; ctx.fillText('PO', mx + px - 6, my + py);
+  ctx.lineTo(x2 + Math.cos(wingAngle) * aLen, y2 + Math.sin(wingAngle) * aLen); ctx.stroke();
   ctx.restore();
 }
 
@@ -206,12 +196,13 @@ export function getAllSymbols() {
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
 const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
-  const cvRef         = useRef();
-  const bgRef         = useRef(null);
-  const vpStart       = useRef(null);
-  const textDragRef   = useRef(null); // { mode:'box'|'tip', origX/Y, origArrowX/Y, tapX, tapY }
+  const cvRef          = useRef();
+  const bgRef          = useRef(null);
+  const vpStart        = useRef(null);
+  const textDragRef    = useRef(null); // { mode:'box'|'tip', origX/Y, origArrowX/Y, tapX, tapY }
   const porteeStartRef = useRef(null);
-  const annotDragRef  = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
+  const annotDragRef   = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
+  const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -241,8 +232,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
   const [textMode,      setTextMode]      = useState('plain');
-  const [pendingPortee, setPendingPortee] = useState(null);
-  const [selAnnot,      setSelAnnot]      = useState(null); // { idx } symbole/viewpoint sélectionné
+  const [pendingPortee,    setPendingPortee]    = useState(null);
+  const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
+  const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -305,21 +297,45 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
     }
 
-    // Indicateur de sélection : texte
-    if (selTextIdx !== null && paths[selTextIdx]?.type === 'text') {
-      const tp = paths[selTextIdx];
-      const fontSize = 12 + tp.size * 2;
+    // Poignées des textes (toujours visibles en mode texte)
+    if (tool === 'text') {
+      paths.forEach((p, i) => {
+        if (p.type !== 'text') return;
+        const isSel = i === selTextIdx;
+        const hr = isSel ? 9 : 6;
+        ctx.save();
+        ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = isSel ? 2.5 : 1.5;
+        ctx.fillStyle = isSel ? 'rgba(74,158,255,0.55)' : 'rgba(74,158,255,0.22)';
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(p.x, p.y, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        if (p.textMode === 'arrow' && p.arrowX != null) {
+          ctx.strokeStyle = '#FF9500'; ctx.lineWidth = isSel ? 2.5 : 1.5;
+          ctx.fillStyle = isSel ? 'rgba(255,149,0,0.55)' : 'rgba(255,149,0,0.22)';
+          ctx.beginPath(); ctx.arc(p.arrowX, p.arrowY, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+        if (isSel) {
+          const fs = 12 + p.size * 2;
+          ctx.font = `bold ${fs}px Arial`;
+          const tw = ctx.measureText(p.text).width;
+          const pad = 5;
+          ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+          ctx.strokeRect(p.x - pad, p.y - fs - 2, tw + pad * 2, fs + pad + 2);
+        }
+        ctx.restore();
+      });
+    }
+
+    // Ligne de prévisualisation flèche-callout (pendant le drag de placement)
+    if (pendingArrowLine) {
+      const { tipX, tipY, boxX, boxY } = pendingArrowLine;
       ctx.save();
-      ctx.font = `bold ${fontSize}px Arial`;
-      const tw = ctx.measureText(tp.text).width;
-      ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
-      ctx.strokeRect(tp.x - 4, tp.y - fontSize - 3, tw + 8, fontSize + 8);
-      // Poignée de la flèche (tip handle)
-      if (tp.textMode === 'arrow' && tp.arrowX != null) {
-        ctx.setLineDash([]); ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(tp.arrowX, tp.arrowY, 7, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(74,158,255,0.35)'; ctx.fill();
-      }
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.lineTo(boxX, boxY); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(tipX, tipY, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.45; ctx.strokeStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(boxX, boxY, 11, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
 
@@ -337,7 +353,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot]);
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -483,8 +499,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         return;
       }
       setSelTextIdx(null);
-      setTextPt(pos);
-      setTextV('');
+      if (textMode === 'arrow') {
+        // Mode flèche : le start = pointe, drag = position boîte
+        arrowPlaceRef.current = pos;
+        setPendingArrowLine({ tipX: pos.x, tipY: pos.y, boxX: pos.x, boxY: pos.y });
+        setDrawing(true);
+      } else {
+        setTextPt(pos);
+        setTextV('');
+      }
       return;
     }
     setDrawing(true); setCur([pos]);
@@ -506,6 +529,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       const maxPx = cv ? cv.clientWidth  * (newZ - 1) / 2 : 9999;
       const maxPy = cv ? cv.clientHeight * (newZ - 1) / 2 : 9999;
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
+      return;
+    }
+    // Placement flèche : mise à jour de la ligne de prévisualisation
+    if (tool === 'text' && drawing && arrowPlaceRef.current) {
+      const pos = getXY(e, cvRef.current);
+      setPendingArrowLine({ tipX: arrowPlaceRef.current.x, tipY: arrowPlaceRef.current.y, boxX: pos.x, boxY: pos.y });
       return;
     }
     // Déplacement texte : tip de flèche
@@ -557,6 +586,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       if (e.touches.length < 2) gestureRef.current = null;
       return;
     }
+    // Fin du placement flèche-callout (drag tip → box)
+    if (tool === 'text' && arrowPlaceRef.current) {
+      const tip = arrowPlaceRef.current;
+      const box = pendingArrowLine ?? tip;
+      const dist = Math.hypot(box.boxX - tip.x, box.boxY - tip.y);
+      const boxX = dist > 12 ? box.boxX : tip.x + 60;
+      const boxY = dist > 12 ? box.boxY : tip.y - 40;
+      setTextPt({ x: boxX, y: boxY, arrowX: tip.x, arrowY: tip.y });
+      setTextV('');
+      setPendingArrowLine(null);
+      arrowPlaceRef.current = null;
+      setDrawing(false);
+      return;
+    }
     // Fin portée
     if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
       if (pendingPortee) {
@@ -602,7 +645,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const addText = () => {
     if (!textV.trim() || !textPt) { setTextPt(null); return; }
     const entry = { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size, textMode };
-    if (textMode === 'arrow') { entry.arrowX = textPt.x + 25; entry.arrowY = textPt.y + 45; }
+    if (textMode === 'arrow') {
+      entry.arrowX = textPt.arrowX ?? (textPt.x + 50);
+      entry.arrowY = textPt.arrowY ?? (textPt.y + 50);
+    }
     setPaths(prev => [...prev, entry]);
     setTextPt(null); setTextV('');
   };
@@ -798,22 +844,24 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         </div>
       )}
 
-      {/* ── Sélecteur de mode texte (affiché quand outil texte actif) ── */}
+      {/* ── Sélecteur de mode texte ── */}
       {tool === 'text' && !selText && (
-        <div style={{ background:'#1a1a1a',padding:'6px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:6,flexShrink:0 }}>
-          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>STYLE</span>
+        <div style={{ background:'#1a1a1a',padding:'6px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap' }}>
+          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>TEXTE</span>
           {[
-            { k:'plain', lbl:'Texte libre' },
+            { k:'plain', lbl:'Libre' },
             { k:'boxed', lbl:'Encadré' },
-            { k:'arrow', lbl:'Encadré + flèche' },
+            { k:'arrow', lbl:'↗ Flèche' },
           ].map(m => (
             <button key={m.k} onClick={() => setTextMode(m.k)}
-              style={{ padding:'4px 10px',borderRadius:7,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+              style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
                 background:textMode===m.k?DA.red:'#333',color:textMode===m.k?'white':'#aaa',border:'none' }}>
               {m.lbl}
             </button>
           ))}
-          <span style={{ fontSize:9,color:'#555',marginLeft:4 }}>Cliquez sur le plan pour placer</span>
+          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>
+            {textMode === 'arrow' ? '① Appuyez là où pointe la flèche  ② Glissez jusqu\'au texte' : '① Tapez sur le plan  ② Tapez un texte existant pour le modifier'}
+          </span>
         </div>
       )}
 
@@ -901,39 +949,39 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 ×{vt.z.toFixed(1)} ↺
               </button>
             )}
-            {/* Popup saisie texte — ancrée au point de clic */}
-            {textPt && (() => {
-              const sx = cvRef.current?.clientWidth  / cvRef.current?.width  || 1;
-              const sy = cvRef.current?.clientHeight / cvRef.current?.height || 1;
-              const px = textPt.x * sx;
-              const py = textPt.y * sy;
-              return (
-                <div style={{ position:'absolute',left:0,top:0,transform:`translate(${px}px,${py}px)`,zIndex:10,pointerEvents:'none' }}>
-                  <div style={{ background:'#1e1e1e',borderRadius:10,boxShadow:'0 6px 28px rgba(0,0,0,0.6)',padding:'10px 12px',display:'flex',flexDirection:'column',gap:8,minWidth:230,pointerEvents:'all',border:'1px solid #333' }}>
-                    {/* Sélecteur de style rapide */}
-                    <div style={{ display:'flex',gap:4 }}>
-                      {[{ k:'plain', lbl:'Libre' },{ k:'boxed', lbl:'Encadré' },{ k:'arrow', lbl:'↓ Flèche' }].map(m => (
-                        <button key={m.k} onClick={() => setTextMode(m.k)}
-                          style={{ flex:1,padding:'4px 0',borderRadius:6,fontSize:10,fontWeight:700,cursor:'pointer',
-                            background:textMode===m.k?DA.red:'#333',color:textMode===m.k?'white':'#aaa',border:'none' }}>
-                          {m.lbl}
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{ display:'flex',gap:6 }}>
-                      <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
-                        onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
-                        placeholder="Saisir le texte…"
-                        style={{ flex:1,fontSize:13,border:'1px solid #444',borderRadius:7,padding:'6px 10px',outline:'none',background:'#111',color:'white',fontFamily:'inherit' }}/>
-                      <button onClick={addText}
-                        style={{ background:DA.red,color:'white',borderRadius:7,padding:'6px 12px',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
-                      <button onClick={() => setTextPt(null)}
-                        style={{ background:'#333',color:'#aaa',borderRadius:7,padding:'6px 8px',fontSize:12,cursor:'pointer',flexShrink:0,border:'none' }}>✕</button>
-                    </div>
+            {/* Modal saisie texte — centré sur le canvas */}
+            {textPt && (
+              <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:10,background:'rgba(0,0,0,0.5)',padding:16 }}
+                onClick={e => { if (e.target === e.currentTarget) setTextPt(null); }}>
+                <div style={{ background:'#1e1e1e',borderRadius:18,boxShadow:'0 14px 50px rgba(0,0,0,0.85)',padding:'22px 20px 18px',display:'flex',flexDirection:'column',gap:16,width:'100%',maxWidth:380,border:'1px solid #3a3a3a' }}>
+                  <div style={{ display:'flex',alignItems:'center',gap:10 }}>
+                    <span style={{ fontSize:14,fontWeight:700,color:'#fff' }}>
+                      {textMode==='plain' ? '✏️ Texte libre' : textMode==='boxed' ? '▭ Texte encadré' : '↗ Texte avec flèche'}
+                    </span>
+                    <button onClick={() => setTextPt(null)} style={{ marginLeft:'auto',background:'none',border:'none',color:'#666',fontSize:22,cursor:'pointer',padding:'0 4px',lineHeight:1,flexShrink:0 }}>×</button>
                   </div>
+                  <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
+                    placeholder="Saisir le texte…"
+                    style={{ fontSize:16,border:'2px solid #444',borderRadius:10,padding:'13px 14px',outline:'none',background:'#111',color:'white',fontFamily:'inherit',boxSizing:'border-box',width:'100%' }}/>
+                  <div style={{ display:'flex',gap:10 }}>
+                    <button onClick={addText}
+                      style={{ flex:1,background:DA.red,color:'white',borderRadius:10,padding:'14px',fontSize:15,fontWeight:700,cursor:'pointer',border:'none' }}>
+                      Placer ✓
+                    </button>
+                    <button onClick={() => setTextPt(null)}
+                      style={{ background:'#333',color:'#aaa',borderRadius:10,padding:'14px 18px',fontSize:15,cursor:'pointer',border:'none' }}>
+                      ✕
+                    </button>
+                  </div>
+                  {textMode === 'arrow' && textPt.arrowX != null && (
+                    <p style={{ fontSize:11,color:'#666',textAlign:'center',margin:0,lineHeight:1.4 }}>
+                      La flèche pointera là où vous avez appuyé — déplacez la pointe après placement avec l'outil Texte
+                    </p>
+                  )}
                 </div>
-              );
-            })()}
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:12,color:DA.grayL }}>
