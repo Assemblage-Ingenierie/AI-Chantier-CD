@@ -118,7 +118,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   return (
-    <div style={{ display:'flex',flexDirection:'column',height:'100vh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
+    <div style={{ display:'flex',flexDirection:'column',height:'100dvh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
 
       {/* Header — caché sur mobile quand dans un projet */}
       {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>

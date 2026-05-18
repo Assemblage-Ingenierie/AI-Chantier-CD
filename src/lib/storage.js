@@ -107,12 +107,19 @@ function toSlim(ps) {
 // --- Lecture depuis les tables normalisées ---
 
 function buildLocFromRow(loc, itemsByLoc) {
+  // planId est encodé dans plan_annotations._planId (évite une colonne dédiée)
+  const parsedAnnot = tryParseJson(loc.plan_annotations);
+  const planId = parsedAnnot?._planId ?? null;
+  const planAnnotations = parsedAnnot
+    ? (({ _planId, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
+    : null;
   return {
     id:              loc.id,
     nom:             loc.nom ?? '',
+    planId,
     planBg:          null,
     planData:        null,
-    planAnnotations: tryParseJson(loc.plan_annotations),
+    planAnnotations,
     items: (itemsByLoc[loc.id] ?? []).map(item => ({
       id:              item.id,
       titre:           item.titre ?? '',
@@ -357,20 +364,11 @@ export async function fetchPlanData(planId) {
   } catch (e) { console.warn('fetchPlanData error:', e); return null; }
 }
 
-// Charge plan_bg/plan_data pour un projet donné — appelé paresseusement à l'ouverture du projet
-// pour éviter que loadRemote() ne transmette de gros blobs pour tous les projets d'un coup.
-export async function hydratePlans(projectId) {
-  try {
-    const sb = await getSupabase();
-    const { data, error } = await sb.from('aichantier_chantier_localisations')
-      .select('id,plan_bg').eq('chantier_id', projectId);
-    if (error) { console.warn('hydratePlans error:', error); return null; }
-    const map = {};
-    for (const row of (data ?? [])) {
-      if (row.plan_bg) map[row.id] = { planBg: row.plan_bg ?? null, planData: null };
-    }
-    return map; // { locId: { planBg, planData } }
-  } catch (e) { console.warn('hydratePlans error:', e); return null; }
+// hydratePlans : plan_bg n'est plus stocké dans les locs (timeout 57014).
+// planId est désormais dans plan_annotations._planId, lu par buildLocFromRow/loadRemote.
+// Cette fonction est conservée pour compatibilité mais retourne toujours un map vide.
+export async function hydratePlans(_projectId) {
+  return {};
 }
 
 // Migre les photos legacy (base64 en DB) vers Supabase Storage — une à la fois pour éviter les timeouts.
@@ -594,24 +592,21 @@ async function saveRemote(ps, dirtyIds = null) {
       continue;
     }
 
-    // Loc rows — plan_bg/plan_data envoyés seulement pour nouvelles zones ou si _planDirty.
-    // Évite de retransmettre des MB d'images à chaque save sur des zones existantes (timeout 57014).
+    // Loc rows — plan_bg/plan_data jamais envoyés dans les locs (timeout 57014).
+    // planId est encodé dans plan_annotations._planId pour éviter une colonne dédiée.
     const locRows = allLocsFlat.map((l, i) => {
-      const row = {
+      // Construire l'objet plan_annotations : paths existants + _planId si défini
+      let annotObj = null;
+      if (l.planId || l.planAnnotations?.paths?.length) {
+        annotObj = {};
+        if (l.planId) annotObj._planId = l.planId;
+        if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
+      }
+      return {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
-        // Ne jamais persister .exported (image WebP ~400 Ko) — seuls les paths sont nécessaires en DB.
-        plan_annotations: l.planAnnotations?.paths?.length
-          ? JSON.stringify({ paths: l.planAnnotations.paths })
-          : null,
+        plan_annotations: annotObj ? JSON.stringify(annotObj) : null,
         sort_order: i, visite_id: l._visiteId,
       };
-      const isNew = !dbLocIds.has(l.id);
-      // plan_data (PDF brut) n'est jamais envoyé dans les localisations — il est dans aichantier_chantier_plans.
-      // Seul plan_bg (miniature PNG) est transmis pour éviter les timeouts 57014.
-      if ((isNew || l._planDirty) && l.planBg != null) {
-        row.plan_bg = l.planBg;
-      }
-      return row;
     });
 
     // Supprimer uniquement les locs des visites connues localement — jamais celles d'une visite
@@ -634,16 +629,10 @@ async function saveRemote(ps, dirtyIds = null) {
         : Promise.resolve({ data: [] }),
     ]);
 
-    // UPSERT locs en deux passes séparées pour éviter que PostgREST normalise le batch
-    // et écrase plan_bg/plan_data avec null pour les lignes qui ne les envoient pas.
-    const locRowsWithPlan    = locRows.filter(r => 'plan_bg' in r);
-    const locRowsWithoutPlan = locRows.filter(r => !('plan_bg' in r));
-    const upsertResults = await Promise.all([
-      locRowsWithPlan.length    ? sb.from('aichantier_chantier_localisations').upsert(locRowsWithPlan,    { onConflict: 'id' }) : Promise.resolve({}),
-      locRowsWithoutPlan.length ? sb.from('aichantier_chantier_localisations').upsert(locRowsWithoutPlan, { onConflict: 'id' }) : Promise.resolve({}),
-    ]);
-    const locErr = upsertResults.find(r => r.error)?.error;
-    if (locErr) { errors.push(locErr); continue; }
+    const locUpsertRes = locRows.length
+      ? await sb.from('aichantier_chantier_localisations').upsert(locRows, { onConflict: 'id' })
+      : { error: null };
+    if (locUpsertRes.error) { errors.push(locUpsertRes.error); continue; }
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
