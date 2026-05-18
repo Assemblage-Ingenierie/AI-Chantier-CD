@@ -464,19 +464,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 patchItem(loc.id, updated);
                               }}
                             />
-                            {(loc.planId || loc.planBg) ? (
+                            {loc.planBg ? (
                               <button
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
                                 style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#f4f4f4' }}>
-                                {loc.planBg
-                                  ? <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan" style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-                                  : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:8, color:DA.grayL }}>
-                                      <Ic n="map" s={32}/>
-                                      <span style={{ fontSize:12, fontWeight:600, color:DA.gray }}>
-                                        {(projet.planLibrary||[]).find(p=>p.id===loc.planId)?.nom || 'Plan assigné'}
-                                      </span>
-                                    </div>
-                                }
+                                <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
+                                  style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                 <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>
                                 {loc.planAnnotations?.paths?.length > 0 && (
                                   <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
@@ -499,7 +492,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                               <button
                                 onClick={() => setModal({ t:'niveaux' })}
                                 style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 14px', background:DA.grayXL, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12 }}>
-                                <Ic n="map" s={13}/> Assigner un plan à cette zone
+                                <Ic n="map" s={13}/> {(loc.planId && (projet.planLibrary||[]).find(p=>p.id===loc.planId)?.nom) ? `Plan : ${(projet.planLibrary||[]).find(p=>p.id===loc.planId).nom}` : 'Assigner un plan à cette zone'}
                               </button>
                             )}
                           </div>
