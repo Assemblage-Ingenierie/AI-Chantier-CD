@@ -261,7 +261,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               <button onClick={onBack}
                 style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
                 <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-                <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
+                <span style={{ fontSize:12, fontWeight:600 }}>Retour</span>
               </button>
               <div style={{ minWidth:0 }}>
                 {editingProjetNom ? (
@@ -328,7 +328,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               <button onClick={onBack}
                 style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
                 <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-                <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
+                <span style={{ fontSize:12, fontWeight:600 }}>Retour</span>
               </button>
               <div style={{ flex:1, minWidth:0 }}>
                 <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
