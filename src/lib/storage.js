@@ -747,6 +747,28 @@ async function saveRemote(ps, dirtyIds = null) {
 
 // --- API publique (inchangée) ---
 
+// Persistance des IDs remote connus à travers les sessions navigateur.
+// Permet à mergeWithLocal() de distinguer :
+//   - localOnly + dans persistedIds → projet supprimé ailleurs → drop local
+//   - localOnly + jamais dans persistedIds → vraiment unsynced → push back
+// Sans ça, un appareil offline ré-pousse les projets supprimés ailleurs.
+const PERSISTED_REMOTE_IDS_KEY = '_chantierai_remote_ids_v1';
+
+export function getPersistedRemoteIds() {
+  try {
+    const raw = localStorage.getItem(PERSISTED_REMOTE_IDS_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : null;
+  } catch { return null; }
+}
+
+function writePersistedRemoteIds(ids) {
+  try {
+    localStorage.setItem(PERSISTED_REMOTE_IDS_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
 // Charge uniquement depuis le cache local (sans réseau ni blobs)
 // Utilisé pour l'affichage instantané des cartes projet au démarrage
 export function loadLocalData() {
@@ -764,6 +786,10 @@ export async function loadData() {
     const ps = await loadRemote();
     // Mémoriser les IDs Supabase pour que saveRemote() sache quoi supprimer
     _lastRemoteIds = new Set(ps.map(p => p.id));
+    // Persister AUSSI ces IDs pour que la prochaine session sache ce qui était sur remote.
+    // Critique pour le scénario multi-device : un projet supprimé sur PC ne doit pas
+    // être ré-uploadé par le tel qui chargerait son cache stale.
+    writePersistedRemoteIds(_lastRemoteIds);
     // NE PAS mettre à jour le cache local ici : seul saveData() écrit dans
     // localStorage. Cela évite que loadData() n'écrase des modifications
     // locales non encore synchronisées (race condition beforeunload vs microtask).
