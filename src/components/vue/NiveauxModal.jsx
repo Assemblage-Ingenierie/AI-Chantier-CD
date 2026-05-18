@@ -59,6 +59,21 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
         {/* Liste des niveaux */}
         <div style={{ flex:1,overflowY:'auto',padding:'12px 14px' }}>
+          {planLibrary.length === 0 && (
+            <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:10,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:12 }}>
+              <Ic n="map" s={22} style={{ color:'#D97706',flexShrink:0 }}/>
+              <div style={{ flex:1,minWidth:0 }}>
+                <p style={{ fontSize:13,fontWeight:700,color:'#92400E',margin:'0 0 2px' }}>Aucun plan importé</p>
+                <p style={{ fontSize:11,color:'#92400E',margin:0 }}>Importez vos plans une fois pour les réutiliser sur toutes les zones.</p>
+              </div>
+              {onOpenPlanLib && (
+                <button onClick={() => { onClose(); onOpenPlanLib(); }}
+                  style={{ fontSize:12,fontWeight:700,color:'white',background:'#D97706',border:'none',borderRadius:8,padding:'7px 12px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0 }}>
+                  Importer
+                </button>
+              )}
+            </div>
+          )}
           {localisations.length === 0 && (
             <div style={{ textAlign:'center',padding:'40px 0',color:DA.grayL }}>
               <Ic n="pin" s={40}/>
@@ -124,10 +139,14 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                       </div>
                     ) : (
                       /* Pas de plan — bouton pour en choisir un */
-                      <button onClick={() => setPickingForId(isPicking ? null : loc.id)}
+                      <button
+                        onClick={() => {
+                          if (planLibrary.length === 0 && onOpenPlanLib) { onClose(); onOpenPlanLib(); return; }
+                          setPickingForId(isPicking ? null : loc.id);
+                        }}
                         style={{ width:'100%',padding:'8px 12px',background:isPicking ? DA.redL : DA.grayXL,border:`1.5px dashed ${isPicking ? DA.red : DA.border}`,borderRadius:8,fontSize:12,color:isPicking ? DA.red : DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,transition:'all 0.15s' }}>
                         <Ic n="map" s={13}/>
-                        {isPicking ? 'Annuler' : 'Choisir un plan'}
+                        {isPicking ? 'Annuler' : planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un plan'}
                       </button>
                     )}
 
