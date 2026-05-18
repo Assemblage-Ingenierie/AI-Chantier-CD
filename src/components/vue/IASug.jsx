@@ -54,7 +54,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, 65000);
+    }, 30000);
     return () => clearTimeout(t);
   }, [step]);
 
@@ -151,8 +151,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
   return (
     <div style={{ marginTop: 10 }}>
       <button
-        onClick={open ? handleClose : ask}
-        disabled={loading}
+        onClick={loading ? handleClose : (open ? handleClose : ask)}
         style={{
           fontSize: 12,
           fontWeight: 700,
@@ -161,7 +160,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
           padding: '7px 13px',
           background: open ? DA.black : 'white',
           color: open ? 'white' : DA.black,
-          cursor: loading ? 'wait' : 'pointer',
+          cursor: 'pointer',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
@@ -170,7 +169,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         <span style={{ color: open ? 'white' : DA.red, lineHeight: 0, display: 'inline-flex' }}>
           <Ic n={loading ? 'spn' : 'spk'} s={13}/>
         </span>
-        {loading ? 'Génération…' : (open ? 'Fermer IA' : 'Générer avec IA')}
+        {loading ? 'Annuler' : (open ? 'Fermer IA' : 'Générer avec IA')}
       </button>
 
       {open && (
