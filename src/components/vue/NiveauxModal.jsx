@@ -4,11 +4,13 @@ import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { fetchPlanData } from '../../lib/storage.js';
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan, onDeleteAllPlans }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan, onDeleteAllPlans, onRenamePlan }) {
   const [pickingForId, setPickingForId] = useState(null);
   const [loadingPlanForId, setLoadingPlanForId] = useState(null);
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [confirmDelAll, setConfirmDelAll] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState(null);
+  const [editingPlanNom, setEditingPlanNom] = useState('');
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
@@ -119,7 +121,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 {planLibrary.map(pl => (
                   <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${DA.border}`,background:DA.white }}>
                     {pl.bg && <img src={pl.bg} alt="" style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
-                    <p style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{pl.nom}</p>
+                    {editingPlanId === pl.id ? (
+                      <input autoFocus value={editingPlanNom}
+                        onChange={e => setEditingPlanNom(e.target.value)}
+                        onBlur={() => { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); }}
+                        onKeyDown={e => { if (e.key === 'Enter') { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); } if (e.key === 'Escape') setEditingPlanId(null); }}
+                        style={{ flex:1,fontSize:12,fontWeight:600,border:`1px solid ${DA.red}`,borderRadius:5,padding:'2px 6px',outline:'none',boxSizing:'border-box' }}/>
+                    ) : (
+                      <p onClick={() => { if (onRenamePlan) { setEditingPlanId(pl.id); setEditingPlanNom(pl.nom); } }}
+                        style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:onRenamePlan?'text':'default' }}>{pl.nom}</p>
+                    )}
                     {onDeletePlan && (confirmDelPlanId === pl.id ? (
                       <>
                         <button onClick={() => { onDeletePlan(pl.id); setConfirmDelPlanId(null); }}
