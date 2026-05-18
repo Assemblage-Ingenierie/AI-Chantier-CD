@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote } from '../lib/storage.js';
+import { renderPdfPage } from '../lib/pdfUtils.js';
 
 const MAX_HISTORY = 20;
 
@@ -354,7 +355,9 @@ export function useProjets(onSyncStatus) {
 
   const hydratePlans = async (projectId, libraryMap) => {
     const plansMap = await hydratePlansRemote(projectId);
-    // plansMap may be null/empty if no plan_bg in DB — still run to fill from planLibrary
+
+    // First pass: apply what we have from DB and library map
+    const locsNeedingPdfRender = new Map(); // planId → Set<locId>
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -364,7 +367,6 @@ export function useProjets(onSyncStatus) {
           localisations: (v.localisations || []).map(loc => {
             const fromDb = plansMap?.[loc.id];
             if (fromDb) return { ...loc, planBg: fromDb.planBg ?? loc.planBg, planData: fromDb.planData ?? loc.planData };
-            // No plan_bg in DB — if planId set, pull bg from libraryMap (passed in) or current planLibrary state
             if (loc.planId && !loc.planBg) {
               const libBg = libraryMap?.[loc.planId]?.bg
                 || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.bg;
@@ -373,8 +375,45 @@ export function useProjets(onSyncStatus) {
                   || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.data || null;
                 return { ...loc, planBg: libBg, planData: libData, _planDirty: true };
               }
+              // Queue for PDF rendering fallback
+              if (!locsNeedingPdfRender.has(loc.planId)) locsNeedingPdfRender.set(loc.planId, new Set());
+              locsNeedingPdfRender.get(loc.planId).add(loc.id);
             }
             return loc;
+          }),
+        })),
+      };
+    }));
+
+    // Second pass: for plans with no bg anywhere, try fetching PDF data and rendering
+    if (locsNeedingPdfRender.size === 0) return;
+    const renderedBgs = new Map(); // planId → { bg, data }
+    for (const planId of locsNeedingPdfRender.keys()) {
+      try {
+        const fetched = await fetchPlanData(planId);
+        if (!fetched) continue;
+        const bg = fetched.bg || (fetched.data ? await renderPdfPage(fetched.data, 1) : null);
+        if (bg) renderedBgs.set(planId, { bg, data: fetched.data ?? null });
+      } catch {}
+    }
+    if (renderedBgs.size === 0) return;
+
+    setProjets(ps => ps.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        // Also update planLibrary so assign dialogs show correct thumbnails
+        planLibrary: (p.planLibrary || []).map(pl => {
+          const r = renderedBgs.get(pl.id);
+          return r ? { ...pl, bg: r.bg ?? pl.bg, data: r.data ?? pl.data } : pl;
+        }),
+        visites: (p.visites || []).map(v => ({
+          ...v,
+          localisations: (v.localisations || []).map(loc => {
+            if (!loc.planId || loc.planBg) return loc;
+            const r = renderedBgs.get(loc.planId);
+            if (!r) return loc;
+            return { ...loc, planBg: r.bg, planData: r.data, _planDirty: true };
           }),
         })),
       };

@@ -31,6 +31,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     } catch {}
     return false;
   });
+  const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
@@ -60,6 +61,12 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     clearTimeout(restartTimer.current);
     recogRef.current?.abort();
   }, []);
+
+  // Auto-dismiss draft banner when user modifies the form (skip first render)
+  useEffect(() => {
+    if (draftJustMounted.current) { draftJustMounted.current = false; return; }
+    if (draftRestored) setDraftRestored(false);
+  }, [form.titre, form.commentaire]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const t = setTimeout(() => {
