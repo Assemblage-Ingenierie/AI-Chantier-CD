@@ -72,10 +72,25 @@ function splitComment(comment, maxChars = CHUNK_CHARS) {
 // Découpe un texte en segments coupables : paragraphes > lignes > phrases
 function splitTextSegs(text) {
   if (!text) return [text ?? ''];
+
+  // HTML : splitter par frontières de paragraphes <div>/<p> (le format produit par contentEditable).
+  // On normalise </div><div> et </p><p> en séparateur unique, puis on strip les balises bloc
+  // (tout en gardant les inline strong/em/u/br pour que renderMarkup puisse les rendre).
+  if (/<(?:div|p)\b/i.test(text)) {
+    const SEP = '\x00';
+    const normalized = text
+      .replace(/<\/(?:div|p)>\s*<(?:div|p)[^>]*>/gi, SEP)
+      .replace(/<\/?(?:div|p)[^>]*>/gi, '');
+    const parts = normalized.split(SEP).map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) return parts;
+  }
+
+  // Plain text fallbacks
   const byDouble = text.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
   if (byDouble.length > 1) return byDouble;
   const bySingle = text.split(/\n/).map(s => s.trim()).filter(Boolean);
   if (bySingle.length > 1) return bySingle;
+  // Dernier recours : par phrases (uniquement si pas de structure paragraphe détectée)
   const bySentence = text.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
   return bySentence.length > 1 ? bySentence : [text];
 }
@@ -249,16 +264,16 @@ function TopBreakControl({ id, zoneName, onToggle }) {
     <div style={{ position:'relative', height:0, overflow:'visible' }}>
       <div onClick={() => onToggle(id)}
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-        style={{ position:'absolute', top:-32, left:-9, right:-9, display:'flex', alignItems:'center', gap:10, padding:'7px 14px',
+        title="Cliquer pour retirer ce saut de page"
+        style={{ position:'absolute', top:-20, left:-9, right:-9, display:'flex', alignItems:'center', gap:6, padding:'3px 8px',
           background: hover ? '#c00010' : DA.red, cursor:'pointer', userSelect:'none',
-          borderBottom:'2px solid rgba(255,255,255,0.2)', zIndex:40 }}>
-        <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
-        <span style={{ fontSize:9, fontWeight:800, color:'white', flex:1, letterSpacing:0.3 }}>
-          Saut de page forcé{zoneName ? ` avant « ${zoneName} »` : ''} — cliquer pour retirer et laisser fluer naturellement
+          zIndex:40 }}>
+        <span style={{ fontSize:9, lineHeight:1 }}>✂</span>
+        <span style={{ fontSize:8, fontWeight:700, color:'white', flex:1, letterSpacing:0.2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          Saut forcé{zoneName ? ` · ${zoneName}` : ''}
         </span>
-        <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.7)',
-          background:'rgba(0,0,0,0.2)', borderRadius:3, padding:'2px 7px' }}>
-          × Annuler le saut
+        <span style={{ fontSize:8, fontWeight:700, color:'rgba(255,255,255,0.85)' }}>
+          × Retirer
         </span>
       </div>
     </div>
@@ -1209,8 +1224,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               />
               <div ref={el => { pageRefs.current[pi + 1] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  {/* Bouton de suppression en haut si ce saut de page est forcé */}
-                  {firstForced && firstBlock && (
+                  {/* Bouton de suppression d'un saut forcé — uniquement en mode édition cutMode */}
+                  {cutMode && firstForced && firstBlock && (
                     <div data-print="hide">
                       <TopBreakControl
                         id={firstId}
