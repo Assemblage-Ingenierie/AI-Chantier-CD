@@ -121,7 +121,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
     if (hasPhotos) {
       setStep('photos');
       try {
-        const valid = photos.filter(ph => ph.data).slice(0, 3);
+        const valid = photos.filter(ph => ph.data);
         const imgs = (await Promise.all(valid.map(async ph => {
           const dataUrl = await toDataUrlSafe(ph.data);
           if (!dataUrl) return null;
@@ -133,7 +133,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
           feature: 'photoAnalysis',
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 400,
-          system: `Tu es un ingénieur bâtiment. Sois très synthétique (2-3 phrases max). N'utilise jamais le tiret médiant (—). Réponds UNIQUEMENT avec un JSON valide :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases: désordre constaté et action à mener"}`,
+          system: `Tu es un ingénieur bâtiment expert. Sois très synthétique. Orthographe parfaite obligatoire. N'utilise jamais le tiret médiant (—). Réponds UNIQUEMENT avec un JSON valide :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases: désordre constaté et action à mener"}`,
           messages: [{ role: 'user', content: [...imgs, { type: 'text', text: 'Analyse ces photos de chantier.' }] }],
           _signal: ctrl.signal,
         });
