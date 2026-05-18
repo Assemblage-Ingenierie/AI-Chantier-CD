@@ -30,6 +30,25 @@ Ne jamais laisser des changements uniquement sur la branche feature — l'app es
 - `useProjets.js` gère tout l'état des projets — ne pas dupliquer cette logique
 - Toujours tester que `remoteLoaded` est bien géré si on touche au chargement
 
+## Règles de protection des fonctionnalités existantes — OBLIGATOIRES
+
+**Ne jamais supprimer, simplifier ou modifier une fonctionnalité existante sans demande explicite de l'utilisateur.** Les régressions ont un coût élevé.
+
+Fonctionnalités à ne JAMAIS toucher sans ordre explicite :
+- **Dictée vocale** (`doRecognize`, `startDictaphone`, `stopDictaphone` dans `ItemModal.jsx`) — logique fragile sur iOS, ne pas modifier
+- **Correction IA / `fixSpelling`** — ne pas modifier le flux sauf bug signalé
+- **`bumpSync` / `editorSyncKey`** — ne modifier qu'après avoir compris l'impact sur l'éditeur riche ET la dictée
+- **Hydratation des plans** (`hydratePlans`, `hydratePlanLibrary`, `hydratePlansRemote`) — la chaîne d'appel est précise, ne pas réordonner
+- **`mergeWithLocal`** — critique pour la cohérence local/remote, toute modification doit être explicitement demandée
+- **Annotator / PlanLocModal / NiveauxModal** — fonctionnalités complètes, ne pas retirer de logique existante
+- **Gestion `planId` / `planBg` / `planData`** — les trois champs forment un triplet, toujours les traiter ensemble
+
+Avant de modifier un fichier existant :
+1. Lire le fichier entier pour comprendre ce qui existe déjà
+2. Ne toucher qu'aux lignes strictement nécessaires au bug/feature demandé
+3. Si une modification risque de casser une autre fonctionnalité, le signaler à l'utilisateur avant d'agir
+4. En cas de conflit Git, toujours prendre la version la plus complète (jamais retirer des features)
+
 ## Supabase Storage
 
 - Bucket photos : **`photos`** (privé) — toujours utiliser `createSignedUrl`, jamais `getPublicUrl`
