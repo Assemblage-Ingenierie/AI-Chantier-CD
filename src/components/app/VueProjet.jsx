@@ -272,10 +272,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                     style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:15, fontWeight:800, padding:'3px 7px', width: Math.max(120, projetNomVal.length * 9) + 'px' }}
                   />
                 ) : (
-                  <button onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
-                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left', width:'100%', overflow:'hidden' }}>
-                    <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} spellCheck={false}>{projet.nom}</p>
-                  </button>
+                  <p onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
+                    style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2, cursor:'pointer' }} spellCheck={false}>{projet.nom}</p>
                 )}
                 {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
