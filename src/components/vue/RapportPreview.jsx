@@ -451,10 +451,11 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
   );
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
   const exported = loc.planAnnotations?.exported;
   const paths    = loc.planAnnotations?.paths;
-  const planBg   = loc.planBg;
+  // planBg peut être null si chargé depuis DB — fallback sur planLibrary via planId
+  const planBg   = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
   const [renderedImg, setRenderedImg] = useState(null);
   const deferredAnnotScale = React.useDeferredValue(annotScale);
 
@@ -964,7 +965,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const planLocs = useMemo(
-    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg) : [],
+    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg || l.planId) : [],
     [localisations, plansEnFin]
   );
 
@@ -1077,8 +1078,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
       // CSS : 1px CSS = 1/96 inch, 1mm = 3.7795px → PW=630px = 166.7mm.
       // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.
+      const safeName   = (projet.nom      || 'Projet').replace(/[<>"]/g, '');
+      const safeVisite = (projet.visiteNom || '').replace(/[<>"]/g, '');
+      const printTitle = safeVisite ? `${safeName} - CR ${safeVisite}` : `${safeName} - CR`;
       win.document.write(`<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>Rapport PDF</title>
+<meta charset="utf-8"><title>${printTitle}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Open+Sans:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&display=swap" rel="stylesheet">
 <style>
@@ -1093,11 +1097,20 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 </head><body>${pagesHtml}</body></html>`);
 
       win.document.close();
-      // Imprimer dès que les fonts sont prêtes (< 1.5s) ou après timeout absolu
       const doPrint = () => { try { win.focus(); win.print(); } catch {} };
+      // Attendre que les fonts ET toutes les images soient chargées (signed URLs Supabase)
+      const waitImages = () => new Promise(resolve => {
+        const imgs = Array.from(win.document.images);
+        if (!imgs.length) { resolve(); return; }
+        let pending = imgs.filter(i => !i.complete).length;
+        if (!pending) { resolve(); return; }
+        const done = () => { pending--; if (pending <= 0) resolve(); };
+        imgs.forEach(img => { if (!img.complete) { img.addEventListener('load', done); img.addEventListener('error', done); } });
+        setTimeout(resolve, 8000); // timeout absolu 8s
+      });
       Promise.race([
-        win.document.fonts?.ready ?? Promise.resolve(),
-        new Promise(r => setTimeout(r, 1500)),
+        Promise.all([win.document.fonts?.ready ?? Promise.resolve(), waitImages()]),
+        new Promise(r => setTimeout(r, 10000)),
       ]).then(doPrint);
     }
   }));
@@ -1192,7 +1205,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} annotScale={annotScale}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
@@ -1243,7 +1256,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
@@ -1321,7 +1334,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange}/>
+                  <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary}/>
                 </A4Card>
               </div>
             </React.Fragment>
