@@ -563,18 +563,26 @@ async function saveRemote(ps, dirtyIds = null) {
       }
     }
 
-    // ── Parallèle : upsert chantier + lecture IDs existants ──────────────────
-    const [chantierRes, dbLocsRes] = await Promise.all([
-      sb.from('aichantier_chantiers').upsert({
-        id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
-        adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
-        photo: coverPhotoUrl, date_visite: firstVisit?.dateVisite ?? null,
-        photos_par_ligne: firstVisit?.photosParLigne ?? 2,
-        participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
-        visites: visitesMetadata, updated_at: now,
-      }, { onConflict: 'id' }),
-      sb.from('aichantier_chantier_localisations').select('id').eq('chantier_id', p.id),
+    // ── Parallèle : lecture état DB actuel (avant upsert pour éviter d'écraser des visites créées ailleurs) ──
+    const [dbLocsRes, dbChantierRes] = await Promise.all([
+      sb.from('aichantier_chantier_localisations').select('id,visite_id').eq('chantier_id', p.id),
+      sb.from('aichantier_chantiers').select('visites').eq('id', p.id).maybeSingle(),
     ]);
+
+    // Fusionner les visites locales avec celles en DB non connues localement (créées sur un autre appareil).
+    const localVisitIds = new Set(visitesMetadata.map(v => v.id));
+    const unknownDbVisits = (dbChantierRes.data?.visites || []).filter(v => !localVisitIds.has(v.id));
+    const mergedVisitesMetadata = [...visitesMetadata, ...unknownDbVisits];
+
+    // ── Upsert chantier avec visites fusionnées ────────────────────────────────
+    const chantierRes = await sb.from('aichantier_chantiers').upsert({
+      id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
+      adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
+      photo: coverPhotoUrl, date_visite: firstVisit?.dateVisite ?? null,
+      photos_par_ligne: firstVisit?.photosParLigne ?? 2,
+      participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
+      visites: mergedVisitesMetadata, updated_at: now,
+    }, { onConflict: 'id' });
     if (chantierRes.error) { errors.push(chantierRes.error); continue; }
 
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
@@ -606,7 +614,11 @@ async function saveRemote(ps, dirtyIds = null) {
       return row;
     });
 
-    const removedLocIds  = [...dbLocIds].filter(id => !currLocIds.has(id));
+    // Supprimer uniquement les locs des visites connues localement — jamais celles d'une visite
+    // créée sur un autre appareil (unknownDbVisits) pour éviter la perte de données cross-device.
+    const removedLocIds = (dbLocsRes.data || [])
+      .filter(l => !currLocIds.has(l.id) && localVisitIds.has(l.visite_id))
+      .map(l => l.id);
     const locIdsToFetch  = locRows.map(l => l.id).filter(Boolean);
 
     // ── Parallèle : suppr locs retirées + lecture items existants ────────────

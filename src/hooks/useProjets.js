@@ -42,22 +42,28 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
         }),
         ...newRemotePlans,
       ];
+      // Visites distantes inconnues localement (créées sur un autre appareil pendant qu'on était dirty).
+      const localVisitIds = new Set((lp.visites || []).map(v => v.id));
+      const newRemoteVisits = (rp.visites || []).filter(rv => !localVisitIds.has(rv.id));
       return {
         ...lp,
         planLibrary: mergedPlanLibrary,
-        visites: (lp.visites || []).map(lv => {
-          const rv = (rp.visites || []).find(v => v.id === lv.id);
-          if (!rv) return lv;
-          const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
-          return {
-            ...lv,
-            localisations: (lv.localisations || []).map(ll => {
-              const rl = remoteLocById.get(ll.id);
-              if (!rl) return ll;
-              return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
-            }),
-          };
-        }),
+        visites: [
+          ...(lp.visites || []).map(lv => {
+            const rv = (rp.visites || []).find(v => v.id === lv.id);
+            if (!rv) return lv;
+            const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
+            return {
+              ...lv,
+              localisations: (lv.localisations || []).map(ll => {
+                const rl = remoteLocById.get(ll.id);
+                if (!rl) return ll;
+                return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
+              }),
+            };
+          }),
+          ...newRemoteVisits, // préserve les visites créées ailleurs pendant la session locale
+        ],
       };
     }
 
