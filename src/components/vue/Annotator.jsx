@@ -96,7 +96,7 @@ export const SYMBOLS = [
 ];
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
-const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7 }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
   const cvRef    = useRef();
   const bgRef    = useRef(null);
   const vpStart  = useRef(null);
@@ -380,6 +380,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
+
+      {/* ── Bandeau titre (ex: nom du plan) ── */}
+      {title && (
+        <div style={{ background:'#1a1a1a',padding:'6px 14px',borderBottom:'1px solid #2a2a2a',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+          <Ic n="map" s={13}/>
+          <span style={{ fontSize:12,color:'#bbb',fontWeight:600 }}>{title}</span>
+        </div>
+      )}
 
       {/* ── Toolbar (2 rangées fixes) ── */}
       <div style={{ background:DA.black,padding:'7px 12px 6px',display:'flex',flexDirection:'column',gap:6,flexShrink:0 }}>
