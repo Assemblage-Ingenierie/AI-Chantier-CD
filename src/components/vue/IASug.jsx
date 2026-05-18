@@ -154,24 +154,23 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         onClick={open ? handleClose : ask}
         disabled={loading}
         style={{
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: 700,
-          border: 'none',
-          borderRadius: 10,
-          padding: '9px 16px',
-          background: open
-            ? 'linear-gradient(135deg,#6D28D9,#8B5CF6)'
-            : 'linear-gradient(135deg,#7C3AED,#A855F7)',
-          color: 'white',
+          border: `1.5px solid ${open ? DA.black : DA.border}`,
+          borderRadius: 8,
+          padding: '7px 13px',
+          background: open ? DA.black : 'white',
+          color: open ? 'white' : DA.black,
           cursor: loading ? 'wait' : 'pointer',
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          gap: 7,
-          boxShadow: '0 2px 8px rgba(124,58,237,0.35)',
-          letterSpacing: 0.2,
+          gap: 6,
+          transition: 'background 0.15s, color 0.15s, border-color 0.15s',
         }}>
-        <span style={{ fontSize: 15, lineHeight: 1 }}>✨</span>
-        {open ? 'Fermer IA' : 'Générer avec IA'}
+        <span style={{ color: open ? 'white' : DA.red, lineHeight: 0, display: 'inline-flex' }}>
+          <Ic n={loading ? 'spn' : 'spk'} s={13}/>
+        </span>
+        {loading ? 'Génération…' : (open ? 'Fermer IA' : 'Générer avec IA')}
       </button>
 
       {open && (
