@@ -1,14 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds } from '../lib/storage.js';
 
 const MAX_HISTORY = 20;
 
 // Shared merge helper — called both on initial load and on background polls.
 // Takes remote data and current local state, returns the merged array + updates cache.
-function mergeWithLocal(remotePs, localPs, dirtyIds) {
+//
+// previousRemoteIds : Set des IDs vus sur le remote lors de la session précédente
+//   (persistés en localStorage). Permet de distinguer :
+//   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
+//   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
+//   Si null (1ère session), comportement legacy : tout localOnly est traité comme unsynced.
+function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
-  const unsynced   = localPs.filter(p => !remoteIds.has(p.id));
+  const unsynced   = localPs.filter(p =>
+    !remoteIds.has(p.id) &&
+    (!previousRemoteIds || !previousRemoteIds.has(p.id))
+  );
 
   let keptLocal = false;
   const merged = remotePs.map(rp => {
@@ -114,6 +123,10 @@ export function useProjets(onSyncStatus) {
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
   useEffect(() => {
+    // Snapshot des IDs remote connus AVANT que loadData() ne les mette à jour.
+    // Critique pour distinguer "supprimé ailleurs" de "vraiment unsynced".
+    const previousRemoteIds = getPersistedRemoteIds();
+
     loadLocalData()
       .then((d) => { if (d.length) setProjets(d); })
       .catch(() => {})
@@ -125,7 +138,7 @@ export function useProjets(onSyncStatus) {
         if (!remotePs.length) return;
         if (userModified.current) return;
 
-        const { allMerged, keptLocal, unsynced } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current);
+        const { allMerged, keptLocal, unsynced } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current, previousRemoteIds);
         setProjets(allMerged);
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
@@ -182,9 +195,10 @@ export function useProjets(onSyncStatus) {
   const pollRemote = useCallback(async () => {
     if (savingRef.current || dirtyIds.current.size > 0) return;
     try {
+      const previousRemoteIds = getPersistedRemoteIds();
       const remotePs = await loadData();
       if (!remotePs.length) return;
-      const { allMerged } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current);
+      const { allMerged } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current, previousRemoteIds);
       // Only re-render if something actually changed
       const changed = allMerged.some((rp, i) => {
         const lp = projetsRef.current[i];
