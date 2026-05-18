@@ -377,7 +377,7 @@ export function useProjets(onSyncStatus) {
           localisations: (v.localisations || []).map(loc => {
             const plan = plansMap[loc.id];
             if (!plan) return loc;
-            return { ...loc, planBg: plan.planBg, planData: plan.planData };
+            return { ...loc, planBg: plan.planBg ?? loc.planBg, planData: plan.planData ?? loc.planData };
           }),
         })),
       };
