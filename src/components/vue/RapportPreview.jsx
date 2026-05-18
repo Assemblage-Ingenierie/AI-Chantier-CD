@@ -8,27 +8,31 @@ import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 
 function SymbolIcon({ sym, size = 14 }) {
-  const ref = useRef();
+  const [src, setSrc] = useState('');
   useEffect(() => {
-    const ctx = ref.current?.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, 80, 80);
+    const cv = document.createElement('canvas');
+    cv.width = 80; cv.height = 80;
+    const ctx = cv.getContext('2d');
     try { sym.draw(ctx, 40, 28, 2, DA.red); } catch {}
+    setSrc(cv.toDataURL());
   }, [sym]);
-  return <canvas ref={ref} width={80} height={80}
-    style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
+  return src
+    ? <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>
+    : <span style={{ display:'inline-block', width:size, height:size }}/>;
 }
 
 function ViewpointIcon({ size = 24 }) {
-  const ref = useRef();
+  const [src, setSrc] = useState('');
   useEffect(() => {
-    const ctx = ref.current?.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, 80, 80);
+    const cv = document.createElement('canvas');
+    cv.width = 80; cv.height = 80;
+    const ctx = cv.getContext('2d');
     try { drawVP(ctx, { x: 38, y: 55, angle: -Math.PI / 2, label: 'V1', size: 1, color: DA.red }); } catch {}
+    setSrc(cv.toDataURL());
   }, []);
-  return <canvas ref={ref} width={80} height={80}
-    style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
+  return src
+    ? <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>
+    : <span style={{ display:'inline-block', width:size, height:size }}/>;
 }
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
@@ -369,7 +373,7 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
   const commentToShow = textContent ?? item.commentaire;
   const showHeader   = mode !== 'photos' && mode !== 'cont';
   // Les rangées de photos après la première (photoStart > 0) n'affichent pas de bandeau répété
-  const showContHdr  = mode === 'cont' || (mode === 'photos' && (photoStart == null || photoStart === 0));
+
   const showComment  = mode !== 'photos' && commentToShow;
   const showPhotos   = mode !== 'text' && mode !== 'cont' && photos.length > 0;
   return (
@@ -397,18 +401,6 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
               </span>
             )}
           </div>
-        </div>
-      )}
-      {/* Bandeau de continuation minimal — titre en petit + label suite/photos */}
-      {showContHdr && (
-        <div style={{ background:'#F9F9F9', borderBottom:`1px solid ${DA.border}`, padding:'2px 9px', display:'flex', alignItems:'center', gap:6 }}>
-          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{item.titre}</span>
-          <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', fontStyle:'italic', flexShrink:0 }}>{mode === 'photos' ? '↳ photos' : '↳ suite'}</span>
-          {onEdit && (
-            <button data-print="hide" onClick={onEdit} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }} title="Modifier">
-              <Ic n="pen" s={10}/>
-            </button>
-          )}
         </div>
       )}
       {/* Commentaire */}

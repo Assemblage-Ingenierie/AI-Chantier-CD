@@ -24,11 +24,10 @@ export async function callAIProxy(params) {
   const externalSignal = params._signal;
   delete params._signal;
 
-  // Si l'un des deux signaux abort, on abort la requête
   const signal = externalSignal
-    ? AbortSignal.any
-      ? AbortSignal.any([timeoutCtrl.signal, externalSignal])
-      : timeoutCtrl.signal
+    ? (typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([timeoutCtrl.signal, externalSignal])
+        : timeoutCtrl.signal)
     : timeoutCtrl.signal;
 
   let r;

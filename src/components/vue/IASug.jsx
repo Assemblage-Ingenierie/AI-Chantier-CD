@@ -143,7 +143,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         setPhotoResult(photoCtx);
       } catch (e) {
         if (ctrl.signal.aborted) return;
-        // photo analysis failed silently — continue with suggestions only
+        setPhotoResult({ _error: e.message || 'Analyse photo échouée' });
       }
     }
 
@@ -232,6 +232,11 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
               {photoResult && (
                 <>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Analyse des photos</p>
+                  {photoResult._error && (
+                    <div style={{ fontSize: 11, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 6, padding: '4px 8px' }}>
+                      Analyse photo indisponible — suggestions générées sans les photos
+                    </div>
+                  )}
 
                   {photoResult.titre && onApplyTitle && (
                     <div style={{ background: applied.has('ph_t') ? '#D1FAE5' : 'white', border: `1px solid ${applied.has('ph_t') ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
