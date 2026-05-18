@@ -7,32 +7,22 @@ import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 
+function makeIconDataUrl(drawFn) {
+  const cv = document.createElement('canvas');
+  cv.width = 80; cv.height = 80;
+  const ctx = cv.getContext('2d');
+  try { drawFn(ctx); } catch {}
+  return cv.toDataURL();
+}
+
 function SymbolIcon({ sym, size = 14 }) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    const cv = document.createElement('canvas');
-    cv.width = 80; cv.height = 80;
-    const ctx = cv.getContext('2d');
-    try { sym.draw(ctx, 40, 28, 2, DA.red); } catch {}
-    setSrc(cv.toDataURL());
-  }, [sym]);
-  return src
-    ? <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>
-    : <span style={{ display:'inline-block', width:size, height:size }}/>;
+  const src = useMemo(() => makeIconDataUrl(ctx => sym.draw(ctx, 40, 28, 2, DA.red)), [sym]);
+  return <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
 }
 
 function ViewpointIcon({ size = 24 }) {
-  const [src, setSrc] = useState('');
-  useEffect(() => {
-    const cv = document.createElement('canvas');
-    cv.width = 80; cv.height = 80;
-    const ctx = cv.getContext('2d');
-    try { drawVP(ctx, { x: 38, y: 55, angle: -Math.PI / 2, label: 'V1', size: 1, color: DA.red }); } catch {}
-    setSrc(cv.toDataURL());
-  }, []);
-  return src
-    ? <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>
-    : <span style={{ display:'inline-block', width:size, height:size }}/>;
+  const src = useMemo(() => makeIconDataUrl(ctx => drawVP(ctx, { x: 38, y: 55, angle: -Math.PI / 2, label: 'V1', size: 1, color: DA.red })), []);
+  return <img src={src} alt="" style={{ display:'block', flexShrink:0, width:size, height:size }}/>;
 }
 
 // Échelle : 3px = 1mm → page A4 = 630 × 891px
