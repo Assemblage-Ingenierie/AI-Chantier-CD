@@ -58,7 +58,13 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
               localisations: (lv.localisations || []).map(ll => {
                 const rl = remoteLocById.get(ll.id);
                 if (!rl) return ll;
-                return { ...ll, planBg: rl.planBg ?? ll.planBg, planData: rl.planData ?? ll.planData };
+                return {
+                  ...ll,
+                  planBg: rl.planBg ?? ll.planBg,
+                  planData: rl.planData ?? ll.planData,
+                  planId: ll.planId ?? rl.planId,
+                  planAnnotations: ll.planAnnotations ?? rl.planAnnotations,
+                };
               }),
             };
           }),

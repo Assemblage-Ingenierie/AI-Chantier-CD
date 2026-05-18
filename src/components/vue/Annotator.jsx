@@ -38,19 +38,33 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-// Sens portée avec demi-flèches orientables — les deux branches vont du même côté
+// Sens portée — ligne de travée avec crochet-flèche perpendiculaire en bout
 export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const len   = Math.hypot(x2 - x1, y2 - y1);
-  const aLen  = Math.max(10, Math.min(16 + s * 1.5, len * 0.28));
-  const wingAngle = angle + Math.PI / 2 - Math.PI / 5; // même côté pour les deux extrémités
+  const hookLen = Math.max(14, Math.min(22 + s * 1.5, len * 0.45));
+  const aLen    = Math.max(8,  Math.min(12, hookLen * 0.52));
+  const perpAngle = angle - Math.PI / 2; // côté gauche de la direction
+  const px = Math.cos(perpAngle), py = Math.sin(perpAngle);
+  const tipX = x2 + px * hookLen, tipY = y2 + py * hookLen;
+
   ctx.save();
-  ctx.strokeStyle = c; ctx.lineWidth = s + 1;
+  ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = s + 1; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // Ligne principale
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x1, y1);
-  ctx.lineTo(x1 + Math.cos(wingAngle) * aLen, y1 + Math.sin(wingAngle) * aLen); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 + Math.cos(wingAngle) * aLen, y2 + Math.sin(wingAngle) * aLen); ctx.stroke();
+  // Petite encoche au départ (perpendiculaire, sans flèche)
+  ctx.beginPath();
+  ctx.moveTo(x1 - px * hookLen * 0.28, y1 - py * hookLen * 0.28);
+  ctx.lineTo(x1 + px * hookLen * 0.28, y1 + py * hookLen * 0.28);
+  ctx.stroke();
+  // Bras perpendiculaire vers la pointe
+  ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(tipX, tipY); ctx.stroke();
+  // Flèche pleine à la pointe
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX + Math.cos(perpAngle + Math.PI + Math.PI / 5) * aLen, tipY + Math.sin(perpAngle + Math.PI + Math.PI / 5) * aLen);
+  ctx.lineTo(tipX + Math.cos(perpAngle + Math.PI - Math.PI / 5) * aLen, tipY + Math.sin(perpAngle + Math.PI - Math.PI / 5) * aLen);
+  ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
@@ -159,8 +173,8 @@ export const SYMBOLS = [
   { id:'eclat', label:'Éclatement', short:'ÉCL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
   { id:'nc', label:'Non-conformité', short:'NC', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
   { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
-  { id:'portee', label:'Sens portée', short:'↔', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+2; ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x+20,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-20,y); ctx.lineTo(x-10,y-7); ctx.lineTo(x-10,y+7); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x+20,y); ctx.lineTo(x+10,y-7); ctx.lineTo(x+10,y+7); ctx.closePath(); ctx.fill(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('PO',x-8,y+20); ctx.fillText('PO',x-8,y+20); ctx.restore(); } },
-  { id:'fontis', label:'Fontis', short:'FT', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.ellipse(x,y+4,18,11,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); for(const dx of [-8,0,8]){ctx.beginPath();ctx.moveTo(x+dx,y-15);ctx.lineTo(x+dx,y-6);ctx.stroke();ctx.beginPath();ctx.moveTo(x+dx-4,y-10);ctx.lineTo(x+dx,y-6);ctx.lineTo(x+dx+4,y-10);ctx.stroke();} ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+22); ctx.fillText('FT',x-5,y+22); ctx.restore(); } },
+  { id:'portee', label:'Sens portée', short:'↩', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.beginPath(); ctx.moveTo(x+5,y-16); ctx.lineTo(x+5,y+2); ctx.quadraticCurveTo(x+5,y+14,x-10,y+14); ctx.stroke(); const ta=Math.atan2(0,-1); ctx.beginPath(); ctx.moveTo(x-10,y+14); ctx.lineTo(x-10+Math.cos(ta+Math.PI/5)*9,y+14+Math.sin(ta+Math.PI/5)*9); ctx.lineTo(x-10+Math.cos(ta-Math.PI/5)*9,y+14+Math.sin(ta-Math.PI/5)*9); ctx.closePath(); ctx.fill(); ctx.restore(); } },
+  { id:'fontis', label:'Fontis', short:'FT', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-7,y-2); ctx.moveTo(x+7,y-2); ctx.lineTo(x+20,y-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-7,y-2); ctx.lineTo(x-5,y+5); ctx.moveTo(x+7,y-2); ctx.lineTo(x+5,y+5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+10,11,6,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-4,y-10); ctx.lineTo(x,y-5); ctx.lineTo(x+4,y-10); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+24); ctx.fillText('FT',x-5,y+24); ctx.restore(); } },
 ];
 
 // ── Symboles personnalisés (stockés en localStorage, forme auto-générée) ──────
@@ -418,7 +432,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
     if (tool === 'viewpoint') {
       const cv = cvRef.current;
-      const hitR = 45 * (cv.width / cv.clientWidth);
+      const hitR = 22 * (cv.width / cv.clientWidth);
       let hitIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
@@ -438,7 +452,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     if (tool === 'symbol') {
       const cv = cvRef.current;
-      const hitR = 45 * (cv.width / cv.clientWidth);
+      const hitR = 22 * (cv.width / cv.clientWidth);
       let hitIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
@@ -473,7 +487,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     if (tool === 'text') {
       const cv = cvRef.current;
-      const hitR = 60 * (cv.width / cv.clientWidth);
+      const hitR = 28 * (cv.width / cv.clientWidth);
       // Vérifier d'abord la poignée de flèche (tip)
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
