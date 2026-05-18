@@ -7,6 +7,17 @@ const MAX_TOKENS_CAP = 4096;
 const ANTHROPIC_API  = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VER  = '2023-06-01';
 
+// Rate limiting serveur : 20 appels/minute par IP (protection contre abus avec token volé)
+const _rl = new Map();
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const e = _rl.get(ip) || { n: 0, resetAt: now + 60_000 };
+  if (now > e.resetAt) { e.n = 0; e.resetAt = now + 60_000; }
+  e.n++;
+  _rl.set(ip, e);
+  return e.n <= 20;
+}
+
 // Mappe les anciens noms Gemini vers Claude (rétro-compatibilité)
 function resolveModel(requested) {
   if (!requested || requested.startsWith('gemini-') || requested.startsWith('gemma-')) {
@@ -70,6 +81,11 @@ export default async function handler(req, res) {
     if (!userRes.ok) {
       return res.status(401).json({ error: 'Token invalide ou expiré' });
     }
+  }
+
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+  if (!checkRateLimit(ip)) {
+    return res.status(429).json({ error: 'Trop de requêtes — réessaie dans une minute' });
   }
 
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();

@@ -750,7 +750,8 @@ async function saveRemote(ps, dirtyIds = null) {
         if (keptIds.length === 0) {
           return sb.from('aichantier_item_photos').delete().eq('item_id', itemId);
         }
-        return sb.from('aichantier_item_photos').delete().eq('item_id', itemId).not('id', 'in', `(${keptIds.join(',')})`);
+        const safeIds = keptIds.filter(id => typeof id === 'string' && /^[\w-]+$/.test(id));
+        return sb.from('aichantier_item_photos').delete().eq('item_id', itemId).not('id', 'in', `(${safeIds.join(',')})`);
       }));
     }
 

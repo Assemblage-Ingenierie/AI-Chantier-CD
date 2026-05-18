@@ -853,7 +853,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         ? `\nContexte de l'observation : ${row.commentaire.replace(/<[^>]+>/g,'').replace(/\*{1,3}/g,'').slice(0, 300)}`
         : '';
       const prompt = `Désordre en bâtiment — Zone : ${row.locNom}, Désordre : ${row.titre}.${ctx}\n\nDonne uniquement la solution technique en 6 mots maximum, en français, sans markdown, sans ponctuation finale.`;
-      const d = await callAIProxy({ feature: 'solution_recap', model: 'gemini-2.0-flash-lite', max_tokens: 60, messages: [{ role:'user', content: prompt }] });
+      const d = await callAIProxy({ feature: 'solution_recap', model: 'claude-haiku-4-5-20251001', max_tokens: 60, messages: [{ role:'user', content: prompt }] });
       const sol = d.content?.[0]?.text?.trim().replace(/^["']|["']$/g,'').replace(/\.$/, '');
       if (sol) onUpdateRecap(row.itemId, 'solution', sol);
     } catch(e) { setAiErr(e.message); }

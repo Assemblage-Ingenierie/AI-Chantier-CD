@@ -4,12 +4,20 @@ import { getSupabase } from '../supabase.js';
 const PROF_KEY = '_sb_prof';
 const _hasLS = (() => { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true; } catch { return false; } })();
 
+const PROF_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 function readCachedProfile() {
   if (!_hasLS) return null;
-  try { const r = localStorage.getItem(PROF_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
+  try {
+    const r = localStorage.getItem(PROF_KEY);
+    if (!r) return null;
+    const p = JSON.parse(r);
+    if (p._ts && Date.now() - p._ts > PROF_TTL_MS) { localStorage.removeItem(PROF_KEY); return null; }
+    return p;
+  } catch { return null; }
 }
 function writeCachedProfile(p) {
-  if (_hasLS) try { localStorage.setItem(PROF_KEY, JSON.stringify(p)); } catch {}
+  if (_hasLS) try { localStorage.setItem(PROF_KEY, JSON.stringify({ ...p, _ts: Date.now() })); } catch {}
 }
 function clearCachedProfile() {
   if (_hasLS) try { localStorage.removeItem(PROF_KEY); } catch {}
