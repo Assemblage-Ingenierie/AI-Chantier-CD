@@ -316,7 +316,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 <button onClick={() => setModal({ t:'niveaux' })}
                   style={{ background:'white', border:'none', borderRadius:8, padding:'6px 13px', color:DA.black, cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontWeight:800 }}>
                   <Ic n="bld" s={14}/>
-                  <span style={{ fontSize:12, fontWeight:800 }}>Niveaux</span>
+                  <span style={{ fontSize:12, fontWeight:800 }}>Plans</span>
                 </button>
               )}
             </div>
@@ -355,7 +355,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                 <button onClick={() => setModal({ t:'niveaux' })}
                   style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 9px', color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
                   <Ic n="bld" s={14}/>
-                  <span style={{ fontSize:11, fontWeight:700 }}>Niveaux</span>
+                  <span style={{ fontSize:11, fontWeight:700 }}>Plans</span>
                 </button>
               )}
             </div>
