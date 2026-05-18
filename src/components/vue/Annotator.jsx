@@ -38,40 +38,31 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-// Sens portée — crochet en J : ligne droite + courbe bezier perpendiculaire + flèche pleine
+// Sens portée — double flèche ↔ : ligne droite avec flèches pleines aux deux extrémités
 export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const len   = Math.hypot(x2 - x1, y2 - y1);
-  const hookLen  = Math.max(14, Math.min(20 + s * 1.5, len * 0.5));
-  const curveLen = hookLen * 0.55;
-  const aLen     = Math.max(8, Math.min(11, hookLen * 0.52));
-
-  // Le crochet part à GAUCHE de la direction de tracé
-  const perpAngle = angle + Math.PI / 2;
-  const px = Math.cos(perpAngle), py = Math.sin(perpAngle);
-
-  // Point de départ de la courbe (un peu avant x2)
-  const preX = x2 - Math.cos(angle) * curveLen;
-  const preY = y2 - Math.sin(angle) * curveLen;
-  // Extrémité du crochet
-  const tipX = x2 + px * hookLen, tipY = y2 + py * hookLen;
-  // cp2 : approche perpendiculaire depuis la pointe
-  const cp2x = tipX - px * curveLen, cp2y = tipY - py * curveLen;
+  const aLen  = Math.max(9, Math.min(14, len * 0.18 + 5));
 
   ctx.save();
-  ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = s + 1; ctx.lineCap = 'round';
-  // Ligne principale jusqu'au début de la courbe
-  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(preX, preY); ctx.stroke();
-  // Crochet bezier : tangente initiale = direction ligne, tangente finale = perpendiculaire
-  ctx.beginPath(); ctx.moveTo(preX, preY);
-  ctx.bezierCurveTo(x2, y2, cp2x, cp2y, tipX, tipY);
-  ctx.stroke();
-  // Flèche pleine à la pointe (direction = perpAngle)
+  ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = s + 1.5; ctx.lineCap = 'round';
+
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+  // Flèche à x2,y2 (pointe vers x2, ailes vers x1)
   ctx.beginPath();
-  ctx.moveTo(tipX, tipY);
-  ctx.lineTo(tipX + Math.cos(perpAngle + Math.PI + Math.PI / 5) * aLen, tipY + Math.sin(perpAngle + Math.PI + Math.PI / 5) * aLen);
-  ctx.lineTo(tipX + Math.cos(perpAngle + Math.PI - Math.PI / 5) * aLen, tipY + Math.sin(perpAngle + Math.PI - Math.PI / 5) * aLen);
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + Math.cos(angle + Math.PI + Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI + Math.PI / 5) * aLen);
+  ctx.lineTo(x2 + Math.cos(angle + Math.PI - Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI - Math.PI / 5) * aLen);
   ctx.closePath(); ctx.fill();
+
+  // Flèche à x1,y1 (pointe vers x1, ailes vers x2)
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 + Math.cos(angle + Math.PI / 5) * aLen, y1 + Math.sin(angle + Math.PI / 5) * aLen);
+  ctx.lineTo(x1 + Math.cos(angle - Math.PI / 5) * aLen, y1 + Math.sin(angle - Math.PI / 5) * aLen);
+  ctx.closePath(); ctx.fill();
+
   ctx.restore();
 }
 
@@ -180,7 +171,7 @@ export const SYMBOLS = [
   { id:'eclat', label:'Éclatement', short:'ÉCL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
   { id:'nc', label:'Non-conformité', short:'NC', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
   { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
-  { id:'portee', label:'Sens portée', short:'↩', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+2; ctx.lineCap='round'; const r=10,hx=x-13,hy=y+15; ctx.beginPath(); ctx.moveTo(x+7,y-18); ctx.lineTo(x+7,hy-r); ctx.arcTo(x+7,hy,hx+r,hy,r); ctx.lineTo(hx,hy); ctx.stroke(); const aL=9+s*0.3; ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+Math.cos(Math.PI/6)*aL,hy+Math.sin(Math.PI/6)*aL); ctx.lineTo(hx+Math.cos(-Math.PI/6)*aL,hy+Math.sin(-Math.PI/6)*aL); ctx.closePath(); ctx.fill(); ctx.restore(); } },
+  { id:'portee', label:'Sens portée', short:'↔', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x+17,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+17,y); ctx.lineTo(x+17+Math.cos(Math.PI+Math.PI/5)*aL,y+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(x+17+Math.cos(Math.PI-Math.PI/5)*aL,y+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x-17+Math.cos(Math.PI/5)*aL,y+Math.sin(Math.PI/5)*aL); ctx.lineTo(x-17+Math.cos(-Math.PI/5)*aL,y+Math.sin(-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.restore(); } },
   { id:'fontis', label:'Fontis', short:'FT', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-7,y-2); ctx.moveTo(x+7,y-2); ctx.lineTo(x+20,y-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-7,y-2); ctx.lineTo(x-5,y+5); ctx.moveTo(x+7,y-2); ctx.lineTo(x+5,y+5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+10,11,6,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-4,y-10); ctx.lineTo(x,y-5); ctx.lineTo(x+4,y-10); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+24); ctx.fillText('FT',x-5,y+24); ctx.restore(); } },
 ];
 

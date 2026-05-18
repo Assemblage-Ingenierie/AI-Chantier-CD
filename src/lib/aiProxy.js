@@ -20,7 +20,7 @@ export async function callAIProxy(params) {
   // Combiner le signal venant du composant (annulation manuelle) avec un timeout 60s
   // (aligné sur le maxDuration de la function Vercel — 60s — pour ne pas couper avant elle)
   const timeoutCtrl = new AbortController();
-  const timer = setTimeout(() => timeoutCtrl.abort(), 25000);
+  const timer = setTimeout(() => timeoutCtrl.abort(), 55000);
   const externalSignal = params._signal;
   delete params._signal;
 
@@ -44,7 +44,7 @@ export async function callAIProxy(params) {
     });
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error('Timeout IA (25s) — réessaie');
+    if (e.name === 'AbortError') throw new Error('Timeout IA — réessaie');
     throw new Error(`Erreur réseau : ${e.message}`);
   }
   clearTimeout(timer);

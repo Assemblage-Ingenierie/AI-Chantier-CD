@@ -50,11 +50,12 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
 
   useEffect(() => {
     if (step !== 'photos' && step !== 'suggest') return;
+    const ms = step === 'photos' ? 65000 : 55000;
     const t = setTimeout(() => {
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, 30000);
+    }, ms);
     return () => clearTimeout(t);
   }, [step]);
 

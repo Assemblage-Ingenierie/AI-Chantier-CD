@@ -34,7 +34,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
       title={annotTitle}
       onSave={(p, e) => {
         const newAnnot = { paths: p, exported: e };
-        onSave({ planBg, planData, planAnnotations: newAnnot });
+        onSave({ planId, planBg, planData, planAnnotations: newAnnot });
         onClose();
       }}
       onClose={() => setShowAnnot(false)}/>

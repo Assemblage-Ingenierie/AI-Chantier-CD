@@ -447,6 +447,32 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
           })}
         </div>
       )}
+      {/* Légende annotations photos — affichée une seule fois après la dernière rangée */}
+      {showPhotos && (() => {
+        const isLastRow = photoStart == null || (photoStart + photos.length) >= allPhotos.length;
+        if (!isLastRow) return null;
+        const usedIds = new Set(allPhotos.flatMap(ph => (ph.annotations || []).filter(a => a.type === 'symbol').map(a => a.symbolId)));
+        const hasVP = allPhotos.some(ph => (ph.annotations || []).some(a => a.type === 'viewpoint'));
+        const syms = getAllSymbols().filter(s => usedIds.has(s.id));
+        if (!syms.length && !hasVP) return null;
+        return (
+          <div style={{ padding:'5px 9px 7px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
+            <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>Légende</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 12px' }}>
+              {syms.map(s => (
+                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:3, fontSize:9, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
+                  <SymbolIcon sym={s} size={14}/>{s.label}
+                </div>
+              ))}
+              {hasVP && (
+                <div style={{ display:'flex', alignItems:'center', gap:3, fontSize:9, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
+                  <ViewpointIcon size={14}/>Vue photo
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
