@@ -6,7 +6,7 @@ import { Ic } from '../ui/Icons.jsx';
 import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
-import RichTextArea from '../ui/RichTextArea.jsx';
+import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -242,8 +242,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
   const applyDiff = (all = false) => {
     const segs = all ? spellDiff.segments.map(s => s.type === 'fix' ? { ...s, active: true } : s) : spellDiff.segments;
-    const text = segs.map(s => s.type === 'eq' ? s.text : (s.active ? s.add : s.del)).join('');
-    setForm(f => ({ ...f, commentaire: text }));
+    const plain = segs.map(s => s.type === 'eq' ? s.text : (s.active ? s.add : s.del)).join('');
+    const html = plain.replace(/\n/g, '<br>');
+    setForm(f => ({ ...f, commentaire: html }));
     setSpellDiff(null);
     bumpSync();
   };
@@ -254,21 +255,22 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     setSpellError('');
     setSpellDiff(null);
     try {
+      const plain = htmlToPlain(form.commentaire);
       const d = await callAIProxy({
         feature: 'spell-correction',
         model: 'gemini-2.0-flash-lite',
         max_tokens: 2000,
         system: 'Tu es un correcteur orthographique et grammatical français. Corrige UNIQUEMENT les fautes d\'orthographe et de grammaire, sans rien reformuler, sans résumer, sans couper le texte. Le texte corrigé doit avoir exactement la même longueur et le même contenu que l\'original. Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
-        messages: [{ role: 'user', content: form.commentaire }],
+        messages: [{ role: 'user', content: plain }],
       });
       const corrected = d.content?.[0]?.text?.trim();
-      const minLen = Math.floor(form.commentaire.length * 0.6);
+      const minLen = Math.floor(plain.length * 0.6);
       if (!corrected) throw new Error('Réponse vide du modèle');
       if (corrected.length < minLen) throw new Error('Réponse IA tronquée — réessaie');
-      if (corrected === form.commentaire) {
+      if (corrected === plain) {
         setSpellError('Aucune faute détectée ✓');
       } else {
-        setSpellDiff({ segments: buildDiffSegments(form.commentaire, corrected) });
+        setSpellDiff({ original: plain, segments: buildDiffSegments(plain, corrected) });
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
