@@ -21,21 +21,55 @@ function parseSuggestions(text) {
   return items;
 }
 
-const toResized = (dataUrl) => new Promise((res, rej) => {
-  const img = new window.Image();
-  img.onload = () => {
-    const MAX = 800;
-    const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.round(img.naturalWidth * scale);
-    const h = Math.round(img.naturalHeight * scale);
-    const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(img, 0, 0, w, h);
-    res(cv.toDataURL('image/jpeg', 0.75));
-  };
-  img.onerror = () => res(dataUrl);
-  img.src = dataUrl;
-});
+// Pour les URLs Supabase (cross-origin), toDataURL() sur canvas est bloqué par le navigateur.
+// On fetch le blob directement pour obtenir un data URL local sans taint canvas.
+const toDataUrlSafe = async (url) => {
+  if (!url) return null;
+  if (url.startsWith('data:')) {
+    // data URL locale — resize via canvas normalement
+    return new Promise((res) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX = 800;
+        const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        try { res(cv.toDataURL('image/jpeg', 0.75)); } catch { res(url); }
+      };
+      img.onerror = () => res(url);
+      img.src = url;
+    });
+  }
+  // URL externe (Supabase signed URL) — fetch blob pour éviter le taint canvas
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  const blob = await resp.blob();
+  const base = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+  // Resize depuis le data URL local (pas de taint)
+  return new Promise((res) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const MAX = 800;
+      const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      try { res(cv.toDataURL('image/jpeg', 0.75)); } catch { res(base); }
+    };
+    img.onerror = () => res(base);
+    img.src = base;
+  });
+};
 
 export default function IASug({ content, commentaire, photos = [], onApply, onApplyTitle, onApplyUrgence }) {
   const [open, setOpen]             = useState(false);
@@ -87,13 +121,14 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
     if (hasPhotos) {
       setStep('photos');
       try {
-        const valid = photos.filter(ph => ph.data).slice(0, 2);
-        const imgs = await Promise.all(valid.map(async ph => {
-          const url = await toResized(ph.data);
-          const [hdr, b64] = url.split(',');
+        const valid = photos.filter(ph => ph.data).slice(0, 3);
+        const imgs = (await Promise.all(valid.map(async ph => {
+          const dataUrl = await toDataUrlSafe(ph.data);
+          if (!dataUrl) return null;
+          const [hdr, b64] = dataUrl.split(',');
           const mt = hdr.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
           return { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } };
-        }));
+        }))).filter(Boolean);
         const r = await callAIProxy({
           feature: 'photoAnalysis',
           model: 'claude-haiku-4-5-20251001',
