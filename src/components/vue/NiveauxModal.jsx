@@ -8,6 +8,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [pickingForId, setPickingForId] = useState(null);
   const [loadingPlanForId, setLoadingPlanForId] = useState(null);
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
+  const [confirmDelAll, setConfirmDelAll] = useState(false);
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
@@ -81,12 +82,32 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
                 Plans importés ({planLibrary.length})
               </p>
-              {onOpenPlanLib && (
-                <button onClick={() => { onClose(); onOpenPlanLib(); }}
-                  style={{ fontSize:11,fontWeight:700,color:DA.red,background:'none',border:`1px solid ${DA.red}`,borderRadius:7,padding:'4px 9px',cursor:'pointer' }}>
-                  + Importer
-                </button>
-              )}
+              <div style={{ display:'flex',gap:6,alignItems:'center' }}>
+                {onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
+                  <>
+                    <button onClick={() => { planLibrary.forEach(pl => onDeletePlan(pl.id)); setConfirmDelAll(false); }}
+                      style={{ fontSize:11,fontWeight:700,padding:'4px 9px',background:'#B91C1C',color:'white',border:'none',borderRadius:7,cursor:'pointer' }}>
+                      Tout supprimer
+                    </button>
+                    <button onClick={() => setConfirmDelAll(false)}
+                      style={{ fontSize:11,padding:'4px 8px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:7,cursor:'pointer' }}>
+                      Non
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelAll(true)}
+                    style={{ fontSize:11,color:'#ccc',background:'none',border:`1px solid #E5E5E5`,borderRadius:7,padding:'4px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}
+                    onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+                    <Ic n="del" s={11}/> Tout supprimer
+                  </button>
+                ))}
+                {onOpenPlanLib && (
+                  <button onClick={() => { onClose(); onOpenPlanLib(); }}
+                    style={{ fontSize:11,fontWeight:700,color:DA.red,background:'none',border:`1px solid ${DA.red}`,borderRadius:7,padding:'4px 9px',cursor:'pointer' }}>
+                    + Importer
+                  </button>
+                )}
+              </div>
             </div>
             {planLibrary.length === 0 ? (
               <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10 }}>
