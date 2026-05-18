@@ -272,7 +272,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       const img = new Image();
       img.onerror = () => res(null);
       img.onload = () => {
-        const MAX = 1920;
+        const MAX = 1600;
         let { width, height } = img;
         if (width > MAX || height > MAX) {
           if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -281,8 +281,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const name = file.name.replace(/\.[^.]+$/, '.jpg');
-        res({ data: canvas.toDataURL('image/jpeg', 0.78), name });
+        const name = file.name.replace(/\.[^.]+$/, '.webp');
+        res({ data: canvas.toDataURL('image/webp', 0.82), name });
       };
       img.src = ev.target.result;
     };
@@ -293,7 +293,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     try {
       const a = document.createElement('a');
       a.href = data;
-      a.download = name || `chantier_${Date.now()}.jpg`;
+      a.download = name || `chantier_${Date.now()}.webp`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

@@ -102,7 +102,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const handleUnarchive = (id) => {
     updateProjet(id, { statut: 'en_cours' });
     hydratePhotos(id);
-    hydratePlans(id);
+    hydratePlanLibrary(id).then(lm => hydratePlans(id, lm));
   };
 
   if (showSplash) return (
@@ -188,7 +188,7 @@ export default function ChantierAI({ profile, onLogout }) {
             <Dashboard
               projets={projets}
               remoteLoaded={remoteLoaded}
-              onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePhotos(p.id); hydratePlans(p.id); hydratePlanLibrary(p.id); }}
+              onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePhotos(p.id); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
               onArchive={handleArchive}

@@ -240,7 +240,7 @@ export default function RapportTab({ projet, onUpdate }) {
       (loc.items || []).flatMap(item =>
         (item.photos || []).filter(ph => ph.data).map((ph, idx) => ({
           data: ph.data,
-          name: ph.name || `photo_${idx + 1}.jpg`,
+          name: ph.name || `photo_${idx + 1}.webp`,
           locNom: loc.nom || 'Sans zone',
           itemTitre: item.titre || 'Sans titre',
         }))

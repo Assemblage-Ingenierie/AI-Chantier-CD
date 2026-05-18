@@ -151,7 +151,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         : exportSizeMultiplier * annotScale;
       drawAnnotationPaths(ectx, paths, exportScale);
       ectx.restore();
-      return { paths, annotated: ec.toDataURL('image/jpeg', 0.88), annotW: cv.width, annotH: cv.height };
+      return { paths, annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
     },
   }), [paths, annotScale, exportSizeMultiplier]);
 
@@ -448,7 +448,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 : exportSizeMultiplier * annotScale;
               drawAnnotationPaths(ectx, paths, exportScale);
               ectx.restore();
-              onSave(paths, ec.toDataURL('image/jpeg', 0.88), { w: cv.width, h: cv.height });
+              onSave(paths, ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
             }}
               style={{ padding:'8px 14px',borderRadius:8,background:DA.red,color:'white',

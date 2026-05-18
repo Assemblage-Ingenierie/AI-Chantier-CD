@@ -7,7 +7,7 @@ const compress = (file) => new Promise(res => {
   r.onload = ev => {
     const img = new Image();
     img.onload = () => {
-      const MAX = 1920;
+      const MAX = 1600;
       let { width, height } = img;
       if (width > MAX || height > MAX) {
         if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -16,7 +16,7 @@ const compress = (file) => new Promise(res => {
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      res(canvas.toDataURL('image/jpeg', 0.78));
+      res(canvas.toDataURL('image/webp', 0.82));
     };
     img.onerror = () => res(null);
     img.src = ev.target.result;

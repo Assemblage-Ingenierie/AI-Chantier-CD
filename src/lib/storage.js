@@ -415,9 +415,11 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, b
   try {
     const resp = await fetch(base64);
     const blob = await resp.blob();
-    const ext = (name || 'photo').replace(/.*\./, '') || 'jpg';
+    const rawExt = (name || 'photo').replace(/.*\./, '') || 'webp';
+    const ext = rawExt === 'webp' ? 'webp' : rawExt === 'jpg' || rawExt === 'jpeg' ? 'jpg' : rawExt;
+    const contentType = blob.type || (ext === 'webp' ? 'image/webp' : 'image/jpeg');
     const path = `${projectSlug}/${itemId}/${Date.now()}_${photoIndex}.${ext}`;
-    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true, cacheControl: '31536000' });
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType, upsert: true, cacheControl: '31536000' });
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
@@ -535,12 +537,12 @@ async function saveRemote(ps, dirtyIds = null) {
     );
 
     const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
-    const newCoverPath = `${slug}/cover/${p.id}.jpg`;
+    const newCoverPath = `${slug}/cover/${p.id}.webp`;
 
     // Migrer la photo couverture si c'est encore un base64 → Storage
     let coverPhotoUrl = p.photo ?? null;
     if (coverPhotoUrl?.startsWith('data:')) {
-      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.jpg', coverPhotoUrl);
+      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.webp', coverPhotoUrl);
       if (uploaded) coverPhotoUrl = uploaded;
     }
 
@@ -594,8 +596,8 @@ async function saveRemote(ps, dirtyIds = null) {
         sort_order: i, visite_id: l._visiteId,
       };
       const isNew = !dbLocIds.has(l.id);
-      if (isNew || l._planDirty) {
-        row.plan_bg   = l.planBg   ?? null;
+      if ((isNew || l._planDirty) && l.planBg != null) {
+        row.plan_bg   = l.planBg;
         row.plan_data = l.planData ?? null;
       }
       return row;
@@ -632,7 +634,7 @@ async function saveRemote(ps, dirtyIds = null) {
     const plansPromise = (async () => {
       const dbPlansRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
-      // Plans sans bg en DB (à cause d'un timeout au premier save) — récupérer leur ID
+      // Plans existants sans bg (timeout lors du premier save) — à réparer si bg dispo en mémoire
       const dbPlansNoBgRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null);
       const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
@@ -640,10 +642,9 @@ async function saveRemote(ps, dirtyIds = null) {
       const planRows = (p.planLibrary || []).map((pl, i) => {
         const id = pl.id || crypto.randomUUID();
         const row = { id, chantier_id: p.id, nom: pl.nom ?? '', sort_order: i };
+        // Send bg for new plans or plans missing bg in DB (repair after timeout) — never resend if already stored
         const isNew = !dbPlanIds.has(id);
         const missingBg = dbPlansNoBg.has(id);
-        // Envoyer bg si nouveau plan ou si bg manquant en DB (recovery après timeout)
-        // Ne jamais envoyer data (PDF brut) — trop volumineux, cause timeout 57014
         if (pl.bg != null && (isNew || missingBg)) row.bg = pl.bg;
         return row;
       });
