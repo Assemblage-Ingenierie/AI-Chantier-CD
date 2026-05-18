@@ -77,8 +77,7 @@ function extractPhotoPath(urlOrPath) {
 function slimLoc(l) {
   return {
     ...l,
-    planBg: null,
-    planData: null,
+    planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
     planAnnotations: l.planAnnotations ?? null,
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
@@ -94,7 +93,7 @@ function toSlim(ps) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
-    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })),
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null })), // garder bg (miniature PNG) pour affichage immédiat
     visites: (p.visites || []).map(v => ({
       ...v,
       localisations: (v.localisations || []).map(slimLoc),
