@@ -9,6 +9,10 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const [planBg, setPlanBg] = useState(loc.planBg || null);
   const [planData, setPlanData] = useState(loc.planData || null);
   const [annot, setAnnot] = useState(loc.planAnnotations || null);
+  // Track selection by plan id (stable) plutôt que par blob bg (qui peut être null
+  // pendant l'hydratation → comparaison null===null sélectionne tout par erreur).
+  const initialSelId = loc.planBg ? (planLibrary || []).find(p => p.bg === loc.planBg)?.id : null;
+  const [selectedPlanId, setSelectedPlanId] = useState(initialSelId || null);
   const [showAnnot, setShowAnnot] = useState(!!autoAnnot);
   const [showPicker, setShowPicker] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -76,11 +80,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
               </p>
               <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
                 {planLibrary.map(pl => {
-                  const sel = planBg === pl.bg;
+                  const sel = selectedPlanId === pl.id;
                   return (
                     <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,transition:'all 0.15s',overflow:'hidden' }}>
                       {/* Zone cliquable = sélection */}
-                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setConfirmDelId(null); }}
+                      <button onClick={() => { if(sel){setSelectedPlanId(null);setPlanBg(null);setPlanData(null);return;} setSelectedPlanId(pl.id); setPlanBg(pl.bg||null); setPlanData(pl.data||null); setConfirmDelId(null); }}
                         style={{ flex:1,display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',minWidth:0 }}>
                         {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
                         <div style={{ flex:1,minWidth:0 }}>

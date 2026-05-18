@@ -511,11 +511,11 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange }) {
 
 // ── Bandeau header commun (logo + titre projet) ──────────────────────────────────────────
 function HdrBar({ projet, dateStr }) {
-  const logoUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
+  const logoUrl = useBrandingLogo(); // full logo "Assemblage Ingenierie" (default)
   return (
     <div style={{ height:HDR, background:'white', display:'flex', alignItems:'center', padding:`0 ${MX}px`, borderBottom:`1px solid ${DA.red}` }}>
-      {logoUrl && <img src={logoUrl} alt="AI"
-        style={{ height:14, objectFit:'contain', flexShrink:0 }}/>}
+      {logoUrl && <img src={logoUrl} alt="Assemblage Ingenierie"
+        style={{ height:18, objectFit:'contain', flexShrink:0 }}/>}
       <span style={{ flex:1 }}/>
       <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', letterSpacing:'0.03em' }}>{projet.nom}{dateStr ? ` · ${dateStr}` : ''}</span>
     </div>
