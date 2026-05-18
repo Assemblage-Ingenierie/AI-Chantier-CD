@@ -33,15 +33,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const assignPlan = (locId, plan) => {
     onChange(localisations.map(l => {
       if (l.id !== locId) return l;
-      const isSamePlan = l.planBg === (plan?.bg || null);
-      return { ...l, planBg: plan?.bg || null, planData: plan?.data || null, planAnnotations: isSamePlan ? l.planAnnotations : null, _planDirty: !isSamePlan };
+      const isSamePlan = l.planId === (plan?.id || null);
+      return { ...l, planId: plan?.id || null, planBg: plan?.bg || null, planData: plan?.data || null, planAnnotations: isSamePlan ? l.planAnnotations : null, _planDirty: !isSamePlan };
     }));
     setPickingForId(null);
   };
 
   const removePlan = (locId) => {
     onChange(localisations.map(l =>
-      l.id === locId ? { ...l, planBg: null, planData: null, _planDirty: true } : l
+      l.id === locId ? { ...l, planId: null, planBg: null, planData: null, _planDirty: true } : l
     ));
   };
 
@@ -77,7 +77,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
             {localisations.map(loc => {
               const isPicking = pickingForId === loc.id;
-              const assignedPlan = planLibrary.find(p => p.bg === loc.planBg);
+              const assignedPlan = planLibrary.find(p => p.id === loc.planId) || planLibrary.find(p => p.bg && p.bg === loc.planBg);
 
               return (
                 <div key={loc.id} style={{ border:`1px solid ${loc.planBg ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
@@ -155,7 +155,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                               Choisir dans la bibliothèque
                             </p>
                             {planLibrary.map(pl => {
-                              const isSel = loc.planBg === pl.bg;
+                              const isSel = loc.planId ? loc.planId === pl.id : (loc.planBg && loc.planBg === pl.bg);
                               return (
                                 <button key={pl.id}
                                   onClick={() => assignPlan(loc.id, isSel ? null : pl)}
