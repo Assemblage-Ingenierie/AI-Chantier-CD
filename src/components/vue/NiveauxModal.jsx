@@ -14,12 +14,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     if (planLibrary.length > 0) setPickingForId(newLoc.id);
   };
 
-  const deleteLoc = (locId, nom) => {
-    if (!window.confirm(`Supprimer le niveau "${nom}" et toutes ses observations ?`)) return;
-    onChange(localisations.filter(l => l.id !== locId));
-    if (pickingForId === locId) setPickingForId(null);
-  };
-
   const renameLoc = (locId, nom) => {
     onChange(localisations.map(l => l.id === locId ? { ...l, nom } : l));
   };
@@ -112,12 +106,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     <span style={{ fontSize:11,color:DA.grayL,flexShrink:0 }}>
                       {(loc.items || []).length} obs.
                     </span>
-                    <button onClick={() => deleteLoc(loc.id, loc.nom)}
-                      style={{ padding:6,color:'#ccc',background:'none',border:'none',cursor:'pointer',flexShrink:0,lineHeight:0 }}
-                      onMouseEnter={e => e.currentTarget.style.color = DA.red}
-                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
-                      <Ic n="del" s={15}/>
-                    </button>
                   </div>
 
                   {/* Zone plan */}
