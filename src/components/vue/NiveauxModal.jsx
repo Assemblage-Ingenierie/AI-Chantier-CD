@@ -4,9 +4,10 @@ import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { fetchPlanData } from '../../lib/storage.js';
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan }) {
   const [pickingForId, setPickingForId] = useState(null);
-  const [loadingPlanForId, setLoadingPlanForId] = useState(null); // locId en cours de fetch
+  const [loadingPlanForId, setLoadingPlanForId] = useState(null);
+  const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
@@ -74,6 +75,49 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
         {/* Liste des niveaux */}
         <div style={{ flex:1,overflowY:'auto',padding:'12px 14px' }}>
+          {/* Section bibliothèque */}
+          <div style={{ marginBottom:16 }}>
+            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+              <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
+                Plans importés ({planLibrary.length})
+              </p>
+              {onOpenPlanLib && (
+                <button onClick={() => { onClose(); onOpenPlanLib(); }}
+                  style={{ fontSize:11,fontWeight:700,color:DA.red,background:'none',border:`1px solid ${DA.red}`,borderRadius:7,padding:'4px 9px',cursor:'pointer' }}>
+                  + Importer
+                </button>
+              )}
+            </div>
+            {planLibrary.length === 0 ? (
+              <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:10 }}>
+                <Ic n="map" s={18}/>
+                <p style={{ fontSize:12,color:'#92400E',margin:0,flex:1 }}>Aucun plan — appuyez sur <strong>+ Importer</strong> pour commencer.</p>
+              </div>
+            ) : (
+              <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                {planLibrary.map(pl => (
+                  <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${DA.border}`,background:DA.white }}>
+                    {pl.bg && <img src={pl.bg} alt="" style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
+                    <p style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{pl.nom}</p>
+                    {onDeletePlan && (confirmDelPlanId === pl.id ? (
+                      <>
+                        <button onClick={() => { onDeletePlan(pl.id); setConfirmDelPlanId(null); }}
+                          style={{ fontSize:11,fontWeight:700,padding:'3px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,cursor:'pointer' }}>Supprimer</button>
+                        <button onClick={() => setConfirmDelPlanId(null)}
+                          style={{ fontSize:11,padding:'3px 7px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:5,cursor:'pointer' }}>Non</button>
+                      </>
+                    ) : (
+                      <button onClick={() => setConfirmDelPlanId(pl.id)}
+                        style={{ padding:'4px 6px',color:'#ccc',background:'none',border:'none',cursor:'pointer',borderRadius:5,lineHeight:0 }}
+                        onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+                        <Ic n="del" s={13}/>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {localisations.length === 0 && (
             <div style={{ textAlign:'center',padding:'40px 0',color:DA.grayL }}>
               <Ic n="pin" s={40}/>
@@ -143,11 +187,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         </div>
                       </div>
                     ) : (
-                      /* Pas de plan */
-                      <button onClick={() => setPickingForId(isPicking ? null : loc.id)}
+                      /* Pas de plan — bouton pour en choisir un */
+                      <button
+                        onClick={() => {
+                          if (planLibrary.length === 0 && onOpenPlanLib) { onClose(); onOpenPlanLib(); return; }
+                          setPickingForId(isPicking ? null : loc.id);
+                        }}
                         style={{ width:'100%',padding:'8px 12px',background:isPicking ? DA.redL : DA.grayXL,border:`1.5px dashed ${isPicking ? DA.red : DA.border}`,borderRadius:8,fontSize:12,color:isPicking ? DA.red : DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,transition:'all 0.15s' }}>
                         <Ic n="map" s={13}/>
-                        {isPicking ? 'Annuler' : 'Choisir un plan'}
+                        {isPicking ? 'Annuler' : planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un plan'}
                       </button>
                     )}
 
