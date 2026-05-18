@@ -156,8 +156,8 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       const hasCtx = texte.trim().length > 20 || photo;
 
       const prompt = hasCtx
-        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER (3 à 10) :\n- préconisations techniques (DTU, normes, tolérances)\n- réserves formelles à notifier\n- points de vigilance pour la prochaine visite\n- actions correctives concrètes\n- essais ou contrôles à demander\nNe répète JAMAIS ce qui est déjà écrit. Sois direct, précis, technique.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
-        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 10 suggestions techniques liées à ce désordre.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
+        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère uniquement les 3 à 5 suggestions LES PLUS UTILES et directement actionnables pour compléter cette observation. Qualité > quantité. Chaque suggestion doit être concrète, technique et directement liée à ce désordre précis. Pas de généralités.\nNe répète jamais ce qui est déjà écrit.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
+        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 5 suggestions techniques précises et actionnables liées à ce désordre. Qualité > quantité.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
