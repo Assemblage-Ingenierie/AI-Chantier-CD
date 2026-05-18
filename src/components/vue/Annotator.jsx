@@ -38,6 +38,32 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
+// Sens portée avec demi-flèches orientables (drag-to-orient)
+export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const len   = Math.hypot(x2 - x1, y2 - y1);
+  const aLen  = Math.max(10, Math.min(18 + s * 1.5, len * 0.28));
+  ctx.save();
+  ctx.strokeStyle = c; ctx.lineWidth = s + 1;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  // Demi-flèche à x1 (une seule branche du V)
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 + Math.cos(angle + Math.PI / 5) * aLen, y1 + Math.sin(angle + Math.PI / 5) * aLen);
+  ctx.stroke();
+  // Demi-flèche à x2 (côté opposé)
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + Math.cos(angle + Math.PI - Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI - Math.PI / 5) * aLen);
+  ctx.stroke();
+  // Label au milieu, décalé perpendiculairement
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const px = -Math.sin(angle) * (12 + s), py = Math.cos(angle) * (12 + s);
+  ctx.font = `bold ${7 + s}px Arial`;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.strokeText('PO', mx + px - 6, my + py);
+  ctx.fillStyle = c; ctx.fillText('PO', mx + px - 6, my + py);
+  ctx.restore();
+}
+
 // sizeScale : échelle pour symboles/textes/viewpoints (contrôlé par annotScale)
 // strokeScale : échelle pour les tracés (normalisée en pixels écran, indépendante de annotScale)
 export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null) {
@@ -51,14 +77,24 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       drawVP(ctx, p);
       ctx.restore();
     } else if (p.type === 'symbol') {
-      const sm = getAllSymbols().find(x => x.id === p.symbolId);
-      if (sm) {
+      if (p.symbolId === 'portee') {
         ctx.save();
-        if (sizeScale !== 1 && p.x != null) {
-          ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+        if (p.x1 != null) {
+          drawPorteePath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sizeScale, p.color);
+        } else {
+          drawPorteePath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sizeScale, p.color);
         }
-        sm.draw(ctx, p.x, p.y, p.size, p.color);
         ctx.restore();
+      } else {
+        const sm = getAllSymbols().find(x => x.id === p.symbolId);
+        if (sm) {
+          ctx.save();
+          if (sizeScale !== 1 && p.x != null) {
+            ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+          }
+          sm.draw(ctx, p.x, p.y, p.size, p.color);
+          ctx.restore();
+        }
       }
     } else if (p.type === 'text') {
       ctx.save();
@@ -76,10 +112,30 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.strokeStyle = p.color; ctx.lineWidth = 1.8;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill(); ctx.stroke();
         if (p.textMode === 'arrow') {
-          // Petite flèche vers le bas depuis le centre-bas du cadre
-          const ax = p.x + tw / 2, ay = by + bh;
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay + 14); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(ax - 5, ay + 9); ctx.lineTo(ax, ay + 14); ctx.lineTo(ax + 5, ay + 9); ctx.stroke();
+          // Flèche vers le point arrowX/arrowY (ou défaut bas-centre)
+          const tipX = p.arrowX ?? (p.x + tw / 2);
+          const tipY = p.arrowY ?? (by + bh + 16);
+          const bcx = bx + bw / 2, bcy = by + bh / 2;
+          const ddx = tipX - bcx, ddy = tipY - bcy;
+          let ex = bcx, ey = bcy;
+          if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
+            const hw = bw / 2, hh = bh / 2;
+            if (hw * Math.abs(ddy) <= hh * Math.abs(ddx)) {
+              const sx2 = ddx > 0 ? 1 : -1;
+              ex = bcx + sx2 * hw; ey = bcy + (ddy / ddx) * sx2 * hw;
+            } else {
+              const sy2 = ddy > 0 ? 1 : -1;
+              ex = bcx + (ddx / ddy) * sy2 * hh; ey = bcy + sy2 * hh;
+            }
+          }
+          ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tipX, tipY); ctx.stroke();
+          const ta = Math.atan2(tipY - ey, tipX - ex), aL = 9;
+          ctx.beginPath();
+          ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX + Math.cos(ta + Math.PI + Math.PI / 6) * aL, tipY + Math.sin(ta + Math.PI + Math.PI / 6) * aL);
+          ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX + Math.cos(ta + Math.PI - Math.PI / 6) * aL, tipY + Math.sin(ta + Math.PI - Math.PI / 6) * aL);
+          ctx.stroke();
         }
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
@@ -150,10 +206,12 @@ export function getAllSymbols() {
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
 const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
-  const cvRef    = useRef();
-  const bgRef    = useRef(null);
-  const vpStart  = useRef(null);
-  const textDragRef = useRef(null); // { origX, origY, tapX, tapY } — drag d'un texte sélectionné
+  const cvRef         = useRef();
+  const bgRef         = useRef(null);
+  const vpStart       = useRef(null);
+  const textDragRef   = useRef(null); // { mode:'box'|'tip', origX/Y, origArrowX/Y, tapX, tapY }
+  const porteeStartRef = useRef(null);
+  const annotDragRef  = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -179,11 +237,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
     return Math.max(0.3, Math.min(2, v));
   });
-  const [customSyms,  setCustomSyms]  = useState(() => getCustomSymbolDefs());
-  const [newSymName,  setNewSymName]  = useState('');
-  const [showNewSym,  setShowNewSym]  = useState(false);
-  // Modes de texte : 'plain' | 'boxed' | 'arrow'
-  const [textMode,    setTextMode]    = useState('plain');
+  const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
+  const [newSymName,    setNewSymName]    = useState('');
+  const [showNewSym,    setShowNewSym]    = useState(false);
+  const [textMode,      setTextMode]      = useState('plain');
+  const [pendingPortee, setPendingPortee] = useState(null);
+  const [selAnnot,      setSelAnnot]      = useState(null); // { idx } symbole/viewpoint sélectionné
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -233,29 +292,52 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
     if (pendingVP) {
       ctx.save();
-      if (displayScale > 1) {
+      if (symbolScale > 1) {
         ctx.translate(pendingVP.x, pendingVP.y);
-        ctx.scale(displayScale, displayScale);
+        ctx.scale(symbolScale, symbolScale);
         ctx.translate(-pendingVP.x, -pendingVP.y);
       }
       drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
       ctx.restore();
     }
 
-    // Indicateur de sélection sur le texte sélectionné
+    if (pendingPortee) {
+      drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+    }
+
+    // Indicateur de sélection : texte
     if (selTextIdx !== null && paths[selTextIdx]?.type === 'text') {
       const tp = paths[selTextIdx];
       const fontSize = 12 + tp.size * 2;
       ctx.save();
       ctx.font = `bold ${fontSize}px Arial`;
       const tw = ctx.measureText(tp.text).width;
-      ctx.strokeStyle = '#4A9EFF';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
       ctx.strokeRect(tp.x - 4, tp.y - fontSize - 3, tw + 8, fontSize + 8);
+      // Poignée de la flèche (tip handle)
+      if (tp.textMode === 'arrow' && tp.arrowX != null) {
+        ctx.setLineDash([]); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(tp.arrowX, tp.arrowY, 7, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = 'rgba(74,158,255,0.35)'; ctx.fill();
+      }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, activePh, vpCount, annotScale, selTextIdx]);
+
+    // Indicateur de sélection : symbole/viewpoint
+    if (selAnnot !== null && paths[selAnnot.idx]) {
+      const ap = paths[selAnnot.idx];
+      ctx.save();
+      ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+      if (ap.symbolId === 'portee' && ap.x1 != null) {
+        ctx.beginPath(); ctx.moveTo(ap.x1, ap.y1); ctx.lineTo(ap.x2, ap.y2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 8, 0, Math.PI * 2); ctx.stroke();
+      } else if (ap.x != null) {
+        ctx.beginPath(); ctx.arc(ap.x, ap.y, 28 * Math.max(1, symbolScale), 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -319,31 +401,85 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     const pos = getXY(e, cvRef.current);
 
     if (tool === 'viewpoint') {
+      const cv = cvRef.current;
+      const hitR = 45 * (cv.width / cv.clientWidth);
+      let hitIdx = -1;
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type === 'viewpoint' && Math.hypot(p.x - pos.x, p.y - pos.y) < hitR) { hitIdx = i; break; }
+      }
+      if (hitIdx >= 0) {
+        setSelAnnot({ idx: hitIdx });
+        annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx] }, tapX: pos.x, tapY: pos.y };
+        setDrawing(true);
+        return;
+      }
+      setSelAnnot(null);
       vpStart.current = pos;
       setPendingVP({ x: pos.x, y: pos.y, angle: 0 });
       setDrawing(true);
       return;
     }
     if (tool === 'symbol') {
-      setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]);
+      const cv = cvRef.current;
+      const hitR = 45 * (cv.width / cv.clientWidth);
+      let hitIdx = -1;
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type !== 'symbol') continue;
+        let hit = false;
+        if (p.symbolId === 'portee' && p.x1 != null) {
+          const dx = p.x2 - p.x1, dy = p.y2 - p.y1, len = Math.hypot(dx, dy);
+          if (len > 0) {
+            const t = Math.max(0, Math.min(1, ((pos.x - p.x1) * dx + (pos.y - p.y1) * dy) / (len * len)));
+            hit = Math.hypot(pos.x - (p.x1 + t * dx), pos.y - (p.y1 + t * dy)) < hitR;
+          }
+        } else if (p.x != null) {
+          hit = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
+        }
+        if (hit) { hitIdx = i; break; }
+      }
+      if (hitIdx >= 0) {
+        setSelAnnot({ idx: hitIdx });
+        annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx] }, tapX: pos.x, tapY: pos.y };
+        setDrawing(true);
+        return;
+      }
+      setSelAnnot(null);
+      if (sym.id === 'portee') {
+        porteeStartRef.current = pos;
+        setPendingPortee({ x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
+        setDrawing(true);
+      } else {
+        setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]);
+      }
       return;
     }
     if (tool === 'text') {
-      // Chercher un texte existant à proximité
       const cv = cvRef.current;
-      const HIT_R = 60 * (cv.width / cv.clientWidth);
+      const hitR = 60 * (cv.width / cv.clientWidth);
+      // Vérifier d'abord la poignée de flèche (tip)
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type === 'text' && p.textMode === 'arrow' && p.arrowX != null) {
+          if (Math.hypot(p.arrowX - pos.x, p.arrowY - pos.y) < hitR * 0.55) {
+            setSelTextIdx(i);
+            setDrawing(true);
+            textDragRef.current = { mode: 'tip', origArrowX: p.arrowX, origArrowY: p.arrowY, tapX: pos.x, tapY: pos.y };
+            return;
+          }
+        }
+      }
+      // Puis la boîte de texte
       let existIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
-        if (p.type === 'text' && Math.hypot(p.x - pos.x, p.y - pos.y) < HIT_R) {
-          existIdx = i;
-          break;
-        }
+        if (p.type === 'text' && Math.hypot(p.x - pos.x, p.y - pos.y) < hitR) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
         setSelTextIdx(existIdx);
         setDrawing(true);
-        textDragRef.current = { origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y };
+        textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y };
         return;
       }
       setSelTextIdx(null);
@@ -372,11 +508,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
       return;
     }
-    // Déplacement d'un texte sélectionné
+    // Déplacement texte : tip de flèche
+    if (tool === 'text' && drawing && selTextIdx !== null && textDragRef.current?.mode === 'tip') {
+      const pos = getXY(e, cvRef.current);
+      const { origArrowX, origArrowY, tapX, tapY } = textDragRef.current;
+      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, arrowX: origArrowX + (pos.x - tapX), arrowY: origArrowY + (pos.y - tapY) } : p));
+      return;
+    }
+    // Déplacement texte : boîte
     if (tool === 'text' && drawing && selTextIdx !== null && textDragRef.current) {
       const pos = getXY(e, cvRef.current);
       const { origX, origY, tapX, tapY } = textDragRef.current;
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + (pos.x - tapX), y: origY + (pos.y - tapY) } : p));
+      return;
+    }
+    // Déplacement symbole/viewpoint sélectionné
+    if (drawing && selAnnot !== null && annotDragRef.current) {
+      const pos = getXY(e, cvRef.current);
+      const { origData, tapX, tapY } = annotDragRef.current;
+      const dx = pos.x - tapX, dy = pos.y - tapY;
+      setPaths(prev => prev.map((p, i) => {
+        if (i !== selAnnot.idx) return p;
+        if (origData.x1 != null) return { ...p, x1: origData.x1 + dx, y1: origData.y1 + dy, x2: origData.x2 + dx, y2: origData.y2 + dy };
+        return { ...p, x: origData.x + dx, y: origData.y + dy };
+      }));
       return;
     }
     if (!drawing) return;
@@ -387,6 +542,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setPendingVP({ x: vpStart.current.x, y: vpStart.current.y, angle: Math.atan2(dy, dx) });
       return;
     }
+    // Portée en cours de tracé
+    if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
+      const pos = getXY(e, cvRef.current);
+      setPendingPortee({ x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
+      return;
+    }
     setCur(prev => [...prev, getXY(e, cvRef.current)]);
   };
 
@@ -395,6 +556,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     if (gestureRef.current) {
       if (e.touches.length < 2) gestureRef.current = null;
       return;
+    }
+    // Fin portée
+    if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
+      if (pendingPortee) {
+        const len = Math.hypot(pendingPortee.x2 - pendingPortee.x1, pendingPortee.y2 - pendingPortee.y1);
+        if (len > 8) {
+          setPaths(prev => [...prev, { type:'symbol', symbolId:'portee', x1:pendingPortee.x1, y1:pendingPortee.y1, x2:pendingPortee.x2, y2:pendingPortee.y2, color, size }]);
+        } else {
+          setPaths(prev => [...prev, { type:'symbol', symbolId:'portee', x1:pendingPortee.x1 - 35, y1:pendingPortee.y1, x2:pendingPortee.x1 + 35, y2:pendingPortee.y1, color, size }]);
+        }
+      }
+      setPendingPortee(null); porteeStartRef.current = null; setDrawing(false); return;
+    }
+    // Fin déplacement symbole/viewpoint
+    if (selAnnot !== null && annotDragRef.current) {
+      annotDragRef.current = null; setDrawing(false); return;
     }
     // Fin du déplacement de texte
     if (tool === 'text' && selTextIdx !== null && textDragRef.current) {
@@ -424,7 +601,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   const addText = () => {
     if (!textV.trim() || !textPt) { setTextPt(null); return; }
-    setPaths(prev => [...prev, { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size, textMode }]);
+    const entry = { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size, textMode };
+    if (textMode === 'arrow') { entry.arrowX = textPt.x + 25; entry.arrowY = textPt.y + 45; }
+    setPaths(prev => [...prev, entry]);
     setTextPt(null); setTextV('');
   };
 
@@ -488,6 +667,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
                   if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
                   if (t.k !== 'viewpoint') setActivePh(null);
+                  setSelAnnot(null); annotDragRef.current = null;
                 }}
                 style={{ padding:'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                   color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
@@ -665,15 +845,43 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         </div>
       )}
 
+      {/* ── Panneau symbole/viewpoint sélectionné ── */}
+      {selAnnot !== null && paths[selAnnot.idx] && (
+        <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+          <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
+            {paths[selAnnot.idx].type === 'viewpoint'
+              ? 'Vue'
+              : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
+            } sélectionné
+          </span>
+          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer</span>
+          <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selAnnot.idx)); setSelAnnot(null); annotDragRef.current = null; }}
+            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
+            <Ic n="del" s={13}/>
+          </button>
+          <button onClick={() => { setSelAnnot(null); annotDragRef.current = null; }}
+            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ── Aide viewpoint ── */}
-      {tool === 'viewpoint' && (
+      {tool === 'viewpoint' && !selAnnot && (
         <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
           <Ic n="eye" s={12}/>
           <span style={{ fontSize:11,color:'#888' }}>
             {activePh
               ? <><span style={{ color:DA.red,fontWeight:700 }}>{activePh.label}</span> sélectionnée — cliquer-glisser pour placer et orienter</>
-              : 'Cliquer-glisser sur le plan pour placer un œil de vue.'}
+              : 'Cliquer-glisser pour placer. Cliquer sur un existant pour le déplacer.'}
           </span>
+        </div>
+      )}
+
+      {/* ── Aide portée ── */}
+      {tool === 'symbol' && sym?.id === 'portee' && !selAnnot && (
+        <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
+          <span style={{ fontSize:11,color:'#888' }}>Cliquer-glisser pour orienter le sens de portée. Cliquer sur un existant pour le déplacer.</span>
         </div>
       )}
 
