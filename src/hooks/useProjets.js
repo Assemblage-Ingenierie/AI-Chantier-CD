@@ -308,42 +308,57 @@ export function useProjets(onSyncStatus) {
     return projet;
   };
 
-  // Charge les photos pour un projet (cherche dans toutes les visites)
-  const hydratePhotos = async (projectId) => {
+  // Charge les photos d'un projet. Si visiteId fourni, charge uniquement cette visite
+  // et skip les items déjà hydratés — permet le lazy loading par visite.
+  const hydratePhotos = async (projectId, visiteId = null) => {
     const projet = projetsRef.current.find(p => p.id === projectId);
     if (!projet) return;
 
-    const itemIds = (projet.visites || []).flatMap(v =>
-      (v.localisations || []).flatMap(l => (l.items || []).map(i => i.id))
+    const targetVisites = visiteId
+      ? (projet.visites || []).filter(v => v.id === visiteId)
+      : (projet.visites || []);
+
+    const itemIds = targetVisites.flatMap(v =>
+      (v.localisations || []).flatMap(l =>
+        (l.items || []).filter(i => !i._photosHydrated).map(i => i.id)
+      )
     );
-    const photosMap = itemIds.length ? await loadProjectPhotos(itemIds) : {};
+    if (!itemIds.length) return; // Tout déjà hydraté
+
+    const photosMap = await loadProjectPhotos(itemIds);
     if (photosMap === null) return;
 
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
         ...p,
-        visites: (p.visites || []).map(v => ({
-          ...v,
-          localisations: (v.localisations || []).map(loc => ({
-            ...loc,
-            items: (loc.items || []).map(item => ({
-              ...item,
-              _photosHydrated: true,
-              photos: photosMap[item.id]
-                ? photosMap[item.id].map(ph => ({
-                    name:        ph.name ?? '',
-                    data:        ph.data ?? null,
-                    storage_url: ph.storage_url ?? null,
-                    annotated:   ph.annotated ?? null,
-                    annotations: ph.annotations ?? null,
-                    _id:         ph.id,
-                    _legacy:     ph._legacy ?? false,
-                  }))
-                : [],
+        visites: (p.visites || []).map(v => {
+          if (visiteId && v.id !== visiteId) return v; // Skip les autres visites
+          return {
+            ...v,
+            localisations: (v.localisations || []).map(loc => ({
+              ...loc,
+              items: (loc.items || []).map(item => {
+                if (item._photosHydrated) return item; // Déjà hydraté
+                return {
+                  ...item,
+                  _photosHydrated: true,
+                  photos: photosMap[item.id]
+                    ? photosMap[item.id].map(ph => ({
+                        name:        ph.name ?? '',
+                        data:        ph.data ?? null,
+                        storage_url: ph.storage_url ?? null,
+                        annotated:   ph.annotated ?? null,
+                        annotations: ph.annotations ?? null,
+                        _id:         ph.id,
+                        _legacy:     ph._legacy ?? false,
+                      }))
+                    : [],
+                };
+              }),
             })),
-          })),
-        })),
+          };
+        }),
       };
     }));
 

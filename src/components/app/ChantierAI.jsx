@@ -32,6 +32,13 @@ export default function ChantierAI({ profile, onLogout }) {
   const selectedVisiteIdRef = useRef(selectedVisiteId);
   useEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
   useEffect(() => { selectedVisiteIdRef.current = selectedVisiteId; }, [selectedVisiteId]);
+
+  // Lazy loading photos : charger uniquement la visite sélectionnée
+  useEffect(() => {
+    if (ouvert && selectedVisiteId) {
+      hydratePhotos(ouvert.id, selectedVisiteId);
+    }
+  }, [selectedVisiteId, ouvert?.id]);
   const childBackHandler = useRef(null); // fn() → true si le modal a géré le retour
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
@@ -188,7 +195,7 @@ export default function ChantierAI({ profile, onLogout }) {
             <Dashboard
               projets={projets}
               remoteLoaded={remoteLoaded}
-              onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePhotos(p.id); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); }}
+              onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
               onArchive={handleArchive}
