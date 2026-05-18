@@ -1,4 +1,7 @@
 import { getSupabase } from '../supabase.js';
+import { getCachedUrls, setCachedUrls } from './urlCache.js';
+
+const SIGNED_URL_TTL = 604800; // 7 jours — synchro avec urlCache.js
 
 // v12 = format normalisé (tables séparées, sans placeholders __img__/__pdf__)
 const SK = 'chantierai_v12';
@@ -253,15 +256,22 @@ export async function loadProjectPhotos(itemIds) {
     }));
 
     // Batch generate signed URLs pour photos ET composites annotés
+    // Memoize via urlCache : on ne demande à Supabase que les paths sans entrée valide.
     const allPaths = [...new Set([
       ...rows.filter(r => r._path).map(r => r._path),
       ...rows.filter(r => r._annotatedPath).map(r => r._annotatedPath),
     ])];
     const signedMap = {};
     if (allPaths.length > 0) {
-      const { data: signed } = await sb.storage.from('photos').createSignedUrls(allPaths, 604800);
-      for (const s of (signed ?? [])) {
-        if (s.signedUrl) signedMap[s.path] = s.signedUrl;
+      const { cached, missing } = getCachedUrls(allPaths);
+      Object.assign(signedMap, cached);
+      if (missing.length > 0) {
+        const { data: signed } = await sb.storage.from('photos').createSignedUrls(missing, SIGNED_URL_TTL);
+        const fresh = {};
+        for (const s of (signed ?? [])) {
+          if (s.signedUrl) { signedMap[s.path] = s.signedUrl; fresh[s.path] = s.signedUrl; }
+        }
+        setCachedUrls(fresh, SIGNED_URL_TTL);
       }
     }
 
@@ -302,12 +312,23 @@ export async function hydrateChantierPhotos(chantierIds) {
     }
     if (!paths.length) return result;
 
-    const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(paths, 604800);
+    // Memoize : on évite de redemander une signed URL pour un cover déjà en cache.
+    const { cached, missing } = getCachedUrls(paths);
+    for (const [path, url] of Object.entries(cached)) {
+      const id = pathToId[path];
+      if (id) result[id] = url;
+    }
+    if (missing.length === 0) return result;
+
+    const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(missing, SIGNED_URL_TTL);
     if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); return result; }
+    const fresh = {};
     (signed ?? []).forEach((s, idx) => {
-      const id = pathToId[paths[idx]];
-      if (s.signedUrl && id) result[id] = s.signedUrl;
+      const path = missing[idx];
+      const id = pathToId[path];
+      if (s.signedUrl && id) { result[id] = s.signedUrl; fresh[path] = s.signedUrl; }
     });
+    setCachedUrls(fresh, SIGNED_URL_TTL);
     return result;
   } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
 }
@@ -364,8 +385,13 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
       if (upErr) { console.warn('Storage upload error:', upErr); continue; }
       // Store path (not public URL) + retourner signed URL pour affichage immédiat
       await sb.from('aichantier_item_photos').update({ storage_url: path, data: null }).eq('id', id);
-      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, 604800);
-      result[id] = signed?.signedUrl ?? null;
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
+      if (signed?.signedUrl) {
+        result[id] = signed.signedUrl;
+        setCachedUrls({ [path]: signed.signedUrl }, SIGNED_URL_TTL);
+      } else {
+        result[id] = null;
+      }
     } catch (e) { console.warn('migratePhotosToStorage error for', id, e); }
   }
   return result;
