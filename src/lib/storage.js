@@ -450,8 +450,19 @@ async function saveRemote(ps, dirtyIds = null) {
   const uid = user?.id ?? null;
   const errors = [];
 
+  // Détecter les projets orphelins (sans id) — corruption cache locale.
+  // On les ignore proprement plutôt que de planter avec 23502 ou de déclencher
+  // un faux toDelete sur les vrais projets remote correspondants.
+  const orphans = ps.filter(p => !p.id);
+  if (orphans.length > 0) {
+    console.warn('saveRemote: ignoring', orphans.length, 'orphan projet(s) without id:', orphans.map(p => ({ nom: p.nom, visites: p.visites?.length })));
+  }
+
   const memIds = new Set(ps.map(p => p.id).filter(Boolean));
-  if (_lastRemoteIds !== null) {
+  // Skip TOTAL du delete step si des orphelins existent : impossible de savoir
+  // si l'orphelin correspond à un projet remote dont l'id a été perdu localement.
+  // Mieux vaut ne rien supprimer que risquer une suppression incorrecte.
+  if (_lastRemoteIds !== null && orphans.length === 0) {
     const toDelete = [..._lastRemoteIds].filter(id => !memIds.has(id));
     // Garde anti-catastrophe : refuser un mass-delete (>50% du remote connu).
     // Évite que des incohérences cache local / DB ne déclenchent une suppression
@@ -470,7 +481,9 @@ async function saveRemote(ps, dirtyIds = null) {
   _lastRemoteIds = new Set(ps.map(p => p.id).filter(Boolean));
 
   // Sauvegarder uniquement les projets modifiés (évite timeout sur gros volumes)
-  const toSave = dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps;
+  // Filtre aussi les orphelins (id null/undefined) → évite 23502 sur upsert.
+  const toSave = (dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps)
+    .filter(p => p.id);
 
   for (const p of toSave) {
     const visitesMetadata = (p.visites || []).map(v => ({
