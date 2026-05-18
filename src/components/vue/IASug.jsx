@@ -49,13 +49,12 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
   const hasPhotos = photos.filter(ph => ph.data).length > 0;
 
   useEffect(() => {
-    if (step !== 'photos' && step !== 'suggest') return;
-    const ms = step === 'photos' ? 65000 : 55000;
+    if (step !== 'suggest') return;
     const t = setTimeout(() => {
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, ms);
+    }, 30000);
     return () => clearTimeout(t);
   }, [step]);
 
@@ -71,7 +70,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
   };
 
   const ask = async () => {
-    if (step === 'photos' || step === 'suggest') return;
+    if (step === 'suggest') return;
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -81,14 +80,20 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
     setPhotoResult(null);
     setSuggestions([]);
     setApplied(new Set());
+    setStep('suggest');
 
-    let photoCtx = null;
+    try {
+      const titre = (content || '').slice(0, 300);
+      const texte = (commentaire || '').slice(0, 2000);
+      const hasCtx = texte.trim().length > 20;
 
-    // Step 1: analyze photos if any
-    if (hasPhotos) {
-      setStep('photos');
-      try {
-        const valid = photos.filter(ph => ph.data).slice(0, 4);
+      const prompt = hasCtx
+        ? `Observation de chantier :\nTitre : "${titre}"\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER (3 à 10) :\n- préconisations techniques (DTU, normes, tolérances)\n- réserves formelles à notifier\n- points de vigilance pour la prochaine visite\n- actions correctives concrètes\n- essais ou contrôles à demander\nNe répète JAMAIS ce qui est déjà écrit. Sois direct, précis, technique.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
+        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 10 suggestions techniques liées à ce désordre.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
+
+      // Analyse photos + suggestions en parallèle
+      const photoPromise = hasPhotos ? (async () => {
+        const valid = photos.filter(ph => ph.data).slice(0, 2);
         const imgs = await Promise.all(valid.map(async ph => {
           const url = await toResized(ph.data);
           const [hdr, b64] = url.split(',');
@@ -97,44 +102,34 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         }));
         const r = await callAIProxy({
           feature: 'photoAnalysis',
-          model: 'claude-sonnet-4-6',
-          max_tokens: 600,
-          system: `Tu es un ingénieur bâtiment. Sois très synthétique (2-3 phrases max). N'utilise jamais le tiret médiant (—). Réponds UNIQUEMENT avec un JSON valide :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases: désordre constaté et action à mener"}`,
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          system: `Tu es un ingénieur bâtiment. Réponds UNIQUEMENT avec un JSON valide sans markdown :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases"}`,
           messages: [{ role: 'user', content: [...imgs, { type: 'text', text: 'Analyse ces photos de chantier.' }] }],
           _signal: ctrl.signal,
         });
-        if (ctrl.signal.aborted) return;
         const raw = r.content?.[0]?.text || '';
-        photoCtx = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim());
-        setPhotoResult(photoCtx);
-      } catch (e) {
-        if (ctrl.signal.aborted) return;
-        // photo analysis failed silently — continue with suggestions only
-      }
-    }
+        return JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim());
+      })() : Promise.resolve(null);
 
-    // Step 2: generate technical suggestions
-    setStep('suggest');
-    try {
-      const titre  = (content || photoCtx?.titre || '').slice(0, 300);
-      const texte  = (commentaire || '').slice(0, 2000);
-      const photo  = photoCtx?.commentaire ? `Analyse photos: "${photoCtx.commentaire}"` : '';
-      const hasCtx = texte.trim().length > 20 || photo;
-
-      const prompt = hasCtx
-        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère TOUTES les suggestions pertinentes pour COMPLÉTER (3 à 10) :\n- préconisations techniques (DTU, normes, tolérances)\n- réserves formelles à notifier\n- points de vigilance pour la prochaine visite\n- actions correctives concrètes\n- essais ou contrôles à demander\nNe répète JAMAIS ce qui est déjà écrit. Sois direct, précis, technique.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
-        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 10 suggestions techniques liées à ce désordre.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
-
-      const d = await callAIProxy({
+      const suggestPromise = callAIProxy({
         feature: 'observation-suggestion',
         model: 'gemini-2.0-flash-lite',
-        max_tokens: 2000,
+        max_tokens: 1500,
         system: `Tu es expert MOE/BET bâtiment senior. Suggestions ultra-précises et contextuelles, jamais vagues. N'utilise jamais le tiret médiant (—) ni les tirets longs.`,
         messages: [{ role: 'user', content: prompt }],
         _signal: ctrl.signal,
       });
+
+      const [photoRes, suggestRes] = await Promise.allSettled([photoPromise, suggestPromise]);
       if (ctrl.signal.aborted) return;
-      const raw = d.content?.[0]?.text || '';
+
+      if (photoRes.status === 'fulfilled' && photoRes.value) {
+        setPhotoResult(photoRes.value);
+      }
+
+      if (suggestRes.status === 'rejected') throw suggestRes.reason;
+      const raw = suggestRes.value?.content?.[0]?.text || '';
       if (!raw) throw new Error('Réponse vide');
       setSuggestions(parseSuggestions(raw));
       setStep('done');
