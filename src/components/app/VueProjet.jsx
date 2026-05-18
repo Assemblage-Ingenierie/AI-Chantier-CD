@@ -273,8 +273,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                   />
                 ) : (
                   <button onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
-                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left', width:'100%', overflow:'hidden' }}>
-                    <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left', width:'100%', overflow:'hidden', display:'block', lineHeight:0, font:'inherit' }}>
+                    <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2 }}>{projet.nom}</p>
                   </button>
                 )}
                 {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
