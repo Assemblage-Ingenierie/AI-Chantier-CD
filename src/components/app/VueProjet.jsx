@@ -592,6 +592,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
           onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
         />
       )}
     </div>

@@ -4,7 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { fetchPlanData } from '../../lib/storage.js';
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan, onDeleteAllPlans }) {
   const [pickingForId, setPickingForId] = useState(null);
   const [loadingPlanForId, setLoadingPlanForId] = useState(null);
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
@@ -85,7 +85,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               <div style={{ display:'flex',gap:6,alignItems:'center' }}>
                 {onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
                   <>
-                    <button onClick={() => { planLibrary.forEach(pl => onDeletePlan(pl.id)); setConfirmDelAll(false); }}
+                    <button onClick={() => { if (onDeleteAllPlans) onDeleteAllPlans(); else planLibrary.forEach(pl => onDeletePlan(pl.id)); setConfirmDelAll(false); }}
                       style={{ fontSize:11,fontWeight:700,padding:'4px 9px',background:'#B91C1C',color:'white',border:'none',borderRadius:7,cursor:'pointer' }}>
                       Tout supprimer
                     </button>
