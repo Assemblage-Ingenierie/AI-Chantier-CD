@@ -363,11 +363,11 @@ export async function hydratePlans(projectId) {
   try {
     const sb = await getSupabase();
     const { data, error } = await sb.from('aichantier_chantier_localisations')
-      .select('id,plan_bg,plan_data').eq('chantier_id', projectId);
+      .select('id,plan_bg').eq('chantier_id', projectId);
     if (error) { console.warn('hydratePlans error:', error); return null; }
     const map = {};
     for (const row of (data ?? [])) {
-      if (row.plan_bg || row.plan_data) map[row.id] = { planBg: row.plan_bg ?? null, planData: row.plan_data ?? null };
+      if (row.plan_bg) map[row.id] = { planBg: row.plan_bg ?? null, planData: null };
     }
     return map; // { locId: { planBg, planData } }
   } catch (e) { console.warn('hydratePlans error:', e); return null; }
@@ -595,9 +595,10 @@ async function saveRemote(ps, dirtyIds = null) {
         sort_order: i, visite_id: l._visiteId,
       };
       const isNew = !dbLocIds.has(l.id);
+      // plan_data (PDF brut) n'est jamais envoyé dans les localisations — il est dans aichantier_chantier_plans.
+      // Seul plan_bg (miniature PNG) est transmis pour éviter les timeouts 57014.
       if ((isNew || l._planDirty) && l.planBg != null) {
-        row.plan_bg   = l.planBg;
-        row.plan_data = l.planData ?? null;
+        row.plan_bg = l.planBg;
       }
       return row;
     });
