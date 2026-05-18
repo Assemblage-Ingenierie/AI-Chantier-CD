@@ -538,8 +538,8 @@ async function saveRemote(ps, dirtyIds = null) {
         sort_order: i, visite_id: l._visiteId,
       };
       const isNew = !dbLocIds.has(l.id);
-      if (isNew || l._planDirty) {
-        row.plan_bg   = l.planBg   ?? null;
+      if ((isNew || l._planDirty) && l.planBg != null) {
+        row.plan_bg   = l.planBg;
         row.plan_data = l.planData ?? null;
       }
       return row;
@@ -576,15 +576,18 @@ async function saveRemote(ps, dirtyIds = null) {
     const plansPromise = (async () => {
       const dbPlansRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
+      // Plans existants sans bg (timeout lors du premier save) — à réparer si bg dispo en mémoire
+      const dbPlansNoBgRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null);
+      const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
       const planRows = (p.planLibrary || []).map((pl, i) => {
         const id = pl.id || crypto.randomUUID();
         const row = { id, chantier_id: p.id, nom: pl.nom ?? '', sort_order: i };
-        // Only send bg/data for new plans — existing plans already have their image data
-        // in DB. Re-sending multi-MB base64 on every save causes statement timeout (57014).
+        // Send bg for new plans or plans missing bg in DB (repair) — never resend if already stored
         const isNew = !dbPlanIds.has(id);
-        if (isNew && pl.bg   != null) row.bg   = pl.bg;
+        const missingBg = dbPlansNoBg.has(id);
+        if (pl.bg != null && (isNew || missingBg)) row.bg = pl.bg;
         if (isNew && pl.data != null) row.data = pl.data;
         return row;
       });

@@ -76,7 +76,8 @@ function mergeWithLocal(remotePs, localPs, dirtyIds) {
             if (!localLoc) return loc;
             return {
               ...loc,
-              // Preserve locally-hydrated plan blobs (remote returns null for these)
+              // Preserve planId + locally-hydrated plan blobs (remote returns null for these)
+              planId: localLoc.planId ?? loc.planId,
               planBg: localLoc.planBg ?? loc.planBg,
               planData: localLoc.planData ?? loc.planData,
               items: (loc.items || []).map(item => {
@@ -351,9 +352,9 @@ export function useProjets(onSyncStatus) {
     }
   };
 
-  const hydratePlans = async (projectId) => {
+  const hydratePlans = async (projectId, libraryMap) => {
     const plansMap = await hydratePlansRemote(projectId);
-    if (!plansMap || !Object.keys(plansMap).length) return;
+    // plansMap may be null/empty if no plan_bg in DB — still run to fill from planLibrary
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -361,9 +362,19 @@ export function useProjets(onSyncStatus) {
         visites: (p.visites || []).map(v => ({
           ...v,
           localisations: (v.localisations || []).map(loc => {
-            const plan = plansMap[loc.id];
-            if (!plan) return loc;
-            return { ...loc, planBg: plan.planBg, planData: plan.planData };
+            const fromDb = plansMap?.[loc.id];
+            if (fromDb) return { ...loc, planBg: fromDb.planBg ?? loc.planBg, planData: fromDb.planData ?? loc.planData };
+            // No plan_bg in DB — if planId set, pull bg from libraryMap (passed in) or current planLibrary state
+            if (loc.planId && !loc.planBg) {
+              const libBg = libraryMap?.[loc.planId]?.bg
+                || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.bg;
+              if (libBg) {
+                const libData = libraryMap?.[loc.planId]?.data
+                  || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.data || null;
+                return { ...loc, planBg: libBg, planData: libData, _planDirty: true };
+              }
+            }
+            return loc;
           }),
         })),
       };
@@ -372,7 +383,7 @@ export function useProjets(onSyncStatus) {
 
   const hydratePlanLibrary = async (projectId) => {
     const plansMap = await hydratePlanLibraryRemote(projectId);
-    if (!plansMap || !Object.keys(plansMap).length) return;
+    if (!plansMap || !Object.keys(plansMap).length) return plansMap || {};
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -384,6 +395,7 @@ export function useProjets(onSyncStatus) {
         }),
       };
     }));
+    return plansMap; // { planId: { bg, data } }
   };
 
   const undo = useCallback(() => {
