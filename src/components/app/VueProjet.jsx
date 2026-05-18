@@ -26,7 +26,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   const modalRef = useRef(null);
   useEffect(() => { modalRef.current = modal; }, [modal]);
 
-  // Enregistre le handler "retour arrière" pour les modals (swipe iOS / bouton Android)
   useEffect(() => {
     if (!setBackHandler) return;
     setBackHandler(() => {
@@ -47,7 +46,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   const [editingProjetNom, setEditingProjetNom] = useState(false);
   const [projetNomVal, setProjetNomVal] = useState('');
 
-  // Si le projet change (chargement async), synchro la visite sélectionnée
   useEffect(() => {
     if (!selectedVisiteId && visites.length > 0) setSelectedVisiteId(visites[0].id);
   }, [visites]);
@@ -57,7 +55,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     [visites, selectedVisiteId]
   );
 
-  // Objet "projet fusionné" passé aux enfants — ils ne voient pas la structure visites
   const visitProjet = useMemo(() => ({
     ...projet,
     localisations:       selectedVisite?.localisations       ?? [],
@@ -73,7 +70,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     visiteNom:           selectedVisite?.label                 ?? '',
   }), [projet, selectedVisite]);
 
-  // Route les mises à jour : champs visite → visites[], champs projet → projet
   const onUpdateVisit = useCallback((upd) => {
     const visitUpd   = {};
     const projectUpd = {};
@@ -96,7 +92,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     onUpdate({ visites: newVisites });
   };
 
-  // --- Réordonnancement zones par drag -----------------------------------------------
   const [zoneDragIdx, setZoneDragIdx] = useState(null);
   const [zoneOverIdx, setZoneOverIdx] = useState(null);
   const zoneDragDidMove = useRef(false);
@@ -116,7 +111,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
   }, [zoneDragIdx, zoneOverIdx, moveZone]);
 
-  // --- Open zones quand on change de visite ---
   const [openLocIds, setOpenLocIds] = useState(
     () => new Set((selectedVisite?.localisations || []).map(l => l.id))
   );
@@ -124,7 +118,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     setOpenLocIds(new Set((selectedVisite?.localisations || []).map(l => l.id)));
   }, [selectedVisiteId]);
 
-  // --- Helpers de mutation (opèrent sur visitProjet.localisations) ---
   const patchLoc = useCallback((locId, patch) => {
     const locs = visitProjet.localisations.map(l => l.id === locId ? { ...l, ...patch } : l);
     onUpdateVisit({ localisations: locs });
@@ -181,7 +174,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     patchItem(locId, { ...form, id: form.id || crypto.randomUUID() });
   };
 
-  const [undoToast, setUndoToast] = useState(null); // { label, onUndo }
+  const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
   const annotatorRef = useRef(null);
 
@@ -189,7 +182,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
     : null;
 
-  // --- Annotator photo plein écran (depuis la liste visite) ---
   if (modal?.t === 'photoAnnot') {
     const { item, locId, photoIdx } = modal;
     const validPhotos = (item.photos || []).filter(p => p.data);
@@ -198,7 +190,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     const switchToPhoto = (newRealIdx) => {
       const annotation = annotatorRef.current?.getAnnotation();
       const updatedItem = annotation
-        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated } : p) }
+        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH } : p) }
         : item;
       if (annotation) patchItem(locId, updatedItem);
       setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
@@ -210,11 +202,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           ref={annotatorRef}
           bgImage={ph?.data}
           savedPaths={ph?.annotations || []}
-          onSave={(paths, exported) => {
+          onSave={(paths, exported, dims) => {
             const updatedItem = {
               ...item,
               _photosHydrated: true,
-              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported } : p),
+              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h } : p),
             };
             patchItem(locId, updatedItem);
             setModal(null);
@@ -239,7 +231,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     );
   }
 
-  // --- Annotator plein écran ---
   if (modal?.t === 'annotate') {
     const loc = visitProjet.localisations.find(l => l.id === modal.locId);
     return (
@@ -261,14 +252,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
-      {/* ── Header projet ── */}
       <div style={{ background:DA.black, flexShrink:0 }}>
 
         {isDesktop ? (
-          /* ── Desktop : 3 colonnes [gauche | tabs centrés | droite] sur une ligne ── */
           <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:52, padding:'0 16px' }}>
 
-            {/* Gauche : retour + nom projet */}
             <div style={{ flex:1, display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
               <button onClick={onBack}
                 style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
@@ -285,7 +273,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                   />
                 ) : (
                   <button onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
-                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>
+                    style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'left', width:'100%', overflow:'hidden' }}>
                     <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration:'underline dotted rgba(255,255,255,0.3)', textUnderlineOffset:3 }}>{projet.nom}</p>
                   </button>
                 )}
@@ -293,11 +281,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               </div>
             </div>
 
-            {/* Centre : tabs */}
             <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'stretch', gap:4, padding:'0 8px', height:'100%' }}>
               {[
                 { k:'visite',  n:'bld', l:'Visite' },
-                { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
+                { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` + '`' + ` (${totalItems})` + '`' + ` : ''}` },
               ].map(t => (
                 <button key={t.k} onClick={() => setTab(t.k)}
                   style={{ display:'flex', alignItems:'center', gap:7, padding:'0 28px', fontSize:15, fontWeight:700, border:'none', borderBottom:`3px solid ${tab===t.k ? 'white' : 'transparent'}`, background: tab===t.k ? 'rgba(255,255,255,0.08)' : 'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.5)', cursor:'pointer', transition:'all 0.15s', borderRadius:'6px 6px 0 0' }}>
@@ -306,7 +293,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               ))}
             </div>
 
-            {/* Droite : visite label + Niveaux */}
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
@@ -337,11 +323,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
           </div>
         ) : (
-          /* ── Mobile : 2 lignes ── */
           <>
             <div style={{ padding:'8px 12px 0', display:'flex', alignItems:'center', gap:8 }}>
+              <button onClick={onBack}
+                style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
+                <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
+                <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
+              </button>
               <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontWeight:800, fontSize:14, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
               {(() => {
                 const v = visites.find(vv => vv.id === selectedVisiteId);
@@ -373,7 +364,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               <div style={{ display:'flex' }}>
                 {[
                   { k:'visite',  n:'bld', l:'Visite' },
-                  { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` (${totalItems})` : ''}` },
+                  { k:'rapport', n:'fil', l:`Rapport${totalItems > 0 ? ` + '`' + `(${totalItems})` + '`' + ` : ''}` },
                 ].map(t => (
                   <button key={t.k} onClick={() => setTab(t.k)}
                     style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 0', fontSize:14, fontWeight:700, border:'none', borderBottom:`2.5px solid ${tab===t.k ? 'white' : 'transparent'}`, background:'transparent', color: tab===t.k ? 'white' : 'rgba(255,255,255,0.45)', cursor:'pointer', transition:'all 0.15s' }}>
@@ -386,14 +377,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
         )}
       </div>
 
-      {/* ── Corps scrollable ── */}
       <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto', background: tab === 'visite' ? '#E8E8E8' : undefined }}>
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
-          {/* ════ TAB VISITE ════ */}
           {tab === 'visite' && (
             <div style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
-              {/* Bannière résumé */}
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -412,7 +400,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                     const items    = loc.items || [];
                     const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
-                    const total       = visitProjet.localisations.length;
                     return (
                       <div key={loc.id}
                         draggable
@@ -430,7 +417,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                           transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
                         }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
-                          {/* Poignée drag zone */}
                           <div onClick={e => e.stopPropagation()}
                             style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
                             <Ic n="grp" s={18}/>
@@ -480,22 +466,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 patchItem(loc.id, updated);
                               }}
                             />
-                            {/* Plan banner — même DA desktop/mobile, plan en `contain` pour tout voir */}
                             {loc.planBg ? (
                               <button
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
                                 style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#f4f4f4' }}>
                                 <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
                                   style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-                                {/* Gradient overlay en bas — plus doux sur fond clair */}
                                 <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>
-                                {/* Badge annotation count */}
                                 {loc.planAnnotations?.paths?.length > 0 && (
                                   <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
                                     <Ic n="pen" s={10}/> {loc.planAnnotations.paths.length} annotation{loc.planAnnotations.paths.length > 1 ? 's' : ''}
                                   </div>
                                 )}
-                                {/* Bottom caption */}
                                 <div style={{ position:'absolute', bottom:0, left:0, right:0, padding: isDesktop ? '10px 16px' : '8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                                   <div>
                                     <p style={{ margin:0, fontSize: isDesktop ? 14 : 13, fontWeight:800, color:'white', letterSpacing:0.2 }}>Plan de zone</p>
@@ -529,14 +511,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             </div>
           )}
 
-          {/* ════ TAB RAPPORT ════ */}
           {tab === 'rapport' && (
             <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} />
           )}
         </div>
       </div>
 
-      {/* ── Toast Undo ── */}
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
           <span>{undoToast.label}</span>
@@ -548,7 +528,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
         </div>
       )}
 
-      {/* ── Modals ── */}
       {modal?.t === 'item' && (() => {
         const loc      = visitProjet.localisations.find(l => l.id === modal.locId);
         const initItem = modal.savedForm ?? modal.item;
