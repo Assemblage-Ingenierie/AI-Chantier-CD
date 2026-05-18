@@ -38,7 +38,10 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-export function drawAnnotationPaths(ctx, paths, sizeScale = 1) {
+// sizeScale : échelle pour symboles/textes/viewpoints (contrôlé par annotScale)
+// strokeScale : échelle pour les tracés (normalisée en pixels écran, indépendante de annotScale)
+export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null) {
+  const ss = strokeScale ?? sizeScale;
   (paths || []).forEach(p => {
     if (p.type === 'viewpoint') {
       ctx.save();
@@ -72,7 +75,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1) {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = p.color;
-      ctx.lineWidth = (p.tool === 'eraser' ? p.size * 6 : p.size) * sizeScale;
+      ctx.lineWidth = (p.tool === 'eraser' ? p.size * 6 : p.size) * ss;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.globalCompositeOperation = p.tool === 'eraser' ? 'destination-out' : 'source-over';
       ctx.moveTo(p.points[0].x, p.points[0].y);
@@ -122,7 +125,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   const [annotScale, setAnnotScale] = useState(() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
-    return isNaN(v) ? 1 : Math.max(0.3, Math.min(2, v));
+    // Réinitialiser à 1 si la valeur sauvegardée était > 1.5 (ancien bug où annotScale affectait les tracés)
+    if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
+    return Math.max(0.3, Math.min(2, v));
   });
 
   useEffect(() => { vtRef.current = vt; }, [vt]);
@@ -146,10 +151,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       ectx.drawImage(bgRef.current, 0, 0, EW, EH);
       ectx.save();
       ectx.scale(EW / cv.width, EH / cv.height);
-      const exportScale = cv.clientWidth > 0
-        ? (cv.width / cv.clientWidth) * 0.5 * annotScale
-        : exportSizeMultiplier * annotScale;
-      drawAnnotationPaths(ectx, paths, exportScale);
+      const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
+      drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
       ectx.restore();
       return { paths, annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
     },
@@ -164,10 +167,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     ctx.clearRect(0, 0, cv.width, cv.height);
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
 
-    const displayScale = cv.clientWidth > 0 ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
+    const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : 1;
+    const symbolScale = ratio * 0.5 * annotScale; // symboles/viewpoints/textes : contrôlés par annotScale
+    const strokeScale = ratio;                     // tracés : normalisés en pixels écran, sans annotScale
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
-    drawAnnotationPaths(ctx, all, displayScale);
+    drawAnnotationPaths(ctx, all, symbolScale, strokeScale);
 
     if (pendingVP) {
       ctx.save();
@@ -442,11 +447,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
               ectx.drawImage(bgRef.current, 0, 0, EW, EH);
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
-              // Scale export = display scale (cv.width/clientWidth*0.5) pour cohérence
-              const exportScale = cv.clientWidth > 0
-                ? (cv.width / cv.clientWidth) * 0.5 * annotScale
-                : exportSizeMultiplier * annotScale;
-              drawAnnotationPaths(ectx, paths, exportScale);
+              const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
+              drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
               ectx.restore();
               onSave(paths, ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
@@ -492,7 +494,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
       {/* ── Taille globale des logos ── */}
       <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
-        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>LOGOS</span>
+        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>SYMBOLES</span>
         <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
           onChange={e => {
             const v = parseFloat(e.target.value);
