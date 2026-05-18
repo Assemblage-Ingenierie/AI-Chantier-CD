@@ -54,7 +54,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, 30000);
+    }, 50000);
     return () => clearTimeout(t);
   }, [step]);
 

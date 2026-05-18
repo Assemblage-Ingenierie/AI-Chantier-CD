@@ -347,6 +347,14 @@ export function useProjets(onSyncStatus) {
       };
     }));
 
+    // Preload images into browser cache so thumbnails appear instantly on next render
+    Object.values(photosMap).forEach(photos => {
+      photos.forEach(ph => {
+        if (ph.data) { const i = new Image(); i.src = ph.data; }
+        if (ph.annotated) { const i = new Image(); i.src = ph.annotated; }
+      });
+    });
+
     // Migration background : legacy base64 → Storage
     const legacyPhotoIds = [];
     Object.values(photosMap).forEach(photos => {

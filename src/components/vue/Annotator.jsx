@@ -42,7 +42,8 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
 export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const len   = Math.hypot(x2 - x1, y2 - y1);
-  const aLen  = Math.max(9, Math.min(14, len * 0.18 + 5));
+  const lw    = s + 1.5;
+  const aLen  = Math.max(lw * 2.5, Math.min(lw * 3.5, len * 0.2));
 
   ctx.save();
   ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = s + 1.5; ctx.lineCap = 'round';
