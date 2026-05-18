@@ -54,7 +54,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       abortRef.current?.abort();
       setStep('error');
       setError('Délai dépassé — réessaie');
-    }, 30000);
+    }, 55000);
     return () => clearTimeout(t);
   }, [step]);
 
@@ -87,7 +87,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
     if (hasPhotos) {
       setStep('photos');
       try {
-        const valid = photos.filter(ph => ph.data).slice(0, 4);
+        const valid = photos.filter(ph => ph.data).slice(0, 2);
         const imgs = await Promise.all(valid.map(async ph => {
           const url = await toResized(ph.data);
           const [hdr, b64] = url.split(',');
@@ -96,8 +96,8 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
         }));
         const r = await callAIProxy({
           feature: 'photoAnalysis',
-          model: 'claude-sonnet-4-6',
-          max_tokens: 600,
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 400,
           system: `Tu es un ingénieur bâtiment. Sois très synthétique (2-3 phrases max). N'utilise jamais le tiret médiant (—). Réponds UNIQUEMENT avec un JSON valide :\n{"titre":"5-7 mots décrivant le désordre","urgence":"haute"|"moyenne"|"basse","commentaire":"1-2 phrases: désordre constaté et action à mener"}`,
           messages: [{ role: 'user', content: [...imgs, { type: 'text', text: 'Analyse ces photos de chantier.' }] }],
           _signal: ctrl.signal,
@@ -126,7 +126,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
-        model: 'gemini-2.0-flash-lite',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2000,
         system: `Tu es expert MOE/BET bâtiment senior. Suggestions ultra-précises et contextuelles, jamais vagues. N'utilise jamais le tiret médiant (—) ni les tirets longs.`,
         messages: [{ role: 'user', content: prompt }],
