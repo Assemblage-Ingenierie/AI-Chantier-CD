@@ -81,7 +81,7 @@ function slimLoc(l) {
   return {
     ...l,
     planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
-    planAnnotations: l.planAnnotations ?? null,
+    planAnnotations: slimAnnot(l.planAnnotations) ?? null,
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,
@@ -591,7 +591,10 @@ async function saveRemote(ps, dirtyIds = null) {
     const locRows = allLocsFlat.map((l, i) => {
       const row = {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
-        plan_annotations: l.planAnnotations ? JSON.stringify(l.planAnnotations) : null,
+        // Ne jamais persister .exported (image WebP ~400 Ko) — seuls les paths sont nécessaires en DB.
+        plan_annotations: l.planAnnotations?.paths?.length
+          ? JSON.stringify({ paths: l.planAnnotations.paths })
+          : null,
         sort_order: i, visite_id: l._visiteId,
       };
       const isNew = !dbLocIds.has(l.id);
