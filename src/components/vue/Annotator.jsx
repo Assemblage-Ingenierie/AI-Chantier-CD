@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
