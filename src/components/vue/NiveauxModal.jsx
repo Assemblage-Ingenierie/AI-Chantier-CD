@@ -9,7 +9,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [loadingPlanForId, setLoadingPlanForId] = useState(null); // locId en cours de fetch
 
   const addLoc = () => {
-    const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planBg: null, planData: null, planAnnotations: null };
+    const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
     onChange([...localisations, newLoc]);
     if (planLibrary.length > 0) setPickingForId(newLoc.id);
   };
@@ -92,8 +92,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             {localisations.map(loc => {
               const isPicking = pickingForId === loc.id;
               const isLoading = loadingPlanForId === loc.id;
+              const assignedPlan = planLibrary.find(p => p.id === loc.planId);
               const hasPlan = !!(loc.planId || loc.planBg);
-              const assignedPlan = planLibrary.find(p => p.id === loc.planId) || planLibrary.find(p => p.bg && p.bg === loc.planBg);
+              const thumbSrc = loc.planBg || assignedPlan?.bg || null;
 
               return (
                 <div key={loc.id} style={{ border:`1px solid ${hasPlan ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
@@ -128,10 +129,14 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     ) : hasPlan ? (
                       /* Plan assigné */
                       <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-                        {loc.planBg
-                          ? <img src={loc.planBg} alt="" style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
-                          : <div style={{ width:80,height:54,borderRadius:7,border:`1px solid ${DA.border}`,background:DA.grayXL,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="map" s={20}/></div>
-                        }
+                        {thumbSrc ? (
+                          <img src={thumbSrc} alt=""
+                            style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                        ) : (
+                          <div style={{ width:80,height:54,borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0,background:DA.grayXL,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                            <Ic n="map" s={22}/>
+                          </div>
+                        )}
                         <div style={{ flex:1,minWidth:0 }}>
                           <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                             {assignedPlan?.nom || 'Plan assigné'}
@@ -177,7 +182,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                               Choisir dans la bibliothèque
                             </p>
                             {planLibrary.map(pl => {
-                              const isSel = loc.planId ? loc.planId === pl.id : (loc.planBg && loc.planBg === pl.bg);
+                              const isSel = loc.planId === pl.id;
                               return (
                                 <button key={pl.id}
                                   onClick={() => assignPlan(loc.id, isSel ? null : pl)}

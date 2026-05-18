@@ -552,9 +552,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
             onClose={() => setModal(null)}
-            onSave={({ planBg, planData, planAnnotations, planId }) => {
+            onSave={({ planId, planBg, planData, planAnnotations }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
-              const planChanged = (prevLoc?.planId || prevLoc?.planBg) !== (planId || planBg);
+              const planChanged = prevLoc?.planId !== planId || prevLoc?.planBg !== planBg;
               patchLoc(modal.locId, { planId: planId||null, planBg, planData, planAnnotations, _planDirty: planChanged });
               setModal(null);
             }}
