@@ -26,21 +26,20 @@ function isHtml(text) {
 }
 
 // Rendu React depuis HTML simple — pas de dangerouslySetInnerHTML.
-// Gère : strong/b, em/i, u (inline) ; br/div/p (sauts de ligne).
+// Gère : strong/b, em/i, u (inline) ; br (saut de ligne) ; div/p (paragraphes avec espacement).
 function renderHtml(html) {
   if (!html) return null;
-  // Parser : balises inline (strong/b/em/i/u) + balises bloc (br/div/p, ouvrantes ET fermantes)
+  // Parser : balises inline + balises bloc (br/div/p, ouvrantes ET fermantes)
   const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>)/gi;
   const parts = html.split(HTAG);
-  const result = [];
-  const stack = []; // balises ouvertes
-  let pendingBreak = false; // saut de ligne en attente (div/p ouvrant ou fermant)
+  const blocks = [];   // tableau de paragraphes (chacun = array d'éléments inline)
+  let current = [];    // bloc en cours de construction
+  const stack = [];    // balises inline ouvertes (strong/em/u)
 
-  const flushBreak = () => {
-    if (pendingBreak) {
-      result.push(<br key={`br-pend-${result.length}`}/>);
-      pendingBreak = false;
-    }
+  const finalizeBlock = () => {
+    // On garde le bloc même s'il est "vide" pour préserver les lignes blanches intentionnelles
+    blocks.push(current);
+    current = [];
   };
 
   for (let i = 0; i < parts.length; i++) {
@@ -54,25 +53,22 @@ function renderHtml(html) {
     if (lower === '<u>') { stack.push('u'); continue; }
     if (lower === '</u>') { stack.pop(); continue; }
     if (lower === '<br>' || lower === '<br/>') {
-      result.push(<br key={`br-${i}`}/>);
-      pendingBreak = false;
+      current.push(<br key={`br-${i}`}/>);
       continue;
     }
-    // Balises bloc (div/p) — chaque ouvrante OU fermante marque un saut de ligne.
-    // On colle un seul <br/> par "boundary" pour éviter les doublons (</div><div>).
+    // Balises bloc (div/p) — chaque ouvrante OU fermante marque une frontière de paragraphe.
+    // Les frontières consécutives (</div><div>) ne créent qu'UN seul saut de paragraphe.
     if (lower.startsWith('<div') || lower.startsWith('</div') ||
         lower.startsWith('<p') || lower.startsWith('</p')) {
-      // Premier saut : on note pendingBreak ; consécutif : on collapse (déjà en attente).
-      if (result.length > 0) pendingBreak = true;
+      if (current.length > 0) finalizeBlock();
       continue;
     }
-    // Texte brut — décoder entités + appliquer balises ouvertes + insérer <br/> en attente
+    // Texte brut — décoder entités + appliquer balises ouvertes
     const decoded = decodeEntities(p);
     const lines = decoded.split('\n');
     lines.forEach((line, li) => {
-      if (li > 0) { result.push(<br key={`nl-${i}-${li}`}/>); pendingBreak = false; }
+      if (li > 0) current.push(<br key={`nl-${i}-${li}`}/>);
       if (!line) return;
-      flushBreak();
       let node = line;
       for (let s = stack.length - 1; s >= 0; s--) {
         const tag = stack[s];
@@ -80,10 +76,21 @@ function renderHtml(html) {
         else if (tag === 'em') node = <em key={`${i}-${li}-s${s}`}>{node}</em>;
         else if (tag === 'u') node = <u key={`${i}-${li}-s${s}`}>{node}</u>;
       }
-      result.push(node);
+      current.push(node);
     });
   }
-  return result;
+  if (current.length > 0) finalizeBlock();
+
+  if (blocks.length === 0) return null;
+  if (blocks.length === 1) return blocks[0]; // un seul bloc : pas besoin de wrapper
+
+  // Chaque paragraphe = <span display:block> avec marge en bas
+  // (span plutôt que div pour rester valide HTML quand le parent est un <p>)
+  return blocks.map((block, i) => (
+    <span key={`p-${i}`} style={{ display: 'block', marginBottom: i < blocks.length - 1 ? '0.7em' : 0 }}>
+      {block}
+    </span>
+  ));
 }
 
 // Syntaxe legacy : **gras**, *italique*, __souligné__
