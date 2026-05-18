@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage } from '../../lib/pdfUtils.js';
+import { fetchPlanData } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -160,14 +161,28 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         </div>
 
         <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',gap:8 }}>
-          {planBg && (
-            <button onClick={() => { setPlanBg(null); setPlanData(null); }}
+          {(planBg || selectedPlanId) && (
+            <button onClick={() => { setSelectedPlanId(null); setPlanBg(null); setPlanData(null); }}
               style={{ padding:'12px 16px',background:'white',color:DA.red,border:'1px solid #FCA5A5',borderRadius:12,fontSize:12,fontWeight:600,cursor:'pointer' }}>
               <Ic n="del" s={14}/>
             </button>
           )}
-          <button onClick={() => { onSave({ planBg: planBg||null, planData: planData||null, planAnnotations: annot||null }); onClose(); }}
-            style={{ flex:1,background:planBg?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+          <button onClick={async () => {
+            let bg = planBg;
+            let data = planData;
+            // Si un plan est sélectionné par ID mais le blob n'est pas encore chargé
+            if (selectedPlanId && !bg) {
+              const live = planLibrary?.find(p => p.id === selectedPlanId);
+              if (live?.bg) { bg = live.bg; data = live.data || null; }
+              else {
+                const fetched = await fetchPlanData(selectedPlanId);
+                if (fetched) { bg = fetched.bg; data = fetched.data; }
+              }
+            }
+            onSave({ planBg: bg||null, planData: data||null, planAnnotations: annot||null });
+            onClose();
+          }}
+            style={{ flex:1,background:(planBg||selectedPlanId)?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
           </button>
         </div>

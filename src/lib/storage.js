@@ -334,6 +334,16 @@ export async function hydrateChantierPhotos(chantierIds) {
 }
 
 // Charge bg/data de la bibliothèque de plans pour un projet — appelé à l'ouverture du projet
+export async function fetchPlanData(planId) {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_chantier_plans')
+      .select('bg,data').eq('id', planId).single();
+    if (error || !data) return null;
+    return { bg: data.bg ?? null, data: data.data ?? null };
+  } catch (e) { return null; }
+}
+
 export async function hydratePlanLibrary(projectId) {
   try {
     const sb = await getSupabase();

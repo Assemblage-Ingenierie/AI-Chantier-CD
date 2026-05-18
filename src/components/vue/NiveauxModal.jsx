@@ -2,21 +2,15 @@ import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-
-// Modal de gestion des niveaux / zones avec assignation de plan
-// Props:
-//   localisations - tableau des zones du projet
-//   planLibrary   - tableau des plans disponibles
-//   onChange      - (newLocalisations) => void — appelé immédiatement à chaque action
-//   onClose       - () => void
+import { fetchPlanData } from '../../lib/storage.js';
 
 export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib }) {
-  const [pickingForId, setPickingForId] = useState(null); // id de la zone dont on choisit le plan
+  const [pickingForId, setPickingForId] = useState(null);
+  const [loadingPlanForId, setLoadingPlanForId] = useState(null); // locId en cours de fetch
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planBg: null, planData: null, planAnnotations: null };
     onChange([...localisations, newLoc]);
-    // Ouvrir directement le sélecteur de plan si on a des plans dispos
     if (planLibrary.length > 0) setPickingForId(newLoc.id);
   };
 
@@ -30,11 +24,31 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     onChange(localisations.map(l => l.id === locId ? { ...l, nom } : l));
   };
 
-  const assignPlan = (locId, plan) => {
+  const assignPlan = async (locId, plan) => {
+    if (!plan) {
+      // déselectionner
+      onChange(localisations.map(l =>
+        l.id === locId ? { ...l, planId: null, planBg: null, planData: null, _planDirty: true } : l
+      ));
+      setPickingForId(null);
+      return;
+    }
+
+    let bg = plan.bg || null;
+    let data = plan.data || null;
+
+    // Si le blob n'est pas encore hydraté, le charger depuis Supabase
+    if (!bg) {
+      setLoadingPlanForId(locId);
+      const fetched = await fetchPlanData(plan.id);
+      setLoadingPlanForId(null);
+      if (fetched) { bg = fetched.bg; data = fetched.data; }
+    }
+
     onChange(localisations.map(l => {
       if (l.id !== locId) return l;
-      const isSamePlan = l.planId === (plan?.id || null);
-      return { ...l, planId: plan?.id || null, planBg: plan?.bg || null, planData: plan?.data || null, planAnnotations: isSamePlan ? l.planAnnotations : null, _planDirty: !isSamePlan };
+      const isSamePlan = l.planId === plan.id;
+      return { ...l, planId: plan.id, planBg: bg, planData: data, planAnnotations: isSamePlan ? l.planAnnotations : null, _planDirty: !isSamePlan };
     }));
     setPickingForId(null);
   };
@@ -77,13 +91,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
             {localisations.map(loc => {
               const isPicking = pickingForId === loc.id;
+              const isLoading = loadingPlanForId === loc.id;
+              const hasPlan = !!(loc.planId || loc.planBg);
               const assignedPlan = planLibrary.find(p => p.id === loc.planId) || planLibrary.find(p => p.bg && p.bg === loc.planBg);
 
               return (
-                <div key={loc.id} style={{ border:`1px solid ${loc.planBg ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
+                <div key={loc.id} style={{ border:`1px solid ${hasPlan ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
 
                   {/* En-tête de zone */}
-                  <div style={{ display:'flex',alignItems:'center',padding:'10px 12px',gap:8,background:loc.planBg ? DA.redL : DA.white }}>
+                  <div style={{ display:'flex',alignItems:'center',padding:'10px 12px',gap:8,background:hasPlan ? DA.redL : DA.white }}>
                     <div style={{ flex:1,minWidth:0 }}>
                       <EditTitle
                         value={loc.nom}
@@ -105,11 +121,17 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
                   {/* Zone plan */}
                   <div style={{ borderTop:`1px solid ${DA.border}`,padding:'10px 12px' }}>
-                    {loc.planBg ? (
+                    {isLoading ? (
+                      <div style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'10px 0',color:DA.gray }}>
+                        <Ic n="spn" s={16}/><span style={{ fontSize:12 }}>Chargement du plan…</span>
+                      </div>
+                    ) : hasPlan ? (
                       /* Plan assigné */
                       <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-                        <img src={loc.planBg} alt=""
-                          style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                        {loc.planBg
+                          ? <img src={loc.planBg} alt="" style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                          : <div style={{ width:80,height:54,borderRadius:7,border:`1px solid ${DA.border}`,background:DA.grayXL,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="map" s={20}/></div>
+                        }
                         <div style={{ flex:1,minWidth:0 }}>
                           <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                             {assignedPlan?.nom || 'Plan assigné'}
@@ -128,7 +150,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         </div>
                       </div>
                     ) : (
-                      /* Pas de plan — bouton pour en choisir un */
+                      /* Pas de plan */
                       <button onClick={() => setPickingForId(isPicking ? null : loc.id)}
                         style={{ width:'100%',padding:'8px 12px',background:isPicking ? DA.redL : DA.grayXL,border:`1.5px dashed ${isPicking ? DA.red : DA.border}`,borderRadius:8,fontSize:12,color:isPicking ? DA.red : DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,transition:'all 0.15s' }}>
                         <Ic n="map" s={13}/>
@@ -137,7 +159,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     )}
 
                     {/* Sélecteur de plan inline */}
-                    {isPicking && (
+                    {isPicking && !isLoading && (
                       <div style={{ marginTop:10 }}>
                         {planLibrary.length === 0 ? (
                           <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10 }}>
