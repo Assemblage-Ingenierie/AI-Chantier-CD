@@ -9,7 +9,26 @@ import RapportTab from '../vue/RapportTab.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
-import Annotator from '../vue/Annotator.jsx';
+import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
+
+function PlanAnnotThumb({ bg, annotations, style }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !bg) return;
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const paths = annotations?.paths;
+      if (paths?.length) drawAnnotationPaths(ctx, paths);
+    };
+    img.src = bg;
+  }, [bg, annotations]);
+  return <canvas ref={canvasRef} style={style} />;
+}
 
 // Champs qui appartiennent à une visite (pas au projet)
 const VISIT_FIELDS = new Set([
@@ -470,7 +489,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
                                 style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: thumbSrc ? '#f4f4f4' : DA.grayXL }}>
                                 {thumbSrc ? (
-                                  <img src={loc.planAnnotations?.exported || thumbSrc} alt="Plan"
+                                  <PlanAnnotThumb bg={thumbSrc} annotations={loc.planAnnotations}
                                     style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                 ) : (
                                   <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, color:DA.grayL }}>
