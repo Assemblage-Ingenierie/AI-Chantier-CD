@@ -6,6 +6,7 @@ import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items, autoAnnot }) {
+  const [planId, setPlanId] = useState(loc.planId || null);
   const [planBg, setPlanBg] = useState(loc.planBg || null);
   const [planData, setPlanData] = useState(loc.planData || null);
   const [annot, setAnnot] = useState(loc.planAnnotations || null);
@@ -72,11 +73,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
               </p>
               <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
                 {planLibrary.map(pl => {
-                  const sel = planBg === pl.bg;
+                  const sel = planId === pl.id;
                   return (
                     <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,borderRadius:12,border:`2.5px solid ${sel?DA.red:DA.border}`,background:sel?DA.redL:DA.white,transition:'all 0.15s',overflow:'hidden' }}>
                       {/* Zone cliquable = sélection */}
-                      <button onClick={() => { if(sel){setPlanBg(null);setPlanData(null);return;} setPlanBg(pl.bg); setPlanData(pl.data||null); setConfirmDelId(null); }}
+                      <button onClick={() => { if(sel){setPlanId(null);setPlanBg(null);setPlanData(null);return;} setPlanId(pl.id); setPlanBg(pl.bg); setPlanData(pl.data||null); setConfirmDelId(null); }}
                         style={{ flex:1,display:'flex',alignItems:'center',gap:12,padding:'10px 14px',background:'none',border:'none',cursor:'pointer',textAlign:'left',minWidth:0 }}>
                         {pl.bg && <img src={pl.bg} alt="" style={{ width:58,height:40,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
                         <div style={{ flex:1,minWidth:0 }}>
@@ -105,7 +106,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                         )}
                         {onDeletePlan && (confirmDelId === pl.id ? (
                           <>
-                            <button onClick={() => { if (sel) { setPlanBg(null); setPlanData(null); } onDeletePlan(pl.id); setConfirmDelId(null); }}
+                            <button onClick={() => { if (sel) { setPlanId(null); setPlanBg(null); setPlanData(null); } onDeletePlan(pl.id); setConfirmDelId(null); }}
                               style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,fontSize:11,fontWeight:700,cursor:'pointer' }}>Oui</button>
                             <button onClick={() => setConfirmDelId(null)}
                               style={{ padding:'4px 6px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:5,fontSize:11,cursor:'pointer' }}>Non</button>
@@ -153,12 +154,12 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
 
         <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',gap:8 }}>
           {planBg && (
-            <button onClick={() => { setPlanBg(null); setPlanData(null); }}
+            <button onClick={() => { setPlanId(null); setPlanBg(null); setPlanData(null); }}
               style={{ padding:'12px 16px',background:'white',color:DA.red,border:'1px solid #FCA5A5',borderRadius:12,fontSize:12,fontWeight:600,cursor:'pointer' }}>
               <Ic n="del" s={14}/>
             </button>
           )}
-          <button onClick={() => { onSave({ planBg: planBg||null, planData: planData||null, planAnnotations: annot||null }); onClose(); }}
+          <button onClick={() => { onSave({ planId: planId||null, planBg: planBg||null, planData: planData||null, planAnnotations: annot||null }); onClose(); }}
             style={{ flex:1,background:planBg?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
           </button>

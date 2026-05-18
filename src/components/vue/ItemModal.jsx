@@ -139,7 +139,9 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           ...f,
           commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
         }));
-        bumpSync();
+        // No bumpSync here: isTyping is false during dictation so the value change
+        // alone syncs the editor. bumpSync would trigger el.blur() which interrupts
+        // iOS SpeechRecognition mid-session.
       }
     };
 
