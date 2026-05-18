@@ -436,9 +436,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 {urgentCount} ⚠
                               </span>
                             )}
-                            <span style={{ fontSize:13, color:DA.grayL, minWidth:14, textAlign:'center' }}>{items.length}</span>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
-                              style={{ padding:'7px 9px', border:`1px solid ${loc.planBg ? DA.red : DA.border}`, background:loc.planBg ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:loc.planBg ? DA.red : DA.grayL }}>
+                              style={{ padding:'7px 9px', border:`1px solid ${(loc.planId||loc.planBg) ? DA.red : DA.border}`, background:(loc.planId||loc.planBg) ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:(loc.planId||loc.planBg) ? DA.red : DA.grayL }}>
                               <Ic n="map" s={15}/>
                             </button>
                             <button onClick={() => deleteLoc(loc.id, loc.nom)}
@@ -465,12 +464,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 patchItem(loc.id, updated);
                               }}
                             />
-                            {loc.planBg ? (
+                            {(loc.planId || loc.planBg) ? (
                               <button
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
                                 style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background:'#f4f4f4' }}>
-                                <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan"
-                                  style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                {loc.planBg
+                                  ? <img src={loc.planAnnotations?.exported || loc.planBg} alt="Plan" style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                  : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:8, color:DA.grayL }}>
+                                      <Ic n="map" s={32}/>
+                                      <span style={{ fontSize:12, fontWeight:600, color:DA.gray }}>
+                                        {(projet.planLibrary||[]).find(p=>p.id===loc.planId)?.nom || 'Plan assigné'}
+                                      </span>
+                                    </div>
+                                }
                                 <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>
                                 {loc.planAnnotations?.paths?.length > 0 && (
                                   <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
@@ -552,10 +558,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
             onClose={() => setModal(null)}
-            onSave={({ planBg, planData, planAnnotations }) => {
+            onSave={({ planBg, planData, planAnnotations, planId }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
-              const planChanged = prevLoc?.planBg !== planBg;
-              patchLoc(modal.locId, { planBg, planData, planAnnotations, _planDirty: planChanged });
+              const planChanged = (prevLoc?.planId || prevLoc?.planBg) !== (planId || planBg);
+              patchLoc(modal.locId, { planId: planId||null, planBg, planData, planAnnotations, _planDirty: planChanged });
               setModal(null);
             }}
             onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}

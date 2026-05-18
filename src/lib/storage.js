@@ -632,16 +632,19 @@ async function saveRemote(ps, dirtyIds = null) {
     const plansPromise = (async () => {
       const dbPlansRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
+      // Plans sans bg en DB (à cause d'un timeout au premier save) — récupérer leur ID
+      const dbPlansNoBgRes = await sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null);
+      const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
       const planRows = (p.planLibrary || []).map((pl, i) => {
         const id = pl.id || crypto.randomUUID();
         const row = { id, chantier_id: p.id, nom: pl.nom ?? '', sort_order: i };
-        // Only send bg/data for new plans — existing plans already have their image data
-        // in DB. Re-sending multi-MB base64 on every save causes statement timeout (57014).
         const isNew = !dbPlanIds.has(id);
-        if (isNew && pl.bg   != null) row.bg   = pl.bg;
-        if (isNew && pl.data != null) row.data = pl.data;
+        const missingBg = dbPlansNoBg.has(id);
+        // Envoyer bg si nouveau plan ou si bg manquant en DB (recovery après timeout)
+        // Ne jamais envoyer data (PDF brut) — trop volumineux, cause timeout 57014
+        if (pl.bg != null && (isNew || missingBg)) row.bg = pl.bg;
         return row;
       });
       // Safety guard: if local plan list is empty but DB has plans, skip deletion.

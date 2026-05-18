@@ -179,7 +179,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                 if (fetched) { bg = fetched.bg; data = fetched.data; }
               }
             }
-            onSave({ planBg: bg||null, planData: data||null, planAnnotations: annot||null });
+            onSave({ planBg: bg||null, planData: data||null, planAnnotations: annot||null, planId: selectedPlanId||null });
             onClose();
           }}
             style={{ flex:1,background:(planBg||selectedPlanId)?DA.red:DA.black,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
