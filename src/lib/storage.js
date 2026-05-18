@@ -326,6 +326,17 @@ export async function hydratePlanLibrary(projectId) {
   } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }
 }
 
+// Charge bg + data d'un seul plan — fallback quand la miniature n'est pas encore hydratée
+export async function fetchPlanData(planId) {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_chantier_plans')
+      .select('id,bg,data').eq('id', planId).single();
+    if (error || !data) return null;
+    return { bg: data.bg ?? null, data: data.data ?? null };
+  } catch (e) { console.warn('fetchPlanData error:', e); return null; }
+}
+
 // Charge plan_bg/plan_data pour un projet donné — appelé paresseusement à l'ouverture du projet
 // pour éviter que loadRemote() ne transmette de gros blobs pour tous les projets d'un coup.
 export async function hydratePlans(projectId) {
