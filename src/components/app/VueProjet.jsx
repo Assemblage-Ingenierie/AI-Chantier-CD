@@ -9,35 +9,13 @@ import RapportTab from '../vue/RapportTab.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
-import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
+import Annotator from '../vue/Annotator.jsx';
 
 function PlanAnnotThumb({ bg, annotations, style }) {
-  const canvasRef = useRef(null);
-  const [imgLoaded, setImgLoaded] = React.useState(false);
-
-  // Dessine les annotations sur canvas overlay dès que l'<img> est chargée
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !imgLoaded || !bg) return;
-    const img = canvas.previousSibling;
-    if (!img) return;
-    canvas.width  = img.naturalWidth  || img.offsetWidth  || 800;
-    canvas.height = img.naturalHeight || img.offsetHeight || 600;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const paths = annotations?.paths;
-    if (paths?.length) drawAnnotationPaths(ctx, paths);
-  }, [bg, annotations, imgLoaded]);
-
-  return (
-    <div style={{ ...style, position:'relative', overflow:'hidden' }}>
-      {/* <img> s'affiche immédiatement sans attendre de charger dans un canvas */}
-      <img src={bg} alt="" onLoad={() => setImgLoaded(true)}
-        style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-      <canvas ref={canvasRef}
-        style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>
-    </div>
-  );
+  // annotations?.exported = image pré-composée (plan + annotations) générée par l'Annotateur
+  // C'est une base64 data URL → affichage instantané, coordonnées correctes, pas de canvas
+  const src = annotations?.exported || bg;
+  return <img src={src} alt="" style={{ ...style, objectFit:'contain', display:'block' }} />;
 }
 
 // Champs qui appartiennent à une visite (pas au projet)
@@ -500,7 +478,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 style={{ width:'100%', position:'relative', height: isDesktop ? 300 : 200, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: thumbSrc ? '#f4f4f4' : DA.grayXL }}>
                                 {thumbSrc ? (
                                   <PlanAnnotThumb bg={thumbSrc} annotations={loc.planAnnotations}
-                                    style={{ width:'100%', height:'100%' }}/>
+                                    style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                 ) : (
                                   <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, color:DA.grayL }}>
                                     <Ic n="map" s={36}/>
