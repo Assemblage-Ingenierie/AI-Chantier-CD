@@ -414,11 +414,14 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
+            // ph.annotated = image composée (photo + annotations fusionnées) — utilisée si disponible
+            // car les canvas ne s'impriment pas. Fallback canvas uniquement si pas encore exporté.
+            const useComposed = hasAnnotations && !!ph.annotated;
             return (
               <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
-                <img src={hasAnnotations ? ph.data : (ph.annotated || ph.data)} alt=""
+                <img src={useComposed ? ph.annotated : (ph.annotated || ph.data)} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
-                {hasAnnotations && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
+                {hasAnnotations && !useComposed && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
                 {hasViewpoints && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                     V{vpPhotoOffset + pi + 1}
