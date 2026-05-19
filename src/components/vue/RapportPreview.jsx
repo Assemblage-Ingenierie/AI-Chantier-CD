@@ -761,16 +761,16 @@ function CoverPage({ projet, pageNum, totalPages }) {
 // ── Pied de page commun (toutes les pages) ────────────────────────────────────────────
 function PageFtr({ pageNum, totalPages }) {
   return (
-    <div style={{ height:FTR, background:'white', borderTop:`1px solid #DFE4E8`, flexShrink:0, display:'flex', alignItems:'center', padding:`0 ${MX}px`, gap:6 }}>
-      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:1.5, minWidth:0 }}>
-        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+    <div style={{ height:FTR, background:'white', borderTop:`1px solid #DFE4E8`, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:`0 ${MX}px`, position:'relative' }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:1.5 }}>
+        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, textAlign:'center' }}>
           Assemblage Ingénierie · S.A.S. capital social 1 000€ · 137 rue d'Aboukir, 75002 Paris · contact@assemblage.net · www.assemblage.net · +33 7 65 62 30 87
         </span>
-        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+        <span style={{ fontSize:5, fontFamily:"'Open Sans', sans-serif", color:'#c0c4c8', lineHeight:1, textAlign:'center' }}>
           NAF 7112B · R.C.S. Paris 822 130 100 · Siret 822 130 100 0032 · n°TVA FR 24 822 130 100
         </span>
       </div>
-      <span style={{ fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', flexShrink:0 }}>{pageNum} / {totalPages}</span>
+      <span style={{ position:'absolute', right:MX, fontSize:6, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{pageNum} / {totalPages}</span>
     </div>
   );
 }
@@ -784,9 +784,9 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
   ];
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif" }}>
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>
         <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Conclusion</span>
           {isEditable && onUpdateConclusionAlign && (
@@ -817,7 +817,9 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
           </div>
         )}
       </div>
-      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
+        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      </div>
     </div>
   );
 }
@@ -857,9 +859,9 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
   const isEditable = !!onUpdateRecap;
 
   return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif" }}>
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB}px` }}>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>
         <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tableau récapitulatif</span>
           <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
@@ -933,7 +935,9 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
           </button>
         )}
       </div>
-      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
+        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      </div>
     </div>
   );
 }

@@ -13,21 +13,31 @@ import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
 
 function PlanAnnotThumb({ bg, annotations, style }) {
   const canvasRef = useRef(null);
+  const [imgLoaded, setImgLoaded] = React.useState(false);
+
+  // Dessine les annotations sur canvas overlay dès que l'<img> est chargée
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !bg) return;
-    const img = new Image();
-    img.onload = () => {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const paths = annotations?.paths;
-      if (paths?.length) drawAnnotationPaths(ctx, paths);
-    };
-    img.src = bg;
-  }, [bg, annotations]);
-  return <canvas ref={canvasRef} style={style} />;
+    if (!canvas || !imgLoaded || !bg) return;
+    const img = canvas.previousSibling;
+    if (!img) return;
+    canvas.width  = img.naturalWidth  || img.offsetWidth  || 800;
+    canvas.height = img.naturalHeight || img.offsetHeight || 600;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const paths = annotations?.paths;
+    if (paths?.length) drawAnnotationPaths(ctx, paths);
+  }, [bg, annotations, imgLoaded]);
+
+  return (
+    <div style={{ ...style, position:'relative', overflow:'hidden' }}>
+      {/* <img> s'affiche immédiatement sans attendre de charger dans un canvas */}
+      <img src={bg} alt="" onLoad={() => setImgLoaded(true)}
+        style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+      <canvas ref={canvasRef}
+        style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>
+    </div>
+  );
 }
 
 // Champs qui appartiennent à une visite (pas au projet)
@@ -487,10 +497,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                             {(thumbSrc || loc.planId) ? (
                               <button
                                 onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
-                                style={{ width:'100%', position:'relative', height: isDesktop ? 200 : 140, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: thumbSrc ? '#f4f4f4' : DA.grayXL }}>
+                                style={{ width:'100%', position:'relative', height: isDesktop ? 300 : 200, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: thumbSrc ? '#f4f4f4' : DA.grayXL }}>
                                 {thumbSrc ? (
                                   <PlanAnnotThumb bg={thumbSrc} annotations={loc.planAnnotations}
-                                    style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                    style={{ width:'100%', height:'100%' }}/>
                                 ) : (
                                   <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, color:DA.grayL }}>
                                     <Ic n="map" s={36}/>
