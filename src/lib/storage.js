@@ -343,11 +343,11 @@ export async function hydratePlanLibrary(projectId) {
   try {
     const sb = await getSupabase();
     const { data, error } = await sb.from('aichantier_chantier_plans')
-      .select('id,bg,data').eq('chantier_id', projectId);
+      .select('id,bg').eq('chantier_id', projectId);
     if (error) { console.warn('hydratePlanLibrary error:', error); return null; }
     const map = {};
     for (const row of (data ?? [])) {
-      if (row.bg || row.data) map[row.id] = { bg: row.bg ?? null, data: row.data ?? null };
+      if (row.bg) map[row.id] = { bg: row.bg, data: null };
     }
     return map; // { planId: { bg, data } }
   } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }

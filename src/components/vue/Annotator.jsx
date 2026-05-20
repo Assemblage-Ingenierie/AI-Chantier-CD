@@ -104,16 +104,16 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       if (sizeScale !== 1 && p.x != null) {
         ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
       }
-      const fs = 12 + p.size * 2;
+      const fs = 20 + p.size * 4;
       ctx.font = `bold ${fs}px Arial`;
       const tw = ctx.measureText(p.text).width;
-      const pad = 5;
+      const pad = 10;
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-        // Fond blanc + bordure couleur
-        const bx = p.x - pad, by = p.y - fs - 2, bw = tw + pad * 2, bh = fs + pad + 2;
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.strokeStyle = p.color; ctx.lineWidth = 1.8;
-        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill(); ctx.stroke();
+        // Fond blanc + bordure couleur — lineWidth constant en pixels écran
+        const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = fs + pad + 6;
+        ctx.fillStyle = 'rgba(255,255,255,0.96)';
+        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sizeScale;
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
         if (p.textMode === 'arrow') {
           // Flèche vers le point arrowX/arrowY (ou défaut bas-centre)
           const tipX = p.arrowX ?? (p.x + tw / 2);
@@ -143,7 +143,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
       } else {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sizeScale;
         ctx.strokeText(p.text, p.x, p.y);
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
@@ -411,12 +411,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
           ctx.beginPath(); ctx.arc(hcx, hcy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
         if (isSel) {
-          const fs = 12 + p.size * 2;
-          ctx.font = `bold ${fs}px Arial`;
-          const tw = ctx.measureText(p.text).width;
-          const pad = 5;
+          const fs = (20 + p.size * 4) * symbolScale;
+          ctx.font = `bold ${20 + p.size * 4}px Arial`;
+          const tw = ctx.measureText(p.text).width * symbolScale;
+          const pad = 10 * symbolScale;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
-          ctx.strokeRect(p.x - pad, p.y - fs - 2, tw + pad * 2, fs + pad + 2);
+          ctx.strokeRect(p.x - pad, p.y - fs - 4 * symbolScale, tw + pad * 2, fs + pad + 6 * symbolScale);
         }
         ctx.restore();
       });
@@ -695,11 +695,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         const p = paths[i];
         if (p.type !== 'text') continue;
         const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
-        const fs = 12 + p.size * 2;
-        const approxW = Math.max(60, p.text.length * fs * 0.6) + 12;
+        const cv2 = cvRef.current;
+        const txtScale = cv2 ? (cv2.width / cv2.clientWidth) * 0.5 * annotScale : 1;
+        const fs = (20 + p.size * 4) * txtScale;
+        const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
         const inBox = (p.textMode === 'boxed' || p.textMode === 'arrow') &&
-          pos.x >= p.x - 6 && pos.x <= p.x - 6 + approxW &&
-          pos.y >= p.y - fs - 4 && pos.y <= p.y + 6;
+          pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
+          pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
