@@ -156,14 +156,14 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       const hasCtx = texte.trim().length > 20 || photo;
 
       const prompt = hasCtx
-        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire rédigé : "${texte}"` : ''}\n\nTu es un expert MOE/BET. Génère uniquement les 3 à 5 suggestions LES PLUS UTILES et directement actionnables pour compléter cette observation. Qualité > quantité. Chaque suggestion doit être concrète, technique et directement liée à ce désordre précis. Pas de généralités.\nNe répète jamais ce qui est déjà écrit.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
-        : `Observation de chantier : "${titre}"\nTu es un expert MOE/BET. Génère 3 à 5 suggestions techniques précises et actionnables liées à ce désordre. Qualité > quantité.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
+        ? `Observation de chantier :\nTitre : "${titre}"\n${photo}\n${texte ? `Commentaire déjà rédigé : "${texte}"` : ''}\n\nRédige 3 à 5 commentaires techniques complets, chacun directement intégrable tel quel dans un rapport de visite chantier. Chaque commentaire doit : décrire précisément le désordre constaté, formuler un diagnostic technique, et inclure une préconisation de traitement adaptée à ce désordre. Adapte-toi au contexte déjà écrit — ne répète pas, complète ou propose des angles différents. Qualité > quantité.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`
+        : `Observation de chantier : "${titre}"\nRédige 3 à 5 commentaires techniques complets, chacun directement intégrable tel quel dans un rapport de visite chantier. Chaque commentaire doit décrire le désordre, formuler un diagnostic et inclure une préconisation de traitement. Qualité > quantité.\nFormat strict : "1. texte", "2. texte". Sans intro ni conclusion.`;
 
       const d = await callAIProxy({
         feature: 'observation-suggestion',
         model: 'claude-sonnet-4-6',
         max_tokens: 2000,
-        system: `Tu es expert MOE/BET bâtiment senior. Suggestions ultra-précises et contextuelles, jamais vagues. N'utilise jamais le tiret médiant (—) ni les tirets longs.`,
+        system: `Tu es un ingénieur structure senior spécialisé en réhabilitation du bâtiment. Tu rédiges des observations techniques de chantier en français professionnel, directement intégrables dans des rapports de visite. Chaque texte que tu produis est un commentaire autonome et complet : constat précis, diagnostic technique, préconisation de traitement. Style : neutre, factuel, expert. Orthographe parfaite. N'utilise jamais le tiret médiant (—) ni les tirets longs. Pas de listes ni de puces à l'intérieur d'un commentaire.`,
         messages: [{ role: 'user', content: prompt }],
         _signal: ctrl.signal,
       });
@@ -212,7 +212,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#059669' }}>
-                <Ic n="spn" s={12}/> {step === 'photos' ? 'Analyse des photos…' : 'Génération des suggestions…'}
+                <Ic n="spn" s={12}/> {step === 'photos' ? 'Analyse des photos…' : 'Rédaction des commentaires…'}
               </div>
               <button onClick={handleClose} style={{ fontSize: 11, color: '#059669', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Annuler</button>
             </div>
@@ -284,7 +284,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
               {/* Technical suggestions */}
               {suggestions.length > 0 && (
                 <>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Suggestions techniques — ajoute ce qui te convient</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#059669', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Commentaires rédigés — ajoute directement</p>
                   {suggestions.map((sug, i) => (
                     <div key={i} style={{ background: applied.has(i) ? '#D1FAE5' : 'white', border: `1px solid ${applied.has(i) ? '#059669' : '#A7F3D0'}`, borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                       <span style={{ flex: 1, fontSize: 12, color: '#1e1e2e', lineHeight: 1.5 }}>{sug}</span>
