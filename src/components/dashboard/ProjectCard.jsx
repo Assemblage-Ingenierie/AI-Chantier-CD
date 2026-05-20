@@ -18,18 +18,32 @@ function getLastVisit(p) {
   return [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || '')).find(v => v.dateVisite || v.localisations?.length) || p.visites[0];
 }
 
-// Items de la dernière visite (avec titre)
+// Items de la dernière visite qui contient des observations
 function getLastVisitItems(p) {
-  const lv = getLastVisit(p);
-  const locs = lv ? (lv.localisations || []) : (p.localisations || []);
-  return locs.flatMap(l => getItems(l).filter(i => i.titre));
+  if (p.visites?.length) {
+    // Trier par date décroissante, prendre la première qui a des items
+    const sorted = [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || ''));
+    for (const v of sorted) {
+      const items = (v.localisations || []).flatMap(l => getItems(l).filter(i => i.titre));
+      if (items.length) return items;
+    }
+    return [];
+  }
+  return (p.localisations || []).flatMap(l => getItems(l).filter(i => i.titre));
+}
+
+// Date de la dernière visite qui a des items
+function getLastVisitWithItems(p) {
+  if (!p.visites?.length) return null;
+  const sorted = [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || ''));
+  return sorted.find(v => (v.localisations || []).flatMap(l => getItems(l)).some(i => i.titre)) || null;
 }
 
 function MemoStrip({ p }) {
   const items = getLastVisitItems(p);
   if (!items.length) return null;
 
-  const lv = getLastVisit(p);
+  const lv = getLastVisitWithItems(p);
   const dateStr = lv?.dateVisite
     ? new Date(lv.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
     : null;
