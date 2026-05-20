@@ -234,6 +234,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [vt,         setVt]         = useState({ z: 1, px: 0, py: 0 });
   const vtRef     = useRef({ z: 1, px: 0, py: 0 });
   const gestureRef = useRef(null);
+  const canvasWrapRef = useRef(null);
 
   const [annotScale,  setAnnotScale]  = useState(() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
@@ -374,6 +375,49 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine]);
 
   useEffect(() => { redraw(); }, [redraw]);
+
+  // Ctrl+Z — undo dernière annotation
+  useEffect(() => {
+    const onKey = e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        setPaths(p => p.slice(0, -1));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Ctrl+molette — zoom centré sur le curseur
+  const onWheel = useCallback(e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const cv = cvRef.current;
+    if (!cv) return;
+    const rect = cv.getBoundingClientRect();
+    const mx = e.clientX - (rect.left + rect.width  / 2);
+    const my = e.clientY - (rect.top  + rect.height / 2);
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    const cur = vtRef.current;
+    const newZ = Math.min(6, Math.max(1, cur.z * factor));
+    if (newZ === cur.z) return;
+    const r = newZ / cur.z;
+    const newPx = mx - (mx - cur.px) * r;
+    const newPy = my - (my - cur.py) * r;
+    const maxPx = cv.clientWidth  * (newZ - 1) / 2;
+    const maxPy = cv.clientHeight * (newZ - 1) / 2;
+    const next = { z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) };
+    vtRef.current = next;
+    setVt(next);
+  }, []);
+
+  useEffect(() => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [onWheel]);
 
   useEffect(() => {
     if (!bgImage) return;
@@ -952,7 +996,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       )}
 
       {/* ── Canvas ── */}
-      <div style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
+      <div ref={canvasWrapRef} style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
