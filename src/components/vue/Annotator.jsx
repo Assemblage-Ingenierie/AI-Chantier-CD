@@ -179,6 +179,14 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.closePath(); ctx.fill();
       } else if (p.shape === 'line') {
         ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+      } else if (p.shape === 'poly') {
+        if (!p.pts || p.pts.length < 2) { ctx.restore(); return; }
+        ctx.beginPath();
+        ctx.moveTo(p.pts[0].x, p.pts[0].y);
+        p.pts.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+        ctx.closePath();
+        ctx.fillStyle = p.color; ctx.globalAlpha = 0.32; ctx.fill();
+        ctx.globalAlpha = 1; ctx.stroke();
       }
       ctx.restore();
     } else if (p.points?.length) {
@@ -275,9 +283,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
     return Math.max(0.3, Math.min(5, v));
   });
-  const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line
+  const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(false);
+  const [polyPts,       setPolyPts]       = useState([]);   // sommets du polygone en cours
+  const [polyMousePos,  setPolyMousePos]  = useState(null); // prévisualisation curseur
+  const lastTapRef = useRef(0);
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
@@ -398,6 +409,36 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       ctx.restore();
     }
 
+    // Prévisualisation polygone en cours
+    if (polyPts.length > 0 && tool === 'shape' && shapeTool === 'poly') {
+      ctx.save();
+      ctx.strokeStyle = color; ctx.lineWidth = size * strokeScale;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      // Segments déjà tracés
+      ctx.beginPath();
+      ctx.moveTo(polyPts[0].x, polyPts[0].y);
+      polyPts.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.stroke();
+      // Ligne de preview vers le curseur
+      if (polyMousePos) {
+        ctx.setLineDash([6, 4]); ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(polyPts[polyPts.length - 1].x, polyPts[polyPts.length - 1].y);
+        ctx.lineTo(polyMousePos.x, polyMousePos.y);
+        ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      // Points des sommets
+      polyPts.forEach((pt, i) => {
+        const r = i === 0 ? 10 * strokeScale : 5 * strokeScale;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = i === 0 ? color : 'white';
+        ctx.globalAlpha = i === 0 ? 0.8 : 1; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+      });
+      ctx.restore();
+    }
+
     // Indicateur de sélection : symbole/viewpoint
     if (selAnnot !== null && paths[selAnnot.idx]) {
       const ap = paths[selAnnot.idx];
@@ -407,6 +448,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         ctx.beginPath(); ctx.moveTo(ap.x1, ap.y1); ctx.lineTo(ap.x2, ap.y2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 8, 0, Math.PI * 2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 8, 0, Math.PI * 2); ctx.stroke();
+      } else if (ap.type === 'shape' && ap.shape === 'poly') {
+        if (ap.pts?.length > 1) {
+          const xs = ap.pts.map(pt => pt.x), ys = ap.pts.map(pt => pt.y);
+          const bx = Math.min(...xs) - 8, by = Math.min(...ys) - 8;
+          const bw = Math.max(...xs) - Math.min(...xs) + 16, bh = Math.max(...ys) - Math.min(...ys) + 16;
+          ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.stroke();
+        }
       } else if (ap.type === 'shape') {
         const bx = Math.min(ap.x1, ap.x2) - 8, by = Math.min(ap.y1, ap.y2) - 8;
         const bw = Math.abs(ap.x2 - ap.x1) + 16, bh = Math.abs(ap.y2 - ap.y1) + 16;
@@ -418,7 +466,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled]);
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, polyPts, polyMousePos]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -429,6 +477,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         setPaths(p => p.slice(0, -1));
+      }
+      if (e.key === 'Escape') {
+        setPolyPts([]); setPolyMousePos(null);
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selAnnot !== null) {
@@ -633,17 +684,50 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     if (tool === 'shape') {
       const cv = cvRef.current;
       const hitR = 18 * (cv.width / cv.clientWidth);
+
+      // ── Outil polygone : clic = sommet, double-clic/snap = fermeture ──
+      if (shapeTool === 'poly') {
+        const now = Date.now();
+        const isDbl = now - lastTapRef.current < 380 && polyPts.length >= 2;
+        lastTapRef.current = now;
+        if (isDbl) {
+          if (polyPts.length >= 3) {
+            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size }]);
+          }
+          setPolyPts([]); setPolyMousePos(null);
+          return;
+        }
+        // Snap au premier sommet pour fermer
+        if (polyPts.length >= 3) {
+          const closeR = 18 * (cv.width / cv.clientWidth);
+          if (Math.hypot(pos.x - polyPts[0].x, pos.y - polyPts[0].y) < closeR) {
+            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size }]);
+            setPolyPts([]); setPolyMousePos(null);
+            return;
+          }
+        }
+        setPolyPts(prev => [...prev, pos]);
+        return;
+      }
+
+      // ── Autres formes (rect/ellipse/arrow/line) : hit test pour sélection ──
       let hitIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'shape') continue;
-        const bx1 = Math.min(p.x1, p.x2) - hitR, by1 = Math.min(p.y1, p.y2) - hitR;
-        const bx2 = Math.max(p.x1, p.x2) + hitR, by2 = Math.max(p.y1, p.y2) + hitR;
-        if (pos.x >= bx1 && pos.x <= bx2 && pos.y >= by1 && pos.y <= by2) { hitIdx = i; break; }
+        if (p.shape === 'poly' && p.pts?.length > 1) {
+          const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
+          if (pos.x >= Math.min(...xs) - hitR && pos.x <= Math.max(...xs) + hitR &&
+              pos.y >= Math.min(...ys) - hitR && pos.y <= Math.max(...ys) + hitR) { hitIdx = i; break; }
+        } else if (p.x1 != null) {
+          const bx1 = Math.min(p.x1, p.x2) - hitR, by1 = Math.min(p.y1, p.y2) - hitR;
+          const bx2 = Math.max(p.x1, p.x2) + hitR, by2 = Math.max(p.y1, p.y2) + hitR;
+          if (pos.x >= bx1 && pos.x <= bx2 && pos.y >= by1 && pos.y <= by2) { hitIdx = i; break; }
+        }
       }
       if (hitIdx >= 0) {
         setSelAnnot({ idx: hitIdx });
-        annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx] }, tapX: pos.x, tapY: pos.y };
+        annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx], pts: paths[hitIdx].pts ? paths[hitIdx].pts.map(pt => ({...pt})) : undefined }, tapX: pos.x, tapY: pos.y };
         setDrawing(true);
         return;
       }
@@ -701,6 +785,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       const dx = pos.x - tapX, dy = pos.y - tapY;
       setPaths(prev => prev.map((p, i) => {
         if (i !== selAnnot.idx) return p;
+        if (origData.pts) return { ...p, pts: origData.pts.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) };
         if (origData.x1 != null) return { ...p, x1: origData.x1 + dx, y1: origData.y1 + dy, x2: origData.x2 + dx, y2: origData.y2 + dy };
         return { ...p, x: origData.x + dx, y: origData.y + dy };
       }));
@@ -718,6 +803,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
       const pos = getXY(e, cvRef.current);
       setPendingPortee({ x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
+      return;
+    }
+    // Polygone : mise à jour position curseur pour preview
+    if (tool === 'shape' && shapeTool === 'poly' && polyPts.length > 0) {
+      setPolyMousePos(getXY(e, cvRef.current));
       return;
     }
     // Forme en cours de tracé
@@ -1017,20 +1107,27 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             { k:'ellipse', lbl:'◯ Ellipse' },
             { k:'arrow',   lbl:'→ Flèche' },
             { k:'line',    lbl:'╱ Ligne' },
+            { k:'poly',    lbl:'⬠ Zone libre' },
           ].map(s => (
-            <button key={s.k} onClick={() => setShapeTool(s.k)}
+            <button key={s.k} onClick={() => { if (s.k !== shapeTool) { setPolyPts([]); setPolyMousePos(null); } setShapeTool(s.k); }}
               style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
                 background:shapeTool===s.k?DA.red:'#333',color:shapeTool===s.k?'white':'#aaa',border:'none' }}>
               {s.lbl}
             </button>
           ))}
           <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 4px' }}/>
-          <button onClick={() => setShapeFilled(v => !v)}
-            style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-              background:shapeFilled?DA.red:'#333',color:shapeFilled?'white':'#aaa',border:'none' }}>
-            {shapeFilled ? '◼ Rempli' : '◻ Contour'}
-          </button>
-          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>Glisser pour dessiner · cliquer sur existant pour déplacer · Suppr pour effacer</span>
+          {shapeTool !== 'poly' && (
+            <button onClick={() => setShapeFilled(v => !v)}
+              style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+                background:shapeFilled?DA.red:'#333',color:shapeFilled?'white':'#aaa',border:'none' }}>
+              {shapeFilled ? '◼ Rempli' : '◻ Contour'}
+            </button>
+          )}
+          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>
+            {shapeTool === 'poly'
+              ? 'Clic = ajouter un sommet · Double-clic ou snap au 1er point = fermer · Échap = annuler'
+              : 'Glisser pour dessiner · cliquer sur existant pour déplacer · Suppr pour effacer'}
+          </span>
         </div>
       )}
 
@@ -1090,7 +1187,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             {paths[selAnnot.idx].type === 'viewpoint'
               ? 'Vue'
               : paths[selAnnot.idx].type === 'shape'
-                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne' }[paths[selAnnot.idx].shape] || 'Forme')
+                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone' }[paths[selAnnot.idx].shape] || 'Forme')
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             } sélectionné
           </span>
