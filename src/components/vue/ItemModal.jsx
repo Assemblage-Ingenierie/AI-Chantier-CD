@@ -667,13 +667,13 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                   <Ic n="pen" s={12}/> Annoter
                 </button>
               </div>
-              <div onClick={() => setShowPlan(true)}
+              <div onClick={() => onOpenAnnot(form)}
                 style={{ position:'relative',borderRadius:10,overflow:'hidden',border:`1px solid ${DA.border}`,cursor:'pointer',background:'#1a1a1a' }}>
                 <img src={planAnnotations?.exported || planBg} alt="Plan"
                   style={{ width:'100%',maxHeight: isDesktop ? 220 : 160,objectFit:'contain',display:'block' }}/>
                 <div style={{ position:'absolute',bottom:0,left:0,right:0,padding:'6px 10px',background:'linear-gradient(transparent,rgba(0,0,0,0.55))',display:'flex',alignItems:'center',gap:5 }}>
-                  <Ic n="map" s={11} color="white"/>
-                  <span style={{ fontSize:11,color:'white',fontWeight:600 }}>Voir en plein écran</span>
+                  <Ic n="pen" s={11} color="white"/>
+                  <span style={{ fontSize:11,color:'white',fontWeight:600 }}>Cliquer pour annoter</span>
                 </div>
               </div>
             </div>
