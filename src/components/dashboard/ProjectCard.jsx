@@ -34,10 +34,15 @@ function MemoStrip({ p }) {
     ? new Date(lv.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
     : null;
 
+  // Urgents = haute, À planifier = moyenne, À faire = suivi actif
   const urgents  = items.filter(i => i.urgence === 'haute').map(i => i.titre).filter(Boolean);
+  const moyen    = items.filter(i => i.urgence === 'moyenne').map(i => i.titre).filter(Boolean);
   const aFaire   = items.filter(i => ['a_faire','en_cours','prochaine'].includes(i.suivi)).map(i => i.titre).filter(Boolean);
 
-  if (!urgents.length && !aFaire.length && !dateStr) return null;
+  // Fallback : si rien de marqué, afficher les 3 premiers items
+  const fallback = !urgents.length && !moyen.length && !aFaire.length
+    ? items.slice(0, 3).map(i => i.titre).filter(Boolean)
+    : [];
 
   const line = (label, color, bg, titres) => (
     <div style={{ display:'flex', alignItems:'baseline', gap:5, marginBottom:3 }}>
@@ -45,7 +50,7 @@ function MemoStrip({ p }) {
         {label}
       </span>
       <span style={{ fontSize:11, color:'#444', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
-        {titres.slice(0,3).join(' · ')}
+        {titres.slice(0, 3).join(' · ')}
         {titres.length > 3 && <span style={{ color:DA.grayL }}> +{titres.length - 3}</span>}
       </span>
     </div>
@@ -58,8 +63,10 @@ function MemoStrip({ p }) {
           Dernière visite · {dateStr}
         </p>
       )}
-      {urgents.length > 0 && line('Urgent', '#B91C1C', '#FFF0F0', urgents)}
-      {aFaire.length  > 0 && line('À faire', '#C2410C', '#FFF7ED', aFaire)}
+      {urgents.length > 0 && line('Urgent',      '#B91C1C', '#FFF0F0', urgents)}
+      {moyen.length   > 0 && line('À planifier', '#92400E', '#FFFBEB', moyen)}
+      {aFaire.length  > 0 && line('À faire',     '#1D4ED8', '#EFF6FF', aFaire)}
+      {fallback.length > 0 && line('Obs.',        '#4B5563', '#F3F4F6', fallback)}
     </div>
   );
 }
