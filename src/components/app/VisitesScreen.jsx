@@ -195,12 +195,12 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
         <div ref={listRef} style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {visites.map((v, i) => {
-            const allItems   = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.titre);
-            const obsCount   = allItems.length;
-            const urgCount   = allItems.filter(i => i.urgence === 'haute').length;
-            const urgTitres  = allItems.filter(i => i.urgence === 'haute').map(i => i.titre);
-            const moyTitres  = allItems.filter(i => i.urgence === 'moyenne').map(i => i.titre);
-            const aFaireTitres = allItems.filter(i => ['a_faire','en_cours','prochaine'].includes(i.suivi)).map(i => i.titre);
+            const rawItems   = (v.localisations || []).flatMap(l => l.items || []);
+            const obsCount   = rawItems.length;
+            const urgCount   = rawItems.filter(it => it.urgence === 'haute').length;
+            const urgTitres  = rawItems.filter(it => it.urgence === 'haute' && it.titre).map(it => it.titre);
+            const moyTitres  = rawItems.filter(it => it.urgence === 'moyenne' && it.titre).map(it => it.titre);
+            const aFaireTitres = rawItems.filter(it => ['a_faire','en_cours','prochaine'].includes(it.suivi) && it.titre).map(it => it.titre);
             const zonesCount = (v.localisations || []).length;
             const isDragging = dragIdx === i;
             const isOver     = overIdx === i && dragIdx !== i;
