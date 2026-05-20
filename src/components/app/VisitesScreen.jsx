@@ -195,8 +195,12 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
         <div ref={listRef} style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {visites.map((v, i) => {
-            const obsCount   = (v.localisations || []).flatMap(l => l.items || []).length;
-            const urgCount   = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.urgence === 'haute').length;
+            const allItems   = (v.localisations || []).flatMap(l => l.items || []).filter(i => i.titre);
+            const obsCount   = allItems.length;
+            const urgCount   = allItems.filter(i => i.urgence === 'haute').length;
+            const urgTitres  = allItems.filter(i => i.urgence === 'haute').map(i => i.titre);
+            const moyTitres  = allItems.filter(i => i.urgence === 'moyenne').map(i => i.titre);
+            const aFaireTitres = allItems.filter(i => ['a_faire','en_cours','prochaine'].includes(i.suivi)).map(i => i.titre);
             const zonesCount = (v.localisations || []).length;
             const isDragging = dragIdx === i;
             const isOver     = overIdx === i && dragIdx !== i;
@@ -284,6 +288,27 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                             ⚠ {urgCount} urgente{urgCount > 1 ? 's' : ''}
                           </span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Mémo urgences / à faire */}
+                    {(urgTitres.length > 0 || moyTitres.length > 0 || aFaireTitres.length > 0) && (
+                      <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${DA.border}` }}>
+                        {[
+                          urgTitres.length   > 0 && { label:'Urgent',      color:'#B91C1C', bg:'#FFF0F0', titres: urgTitres },
+                          moyTitres.length   > 0 && { label:'À planifier', color:'#92400E', bg:'#FFFBEB', titres: moyTitres },
+                          aFaireTitres.length > 0 && { label:'À faire',    color:'#1D4ED8', bg:'#EFF6FF', titres: aFaireTitres },
+                        ].filter(Boolean).map(({ label, color, bg, titres }) => (
+                          <div key={label} style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:4 }}>
+                            <span style={{ fontSize:10, fontWeight:800, color, background:bg, borderRadius:4, padding:'1px 6px', flexShrink:0 }}>
+                              {label}
+                            </span>
+                            <span style={{ fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+                              {titres.slice(0, 3).join(' · ')}
+                              {titres.length > 3 && <span style={{ color:DA.grayL }}> +{titres.length - 3}</span>}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
