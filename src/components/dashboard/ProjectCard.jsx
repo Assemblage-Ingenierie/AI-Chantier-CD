@@ -12,6 +12,65 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
+// Dernière visite triée par date
+function getLastVisit(p) {
+  if (!p.visites?.length) return null;
+  return [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || '')).find(v => v.dateVisite || v.localisations?.length) || p.visites[0];
+}
+
+// Items de la dernière visite (avec titre)
+function getLastVisitItems(p) {
+  const lv = getLastVisit(p);
+  const locs = lv ? (lv.localisations || []) : (p.localisations || []);
+  return locs.flatMap(l => getItems(l).filter(i => i.titre));
+}
+
+function MemoStrip({ p }) {
+  const items = getLastVisitItems(p);
+  if (!items.length) return null;
+
+  const lv = getLastVisit(p);
+  const dateStr = lv?.dateVisite
+    ? new Date(lv.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+    : null;
+
+  // Items urgents (haute), puis à planifier (moyenne) — max 3 au total
+  const urgent  = items.filter(i => i.urgence === 'haute');
+  const moyen   = items.filter(i => i.urgence === 'moyenne');
+  const preview = [...urgent, ...moyen].slice(0, 3);
+
+  // Pendants = pas encore fait
+  const pending = items.filter(i => i.suivi !== 'fait').length;
+
+  return (
+    <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${DA.border}` }}>
+      {dateStr && (
+        <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 5px', fontWeight:600 }}>
+          Dernière visite · {dateStr}
+        </p>
+      )}
+      {preview.map((item, i) => {
+        const isUrg = item.urgence === 'haute';
+        return (
+          <div key={i} style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
+            <span style={{ width:5, height:5, borderRadius:'50%', flexShrink:0,
+              background: isUrg ? DA.red : '#F59E0B' }}/>
+            <span style={{ fontSize:11, color: isUrg ? DA.red : '#92400E', fontWeight: isUrg ? 700 : 500,
+              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+              {item.titre}
+            </span>
+          </div>
+        );
+      })}
+      {pending > 0 && (
+        <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0' }}>
+          {pending} action{pending > 1 ? 's' : ''} en attente
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
@@ -74,6 +133,7 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
               )}
             </div>
           )}
+          {!arc && <MemoStrip p={p}/>}
         </div>
 
         {/* Menu — dropdown uses position:fixed to escape overflow:hidden on the card */}
