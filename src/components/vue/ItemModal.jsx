@@ -650,16 +650,43 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
           )}
 
-          {/* Plan + Enregistrer */}
+          {/* Vignette plan */}
+          {planBg && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+                <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>
+                  Plan
+                  {planAnnotations?.paths?.length > 0 && (
+                    <span style={{ marginLeft:6,fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 7px',border:`1px solid #FECACA` }}>
+                      {planAnnotations.paths.length} annotation{planAnnotations.paths.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </label>
+                <button onClick={() => onOpenAnnot(form)}
+                  style={{ fontSize:12,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'5px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:5 }}>
+                  <Ic n="pen" s={12}/> Annoter
+                </button>
+              </div>
+              <div onClick={() => setShowPlan(true)}
+                style={{ position:'relative',borderRadius:10,overflow:'hidden',border:`1px solid ${DA.border}`,cursor:'pointer',background:'#1a1a1a' }}>
+                <img src={planAnnotations?.exported || planBg} alt="Plan"
+                  style={{ width:'100%',maxHeight: isDesktop ? 220 : 160,objectFit:'contain',display:'block' }}/>
+                <div style={{ position:'absolute',bottom:0,left:0,right:0,padding:'6px 10px',background:'linear-gradient(transparent,rgba(0,0,0,0.55))',display:'flex',alignItems:'center',gap:5 }}>
+                  <Ic n="map" s={11} color="white"/>
+                  <span style={{ fontSize:11,color:'white',fontWeight:600 }}>Voir en plein écran</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Enregistrer */}
           <div style={{ display:'flex',gap:8,alignItems:'stretch' }}>
-            <button onClick={() => setShowPlan(true)}
-              style={{ border:`1px solid ${planBg?DA.red:DA.border}`,borderRadius:10,padding:'12px 14px',fontSize:13,background:planBg?DA.redL:'white',color:planBg?DA.red:DA.gray,display:'flex',alignItems:'center',gap:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap' }}>
-              <Ic n="map" s={15}/>
-              {planBg ? 'Plan' : 'Plan (vide)'}
-              {planAnnotations?.paths?.length > 0 && (
-                <span style={{ fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 7px',border:`1px solid #FECACA` }}>{planAnnotations.paths.length}</span>
-              )}
-            </button>
+            {!planBg && (
+              <button onClick={() => setShowPlan(true)}
+                style={{ border:`1px solid ${DA.border}`,borderRadius:10,padding:'12px 14px',fontSize:13,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap' }}>
+                <Ic n="map" s={15}/> Plan (vide)
+              </button>
+            )}
             <button onClick={handleSave} disabled={!form.titre || compressing}
               style={{ flex:1,background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed' }}>
               Enregistrer l'observation
