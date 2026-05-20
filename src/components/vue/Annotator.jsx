@@ -1015,6 +1015,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   };
 
   const selText = selTextIdx !== null ? paths[selTextIdx] : null;
+  const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
@@ -1048,28 +1049,28 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                   setSelAnnot(null); annotDragRef.current = null;
                 }}
-                style={{ padding:'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                style={{ padding:isMob?'7px 8px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                   color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:52 }}>
-                <Ic n={t.n} s={22}/>
-                <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?38:52 }}>
+                <Ic n={t.n} s={isMob?18:22}/>
+                {!isMob && <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>}
               </button>
             ))}
           </div>
           <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
             <button onClick={onClose}
-              style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:44 }}
-              title="Annuler">
-              <Ic n="x" s={20}/>
-              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>
+              style={{ padding:isMob?'7px 9px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?36:44 }}
+              title="Fermer">
+              <Ic n="x" s={isMob?17:20}/>
+              {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>}
             </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
-              style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:44 }}
+              style={{ padding:isMob?'7px 9px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?36:44 }}
               title="Annuler dernière action">
-              <Ic n="und" s={20}/>
-              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
+              <Ic n="und" s={isMob?17:20}/>
+              {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>}
             </button>
             <button onClick={() => {
               const cv = cvRef.current;
@@ -1089,10 +1090,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
               onSave(paths, ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
             }}
-              style={{ padding:'8px 14px',borderRadius:8,background:DA.red,color:'white',
+              style={{ padding:isMob?'7px 10px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
                 display:'flex',flexDirection:'column',alignItems:'center',gap:4 }}>
-              <Ic n="chk" s={20}/>
-              <span style={{ fontSize:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>Sauvegarder</span>
+              <Ic n="chk" s={isMob?17:20}/>
+              <span style={{ fontSize:isMob?8:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
             </button>
           </div>
         </div>
