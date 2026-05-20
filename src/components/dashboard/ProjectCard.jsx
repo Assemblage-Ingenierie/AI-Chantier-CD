@@ -34,39 +34,32 @@ function MemoStrip({ p }) {
     ? new Date(lv.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
     : null;
 
-  // Items urgents (haute), puis à planifier (moyenne) — max 3 au total
-  const urgent  = items.filter(i => i.urgence === 'haute');
-  const moyen   = items.filter(i => i.urgence === 'moyenne');
-  const preview = [...urgent, ...moyen].slice(0, 3);
+  const urgents  = items.filter(i => i.urgence === 'haute').map(i => i.titre).filter(Boolean);
+  const aFaire   = items.filter(i => ['a_faire','en_cours','prochaine'].includes(i.suivi)).map(i => i.titre).filter(Boolean);
 
-  // Pendants = pas encore fait
-  const pending = items.filter(i => i.suivi !== 'fait').length;
+  if (!urgents.length && !aFaire.length && !dateStr) return null;
+
+  const line = (label, color, bg, titres) => (
+    <div style={{ display:'flex', alignItems:'baseline', gap:5, marginBottom:3 }}>
+      <span style={{ fontSize:10, fontWeight:800, color, background:bg, borderRadius:4, padding:'1px 5px', flexShrink:0, whiteSpace:'nowrap' }}>
+        {label}
+      </span>
+      <span style={{ fontSize:11, color:'#444', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+        {titres.slice(0,3).join(' · ')}
+        {titres.length > 3 && <span style={{ color:DA.grayL }}> +{titres.length - 3}</span>}
+      </span>
+    </div>
+  );
 
   return (
     <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${DA.border}` }}>
       {dateStr && (
-        <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 5px', fontWeight:600 }}>
+        <p style={{ fontSize:10, color:DA.grayL, margin:'0 0 6px', fontWeight:600, letterSpacing:0.2 }}>
           Dernière visite · {dateStr}
         </p>
       )}
-      {preview.map((item, i) => {
-        const isUrg = item.urgence === 'haute';
-        return (
-          <div key={i} style={{ display:'flex', alignItems:'center', gap:5, marginBottom:3 }}>
-            <span style={{ width:5, height:5, borderRadius:'50%', flexShrink:0,
-              background: isUrg ? DA.red : '#F59E0B' }}/>
-            <span style={{ fontSize:11, color: isUrg ? DA.red : '#92400E', fontWeight: isUrg ? 700 : 500,
-              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
-              {item.titre}
-            </span>
-          </div>
-        );
-      })}
-      {pending > 0 && (
-        <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0' }}>
-          {pending} action{pending > 1 ? 's' : ''} en attente
-        </p>
-      )}
+      {urgents.length > 0 && line('Urgent', '#B91C1C', '#FFF0F0', urgents)}
+      {aFaire.length  > 0 && line('À faire', '#C2410C', '#FFF7ED', aFaire)}
     </div>
   );
 }
