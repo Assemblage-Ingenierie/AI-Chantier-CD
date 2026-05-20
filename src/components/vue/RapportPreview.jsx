@@ -777,37 +777,107 @@ function PageFtr({ pageNum, totalPages }) {
 
 
 // ── Page conclusion ──────────────────────────────────────────────────────────────────────────
-function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages, onUpdateConclusion, onUpdateConclusionAlign }) {
+function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum, totalPages, onUpdateConclusion, onUpdateConclusionAlign, localisations = [] }) {
   const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
   const isEditable = !!onUpdateConclusion;
   const ALIGNS = [
     { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
   ];
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiErr, setAiErr] = useState(null);
+
+  const generateConclusion = async () => {
+    setAiLoading(true); setAiErr(null);
+    try {
+      // Résumé structuré des observations pour le prompt
+      const items = localisations.flatMap(loc =>
+        (loc.items || []).filter(i => i.titre).map(i => ({
+          zone: loc.nom || '',
+          titre: i.titre || '',
+          urgence: i.urgence || 'basse',
+          commentaire: (i.commentaire || '').replace(/<[^>]+>/g, '').slice(0, 200),
+        }))
+      );
+      const urgCounts = { haute: 0, moyenne: 0, basse: 0 };
+      items.forEach(i => { urgCounts[i.urgence] = (urgCounts[i.urgence] || 0) + 1; });
+
+      const obsText = localisations.map(loc => {
+        const zoneItems = (loc.items || []).filter(i => i.titre);
+        if (!zoneItems.length) return null;
+        const lines = zoneItems.map(i => {
+          const urgLabel = i.urgence === 'haute' ? 'URGENT' : i.urgence === 'moyenne' ? 'À planifier' : 'Mineur';
+          const comment = (i.commentaire || '').replace(/<[^>]+>/g, '').slice(0, 150);
+          return `  - [${urgLabel}] ${i.titre}${comment ? ` : ${comment}` : ''}`;
+        }).join('\n');
+        return `Zone ${loc.nom} :\n${lines}`;
+      }).filter(Boolean).join('\n\n');
+
+      const projetNom = projet.nom || 'ce projet';
+      const dateVisite = dateStr || 'date non précisée';
+      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. Rédige une conclusion professionnelle de rapport de visite de chantier en français.
+
+Projet : ${projetNom}
+Date de visite : ${dateVisite}
+Nombre d'observations : ${items.length} (${urgCounts.haute} urgentes, ${urgCounts.moyenne} à planifier, ${urgCounts.basse} mineures)
+
+Observations par zone :
+${obsText}
+
+Rédige une conclusion de 4 à 6 phrases :
+- Rappelle brièvement le contexte de la visite
+- Synthétise les principaux désordres constatés et leur niveau de gravité
+- Formule une recommandation d'action prioritaire
+- Ton professionnel, factuel, sans markdown, sans titre, sans liste — uniquement du texte continu`;
+
+      const d = await callAIProxy({
+        feature: 'conclusion',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 400,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = d.content?.[0]?.text?.trim();
+      if (text) onUpdateConclusion(text);
+    } catch(e) { setAiErr(e.message || 'Erreur IA'); }
+    setAiLoading(false);
+  };
+
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>
         <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Conclusion</span>
-          {isEditable && onUpdateConclusionAlign && (
-            <div data-print="hide" style={{ display:'flex', gap:3, marginLeft:'auto' }}>
-              {ALIGNS.map(a => (
-                <button key={a.k} onClick={() => onUpdateConclusionAlign(a.k)}
-                  style={{ width:22, height:22, borderRadius:4, fontSize:11, cursor:'pointer',
-                    border:`1.5px solid ${conclusionAlign===a.k ? DA.red : DA.border}`,
-                    background: conclusionAlign===a.k ? DA.redL : 'white',
-                    color: conclusionAlign===a.k ? DA.red : DA.gray }}>
-                  {a.sym}
-                </button>
-              ))}
+          {isEditable && (
+            <div data-print="hide" style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
+              {/* Bouton génération IA */}
+              <button onClick={generateConclusion} disabled={aiLoading}
+                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.red}`, background: aiLoading ? DA.grayXL : DA.redL, color: aiLoading ? DA.grayL : DA.red, fontSize:8, fontWeight:700, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
+                {aiLoading ? <Ic n="spn" s={9}/> : <Ic n="spk" s={9}/>}
+                {aiLoading ? 'Génération…' : 'Générer via IA'}
+              </button>
+              {onUpdateConclusionAlign && (
+                <div style={{ display:'flex', gap:3 }}>
+                  {ALIGNS.map(a => (
+                    <button key={a.k} onClick={() => onUpdateConclusionAlign(a.k)}
+                      style={{ width:22, height:22, borderRadius:4, fontSize:11, cursor:'pointer',
+                        border:`1.5px solid ${conclusionAlign===a.k ? DA.red : DA.border}`,
+                        background: conclusionAlign===a.k ? DA.redL : 'white',
+                        color: conclusionAlign===a.k ? DA.red : DA.gray }}>
+                      {a.sym}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
+        {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
         {isEditable ? (
           <textarea
             value={conclusion || ''}
             onChange={e => onUpdateConclusion(e.target.value)}
-            placeholder="Saisissez votre conclusion…"
+            placeholder="Saisissez votre conclusion ou générez-la via IA…"
             rows={8}
             style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'#F2F2F2', boxSizing:'border-box', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
           />
@@ -1338,6 +1408,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   totalPages={totalPages}
                   onUpdateConclusion={onUpdateConclusion}
                   onUpdateConclusionAlign={onUpdateConclusionAlign}
+                  localisations={locs}
                 />
               </div>
             </>
