@@ -149,6 +149,38 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.fillText(p.text, p.x, p.y);
       }
       ctx.restore();
+    } else if (p.type === 'shape') {
+      ctx.save();
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = (p.size || 2) * ss;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = 1;
+      if (p.shape === 'rect') {
+        const x = Math.min(p.x1, p.x2), y = Math.min(p.y1, p.y2);
+        const w = Math.abs(p.x2 - p.x1), h = Math.abs(p.y2 - p.y1);
+        if (p.filled) { ctx.fillStyle = p.color; ctx.globalAlpha = 0.18; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+        ctx.strokeRect(x, y, w, h);
+      } else if (p.shape === 'ellipse') {
+        const cx = (p.x1 + p.x2) / 2, cy = (p.y1 + p.y2) / 2;
+        const rx = Math.max(1, Math.abs(p.x2 - p.x1) / 2), ry = Math.max(1, Math.abs(p.y2 - p.y1) / 2);
+        if (p.filled) { ctx.fillStyle = p.color; ctx.globalAlpha = 0.18; ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      } else if (p.shape === 'arrow') {
+        const angle = Math.atan2(p.y2 - p.y1, p.x2 - p.x1);
+        const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
+        const aLen = Math.max(12, Math.min(len * 0.35, 28 * ss));
+        ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(p.x2, p.y2);
+        ctx.lineTo(p.x2 + Math.cos(angle + Math.PI + Math.PI / 6) * aLen, p.y2 + Math.sin(angle + Math.PI + Math.PI / 6) * aLen);
+        ctx.lineTo(p.x2 + Math.cos(angle + Math.PI - Math.PI / 6) * aLen, p.y2 + Math.sin(angle + Math.PI - Math.PI / 6) * aLen);
+        ctx.closePath(); ctx.fill();
+      } else if (p.shape === 'line') {
+        ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+      }
+      ctx.restore();
     } else if (p.points?.length) {
       ctx.save();
       ctx.beginPath();
@@ -214,6 +246,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const vpStart        = useRef(null);
   const textDragRef    = useRef(null); // { mode:'box'|'tip', origX/Y, origArrowX/Y, tapX, tapY }
   const porteeStartRef = useRef(null);
+  const shapeStartRef  = useRef(null);
   const annotDragRef   = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
   const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
 
@@ -240,8 +273,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
     // Réinitialiser à 1 si la valeur sauvegardée était > 1.5 (ancien bug où annotScale affectait les tracés)
     if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
-    return Math.max(0.3, Math.min(2, v));
+    return Math.max(0.3, Math.min(5, v));
   });
+  const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line
+  const [pendingShape,  setPendingShape]  = useState(null);
+  const [shapeFilled,   setShapeFilled]   = useState(false);
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
@@ -311,6 +347,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
     }
 
+    if (pendingShape && tool === 'shape') {
+      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled }], symbolScale, strokeScale);
+    }
+
     // Poignées des textes (toujours visibles en mode texte)
     if (tool === 'text') {
       paths.forEach((p, i) => {
@@ -367,16 +407,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         ctx.beginPath(); ctx.moveTo(ap.x1, ap.y1); ctx.lineTo(ap.x2, ap.y2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 8, 0, Math.PI * 2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 8, 0, Math.PI * 2); ctx.stroke();
+      } else if (ap.type === 'shape') {
+        const bx = Math.min(ap.x1, ap.x2) - 8, by = Math.min(ap.y1, ap.y2) - 8;
+        const bw = Math.abs(ap.x2 - ap.x1) + 16, bh = Math.abs(ap.y2 - ap.y1) + 16;
+        ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 7, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 7, 0, Math.PI * 2); ctx.stroke();
       } else if (ap.x != null) {
         ctx.beginPath(); ctx.arc(ap.x, ap.y, 28 * Math.max(1, symbolScale), 0, Math.PI * 2); ctx.stroke();
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine]);
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
-  // Ctrl+Z — undo dernière annotation
+  // Ctrl+Z — undo dernière annotation / Delete — supprimer sélection
   useEffect(() => {
     const onKey = e => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -384,10 +430,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         e.preventDefault();
         setPaths(p => p.slice(0, -1));
       }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selAnnot !== null) {
+          e.preventDefault();
+          setPaths(p => p.filter((_, i) => i !== selAnnot.idx));
+          setSelAnnot(null);
+          annotDragRef.current = null;
+        } else if (selTextIdx !== null) {
+          e.preventDefault();
+          setPaths(p => p.filter((_, i) => i !== selTextIdx));
+          setSelTextIdx(null);
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [selAnnot, selTextIdx]);
 
   // Ctrl+molette — zoom centré sur le curseur
   const onWheel = useCallback(e => {
@@ -572,6 +630,29 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       return;
     }
+    if (tool === 'shape') {
+      const cv = cvRef.current;
+      const hitR = 18 * (cv.width / cv.clientWidth);
+      let hitIdx = -1;
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type !== 'shape') continue;
+        const bx1 = Math.min(p.x1, p.x2) - hitR, by1 = Math.min(p.y1, p.y2) - hitR;
+        const bx2 = Math.max(p.x1, p.x2) + hitR, by2 = Math.max(p.y1, p.y2) + hitR;
+        if (pos.x >= bx1 && pos.x <= bx2 && pos.y >= by1 && pos.y <= by2) { hitIdx = i; break; }
+      }
+      if (hitIdx >= 0) {
+        setSelAnnot({ idx: hitIdx });
+        annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx] }, tapX: pos.x, tapY: pos.y };
+        setDrawing(true);
+        return;
+      }
+      setSelAnnot(null);
+      shapeStartRef.current = pos;
+      setPendingShape({ x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
+      setDrawing(true);
+      return;
+    }
     setDrawing(true); setCur([pos]);
   };
 
@@ -639,6 +720,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setPendingPortee({ x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
       return;
     }
+    // Forme en cours de tracé
+    if (tool === 'shape' && drawing && shapeStartRef.current && !annotDragRef.current) {
+      const pos = getXY(e, cvRef.current);
+      setPendingShape({ x1: shapeStartRef.current.x, y1: shapeStartRef.current.y, x2: pos.x, y2: pos.y });
+      return;
+    }
     setCur(prev => [...prev, getXY(e, cvRef.current)]);
   };
 
@@ -673,6 +760,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         }
       }
       setPendingPortee(null); porteeStartRef.current = null; setDrawing(false); return;
+    }
+    // Fin forme
+    if (tool === 'shape' && shapeStartRef.current) {
+      if (pendingShape) {
+        const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
+        if (len > 6) {
+          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled }]);
+        }
+      }
+      setPendingShape(null);
+      shapeStartRef.current = null;
+      setDrawing(false);
+      return;
     }
     // Fin déplacement symbole/viewpoint
     if (selAnnot !== null && annotDragRef.current) {
@@ -767,6 +867,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             {[
               { k:'pen',    n:'pen',  lbl:'Dessin'  },
               { k:'text',   n:'txt',  lbl:'Texte'   },
+              { k:'shape',  n:'sym',  lbl:'Formes'  },
               { k:'symbol', n:'sym',  lbl:'Symbole' },
             ].map(t => (
               <button key={t.k}
@@ -775,6 +876,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
                   if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
                   if (t.k !== 'viewpoint') setActivePh(null);
+                  if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                   setSelAnnot(null); annotDragRef.current = null;
                 }}
                 style={{ padding:'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
@@ -860,7 +962,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       {/* ── Taille globale des logos ── */}
       <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
         <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>SYMBOLES</span>
-        <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
+        <input type="range" min="0.3" max="5" step="0.1" value={annotScale}
           onChange={e => {
             const v = parseFloat(e.target.value);
             setAnnotScale(v);
@@ -903,6 +1005,32 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   style={{ padding:'4px 7px',background:'#333',color:'#aaa',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>✕</button>
               </div>
           }
+        </div>
+      )}
+
+      {/* ── Shape sub-panel ── */}
+      {tool === 'shape' && (
+        <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
+          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>FORME</span>
+          {[
+            { k:'rect',    lbl:'▭ Rect.' },
+            { k:'ellipse', lbl:'◯ Ellipse' },
+            { k:'arrow',   lbl:'→ Flèche' },
+            { k:'line',    lbl:'╱ Ligne' },
+          ].map(s => (
+            <button key={s.k} onClick={() => setShapeTool(s.k)}
+              style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+                background:shapeTool===s.k?DA.red:'#333',color:shapeTool===s.k?'white':'#aaa',border:'none' }}>
+              {s.lbl}
+            </button>
+          ))}
+          <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 4px' }}/>
+          <button onClick={() => setShapeFilled(v => !v)}
+            style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+              background:shapeFilled?DA.red:'#333',color:shapeFilled?'white':'#aaa',border:'none' }}>
+            {shapeFilled ? '◼ Rempli' : '◻ Contour'}
+          </button>
+          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>Glisser pour dessiner · cliquer sur existant pour déplacer · Suppr pour effacer</span>
         </div>
       )}
 
@@ -961,7 +1089,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
           <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
             {paths[selAnnot.idx].type === 'viewpoint'
               ? 'Vue'
-              : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
+              : paths[selAnnot.idx].type === 'shape'
+                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne' }[paths[selAnnot.idx].shape] || 'Forme')
+                : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             } sélectionné
           </span>
           <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer</span>
