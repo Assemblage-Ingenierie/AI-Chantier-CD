@@ -12,79 +12,6 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
-// Dernière visite triée par date
-function getLastVisit(p) {
-  if (!p.visites?.length) return null;
-  return [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || '')).find(v => v.dateVisite || v.localisations?.length) || p.visites[0];
-}
-
-// Items de la dernière visite qui contient des observations
-function getLastVisitItems(p) {
-  if (p.visites?.length) {
-    // Trier par date décroissante, prendre la première qui a des items
-    const sorted = [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || ''));
-    for (const v of sorted) {
-      const items = (v.localisations || []).flatMap(l => getItems(l).filter(i => i.titre));
-      if (items.length) return items;
-    }
-    return [];
-  }
-  return (p.localisations || []).flatMap(l => getItems(l).filter(i => i.titre));
-}
-
-// Date de la dernière visite qui a des items
-function getLastVisitWithItems(p) {
-  if (!p.visites?.length) return null;
-  const sorted = [...p.visites].sort((a, b) => (b.dateVisite || '').localeCompare(a.dateVisite || ''));
-  return sorted.find(v => (v.localisations || []).flatMap(l => getItems(l)).some(i => i.titre)) || null;
-}
-
-function MemoStrip({ p }) {
-  const items = getLastVisitItems(p);
-  if (!items.length) return null;
-
-  const lv = getLastVisitWithItems(p);
-  const dateStr = lv?.dateVisite
-    ? new Date(lv.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
-    : null;
-
-  // Urgents = haute, À planifier = moyenne, À faire = suivi actif
-  const urgents  = items.filter(i => i.urgence === 'haute').map(i => i.titre).filter(Boolean);
-  const moyen    = items.filter(i => i.urgence === 'moyenne').map(i => i.titre).filter(Boolean);
-  const aFaire   = items.filter(i => ['a_faire','en_cours','prochaine'].includes(i.suivi)).map(i => i.titre).filter(Boolean);
-
-  // Fallback : si rien de marqué, afficher les 3 premiers items
-  const fallback = !urgents.length && !moyen.length && !aFaire.length
-    ? items.slice(0, 3).map(i => i.titre).filter(Boolean)
-    : [];
-
-  const line = (label, color, bg, titres) => (
-    <div style={{ display:'flex', alignItems:'baseline', gap:5, marginBottom:3 }}>
-      <span style={{ fontSize:10, fontWeight:800, color, background:bg, borderRadius:4, padding:'1px 5px', flexShrink:0, whiteSpace:'nowrap' }}>
-        {label}
-      </span>
-      <span style={{ fontSize:11, color:'#444', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
-        {titres.slice(0, 3).join(' · ')}
-        {titres.length > 3 && <span style={{ color:DA.grayL }}> +{titres.length - 3}</span>}
-      </span>
-    </div>
-  );
-
-  return (
-    <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${DA.border}` }}>
-      {dateStr && (
-        <p style={{ fontSize:10, color:DA.grayL, margin:'0 0 6px', fontWeight:600, letterSpacing:0.2 }}>
-          Dernière visite · {dateStr}
-        </p>
-      )}
-      {urgents.length > 0 && line('Urgent',      '#B91C1C', '#FFF0F0', urgents)}
-      {moyen.length   > 0 && line('À planifier', '#92400E', '#FFFBEB', moyen)}
-      {aFaire.length  > 0 && line('À faire',     '#1D4ED8', '#EFF6FF', aFaire)}
-      {fallback.length > 0 && line('Obs.',        '#4B5563', '#F3F4F6', fallback)}
-    </div>
-  );
-}
-
 export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
@@ -147,7 +74,6 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
               )}
             </div>
           )}
-          {!arc && <MemoStrip p={p}/>}
         </div>
 
         {/* Menu — dropdown uses position:fixed to escape overflow:hidden on the card */}
