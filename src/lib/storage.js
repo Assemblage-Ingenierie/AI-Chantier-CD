@@ -593,7 +593,14 @@ async function saveRemote(ps, dirtyIds = null) {
       participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
       visites: mergedVisitesMetadata, updated_at: now,
     }, { onConflict: 'id' });
-    if (chantierRes.error) { errors.push(chantierRes.error); continue; }
+    if (chantierRes.error) {
+      // Si le projet n'existe plus en DB (FK ou 404), ne pas essayer de sauvegarder ses locs
+      if (chantierRes.error.code === '23503' || chantierRes.error.code === 'PGRST116') {
+        console.warn('saveRemote: projet introuvable, skip locs pour', p.id);
+        continue;
+      }
+      errors.push(chantierRes.error); continue;
+    }
 
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
@@ -644,7 +651,11 @@ async function saveRemote(ps, dirtyIds = null) {
     const locUpsertRes = locRows.length
       ? await sb.from('aichantier_chantier_localisations').upsert(locRows, { onConflict: 'id' })
       : { error: null };
-    if (locUpsertRes.error) { errors.push(locUpsertRes.error); continue; }
+    if (locUpsertRes.error) {
+      // FK violation : le projet a été supprimé entre temps (race condition) — pas critique
+      if (locUpsertRes.error.code === '23503') { console.warn('saveRemote: FK loc skip', p.id); continue; }
+      errors.push(locUpsertRes.error); continue;
+    }
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
