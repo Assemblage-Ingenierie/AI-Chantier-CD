@@ -371,6 +371,18 @@ export async function hydratePlans(_projectId) {
   return {};
 }
 
+// Supprime immédiatement un projet de Supabase (contourne la garde anti-mass-delete).
+// Appelé au moment où l'utilisateur confirme la suppression, en complément du filtre local.
+export async function deleteRemoteProjet(id) {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.from('aichantier_chantiers').delete().eq('id', id);
+    if (error) { console.warn('deleteRemoteProjet error:', error); return false; }
+    if (_lastRemoteIds) _lastRemoteIds.delete(id);
+    return true;
+  } catch (e) { console.warn('deleteRemoteProjet error:', e); return false; }
+}
+
 // Migre les photos legacy (base64 en DB) vers Supabase Storage — une à la fois pour éviter les timeouts.
 // Retourne un objet { [photoId]: storageUrl } pour les photos migrées avec succès.
 export async function migratePhotosToStorage(legacyPhotoIds) {

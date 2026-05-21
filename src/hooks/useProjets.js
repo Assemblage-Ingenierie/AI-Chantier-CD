@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, deleteRemoteProjet } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 
 const MAX_HISTORY = 20;
@@ -273,9 +273,11 @@ export function useProjets(onSyncStatus) {
 
   const deleteProjet = (id) => {
     pushHistory();
-    // Pas de dirtyIds ici — la suppression est gérée par le diff _lastRemoteIds
     userModified.current = true;
     setProjets((ps) => ps.filter((p) => p.id !== id));
+    // Suppression immédiate sur Supabase — contourne la garde anti-mass-delete
+    // qui bloquerait la suppression de plusieurs projets d'affilée.
+    deleteRemoteProjet(id);
   };
 
   const addProjet = (data) => {
