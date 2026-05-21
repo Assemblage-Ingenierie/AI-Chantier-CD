@@ -17,6 +17,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const logoUrl = useBrandingLogo();
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [showNew, setShowNew] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
@@ -24,6 +25,22 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
+
+  // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
+  useEffect(() => {
+    if (profile?.role !== 'admin') return;
+    const check = async () => {
+      try {
+        const { getSupabase } = await import('../../supabase.js');
+        const sb = await getSupabase();
+        const { count } = await sb.from('aichantier_profiles').select('*', { count: 'exact', head: true }).eq('is_approved', false);
+        setPendingCount(count ?? 0);
+      } catch {}
+    };
+    check();
+    const interval = setInterval(check, 30000);
+    return () => clearInterval(interval);
+  }, [profile?.role]);
   const [undoToast, setUndoToast] = useState(null);
   const undoToastRef = useRef(null);
 
@@ -134,7 +151,12 @@ export default function ChantierAI({ profile, onLogout }) {
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {profile?.role === 'admin' && (
-            <button onClick={() => setShowAdmin(true)} style={{ background:DA.redL,border:'none',color:DA.red,fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>Admin</button>
+            <button onClick={() => { setShowAdmin(true); setPendingCount(0); }} style={{ position:'relative',background:DA.redL,border:'none',color:DA.red,fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>
+              Admin
+              {pendingCount > 0 && (
+                <span style={{ position:'absolute',top:-6,right:-6,background:DA.red,color:'white',borderRadius:'50%',width:16,height:16,fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1 }}>{pendingCount}</span>
+              )}
+            </button>
           )}
           {onLogout && (
             <button onClick={onLogout} style={{ background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
@@ -209,7 +231,7 @@ export default function ChantierAI({ profile, onLogout }) {
 
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
       {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)}/>}
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
 
       {undoToast && (
         <div style={{ position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:'rgba(30,30,30,0.92)',color:'#fff',padding:'10px 20px',borderRadius:10,fontSize:13,fontWeight:600,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',zIndex:9999,pointerEvents:'none',display:'flex',alignItems:'center',gap:8 }}>

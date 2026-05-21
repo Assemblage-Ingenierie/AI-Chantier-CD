@@ -3,7 +3,7 @@ import { getSupabase } from '../../supabase.js';
 import { recoverPhotosFromStorage } from '../../lib/storage.js';
 import { DA } from '../../lib/constants.js';
 
-export default function AdminPanel({ onClose }) {
+export default function AdminPanel({ onClose, onPendingCountChange }) {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -17,6 +17,7 @@ export default function AdminPanel({ onClose }) {
       const { data, error } = await sb.from('aichantier_profiles').select('*').order('created_at', { ascending: true });
       if (error) throw error;
       setProfiles(data);
+      onPendingCountChange?.((data || []).filter(p => !p.is_approved).length);
     } catch (e) { setErr(e.message); }
     setLoading(false);
   };
