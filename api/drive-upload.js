@@ -135,7 +135,36 @@ async function findAffairesFolder(token) {
   throw new Error(`Aucun dossier accessible. Vérifiez que le Shared Drive "Affaires" est partagé avec le compte de service.`);
 }
 
-function slugFolder(str) {
+// Extract project number like A696, A700, A1234 from project name
+function extractProjetNum(nom) {
+  const match = (nom || '').match(/[Aa]\d{3,4}/);
+  return match ? match[0].toUpperCase() : null;
+}
+
+// Find an existing project folder by number (e.g. A696 matches "2026_A696_PEGUY_...")
+// Falls back to creating a new folder with the project name if no match found.
+async function findProjetFolder(token, driveId, projetNom) {
+  const num = extractProjetNum(projetNom);
+  if (num) {
+    const params = new URLSearchParams({
+      q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`,
+      fields: 'files(id,name)',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+      driveId,
+      corpora: 'drive',
+    });
+    const res = await fetch(`${DRIVE_API}/files?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (data.files?.length) return data.files[0].id;
+  }
+  // Fallback: create a folder with the project name
+  return findOrCreateFolder(token, slugFolder(projetNom || 'Projet inconnu'), driveId, driveId);
+}
+
+
   return (str || 'Inconnu')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[<>:"/\\|?*]/g, '-')
@@ -164,9 +193,9 @@ export default async function handler(req, res) {
 
     const token = await getAccessToken(sa);
 
-    // Navigate: Affaires > projetNom > Visite_visiteLabel
+    // Navigate: Affaires root > find project folder by number (A696...) > Visite_label
     const { id: affairesId, driveId } = await findAffairesFolder(token);
-    const projetFolderId = await findOrCreateFolder(token, slugFolder(projetNom || 'Projet inconnu'), affairesId, driveId);
+    const projetFolderId = await findProjetFolder(token, driveId, projetNom);
     const visiteFolderName = visiteLabel ? `Visite_${slugFolder(visiteLabel)}` : `Visite_${new Date().toISOString().slice(0,10)}`;
     const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, projetFolderId, driveId);
 
