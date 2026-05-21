@@ -98,7 +98,11 @@ async function uploadFile(token, { fileName, mimeType, base64Data, parentId }) {
 }
 
 async function findAffairesFolder(token) {
-  // Check if "Affaires" is a Shared Drive the service account is member of
+  // Most reliable: use the Shared Drive ID directly from env var
+  const driveIdOverride = process.env.GOOGLE_AFFAIRES_DRIVE_ID;
+  if (driveIdOverride) return { id: driveIdOverride, driveId: driveIdOverride };
+
+  // Check if "Affaires" is a Shared Drive the service account is a member of
   const drivesRes = await fetch(`${DRIVE_API}/drives?pageSize=50&fields=drives(id,name)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -106,33 +110,35 @@ async function findAffairesFolder(token) {
   const sharedDrive = drivesData.drives?.find(d => d.name === 'Affaires');
   if (sharedDrive) return { id: sharedDrive.id, driveId: sharedDrive.id };
 
-  // Search for any accessible folder to retrieve the shared drive ID
-  // (when service account is contributor, the drive root is not returned as a "file"
-  //  but its driveId is present on every file/folder inside it)
+  // Search accessible folders to retrieve the shared drive ID
+  // (when service account is contributor rather than member, the drive root
+  //  doesn't appear in /drives but its driveId is on every child folder)
   const params = new URLSearchParams({
     q: `mimeType = '${FOLDER_MIME}' and trashed = false`,
     fields: 'files(id,name,driveId,parents)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
     corpora: 'allDrives',
-    pageSize: '10',
+    pageSize: '50',
   });
   const res = await fetch(`${DRIVE_API}/files?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
+  if (data.error) throw new Error(`Drive API error: ${JSON.stringify(data.error)}`);
 
-  // Prefer a folder explicitly named "Affaires"
-  const affairesFolder = data.files?.find(f => f.name === 'Affaires');
+  const folders = data.files || [];
+  const visibleNames = folders.map(f => f.name).join(', ');
+
+  const affairesFolder = folders.find(f => f.name === 'Affaires');
   if (affairesFolder) return { id: affairesFolder.id, driveId: affairesFolder.driveId };
 
-  // "Affaires" is a Shared Drive root — it doesn't appear as a file in search results.
-  // But every accessible folder has a driveId pointing to that Shared Drive.
-  // Use that driveId as the upload root (equivalent to Affaires/).
-  const inSharedDrive = data.files?.find(f => f.driveId);
+  // Use the driveId from any Shared Drive folder as the Affaires root
+  const inSharedDrive = folders.find(f => f.driveId);
   if (inSharedDrive) return { id: inSharedDrive.driveId, driveId: inSharedDrive.driveId };
 
-  throw new Error(`Aucun dossier accessible. Vérifiez que le Shared Drive "Affaires" est partagé avec le compte de service.`);
+  const hint = visibleNames ? `Dossiers visibles : ${visibleNames}` : 'Aucun dossier visible.';
+  throw new Error(`Dossier "Affaires" introuvable. ${hint} — Ajoutez GOOGLE_AFFAIRES_DRIVE_ID dans les variables Vercel.`);
 }
 
 // Extract project number like A696, A700, A1234 from project name
