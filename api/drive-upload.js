@@ -171,6 +171,25 @@ async function findProjetFolder(token, driveId, projetNom) {
 }
 
 
+// Find a folder containing "visit" in the project folder (e.g. 02_VISITES)
+// Falls back to the project folder itself if none found.
+async function findVisiteParent(token, projetFolderId, driveId) {
+  const params = new URLSearchParams({
+    q: `name contains 'visit' and mimeType = '${FOLDER_MIME}' and '${projetFolderId}' in parents and trashed = false`,
+    fields: 'files(id,name)',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+    driveId,
+    corpora: 'drive',
+  });
+  const res = await fetch(`${DRIVE_API}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (data.files?.length) return data.files[0].id;
+  return projetFolderId;
+}
+
 function slugFolder(str) {
   return (str || 'Inconnu')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -200,11 +219,12 @@ export default async function handler(req, res) {
 
     const token = await getAccessToken(sa);
 
-    // Navigate: Affaires root > find project folder by number (A696...) > Visite_label
+    // Navigate: Affaires root > project folder > 02_VISITES (or similar) > Visite_label
     const { id: affairesId, driveId } = await findAffairesFolder(token);
     const projetFolderId = await findProjetFolder(token, driveId, projetNom);
+    const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
     const visiteFolderName = visiteLabel ? `Visite_${slugFolder(visiteLabel)}` : `Visite_${new Date().toISOString().slice(0,10)}`;
-    const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, projetFolderId, driveId);
+    const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, visiteParentId, driveId);
 
     const fileId = await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
 
