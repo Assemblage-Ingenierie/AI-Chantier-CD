@@ -2,7 +2,7 @@
 // Uses a service account stored in GOOGLE_SERVICE_ACCOUNT env var (JSON string)
 // MIME types accepted: image/jpeg, image/png, image/webp
 
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
