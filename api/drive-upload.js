@@ -126,7 +126,13 @@ async function findAffairesFolder(token) {
   const affairesFolder = data.files?.find(f => f.name === 'Affaires');
   if (affairesFolder) return { id: affairesFolder.id, driveId: affairesFolder.driveId };
 
-  throw new Error(`Dossier "Affaires" introuvable. Dossiers visibles: ${data.files?.map(f=>f.name).join(', ') || 'aucun'}. Partagez le dossier "Affaires" racine avec le compte de service.`);
+  // "Affaires" is a Shared Drive root — it doesn't appear as a file in search results.
+  // But every accessible folder has a driveId pointing to that Shared Drive.
+  // Use that driveId as the upload root (equivalent to Affaires/).
+  const inSharedDrive = data.files?.find(f => f.driveId);
+  if (inSharedDrive) return { id: inSharedDrive.driveId, driveId: inSharedDrive.driveId };
+
+  throw new Error(`Aucun dossier accessible. Vérifiez que le Shared Drive "Affaires" est partagé avec le compte de service.`);
 }
 
 function slugFolder(str) {
