@@ -103,23 +103,27 @@ async function findAffairesFolder(token) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const drivesData = await drivesRes.json();
+  console.log('DEBUG shared drives:', JSON.stringify(drivesData.drives));
   const sharedDrive = drivesData.drives?.find(d => d.name === 'Affaires');
   if (sharedDrive) return { id: sharedDrive.id, driveId: sharedDrive.id };
 
   // Fallback: search for a folder named "Affaires" across all drives
   const params = new URLSearchParams({
-    q: `name = 'Affaires' and mimeType = '${FOLDER_MIME}' and trashed = false`,
-    fields: 'files(id,name,driveId)',
+    q: `mimeType = '${FOLDER_MIME}' and trashed = false`,
+    fields: 'files(id,name,driveId,parents)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
     corpora: 'allDrives',
+    pageSize: '50',
   });
   const res = await fetch(`${DRIVE_API}/files?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
-  if (!data.files?.length) throw new Error('Dossier "Affaires" introuvable. Vérifiez que le dossier est partagé avec le compte de service.');
-  return { id: data.files[0].id, driveId: data.files[0].driveId };
+  console.log('DEBUG all folders:', JSON.stringify(data.files?.map(f => f.name)));
+  const affaires = data.files?.find(f => f.name === 'Affaires');
+  if (!affaires) throw new Error(`Dossier "Affaires" introuvable. Dossiers visibles: ${data.files?.map(f=>f.name).join(', ') || 'aucun'}`);
+  return { id: affaires.id, driveId: affaires.driveId };
 }
 
 function slugFolder(str) {
