@@ -228,7 +228,11 @@ export default async function handler(req, res) {
     const { id: affairesId, driveId } = await findAffairesFolder(token);
     const projetFolderId = await findProjetFolder(token, driveId, projetNom);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
+<<<<<<< HEAD
     const visiteFolderName = visiteLabel ? slugFolder(visiteLabel) : `Visite_${new Date().toISOString().slice(0,10)}`;
+=======
+    const visiteFolderName = visiteLabel ? `Visite_${slugFolder(visiteLabel)}` : `Visite_${new Date().toISOString().slice(0,10)}`;
+>>>>>>> origin/main
     const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, visiteParentId, driveId);
 
     const fileId = await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
