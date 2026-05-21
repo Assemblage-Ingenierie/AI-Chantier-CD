@@ -171,7 +171,9 @@ async function findProjetFolder(token, driveId, projetNom) {
 }
 
 
-// Find a folder containing "visit" in the project folder (e.g. 02_VISITES)
+// Find the VISITES parent folder (e.g. 02_VISITES) in the project folder.
+// Prefers folders whose name starts with a digit (e.g. "02_VISITES") to avoid
+// accidentally matching previously created "Visite_..." subfolders.
 // Falls back to the project folder itself if none found.
 async function findVisiteParent(token, projetFolderId, driveId) {
   const params = new URLSearchParams({
@@ -186,7 +188,10 @@ async function findVisiteParent(token, projetFolderId, driveId) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
-  if (data.files?.length) return data.files[0].id;
+  const folders = data.files || [];
+  // Prefer a folder starting with a digit (02_VISITES, 03_VISITES...) over Visite_... subfolders
+  const numbered = folders.find(f => /^\d/.test(f.name));
+  if (numbered) return numbered.id;
   return projetFolderId;
 }
 
@@ -223,7 +228,7 @@ export default async function handler(req, res) {
     const { id: affairesId, driveId } = await findAffairesFolder(token);
     const projetFolderId = await findProjetFolder(token, driveId, projetNom);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
-    const visiteFolderName = visiteLabel ? `Visite_${slugFolder(visiteLabel)}` : `Visite_${new Date().toISOString().slice(0,10)}`;
+    const visiteFolderName = visiteLabel ? slugFolder(visiteLabel) : `Visite_${new Date().toISOString().slice(0,10)}`;
     const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, visiteParentId, driveId);
 
     const fileId = await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
