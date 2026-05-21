@@ -165,6 +165,7 @@ async function findProjetFolder(token, driveId, projetNom) {
 }
 
 
+function slugFolder(str) {
   return (str || 'Inconnu')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[<>:"/\\|?*]/g, '-')
