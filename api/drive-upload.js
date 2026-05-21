@@ -172,26 +172,30 @@ async function findProjetFolder(token, driveId, projetNom) {
 
 
 // Find the VISITES parent folder (e.g. 02_VISITES) in the project folder.
-// Prefers folders whose name starts with a digit (e.g. "02_VISITES") to avoid
-// accidentally matching previously created "Visite_..." subfolders.
-// Falls back to the project folder itself if none found.
+// Lists all subfolders and filters client-side to avoid Drive search indexing issues.
 async function findVisiteParent(token, projetFolderId, driveId) {
   const params = new URLSearchParams({
-    q: `name contains 'visit' and mimeType = '${FOLDER_MIME}' and '${projetFolderId}' in parents and trashed = false`,
+    q: `mimeType = '${FOLDER_MIME}' and '${projetFolderId}' in parents and trashed = false`,
     fields: 'files(id,name)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
     driveId,
     corpora: 'drive',
+    pageSize: '50',
   });
   const res = await fetch(`${DRIVE_API}/files?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
   const folders = data.files || [];
-  // Prefer a folder starting with a digit (02_VISITES, 03_VISITES...) over Visite_... subfolders
-  const numbered = folders.find(f => /^\d/.test(f.name));
-  if (numbered) return numbered.id;
+  console.log('findVisiteParent - sous-dossiers projet:', folders.map(f => f.name).join(', '));
+  // Prefer a folder starting with a digit and containing "visit" (e.g. 02_VISITES)
+  const numbered = folders.find(f => /^\d/i.test(f.name) && /visit/i.test(f.name));
+  if (numbered) { console.log('findVisiteParent - dossier visites trouvé:', numbered.name); return numbered.id; }
+  // Fallback: any folder containing "visit" that isn't a Visite_ subfolder
+  const anyVisit = folders.find(f => /visit/i.test(f.name) && !/^visite_/i.test(f.name));
+  if (anyVisit) { console.log('findVisiteParent - fallback visites:', anyVisit.name); return anyVisit.id; }
+  console.log('findVisiteParent - aucun dossier visites trouvé, upload à la racine projet');
   return projetFolderId;
 }
 
