@@ -2,40 +2,58 @@ import React, { useState, useEffect } from 'react';
 
 const LS_KEY = 'aichantier_install_dismissed';
 
+function isMobileDevice() {
+  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+}
 function isIOS() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 }
-function isInStandaloneMode() {
+function isStandalone() {
   return window.navigator.standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches;
 }
 
 export default function InstallPrompt() {
-  const [show, setShow] = useState(false);
-  const [isIos, setIsIos] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [show, setShow]               = useState(false);
+  const [mode, setMode]               = useState(''); // 'ios' | 'android-native' | 'android-manual'
+  const [deferredPrompt, setDeferred] = useState(null);
 
   useEffect(() => {
-    // Déjà installé ou déjà refusé → ne rien montrer
-    if (isInStandaloneMode()) return;
+    // Uniquement sur mobile
+    if (!isMobileDevice()) return;
+    // Déjà installé en standalone → pas besoin
+    if (isStandalone()) return;
+    // Déjà cliqué "Compris" ou "Plus tard"
     if (localStorage.getItem(LS_KEY)) return;
 
-    const ios = isIOS();
-    setIsIos(ios);
-
-    if (ios) {
-      // iOS : pas d'événement natif, on montre les instructions manuelles
+    if (isIOS()) {
+      setMode('ios');
       setShow(true);
-    } else {
-      // Android/Chrome : intercepter l'événement beforeinstallprompt
-      const handler = (e) => {
-        e.preventDefault();
-        setDeferredPrompt(e);
-        setShow(true);
-      };
-      window.addEventListener('beforeinstallprompt', handler);
-      return () => window.removeEventListener('beforeinstallprompt', handler);
+      return;
     }
+
+    // Android/Chrome : attendre l'événement natif (3s max)
+    let timer;
+    const handler = (e) => {
+      clearTimeout(timer);
+      e.preventDefault();
+      setDeferred(e);
+      setMode('android-native');
+      setShow(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Si l'événement ne vient pas (app déjà ajoutée comme raccourci ou navigateur non compatible)
+    // → afficher les instructions manuelles Android après 3s
+    timer = setTimeout(() => {
+      setMode('android-manual');
+      setShow(true);
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      clearTimeout(timer);
+    };
   }, []);
 
   const dismiss = () => {
@@ -43,55 +61,92 @@ export default function InstallPrompt() {
     setShow(false);
   };
 
-  const install = async () => {
+  const installNative = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') localStorage.setItem(LS_KEY, '1');
-    setDeferredPrompt(null);
+    setDeferred(null);
     setShow(false);
   };
 
   if (!show) return null;
 
+  // Icône partage iOS
+  const ShareIcon = () => (
+    <svg style={{ width:15,height:15,verticalAlign:'middle',display:'inline',flexShrink:0 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>
+  );
+
   return (
     <div style={{
-      position: 'fixed', bottom: 16, left: 16, right: 16, zIndex: 9999,
-      background: '#1a1a1a', borderRadius: 16, padding: '16px 18px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-      display: 'flex', flexDirection: 'column', gap: 12,
-      border: '1px solid rgba(255,255,255,0.08)',
+      position:'fixed', bottom:16, left:12, right:12, zIndex:9999,
+      background:'#1C1C1E', borderRadius:18, padding:'16px 16px 14px',
+      boxShadow:'0 12px 40px rgba(0,0,0,0.55)',
+      display:'flex', flexDirection:'column', gap:12,
+      border:'1px solid rgba(255,255,255,0.1)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <img src="/icon-192.png" alt="" style={{ width: 44, height: 44, borderRadius: 10, flexShrink: 0 }}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: 'white', fontWeight: 800, fontSize: 14 }}>Installer AIchantier</div>
-          <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 }}>
-            Accès rapide depuis votre écran d'accueil
-          </div>
+      {/* En-tête */}
+      <div style={{ display:'flex',alignItems:'center',gap:12 }}>
+        <img src="/icon-192.png" alt="" style={{ width:46,height:46,borderRadius:11,flexShrink:0 }}/>
+        <div style={{ flex:1,minWidth:0 }}>
+          <div style={{ color:'white',fontWeight:800,fontSize:15 }}>Installer AIchantier</div>
+          <div style={{ color:'rgba(255,255,255,0.5)',fontSize:12,marginTop:1 }}>Accès rapide depuis l'écran d'accueil</div>
         </div>
-        <button onClick={dismiss} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 20, cursor: 'pointer', padding: 4, lineHeight: 1, flexShrink: 0 }}>×</button>
+        <button onClick={dismiss} style={{ background:'none',border:'none',color:'rgba(255,255,255,0.35)',fontSize:22,cursor:'pointer',padding:'2px 6px',lineHeight:1,flexShrink:0 }}>×</button>
       </div>
 
-      {isIos ? (
-        <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 10, padding: '10px 12px' }}>
-          <div style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, lineHeight: 1.6 }}>
-            Appuyez sur <strong style={{ color: 'white' }}>
-              <svg style={{ width: 14, height: 14, verticalAlign: 'middle', fill: 'none', stroke: 'currentColor', strokeWidth: 2 }} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
-              {' '}Partager
-            </strong> en bas de Safari, puis <strong style={{ color: 'white' }}>"Sur l'écran d'accueil"</strong>
+      {/* iOS : instructions Partager */}
+      {mode === 'ios' && (
+        <div style={{ background:'rgba(255,255,255,0.08)',borderRadius:12,padding:'12px 14px',display:'flex',flexDirection:'column',gap:10 }}>
+          <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
+            <span style={{ background:'#0A84FF',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>1</span>
+            <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
+              Appuyez sur <strong style={{ color:'white' }}><ShareIcon/> Partager</strong> en bas de Safari
+            </div>
           </div>
-          <button onClick={dismiss} style={{ marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.7)', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
-            Compris
+          <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
+            <span style={{ background:'#0A84FF',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>2</span>
+            <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
+              Faites défiler et appuyez sur <strong style={{ color:'white' }}>"Sur l'écran d'accueil"</strong>
+            </div>
+          </div>
+          <button onClick={dismiss} style={{ marginTop:2,padding:'10px 0',borderRadius:10,border:'none',background:'rgba(255,255,255,0.13)',color:'rgba(255,255,255,0.75)',fontSize:13,cursor:'pointer',fontWeight:700 }}>
+            Compris ✓
           </button>
         </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={dismiss} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+      )}
+
+      {/* Android natif : bouton direct */}
+      {mode === 'android-native' && (
+        <div style={{ display:'flex',gap:8 }}>
+          <button onClick={dismiss} style={{ flex:1,padding:'11px 0',borderRadius:11,border:'1px solid rgba(255,255,255,0.15)',background:'transparent',color:'rgba(255,255,255,0.55)',fontSize:13,cursor:'pointer',fontWeight:600 }}>
             Plus tard
           </button>
-          <button onClick={install} style={{ flex: 2, padding: '10px 0', borderRadius: 10, border: 'none', background: '#E30513', color: 'white', fontSize: 13, cursor: 'pointer', fontWeight: 800 }}>
+          <button onClick={installNative} style={{ flex:2,padding:'11px 0',borderRadius:11,border:'none',background:'#E30513',color:'white',fontSize:14,cursor:'pointer',fontWeight:800 }}>
             Installer l'app
+          </button>
+        </div>
+      )}
+
+      {/* Android manuel : instructions Chrome */}
+      {mode === 'android-manual' && (
+        <div style={{ background:'rgba(255,255,255,0.08)',borderRadius:12,padding:'12px 14px',display:'flex',flexDirection:'column',gap:10 }}>
+          <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
+            <span style={{ background:'#34C759',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>1</span>
+            <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
+              Appuyez sur <strong style={{ color:'white' }}>⋮</strong> (3 points) en haut à droite de Chrome
+            </div>
+          </div>
+          <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
+            <span style={{ background:'#34C759',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>2</span>
+            <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
+              Appuyez sur <strong style={{ color:'white' }}>"Ajouter à l'écran d'accueil"</strong>
+            </div>
+          </div>
+          <button onClick={dismiss} style={{ marginTop:2,padding:'10px 0',borderRadius:10,border:'none',background:'rgba(255,255,255,0.13)',color:'rgba(255,255,255,0.75)',fontSize:13,cursor:'pointer',fontWeight:700 }}>
+            Compris ✓
           </button>
         </div>
       )}
