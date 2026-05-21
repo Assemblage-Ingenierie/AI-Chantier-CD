@@ -211,7 +211,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { base64, mimeType, fileName, projetNom, visiteLabel } = req.body || {};
+    const { base64, mimeType, fileName, projetNom, visiteLabel, visiteDate } = req.body || {};
 
     if (!base64 || !mimeType || !fileName) {
       return res.status(400).json({ error: 'base64, mimeType and fileName are required' });
@@ -232,7 +232,10 @@ export default async function handler(req, res) {
     const { id: affairesId, driveId } = await findAffairesFolder(token);
     const projetFolderId = await findProjetFolder(token, driveId, projetNom);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
-    const visiteFolderName = visiteLabel ? slugFolder(visiteLabel) : `Visite_${new Date().toISOString().slice(0,10)}`;
+    const datePrefix = visiteDate
+      ? new Date(visiteDate).toISOString().slice(0, 10).replace(/-/g, '_')
+      : new Date().toISOString().slice(0, 10).replace(/-/g, '_');
+    const visiteFolderName = visiteLabel ? `${datePrefix}_${slugFolder(visiteLabel)}` : datePrefix;
     const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, visiteParentId, driveId);
 
     const fileId = await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
