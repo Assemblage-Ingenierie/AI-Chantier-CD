@@ -126,11 +126,7 @@ async function findAffairesFolder(token) {
   const affairesFolder = data.files?.find(f => f.name === 'Affaires');
   if (affairesFolder) return { id: affairesFolder.id, driveId: affairesFolder.driveId };
 
-  // Use the shared drive root itself (driveId == id for the root)
-  const inSharedDrive = data.files?.find(f => f.driveId);
-  if (inSharedDrive) return { id: inSharedDrive.driveId, driveId: inSharedDrive.driveId };
-
-  throw new Error(`Aucun dossier accessible. Vérifiez le partage avec le compte de service.`);
+  throw new Error(`Dossier "Affaires" introuvable. Dossiers visibles: ${data.files?.map(f=>f.name).join(', ') || 'aucun'}. Partagez le dossier "Affaires" racine avec le compte de service.`);
 }
 
 function slugFolder(str) {
