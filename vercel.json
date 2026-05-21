@@ -4,7 +4,8 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "functions": {
-    "api/ai-proxy.js": { "maxDuration": 60 }
+    "api/ai-proxy.js": { "maxDuration": 60 },
+    "api/drive-upload.js": { "maxDuration": 30 }
   },
   "headers": [
     {

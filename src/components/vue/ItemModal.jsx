@@ -10,7 +10,20 @@ import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
-export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot }) {
+async function uploadToDrive({ data, name, projetNom, visiteLabel }) {
+  try {
+    // data is a dataURL like "data:image/webp;base64,..."
+    const [header, base64] = data.split(',');
+    const mimeType = header.match(/:(.*?);/)?.[1] || 'image/webp';
+    await fetch('/api/drive-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, visiteLabel }),
+    });
+  } catch { /* silently ignore — Drive upload is best-effort */ }
+}
+
+export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel }) {
   const [form, setForm] = useState(() => {
     const base = item
       ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
@@ -322,7 +335,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
       .then(done => {
         const valid = done.filter(Boolean);
         setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
-        if (fromCamera) valid.forEach(autoSaveToDevice);
+        if (fromCamera) {
+          valid.forEach(autoSaveToDevice);
+          valid.forEach(ph => uploadToDrive({ ...ph, projetNom, visiteLabel }));
+        }
       })
       .finally(() => setCompressing(false));
   };

@@ -554,6 +554,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             onClose={() => setModal(null)}
             onSave={form => { saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
+            projetNom={projet.nom ?? ''}
+            visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
           />
         );
       })()}
