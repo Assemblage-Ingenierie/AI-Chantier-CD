@@ -98,32 +98,39 @@ async function uploadFile(token, { fileName, mimeType, base64Data, parentId }) {
 }
 
 async function findAffairesFolder(token) {
-  // First: check if "Affaires" is a Shared Drive
+  // Check if "Affaires" is a Shared Drive the service account is member of
   const drivesRes = await fetch(`${DRIVE_API}/drives?pageSize=50&fields=drives(id,name)`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const drivesData = await drivesRes.json();
-  console.log('DEBUG shared drives:', JSON.stringify(drivesData.drives));
   const sharedDrive = drivesData.drives?.find(d => d.name === 'Affaires');
   if (sharedDrive) return { id: sharedDrive.id, driveId: sharedDrive.id };
 
-  // Fallback: search for a folder named "Affaires" across all drives
+  // Search for any accessible folder to retrieve the shared drive ID
+  // (when service account is contributor, the drive root is not returned as a "file"
+  //  but its driveId is present on every file/folder inside it)
   const params = new URLSearchParams({
     q: `mimeType = '${FOLDER_MIME}' and trashed = false`,
     fields: 'files(id,name,driveId,parents)',
     supportsAllDrives: 'true',
     includeItemsFromAllDrives: 'true',
     corpora: 'allDrives',
-    pageSize: '50',
+    pageSize: '10',
   });
   const res = await fetch(`${DRIVE_API}/files?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
-  console.log('DEBUG all folders:', JSON.stringify(data.files?.map(f => f.name)));
-  const affaires = data.files?.find(f => f.name === 'Affaires');
-  if (!affaires) throw new Error(`Dossier "Affaires" introuvable. Dossiers visibles: ${data.files?.map(f=>f.name).join(', ') || 'aucun'}`);
-  return { id: affaires.id, driveId: affaires.driveId };
+
+  // Prefer a folder explicitly named "Affaires"
+  const affairesFolder = data.files?.find(f => f.name === 'Affaires');
+  if (affairesFolder) return { id: affairesFolder.id, driveId: affairesFolder.driveId };
+
+  // Use the shared drive root itself (driveId == id for the root)
+  const inSharedDrive = data.files?.find(f => f.driveId);
+  if (inSharedDrive) return { id: inSharedDrive.driveId, driveId: inSharedDrive.driveId };
+
+  throw new Error(`Aucun dossier accessible. Vérifiez le partage avec le compte de service.`);
 }
 
 function slugFolder(str) {
