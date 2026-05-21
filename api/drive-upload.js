@@ -98,7 +98,15 @@ async function uploadFile(token, { fileName, mimeType, base64Data, parentId }) {
 }
 
 async function findAffairesFolder(token) {
-  // Search for the shared "Affaires" folder across all drives
+  // First: check if "Affaires" is a Shared Drive
+  const drivesRes = await fetch(`${DRIVE_API}/drives?pageSize=50&fields=drives(id,name)`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const drivesData = await drivesRes.json();
+  const sharedDrive = drivesData.drives?.find(d => d.name === 'Affaires');
+  if (sharedDrive) return { id: sharedDrive.id, driveId: sharedDrive.id };
+
+  // Fallback: search for a folder named "Affaires" across all drives
   const params = new URLSearchParams({
     q: `name = 'Affaires' and mimeType = '${FOLDER_MIME}' and trashed = false`,
     fields: 'files(id,name,driveId)',
