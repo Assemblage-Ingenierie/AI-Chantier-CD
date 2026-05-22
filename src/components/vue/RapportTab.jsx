@@ -69,7 +69,7 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
         rows={5}
         style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:8, padding:'8px 10px',
           outline:'none', boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', color:DA.black,
-          lineHeight:1.5, textAlign:align }}
+          lineHeight:1.5, textAlign:align, background:'white' }}
       />
       <p style={{ fontSize:9, color:DA.grayL, margin:'2px 0 0', fontStyle:'italic' }}>
         Sélectionne du texte → clique G/I/S pour le mettre en forme

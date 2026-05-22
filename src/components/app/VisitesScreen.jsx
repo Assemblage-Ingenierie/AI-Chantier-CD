@@ -248,42 +248,32 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                 {/* Zone tap → ouvre la visite (cachée en mode édition) */}
                 {!isEditing ? (
                   <div onClick={() => onSelectVisite(v.id)}
-                    style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap:8, padding:'18px 16px', cursor:'pointer', minWidth:0 }}>
+                    style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap:10, padding:'16px 16px', cursor:'pointer', minWidth:0 }}>
 
                     {/* Titre */}
-                    <p style={{ fontWeight:800, fontSize:17, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3 }}>{v.label || `Visite ${visiteNum}`}</p>
+                    <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3 }}>{v.label || `Visite ${visiteNum}`}</p>
 
-                    {/* Date avec icône */}
-                    <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                      <span style={{
-                        display:'inline-flex', alignItems:'center', justifyContent:'center',
-                        width:24, height:24, borderRadius:6, background:DA.grayXL, border:`1px solid ${DA.border}`,
-                        fontSize:12, lineHeight:1,
-                      }} aria-hidden="true">
-                        📅
-                      </span>
-                      <p style={{
-                        fontSize:13, color:v.dateVisite ? DA.black : DA.grayL, margin:0,
-                        fontWeight:v.dateVisite ? 600 : 400,
-                        fontStyle: v.dateVisite ? 'normal' : 'italic',
-                      }}>
-                        {formatDate(v.dateVisite)}
-                      </p>
-                    </div>
-
-                    {/* Ingénieur */}
-                    {v.ingenieur && (
-                      <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:24, height:24, borderRadius:6, background:DA.grayXL, border:`1px solid ${DA.border}` }}>
-                          <Ic n="usr" s={12}/>
+                    {/* Meta : date + ingénieur sur une ligne */}
+                    <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ fontSize:13 }}>📅</span>
+                        <span style={{ fontSize:13, color:v.dateVisite ? DA.black : DA.grayL, fontWeight:v.dateVisite ? 600 : 400, fontStyle:v.dateVisite ? 'normal' : 'italic' }}>
+                          {formatDate(v.dateVisite)}
                         </span>
-                        <p style={{ fontSize:13, color:DA.black, margin:0, fontWeight:700 }}>{v.ingenieur}</p>
                       </div>
-                    )}
+                      {v.ingenieur && (
+                        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                          <span style={{ color:DA.border, fontSize:13 }}>·</span>
+                          <Ic n="usr" s={12} style={{ color:DA.grayL }}/>
+                          <span style={{ fontSize:12, color:DA.grayL, fontWeight:600 }}>Ingénieur :</span>
+                          <span style={{ fontSize:13, color:DA.black, fontWeight:700, letterSpacing:0.5 }}>{v.ingenieur}</span>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Tags */}
                     {(zonesCount > 0 || obsCount > 0 || urgCount > 0) && (
-                      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:2 }}>
+                      <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         {zonesCount > 0 && (
                           <span style={{ fontSize:11, color:DA.gray, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:6, padding:'3px 9px', display:'inline-flex', alignItems:'center', gap:4, fontWeight:600 }}>
                             <Ic n="pin" s={10}/> {zonesCount} zone{zonesCount > 1 ? 's' : ''}
@@ -304,7 +294,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
                     {/* Mémo urgences / à faire */}
                     {(urgTitres.length > 0 || moyTitres.length > 0 || aFaireTitres.length > 0) && (
-                      <div style={{ marginTop:8, paddingTop:8, borderTop:`1px solid ${DA.border}` }}>
+                      <div style={{ paddingTop:10, borderTop:`1px solid ${DA.border}` }}>
                         {[
                           urgTitres.length   > 0 && { label:'Urgent',      color:'#B91C1C', bg:'#FFF0F0', titres: urgTitres },
                           moyTitres.length   > 0 && { label:'À planifier', color:'#92400E', bg:'#FFFBEB', titres: moyTitres },
@@ -325,32 +315,49 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   </div>
                 ) : (
                   /* Mode édition */
-                  <div style={{ flex:1, padding:'18px 16px', minWidth:0 }} onClick={e => e.stopPropagation()}>
-                    <p style={{ fontSize:10, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:1, margin:'0 0 6px' }}>Nom de la visite</p>
+                  <div style={{ flex:1, padding:'16px 14px', minWidth:0 }} onClick={e => e.stopPropagation()}>
+                    {/* Nom de la visite */}
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+                      <Ic n="pen" s={11} style={{ color:DA.red }}/>
+                      <span style={{ fontSize:10, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:1 }}>Nom de la visite</span>
+                    </div>
                     <input
                       autoFocus
                       value={v.label || ''}
                       onChange={e => patchVisite(v.id, { label: e.target.value })}
                       placeholder="Ex: Diagnostic structure"
-                      style={{ width:'100%', fontSize:16, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:12 }}
+                      style={{ width:'100%', fontSize:15, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'9px 11px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:10 }}
                     />
-                    <p style={{ fontSize:10, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:1, margin:'0 0 6px' }}>Date</p>
-                    <input
-                      type="date"
-                      value={v.dateVisite || ''}
-                      onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
-                      style={{ fontSize:15, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
-                    />
-                    <p style={{ fontSize:10, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:1, margin:'12px 0 6px' }}>Ingénieur (initiales)</p>
-                    <input
-                      value={v.ingenieur || ''}
-                      onChange={e => patchVisite(v.id, { ingenieur: e.target.value.toUpperCase().slice(0, 5) })}
-                      placeholder="Ex: TM"
-                      maxLength={5}
-                      style={{ fontSize:15, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', width:'100%', boxSizing:'border-box', textTransform:'uppercase', letterSpacing:2 }}
-                    />
+                    {/* Date + Ingénieur côte à côte */}
+                    <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
+                          <span style={{ fontSize:12 }}>📅</span>
+                          <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Date</span>
+                        </div>
+                        <input
+                          type="date"
+                          value={v.dateVisite || ''}
+                          onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
+                          style={{ fontSize:14, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
+                        />
+                      </div>
+                      <div style={{ width:90, flexShrink:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
+                          <Ic n="usr" s={10} style={{ color:DA.grayL }}/>
+                          <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Ingénieur</span>
+                        </div>
+                        <input
+                          value={v.ingenieur || ''}
+                          onChange={e => patchVisite(v.id, { ingenieur: e.target.value.toUpperCase().slice(0, 5) })}
+                          placeholder="TM"
+                          maxLength={5}
+                          style={{ fontSize:16, fontWeight:800, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', width:'100%', boxSizing:'border-box', textTransform:'uppercase', letterSpacing:3, textAlign:'center' }}
+                        />
+                      </div>
+                    </div>
                     <button onClick={() => setEditingId(null)}
-                      style={{ marginTop:14, width:'100%', padding:'11px 0', background:DA.red, color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, boxShadow:'0 2px 8px rgba(227,5,19,0.3)' }}>
+                      style={{ width:'100%', padding:'10px 0', background:DA.red, color:'white', border:'none', borderRadius:9, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, boxShadow:'0 2px 8px rgba(227,5,19,0.3)' }}>
                       <Ic n="chk" s={14}/> Valider
                     </button>
                   </div>

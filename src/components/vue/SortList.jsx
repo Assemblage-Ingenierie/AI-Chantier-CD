@@ -227,8 +227,7 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                     const shown = isDesktop ? validPhotos : validPhotos.slice(0, 4);
                     const extra = validPhotos.length - shown.length;
                     return (
-                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}
-                        onClick={e => e.stopPropagation()}>
+                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}>
                         {shown.map((ph, pi) => {
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);

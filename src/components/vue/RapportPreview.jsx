@@ -879,10 +879,10 @@ Rédige une conclusion de 4 à 6 phrases :
             onChange={e => onUpdateConclusion(e.target.value)}
             placeholder="Saisissez votre conclusion ou générez-la via IA…"
             rows={8}
-            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'#F2F2F2', boxSizing:'border-box', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
+            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', boxSizing:'border-box', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
           />
         ) : (
-          <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'#F2F2F2', minHeight:60, textAlign: conclusionAlign }}>
+          <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', minHeight:60, textAlign: conclusionAlign }}>
             {conclusion ? renderMarkup(conclusion) : <span style={{ color:'#4D4D4D', fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
           </div>
         )}
