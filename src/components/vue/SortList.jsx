@@ -7,6 +7,7 @@ const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 
 export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
+  const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
 
   // ── Drag state ─────────────────────────────────────────────────────────────
@@ -243,12 +244,29 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                               </div>
                             )}
                             {onDeletePhoto && (
-                              <button
-                                onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); }}
-                                title="Supprimer"
-                                style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-                                <Ic n="x" s={isDesktop ? 12 : 10}/>
-                              </button>
+                              confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
+                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.65)', borderRadius: isDesktop ? 10 : 6, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6 }}
+                                  onClick={e => e.stopPropagation()}>
+                                  <span style={{ fontSize:11, color:'white', fontWeight:700 }}>Supprimer ?</span>
+                                  <div style={{ display:'flex', gap:5 }}>
+                                    <button onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); setConfirmDelPhoto(null); }}
+                                      style={{ padding:'4px 10px', background:'#B91C1C', color:'white', border:'none', borderRadius:6, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                                      Oui
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); setConfirmDelPhoto(null); }}
+                                      style={{ padding:'4px 10px', background:'white', color:'#333', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>
+                                      Non
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={e => { e.stopPropagation(); setConfirmDelPhoto({ item, photoIdx: realIdx }); }}
+                                  title="Supprimer"
+                                  style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                                  <Ic n="x" s={isDesktop ? 12 : 10}/>
+                                </button>
+                              )
                             )}
                             {onAnnotatePhoto && (
                               <button
