@@ -14,6 +14,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [pdfQueueResults, setPdfQueueResults] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState('');
+  const [previewBg, setPreviewBg] = useState(null);
   const fileRef = useRef();
 
   const handleFile = e => {
@@ -120,6 +121,15 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     />
   );
 
+  if (previewBg) return (
+    <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
+      <img src={previewBg} alt="" style={{ maxWidth:'92vw',maxHeight:'92vh',objectFit:'contain',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,0.6)' }}/>
+      <button onClick={() => setPreviewBg(null)} style={{ position:'absolute',top:16,right:16,background:'rgba(255,255,255,0.12)',border:'none',color:'white',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+        <Ic n="x" s={16}/>
+      </button>
+    </div>
+  );
+
   return (
     <div className="modal-overlay" style={{ zIndex:60 }}>
       <div className="modal-sheet-flex">
@@ -157,7 +167,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
           <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
             {planLibrary.map(pl => (
               <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${DA.border}`,background:DA.white }}>
-                {pl.bg && <img src={pl.bg} alt="" style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
+                {pl.bg && <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>}
                 <div style={{ flex:1,minWidth:0 }}>
                   {editingId === pl.id ? (
                     <input

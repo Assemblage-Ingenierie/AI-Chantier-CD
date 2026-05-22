@@ -11,6 +11,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
+  const [previewBg, setPreviewBg] = useState(null);
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
@@ -56,6 +57,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       l.id === locId ? { ...l, planId: null, planBg: null, planData: null, _planDirty: true } : l
     ));
   };
+
+  if (previewBg) return (
+    <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
+      <img src={previewBg} alt="" style={{ maxWidth:'92vw',maxHeight:'92vh',objectFit:'contain',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,0.6)' }}/>
+      <button onClick={() => setPreviewBg(null)} style={{ position:'absolute',top:16,right:16,background:'rgba(255,255,255,0.12)',border:'none',color:'white',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+        <Ic n="x" s={16}/>
+      </button>
+    </div>
+  );
 
   return (
     <div className="modal-overlay" style={{ zIndex:60 }}>
@@ -120,7 +130,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
                 {planLibrary.map(pl => (
                   <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${DA.border}`,background:DA.white }}>
-                    {pl.bg && <img src={pl.bg} alt="" style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0 }}/>}
+                    {pl.bg && <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>}
                     {editingPlanId === pl.id ? (
                       <input autoFocus value={editingPlanNom}
                         onChange={e => setEditingPlanNom(e.target.value)}
@@ -195,7 +205,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                       <div style={{ display:'flex',alignItems:'center',gap:10 }}>
                         {thumbSrc ? (
                           <img src={thumbSrc} alt=""
-                            style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                            onClick={() => setPreviewBg(thumbSrc)}
+                            style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
                         ) : (
                           <div style={{ width:80,height:54,borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0,background:DA.grayXL,display:'flex',alignItems:'center',justifyContent:'center' }}>
                             <Ic n="map" s={22}/>
@@ -257,7 +268,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                                   style={{ display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,border:`2px solid ${isSel ? DA.red : DA.border}`,background:isSel ? DA.redL : DA.white,cursor:'pointer',textAlign:'left',transition:'all 0.1s' }}>
                                   {pl.bg && (
                                     <img src={pl.bg} alt=""
-                                      style={{ width:52,height:36,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0 }}/>
+                                      onClick={e => { e.stopPropagation(); setPreviewBg(pl.bg); }}
+                                      style={{ width:52,height:36,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
                                   )}
                                   <p style={{ flex:1,fontWeight:600,fontSize:12,color:isSel ? DA.red : DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                                     {pl.nom}
