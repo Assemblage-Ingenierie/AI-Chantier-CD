@@ -42,6 +42,15 @@ export default function ChantierAI({ profile, onLogout }) {
     return () => clearInterval(interval);
   }, [profile?.role]);
   const [undoToast, setUndoToast] = useState(null);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const goOnline  = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
   const undoToastRef = useRef(null);
 
   // --- Navigation arrière (swipe iOS / bouton Android) ---
@@ -176,10 +185,24 @@ export default function ChantierAI({ profile, onLogout }) {
         </div>
       )}
 
+      {/* Bandeau hors ligne — toujours visible, desktop + mobile */}
+      {!isOnline && (
+        <div style={{ background:'#1C1917', padding:'7px 16px', display:'flex', alignItems:'center', gap:8, flexShrink:0, zIndex:40 }}>
+          <span style={{ fontSize:14 }}>📵</span>
+          <span style={{ fontSize:12, color:'#FEF3C7', fontWeight:700, flex:1 }}>Hors ligne — modifications sauvegardées localement, synchronisation à la reconnexion</span>
+        </div>
+      )}
+
       {/* Pastille sync mobile — visible uniquement quand le header est masqué */}
       {isMobile && ouvert && (
         <div style={{ position:'fixed', bottom:18, right:14, zIndex:50, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6, pointerEvents:'none' }}>
-          {!remoteLoaded && splashTimedOut && hasDataToShow && (
+          {!isOnline && (
+            <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:10, background:'#1C1917', boxShadow:'0 2px 12px rgba(0,0,0,0.35)' }}>
+              <span style={{ fontSize:11 }}>📵</span>
+              <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:700 }}>Hors ligne</span>
+            </div>
+          )}
+          {isOnline && !remoteLoaded && splashTimedOut && hasDataToShow && (
             <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:10, background:'#78350F', boxShadow:'0 2px 12px rgba(0,0,0,0.25)' }}>
               <Ic n="spn" s={11}/>
               <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:700 }}>Sync en cours…</span>

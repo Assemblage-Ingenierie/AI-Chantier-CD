@@ -1,22 +1,69 @@
-// Service Worker minimal — requis pour que Chrome Android propose l'installation PWA
-const CACHE = 'aichantier-v1';
+const CACHE = 'aichantier-v3';
+
+// Ressources connues à pré-cacher au premier install
+const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
-  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+  );
 });
 
+// Nettoie les anciens caches à l'activation
 self.addEventListener('activate', e => {
-  e.waitUntil(clients.claim());
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => clients.claim())
+  );
 });
 
-// Stratégie network-first : on ne bloque pas les requêtes réseau,
-// on met juste en cache les ressources statiques pour le mode hors-ligne basique.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
-  // Ne pas intercepter les requêtes Supabase ou l'API IA
-  if (url.hostname.includes('supabase') || url.pathname.startsWith('/api/')) return;
+
+  // Ne jamais intercepter : Supabase, API proxy IA, requêtes cross-origin autres que fonts
+  const isSameOrigin = url.origin === self.location.origin;
+  const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+  if (!isSameOrigin && !isFont) return;
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Assets immutables (hashes Vite) → cache-first : si en cache, on sert directement
+  if (url.pathname.startsWith('/assets/')) {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(res => {
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        });
+      })
+    );
+    return;
+  }
+
+  // Fonts Google → cache-first (évite le rechargement réseau répété)
+  if (isFont) {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(res => {
+          if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+          return res;
+        });
+      })
+    );
+    return;
+  }
+
+  // Navigation HTML et autres ressources statiques → network-first (reçoit les mises à jour),
+  // fallback sur le cache si hors ligne
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    fetch(e.request)
+      .then(res => {
+        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+        return res;
+      })
+      .catch(() => caches.match(e.request).then(cached => cached || caches.match('/')))
   );
 });
