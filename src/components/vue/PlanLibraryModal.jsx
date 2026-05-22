@@ -9,64 +9,89 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [pendingPdf, setPendingPdf] = useState(null);
-  const [pendingName, setPendingName] = useState('');
+  const [pdfQueue, setPdfQueue] = useState([]); // [{pdf, nom}]
+  const [pdfQueueIdx, setPdfQueueIdx] = useState(0);
+  const [pdfQueueResults, setPdfQueueResults] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState('');
   const fileRef = useRef();
 
   const handleFile = e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    if (f.size > 20 * 1024 * 1024) { setRenderErr('Fichier trop volumineux (max 20 Mo)'); e.target.value = ''; return; }
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
     setRenderErr(null);
-    const nom = f.name.replace(/\.[^.]+$/, '');
-    if (f.type === 'application/pdf') {
-      const r = new FileReader();
-      r.onload = ev => {
-        setPendingPdf(ev.target.result);
-        setPendingName(nom);
-        setShowPicker(true);
-      };
-      r.readAsDataURL(f);
-    } else if (f.type.startsWith('image/')) {
+
+    const pdfs = [], images = [], bad = [];
+    for (const f of files) {
+      if (f.size > 20 * 1024 * 1024) { bad.push(f.name); continue; }
+      if (f.type === 'application/pdf') pdfs.push(f);
+      else if (f.type.startsWith('image/')) images.push(f);
+      else bad.push(f.name);
+    }
+    if (bad.length) setRenderErr(`Ignoré(s) — trop volumineux ou format non supporté : ${bad.join(', ')}`);
+
+    images.forEach(f => {
+      const nom = f.name.replace(/\.[^.]+$/, '');
       const r = new FileReader();
       r.onload = ev => onAdd([{ id: crypto.randomUUID(), nom, bg: ev.target.result, data: null }]);
       r.readAsDataURL(f);
-    } else {
-      setRenderErr('Format non supporté. Utilisez PDF, JPG ou PNG.');
+    });
+
+    if (pdfs.length > 0) {
+      Promise.all(pdfs.map(f => new Promise(res => {
+        const nom = f.name.replace(/\.[^.]+$/, '');
+        const r = new FileReader();
+        r.onload = ev => res({ pdf: ev.target.result, nom });
+        r.readAsDataURL(f);
+      }))).then(queue => {
+        setPdfQueue(queue);
+        setPdfQueueIdx(0);
+        setPdfQueueResults([]);
+        setShowPicker(true);
+      });
     }
     e.target.value = '';
   };
 
   // Appelé par le picker avec les numéros de pages sélectionnées
   const handlePagesSelected = async selectedNums => {
-    const pdfData = pendingPdf;
-    const baseName = pendingName;
+    const { pdf: pdfData, nom: baseName } = pdfQueue[pdfQueueIdx];
     setShowPicker(false);
-    setPendingPdf(null);
-    setPendingName('');
     setRendering(true);
     setRenderErr(null);
+    const newResults = [];
     try {
-      const results = [];
       for (let idx = 0; idx < selectedNums.length; idx++) {
         const pageNum = selectedNums[idx];
-        setRenderProgress(`Rendu page ${idx + 1} / ${selectedNums.length}…`);
+        setRenderProgress(pdfQueue.length > 1
+          ? `PDF ${pdfQueueIdx + 1}/${pdfQueue.length} — page ${idx + 1}/${selectedNums.length}…`
+          : `Rendu page ${idx + 1} / ${selectedNums.length}…`);
         const img = await renderPdfPage(pdfData, pageNum);
         if (img) {
           const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
-          results.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
+          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
         }
         await new Promise(r => setTimeout(r, 30));
       }
-      if (results.length > 0) onAdd(results); // batch add en une seule fois → pas de race condition
-      else setRenderErr('Aucune page n\'a pu être rendue.');
     } catch (e) {
-      setRenderErr('Erreur rendu PDF: ' + e.message);
+      setRenderErr('Erreur rendu PDF : ' + e.message);
     }
     setRenderProgress('');
     setRendering(false);
+
+    const allResults = [...pdfQueueResults, ...newResults];
+    const nextIdx = pdfQueueIdx + 1;
+    if (nextIdx < pdfQueue.length) {
+      setPdfQueueResults(allResults);
+      setPdfQueueIdx(nextIdx);
+      setShowPicker(true);
+    } else {
+      if (allResults.length > 0) onAdd(allResults);
+      else setRenderErr("Aucune page n'a pu être rendue.");
+      setPdfQueue([]);
+      setPdfQueueIdx(0);
+      setPdfQueueResults([]);
+    }
   };
 
   const startRename = (pl) => {
@@ -80,11 +105,18 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     setEditingNom('');
   };
 
-  if (showPicker && pendingPdf) return (
+  if (showPicker && pdfQueue.length > 0) return (
     <PdfPagePicker
-      pdfData={pendingPdf}
+      pdfData={pdfQueue[pdfQueueIdx].pdf}
+      label={pdfQueue.length > 1 ? `${pdfQueue[pdfQueueIdx].nom} (${pdfQueueIdx + 1}/${pdfQueue.length})` : pdfQueue[pdfQueueIdx].nom}
       onSelectMany={handlePagesSelected}
-      onClose={() => { setShowPicker(false); setPendingPdf(null); setPendingName(''); }}
+      onClose={() => {
+        setShowPicker(false);
+        if (pdfQueueResults.length > 0) onAdd(pdfQueueResults);
+        setPdfQueue([]);
+        setPdfQueueIdx(0);
+        setPdfQueueResults([]);
+      }}
     />
   );
 
@@ -166,7 +198,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             style={{ width:'100%',background:rendering ? DA.grayL : DA.black,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:rendering?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
             <Ic n="plus" s={16}/> Ajouter un plan (PDF, JPG, PNG)
           </button>
-          <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleFile}/>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleFile}/>
           <button onClick={onClose}
             style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer

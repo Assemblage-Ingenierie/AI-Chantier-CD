@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
 
-export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
+export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose }) {
   const [pages, setPages]       = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [loading, setLoading]   = useState(true);
@@ -60,8 +60,9 @@ export default function PdfPagePicker({ pdfData, onSelectMany, onClose }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:70, display:'flex', flexDirection:'column' }}>
       <div style={{ background:DA.black, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-        <div>
+        <div style={{ minWidth:0 }}>
           <p style={{ color:'white', fontWeight:700, fontSize:14, margin:0 }}>Choisir les pages à importer</p>
+          {label && <p style={{ color:'rgba(255,255,255,0.7)', fontSize:12, margin:'1px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</p>}
           <p style={{ color:'rgba(255,255,255,0.45)', fontSize:11, margin:'2px 0 0' }}>
             {selected.size} / {pages.length} page{pages.length !== 1 ? 's' : ''} sélectionnée{selected.size !== 1 ? 's' : ''}
           </p>
