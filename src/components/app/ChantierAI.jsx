@@ -168,11 +168,29 @@ export default function ChantierAI({ profile, onLogout }) {
         </div>
       </div>}
 
-      {/* Bandeau connexion lente */}
-      {!remoteLoaded && splashTimedOut && hasDataToShow && (
+      {/* Bandeau connexion lente — desktop ou hors projet */}
+      {!remoteLoaded && splashTimedOut && hasDataToShow && !(isMobile && ouvert) && (
         <div style={{ background:'#78350F', padding:'6px 16px', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
           <Ic n="spn" s={12}/>
           <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:600 }}>Synchronisation en cours — données du cache affichées</span>
+        </div>
+      )}
+
+      {/* Pastille sync mobile — visible uniquement quand le header est masqué */}
+      {isMobile && ouvert && (
+        <div style={{ position:'fixed', bottom:18, right:14, zIndex:50, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6, pointerEvents:'none' }}>
+          {!remoteLoaded && splashTimedOut && hasDataToShow && (
+            <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:10, background:'#78350F', boxShadow:'0 2px 12px rgba(0,0,0,0.25)' }}>
+              <Ic n="spn" s={11}/>
+              <span style={{ fontSize:11, color:'#FEF3C7', fontWeight:700 }}>Sync en cours…</span>
+            </div>
+          )}
+          <div style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 10px', borderRadius:10,
+            background: syncStatus==='error' ? '#FEE2E2' : syncStatus==='saving' ? '#FEF3C7' : 'white',
+            boxShadow:'0 2px 12px rgba(0,0,0,0.18)', border: `1px solid ${syncStatus==='error'?'#FCA5A5':syncStatus==='saving'?'#FDE68A':'#E5E5E5'}` }}>
+            {syncStatus === 'saving' ? <Ic n="spn" s={11}/> : <div style={{ width:7, height:7, borderRadius:'50%', background:dotColor }}/>}
+            <span style={{ fontSize:12, fontWeight:700, color: syncStatus==='error'?DA.red:syncStatus==='saving'?'#92400E':DA.gray }}>{dotLabel}</span>
+          </div>
         </div>
       )}
 
