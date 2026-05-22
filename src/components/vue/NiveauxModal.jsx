@@ -115,8 +115,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 ))}
                 {onOpenPlanLib && (
                   <button onClick={() => { onClose(); onOpenPlanLib(); }}
-                    style={{ fontSize:11,fontWeight:700,color:DA.red,background:'none',border:`1px solid ${DA.red}`,borderRadius:7,padding:'4px 9px',cursor:'pointer' }}>
-                    + Importer
+                    style={{ fontSize:13,fontWeight:800,color:'white',background:DA.red,border:'none',borderRadius:9,padding:'8px 16px',cursor:'pointer',display:'flex',alignItems:'center',gap:6,boxShadow:'0 2px 8px rgba(227,5,19,0.3)' }}>
+                    <Ic n="plus" s={13}/> Importer
                   </button>
                 )}
               </div>
