@@ -275,9 +275,13 @@ export default function RapportTab({ projet, onUpdate }) {
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
-      const nomProjet = projet.nom ? sanitize(projet.nom) : 'rapport';
+      const datePart = projet.dateVisite ? projet.dateVisite.replace(/-/g, '_') : null;
+      const nomVisite = projet.visiteNom ? sanitize(projet.visiteNom) : null;
+      const ingPart = projet.ingenieur ? `_(${projet.ingenieur})` : '';
+      const parts = [datePart, nomVisite].filter(Boolean);
+      const zipName = parts.length > 0 ? `${parts.join('_')}${ingPart}` : sanitize(projet.nom || 'rapport');
       a.href     = url;
-      a.download = `${nomProjet}_photos.zip`;
+      a.download = `${zipName}_photos.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (e) {

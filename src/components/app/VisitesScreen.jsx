@@ -140,6 +140,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       id: newId,
       label: `Visite ${visites.length + 1}`,
       dateVisite: today,
+      ingenieur: '',
       participants: [], tableauRecap: [],
       photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
       includeTableauRecap: true, includeConclusion: false, conclusion: '',
@@ -270,6 +271,16 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       </p>
                     </div>
 
+                    {/* Ingénieur */}
+                    {v.ingenieur && (
+                      <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:24, height:24, borderRadius:6, background:DA.grayXL, border:`1px solid ${DA.border}` }}>
+                          <Ic n="usr" s={12}/>
+                        </span>
+                        <p style={{ fontSize:13, color:DA.black, margin:0, fontWeight:700 }}>{v.ingenieur}</p>
+                      </div>
+                    )}
+
                     {/* Tags */}
                     {(zonesCount > 0 || obsCount > 0 || urgCount > 0) && (
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:2 }}>
@@ -329,6 +340,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       value={v.dateVisite || ''}
                       onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
                       style={{ fontSize:15, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
+                    />
+                    <p style={{ fontSize:10, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:1, margin:'12px 0 6px' }}>Ingénieur (initiales)</p>
+                    <input
+                      value={v.ingenieur || ''}
+                      onChange={e => patchVisite(v.id, { ingenieur: e.target.value.toUpperCase().slice(0, 5) })}
+                      placeholder="Ex: TM"
+                      maxLength={5}
+                      style={{ fontSize:15, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', outline:'none', background:'white', width:'100%', boxSizing:'border-box', textTransform:'uppercase', letterSpacing:2 }}
                     />
                     <button onClick={() => setEditingId(null)}
                       style={{ marginTop:14, width:'100%', padding:'11px 0', background:DA.red, color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6, boxShadow:'0 2px 8px rgba(227,5,19,0.3)' }}>

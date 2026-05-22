@@ -75,6 +75,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     includeConclusion:   selectedVisite?.includeConclusion    ?? false,
     conclusion:          selectedVisite?.conclusion           ?? '',
     visiteNom:           selectedVisite?.label                 ?? '',
+    ingenieur:           selectedVisite?.ingenieur             ?? '',
   }), [projet, selectedVisite]);
 
   const onUpdateVisit = useCallback((upd) => {
