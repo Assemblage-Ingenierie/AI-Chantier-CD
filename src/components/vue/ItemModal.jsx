@@ -630,19 +630,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
                     <img src={ph.annotated || ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
-                    {confirmDelPhotoIdx === i ? (
-                      <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.72)',display:'flex',flexDirection:'column',alignItems:'stretch',justifyContent:'center',gap:4,padding:'8px' }}>
-                        <span style={{ fontSize:11,color:'white',fontWeight:800,textAlign:'center',marginBottom:2 }}>Supprimer ?</span>
-                        <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) })); setConfirmDelPhotoIdx(null); }}
-                          style={{ padding:'9px 0',background:'#B91C1C',color:'white',border:'none',borderRadius:7,fontSize:13,fontWeight:800,cursor:'pointer',width:'100%' }}>
-                          Oui
-                        </button>
-                        <button onClick={() => setConfirmDelPhotoIdx(null)}
-                          style={{ padding:'9px 0',background:'white',color:'#333',border:'none',borderRadius:7,fontSize:13,fontWeight:600,cursor:'pointer',width:'100%' }}>
-                          Non
-                        </button>
-                      </div>
-                    ) : (
+                    {(
                       <button onClick={() => setConfirmDelPhotoIdx(i)}
                         style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
                         <Ic n="x" s={10}/>
@@ -726,6 +714,28 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
         </div>
       </div>
+
+      {/* Action sheet suppression photo — couvre l'écran, boutons larges */}
+      {confirmDelPhotoIdx !== null && (
+        <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex', flexDirection:'column', justifyContent:'flex-end' }}
+          onClick={() => setConfirmDelPhotoIdx(null)}>
+          <div style={{ background:'white', borderRadius:'20px 20px 0 0', padding:'20px 16px 36px', boxShadow:'0 -8px 32px rgba(0,0,0,0.18)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, background:'#DDD', borderRadius:2, margin:'0 auto 18px' }}/>
+            <p style={{ textAlign:'center', fontSize:13, color:DA.gray, margin:'0 0 16px', fontWeight:600 }}>Supprimer cette photo ?</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j) => j !== confirmDelPhotoIdx) })); setConfirmDelPhotoIdx(null); }}
+                style={{ width:'100%', padding:'15px', background:'#B91C1C', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:800, cursor:'pointer' }}>
+                Supprimer
+              </button>
+              <button onClick={() => setConfirmDelPhotoIdx(null)}
+                style={{ width:'100%', padding:'15px', background:'#F5F5F5', color:'#333', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer' }}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

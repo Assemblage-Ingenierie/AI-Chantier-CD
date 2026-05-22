@@ -244,18 +244,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                             )}
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
-                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.72)', borderRadius: isDesktop ? 10 : 6, display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'center', gap:4, padding: isDesktop ? '10px' : '7px' }}
-                                  onClick={e => e.stopPropagation()}>
-                                  <span style={{ fontSize:11, color:'white', fontWeight:800, textAlign:'center', marginBottom:2 }}>Supprimer ?</span>
-                                  <button onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); setConfirmDelPhoto(null); }}
-                                    style={{ padding: isDesktop ? '10px 0' : '8px 0', background:'#B91C1C', color:'white', border:'none', borderRadius:7, fontSize: isDesktop ? 14 : 13, fontWeight:800, cursor:'pointer', width:'100%' }}>
-                                    Oui
-                                  </button>
-                                  <button onClick={e => { e.stopPropagation(); setConfirmDelPhoto(null); }}
-                                    style={{ padding: isDesktop ? '10px 0' : '8px 0', background:'white', color:'#333', border:'none', borderRadius:7, fontSize: isDesktop ? 14 : 13, fontWeight:600, cursor:'pointer', width:'100%' }}>
-                                    Non
-                                  </button>
-                                </div>
+                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.45)', borderRadius: isDesktop ? 10 : 6 }}
+                                  onClick={e => e.stopPropagation()}/>
                               ) : (
                                 <button
                                   onClick={e => { e.stopPropagation(); setConfirmDelPhoto({ item, photoIdx: realIdx }); }}
@@ -313,6 +303,28 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
         </div>
       )}
     </div>
+
+    {/* Action sheet suppression photo */}
+    {confirmDelPhoto && (
+      <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex', flexDirection:'column', justifyContent:'flex-end' }}
+        onClick={() => setConfirmDelPhoto(null)}>
+        <div style={{ background:'white', borderRadius:'20px 20px 0 0', padding:'20px 16px 36px', boxShadow:'0 -8px 32px rgba(0,0,0,0.18)' }}
+          onClick={e => e.stopPropagation()}>
+          <div style={{ width:36, height:4, background:'#DDD', borderRadius:2, margin:'0 auto 18px' }}/>
+          <p style={{ textAlign:'center', fontSize:13, color:'#555', margin:'0 0 16px', fontWeight:600 }}>Supprimer cette photo ?</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            <button onClick={e => { e.stopPropagation(); onDeletePhoto(confirmDelPhoto.item, confirmDelPhoto.photoIdx); setConfirmDelPhoto(null); }}
+              style={{ width:'100%', padding:'15px', background:'#B91C1C', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:800, cursor:'pointer' }}>
+              Supprimer
+            </button>
+            <button onClick={() => setConfirmDelPhoto(null)}
+              style={{ width:'100%', padding:'15px', background:'#F5F5F5', color:'#333', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer' }}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
