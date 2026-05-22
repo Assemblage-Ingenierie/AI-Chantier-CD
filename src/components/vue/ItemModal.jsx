@@ -47,6 +47,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
+  const [confirmDelPhotoIdx, setConfirmDelPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
   const bumpSync = () => setEditorSyncKey(k => k + 1);
@@ -629,10 +630,26 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
                     <img src={ph.annotated || ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
-                    <button onClick={() => setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) }))}
-                      style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
-                      <Ic n="x" s={10}/>
-                    </button>
+                    {confirmDelPhotoIdx === i ? (
+                      <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.65)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6 }}>
+                        <span style={{ fontSize:11,color:'white',fontWeight:700,textAlign:'center',lineHeight:1.3 }}>Supprimer ?</span>
+                        <div style={{ display:'flex',gap:5 }}>
+                          <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) })); setConfirmDelPhotoIdx(null); }}
+                            style={{ padding:'4px 10px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer' }}>
+                            Oui
+                          </button>
+                          <button onClick={() => setConfirmDelPhotoIdx(null)}
+                            style={{ padding:'4px 10px',background:'white',color:'#333',border:'none',borderRadius:6,fontSize:12,cursor:'pointer' }}>
+                            Non
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmDelPhotoIdx(i)}
+                        style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+                        <Ic n="x" s={10}/>
+                      </button>
+                    )}
                     <button onClick={() => setAnnotatingPhotoIdx(i)}
                       title="Annoter"
                       style={{ position:'absolute',bottom:4,right:4,background: ph.annotations?.length ? DA.red : 'rgba(0,0,0,0.55)',color:'white',border:'none',borderRadius:'50%',width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
