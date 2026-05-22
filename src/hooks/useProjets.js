@@ -93,6 +93,8 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
         if (!lv) return rv;
         return {
           ...rv,
+          // Préserver les champs locaux enrichis que le remote peut ne pas avoir encore
+          ingenieur: lv.ingenieur || rv.ingenieur || '',
           localisations: (rv.localisations || []).map(loc => {
             const localLoc = lv.localisations?.find(l => l.id === loc.id);
             if (!localLoc) return loc;
@@ -132,6 +134,7 @@ export function useProjets(onSyncStatus) {
   const userModified = useRef(false);
   const savingRef = useRef(false);
   const historyRef = useRef([]);
+  const deletedIdsRef = useRef(new Set());
   const dirtyIds = useRef(new Set());
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
@@ -152,7 +155,8 @@ export function useProjets(onSyncStatus) {
         if (!remotePs.length) return;
         if (userModified.current) return;
 
-        const { allMerged, keptLocal, unsynced } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current, previousRemoteIds);
+        const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
+        const { allMerged, keptLocal, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
         setProjets(allMerged);
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
@@ -212,7 +216,8 @@ export function useProjets(onSyncStatus) {
       const previousRemoteIds = getPersistedRemoteIds();
       const remotePs = await loadData();
       if (!remotePs.length) return;
-      const { allMerged } = mergeWithLocal(remotePs, projetsRef.current, dirtyIds.current, previousRemoteIds);
+      const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
+      const { allMerged } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
       // Only re-render if something actually changed
       const changed = allMerged.some((rp, i) => {
         const lp = projetsRef.current[i];
@@ -274,6 +279,7 @@ export function useProjets(onSyncStatus) {
   const deleteProjet = (id) => {
     pushHistory();
     userModified.current = true;
+    deletedIdsRef.current.add(id); // empêche pollRemote de le restaurer avant que saveRemote supprime en DB
     setProjets((ps) => ps.filter((p) => p.id !== id));
     // Suppression immédiate sur Supabase — contourne la garde anti-mass-delete
     // qui bloquerait la suppression de plusieurs projets d'affilée.

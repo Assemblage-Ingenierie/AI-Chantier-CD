@@ -22,7 +22,7 @@ function PlanAnnotThumb({ bg, annotations, style }) {
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
   'photosParLigne','plansEnFin','rapportPageBreaks','includeTableauRecap',
-  'includeConclusion','conclusion',
+  'includeConclusion','conclusion','conclusionAlign','ingenieur',
 ]);
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackHandler, syncStatus = 'ok' }) {

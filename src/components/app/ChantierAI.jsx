@@ -193,8 +193,8 @@ export default function ChantierAI({ profile, onLogout }) {
         </div>
       )}
 
-      {/* Pastille sync mobile — visible sur VisitesScreen (VueProjet gère son propre bandeau) */}
-      {isMobile && ouvert && !selectedVisiteId && (
+      {/* Pastille sync mobile — VisitesScreen et VueProjet ont leur propre indicateur dans leur header */}
+      {isMobile && ouvert && false && (
         <div style={{ position:'fixed', bottom:18, right:14, zIndex:50, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6, pointerEvents:'none' }}>
           {!isOnline && (
             <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', borderRadius:10, background:'#1C1917', boxShadow:'0 2px 12px rgba(0,0,0,0.35)' }}>
@@ -253,6 +253,7 @@ export default function ChantierAI({ profile, onLogout }) {
             onBack={() => { setOuvert(null); setSelectedVisiteId(null); }}
             onSelectVisite={setSelectedVisiteId}
             onUpdateProjet={upd => updateProjet(ouvert.id, upd)}
+            syncStatus={syncStatus}
           />
         ) : (
           <div style={{ height:'100%',overflowY:'auto' }}>

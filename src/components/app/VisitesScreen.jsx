@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
-export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet }) {
+export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok' }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
 
@@ -165,7 +165,18 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2 }} spellCheck={false}>{projet.nom}</p>
             {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
-          <span style={{ fontSize:11, color:'rgba(255,255,255,0.4)', fontWeight:600, flexShrink:0 }}>{visites.length} visite{visites.length !== 1 ? 's' : ''}</span>
+          {(() => {
+            const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
+            const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur' : 'Sauvegardé';
+            return (
+              <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8, flexShrink:0,
+                background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : syncStatus==='saving' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)',
+                border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':syncStatus==='saving'?'rgba(251,191,36,0.4)':'rgba(255,255,255,0.12)'}` }}>
+                {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6, height:6, borderRadius:'50%', background:dotColor, flexShrink:0 }}/>}
+                <span style={{ fontSize:10, fontWeight:700, color: syncStatus==='error'?'#F87171':syncStatus==='saving'?'#FCD34D':'rgba(255,255,255,0.75)', whiteSpace:'nowrap' }}>{dotLabel}</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
