@@ -631,18 +631,16 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
                     <img src={ph.annotated || ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
                     {confirmDelPhotoIdx === i ? (
-                      <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.65)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6 }}>
-                        <span style={{ fontSize:11,color:'white',fontWeight:700,textAlign:'center',lineHeight:1.3 }}>Supprimer ?</span>
-                        <div style={{ display:'flex',gap:5 }}>
-                          <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) })); setConfirmDelPhotoIdx(null); }}
-                            style={{ padding:'4px 10px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer' }}>
-                            Oui
-                          </button>
-                          <button onClick={() => setConfirmDelPhotoIdx(null)}
-                            style={{ padding:'4px 10px',background:'white',color:'#333',border:'none',borderRadius:6,fontSize:12,cursor:'pointer' }}>
-                            Non
-                          </button>
-                        </div>
+                      <div style={{ position:'absolute',inset:0,background:'rgba(0,0,0,0.72)',display:'flex',flexDirection:'column',alignItems:'stretch',justifyContent:'center',gap:4,padding:'8px' }}>
+                        <span style={{ fontSize:11,color:'white',fontWeight:800,textAlign:'center',marginBottom:2 }}>Supprimer ?</span>
+                        <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j)=>j!==i) })); setConfirmDelPhotoIdx(null); }}
+                          style={{ padding:'9px 0',background:'#B91C1C',color:'white',border:'none',borderRadius:7,fontSize:13,fontWeight:800,cursor:'pointer',width:'100%' }}>
+                          Oui
+                        </button>
+                        <button onClick={() => setConfirmDelPhotoIdx(null)}
+                          style={{ padding:'9px 0',background:'white',color:'#333',border:'none',borderRadius:7,fontSize:13,fontWeight:600,cursor:'pointer',width:'100%' }}>
+                          Non
+                        </button>
                       </div>
                     ) : (
                       <button onClick={() => setConfirmDelPhotoIdx(i)}

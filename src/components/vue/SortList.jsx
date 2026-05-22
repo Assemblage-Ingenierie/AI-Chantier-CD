@@ -244,19 +244,17 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                             )}
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
-                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.65)', borderRadius: isDesktop ? 10 : 6, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6 }}
+                                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.72)', borderRadius: isDesktop ? 10 : 6, display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'center', gap:4, padding: isDesktop ? '10px' : '7px' }}
                                   onClick={e => e.stopPropagation()}>
-                                  <span style={{ fontSize:11, color:'white', fontWeight:700 }}>Supprimer ?</span>
-                                  <div style={{ display:'flex', gap:5 }}>
-                                    <button onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); setConfirmDelPhoto(null); }}
-                                      style={{ padding:'4px 10px', background:'#B91C1C', color:'white', border:'none', borderRadius:6, fontSize:12, fontWeight:700, cursor:'pointer' }}>
-                                      Oui
-                                    </button>
-                                    <button onClick={e => { e.stopPropagation(); setConfirmDelPhoto(null); }}
-                                      style={{ padding:'4px 10px', background:'white', color:'#333', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>
-                                      Non
-                                    </button>
-                                  </div>
+                                  <span style={{ fontSize:11, color:'white', fontWeight:800, textAlign:'center', marginBottom:2 }}>Supprimer ?</span>
+                                  <button onClick={e => { e.stopPropagation(); onDeletePhoto(item, realIdx); setConfirmDelPhoto(null); }}
+                                    style={{ padding: isDesktop ? '10px 0' : '8px 0', background:'#B91C1C', color:'white', border:'none', borderRadius:7, fontSize: isDesktop ? 14 : 13, fontWeight:800, cursor:'pointer', width:'100%' }}>
+                                    Oui
+                                  </button>
+                                  <button onClick={e => { e.stopPropagation(); setConfirmDelPhoto(null); }}
+                                    style={{ padding: isDesktop ? '10px 0' : '8px 0', background:'white', color:'#333', border:'none', borderRadius:7, fontSize: isDesktop ? 14 : 13, fontWeight:600, cursor:'pointer', width:'100%' }}>
+                                    Non
+                                  </button>
                                 </div>
                               ) : (
                                 <button

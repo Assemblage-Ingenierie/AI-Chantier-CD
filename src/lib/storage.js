@@ -535,9 +535,14 @@ async function saveRemote(ps, dirtyIds = null) {
   for (const p of toSave) {
     const visitesMetadata = (p.visites || []).map(v => ({
       id: v.id, label: v.label ?? 'Visite 1', dateVisite: v.dateVisite ?? null,
+      ingenieur: v.ingenieur ?? '',
       participants: v.participants ?? [], tableauRecap: v.tableauRecap ?? [],
       photosParLigne: v.photosParLigne ?? 2, plansEnFin: v.plansEnFin ?? false,
       rapportPageBreaks: v.rapportPageBreaks ?? [],
+      includeTableauRecap: v.includeTableauRecap ?? true,
+      includeConclusion: v.includeConclusion ?? false,
+      conclusion: v.conclusion ?? '',
+      conclusionAlign: v.conclusionAlign ?? 'left',
     }));
 
     const firstVisit = p.visites?.[0];
