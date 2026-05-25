@@ -36,6 +36,8 @@ const ICONS = {
   snd: (s) => <svg {...p(s)}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
   und: (s) => <svg {...p(s)}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>,
   pen: (s) => <svg {...p(s)}><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>,
+  shp: (s) => <svg {...p(s)}><rect x="3" y="3" width="9" height="9" rx="1.5"/><circle cx="17.5" cy="7.5" r="4.5"/><path d="M3 18l4-5 4 5 3-4 4 5H3z"/></svg>,
+  pal: (s) => <svg {...p(s)}><circle cx="12" cy="12" r="10"/><circle cx="8" cy="9.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="7" r="1.5" fill="currentColor" stroke="none"/><circle cx="16" cy="9.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="16.5" cy="14" r="1.5" fill="currentColor" stroke="none"/><path d="M8 14.5a4 4 0 003 3.5h3.5a2 2 0 000-4H11"/></svg>,
   srt: (s) => <svg {...p(s)}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>,
   usr: (s) => <svg {...p(s)}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   phn: (s) => <svg {...p(s)}><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.5 9.74 19.79 19.79 0 01.46 1.11 2 2 0 012.46.07h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.5a16 16 0 006.59 6.59l.8-.8a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>,

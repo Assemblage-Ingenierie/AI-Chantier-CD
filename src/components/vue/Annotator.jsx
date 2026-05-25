@@ -229,39 +229,39 @@ export const SYMBOLS = [
   { id:'fissure_verticale', label:'Fissure verticale sur un mur', short:'FV',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-2,y-16); ctx.lineTo(x+4,y-7); ctx.lineTo(x-3,y-1); ctx.lineTo(x+4,y+8); ctx.lineTo(x-1,y+16); ctx.stroke(); ctx.restore(); } },
   { id:'fissure_oblique', label:"Fissure d'allure oblique sur un mur", short:'FO',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='square'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-9,y+9); ctx.lineTo(x,y+9); ctx.lineTo(x,y); ctx.lineTo(x+9,y); ctx.lineTo(x+9,y-9); ctx.stroke(); const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x+9,y-9); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI+Math.PI/5)*aL,y-9+Math.sin(-Math.PI/2+Math.PI+Math.PI/5)*aL); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI-Math.PI/5)*aL,y-9+Math.sin(-Math.PI/2+Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.restore(); } },
   { id:'fissure_oblique_linteau', label:"Fissure oblique sur un mur au-dessus du linteau d'une baie", short:'FL',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('L.',x-12,y+25); ctx.fillText('L.',x-12,y+25); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='square'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-9,y+6); ctx.lineTo(x,y+6); ctx.lineTo(x,y-2); ctx.lineTo(x+9,y-2); ctx.lineTo(x+9,y-10); ctx.stroke(); const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x+9,y-10); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI+Math.PI/5)*aL,y-10+Math.sin(-Math.PI/2+Math.PI+Math.PI/5)*aL); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI-Math.PI/5)*aL,y-10+Math.sin(-Math.PI/2+Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('L.',x-8,y+18); ctx.fillText('L.',x-8,y+18); ctx.restore(); } },
   { id:'fissure_oblique_allege', label:"Fissure oblique sur une allège de fenêtre", short:'FA',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('A',x-10,y+25); ctx.fillText('A',x-10,y+25); ctx.restore(); } },
-  { id:'fissure_horizontale', label:"Fissure d'allure horizontale sur mur, façade", short:'FH',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-14,y-3); ctx.quadraticCurveTo(x-10,y-10,x-7,y-3); ctx.quadraticCurveTo(x-4,y+4,x-1,y-3); ctx.quadraticCurveTo(x+3,y-10,x+6,y-3); ctx.quadraticCurveTo(x+9,y+4,x+12,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('M',x-4,y+14); ctx.fillText('M',x-4,y+14); ctx.restore(); } },
-  { id:'fissure_plafond', label:"Fissure au plafond, sur linteau de baie, en sous-face de l'escalier, sur voûtes", short:'PL',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='square'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-9,y+6); ctx.lineTo(x,y+6); ctx.lineTo(x,y-2); ctx.lineTo(x+9,y-2); ctx.lineTo(x+9,y-10); ctx.stroke(); const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x+9,y-10); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI+Math.PI/5)*aL,y-10+Math.sin(-Math.PI/2+Math.PI+Math.PI/5)*aL); ctx.lineTo(x+9+Math.cos(-Math.PI/2+Math.PI-Math.PI/5)*aL,y-10+Math.sin(-Math.PI/2+Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('A',x-4,y+18); ctx.fillText('A',x-4,y+18); ctx.restore(); } },
+  { id:'fissure_horizontale', label:"Fissure d'allure horizontale sur mur, façade", short:'FM',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('M',x-4,y+14); ctx.fillText('M',x-4,y+14); ctx.restore(); } },
+  { id:'fissure_plafond', label:"Fissure au plafond, sur linteau de baie, en sous-face de l'escalier, sur voûtes", short:'FP',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('↑PL',x-8,y+15); ctx.fillText('↑PL',x-8,y+15); ctx.restore(); } },
   // ── Dégâts ──
   { id:'degats_eaux', label:"Dégâts des eaux, infiltrations, taches d'humidité", short:'EAU',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.fillStyle=c; const r=2+s*0.4; [[-10,-8],[0,-12],[10,-6],[-13,2],[5,0],[14,5],[-5,10],[4,14],[-12,14]].forEach(([dx,dy])=>{ ctx.beginPath(); ctx.arc(x+dx,y+dy,r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); } },
   { id:'baie_deformee', label:"Baie déformée, linteau dénivelé par affaissement d'un appui", short:'BD',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-16,y-10+8); ctx.lineTo(x+16,y-10); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-10,y+16); ctx.lineTo(x-10,y-12+7); ctx.lineTo(x+10,y-12); ctx.lineTo(x+10,y+16); ctx.stroke(); ctx.restore(); } },
   { id:'devers', label:"Dévers d'un élément vertical", short:'DEV',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-4,y+16); ctx.lineTo(x+6,y-14); ctx.stroke(); const ax=x+9,ay=y-16,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('P',x+14,y+3); ctx.fillText('P',x+14,y+3); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-16,y-2); ctx.lineTo(x+16,y-2); ctx.stroke(); const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x+16,y-2); ctx.lineTo(x+16+Math.cos(Math.PI+Math.PI/5)*aL,y-2+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(x+16+Math.cos(Math.PI-Math.PI/5)*aL,y-2+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('D',x-4,y+14); ctx.fillText('D',x-4,y+14); ctx.restore(); } },
   { id:'pente_sol', label:'Pente du sol (descendant dans le sens de la flèche)', short:'SOL',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x+17,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+17,y); ctx.lineTo(x+17+Math.cos(Math.PI+Math.PI/5)*aL,y+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(x+17+Math.cos(Math.PI-Math.PI/5)*aL,y+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.font=`bold ${7+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Sol',x-10,y-7); ctx.fillText('Sol',x-10,y-7); ctx.restore(); } },
   // ── Divers ──
   { id:'portee', label:'Sens de portée', short:'PO',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aLen=10+s*1.5,x1=x-17,y1=y,x2=x+17,y2=y; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2+Math.cos(Math.PI+Math.PI/4)*aLen,y2+Math.sin(Math.PI+Math.PI/4)*aLen); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+Math.cos(Math.PI/4)*aLen,y1+Math.sin(Math.PI/4)*aLen); ctx.stroke(); ctx.restore(); } },
   { id:'nv', label:'Local non visité', short:'NV',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; const fs=12+s*0.7; ctx.font=`bold ${fs}px Arial`; const tw=ctx.measureText('NV').width,pad=5; ctx.beginPath(); ctx.rect(x-pad,y-fs,tw+pad*2,fs+pad+3); ctx.stroke(); ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NV',x,y); ctx.fillText('NV',x,y); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.roundRect(x-13,y-10,26,20,4); ctx.stroke(); const fs=11+s*0.5; ctx.font=`bold ${fs}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NV',x-8,y+5); ctx.fillText('NV',x-8,y+5); ctx.restore(); } },
   { id:'danger', label:'Danger', short:'!',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.font=`bold ${14+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('!',x-3.5,y+9); ctx.fillText('!',x-3.5,y+9); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.beginPath(); ctx.moveTo(x,y-17); ctx.lineTo(x+15,y+12); ctx.lineTo(x-15,y+12); ctx.closePath(); ctx.fillStyle=c; ctx.globalAlpha=0.18; ctx.fill(); ctx.globalAlpha=1; ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineJoin='round'; ctx.stroke(); ctx.font=`bold ${14+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2.5; ctx.strokeText('!',x-4,y+10); ctx.fillText('!',x-4,y+10); ctx.restore(); } },
   { id:'eclat', label:'Éclatement', short:'ÉCL',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.stroke(); [[0,17],[Math.PI/4,14],[Math.PI/2,16],[3*Math.PI/4,13],[Math.PI,15],[5*Math.PI/4,13],[3*Math.PI/2,16],[7*Math.PI/4,14]].forEach(([a,r])=>{ ctx.beginPath(); ctx.moveTo(x+Math.cos(a)*5,y+Math.sin(a)*5); ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r); ctx.stroke(); if(r>13){ ctx.beginPath(); ctx.moveTo(x+Math.cos(a)*(r-5),y+Math.sin(a)*(r-5)); ctx.lineTo(x+Math.cos(a+Math.PI/7)*(r-1),y+Math.sin(a+Math.PI/7)*(r-1)); ctx.stroke(); } }); ctx.restore(); } },
   { id:'nc', label:'Non-conformité', short:'NC',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
   { id:'rouille', label:'Corrosion', short:'Fe',
     draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
   { id:'fontis', label:'Fontis', short:'FT',
-    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-7,y-2); ctx.moveTo(x+7,y-2); ctx.lineTo(x+20,y-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-7,y-2); ctx.lineTo(x-5,y+5); ctx.moveTo(x+7,y-2); ctx.lineTo(x+5,y+5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+10,11,6,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-4,y-10); ctx.lineTo(x,y-5); ctx.lineTo(x+4,y-10); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+24); ctx.fillText('FT',x-5,y+24); ctx.restore(); } },
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-15,y-5); ctx.lineTo(x-5,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+5,y-5); ctx.lineTo(x+15,y-5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+8,9,5,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=s+1.5; ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y-2); ctx.lineTo(x-5,y-8); ctx.lineTo(x+5,y-8); ctx.closePath(); ctx.fill(); ctx.restore(); } },
 ];
 
 export const SYMBOL_CATEGORIES = [
@@ -370,6 +370,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [showNewSym,    setShowNewSym]    = useState(false);
   const [textMode,      setTextMode]      = useState('plain');
   const [symCat,           setSymCat]           = useState('fissures');
+  const [showPalette,      setShowPalette]      = useState(false);
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
@@ -1098,7 +1099,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             {[
               { k:'pen',    n:'pen',  lbl:'Dessin'  },
               { k:'text',   n:'txt',  lbl:'Texte'   },
-              { k:'shape',  n:'sym',  lbl:'Formes'  },
+              { k:'shape',  n:'shp',  lbl:'Formes'  },
               { k:'symbol', n:'sym',  lbl:'Symbole' },
             ].map(t => (
               <button key={t.k}
@@ -1110,27 +1111,37 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                   setSelAnnot(null); annotDragRef.current = null;
                 }}
-                style={{ padding:isMob?'7px 8px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                style={{ padding:isMob?'9px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                   color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?38:52 }}>
-                <Ic n={t.n} s={isMob?18:22}/>
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:52 }}>
+                <Ic n={t.n} s={22}/>
                 {!isMob && <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>}
               </button>
             ))}
           </div>
           <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
+            {/* Palette mobile — couleur courante visible en live */}
+            {isMob && (
+              <button onClick={() => setShowPalette(v => !v)}
+                style={{ padding:'9px 10px',borderRadius:8,background:showPalette?DA.red:'#333',
+                  display:'flex',alignItems:'center',justifyContent:'center',minWidth:44 }}
+                title="Couleurs et épaisseur">
+                <div style={{ width:22,height:22,borderRadius:'50%',background:color,
+                  border:`2.5px solid ${showPalette?'white':'rgba(255,255,255,0.4)'}`,flexShrink:0 }}/>
+              </button>
+            )}
             <button onClick={onClose}
-              style={{ padding:isMob?'7px 9px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?36:44 }}
+              style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:44 }}
               title="Fermer">
-              <Ic n="x" s={isMob?17:20}/>
+              <Ic n="x" s={22}/>
               {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>}
             </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
-              style={{ padding:isMob?'7px 9px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?36:44 }}
+              style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:44 }}
               title="Annuler dernière action">
-              <Ic n="und" s={isMob?17:20}/>
+              <Ic n="und" s={22}/>
               {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>}
             </button>
             <button onClick={() => {
@@ -1159,8 +1170,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
           </div>
         </div>
 
-        {/* Rangée 2 : couleurs + tailles */}
-        <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
+        {/* Rangée 2 : couleurs + tailles — cachée sur mobile (palette) */}
+        {!isMob && <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
           <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             {ANNOT_COLORS.map(cl => (
               <button key={cl} onClick={() => {
@@ -1187,8 +1198,31 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                   display:'flex',alignItems:'center',justifyContent:'center' }}/>
             ))}
           </div>
-        </div>
+        </div>}
       </div>
+
+      {/* ── Palette mobile ── */}
+      {isMob && showPalette && (
+        <div style={{ background:DA.black,padding:'8px 12px',display:'flex',flexDirection:'column',gap:8,flexShrink:0,borderBottom:'1px solid #333' }}>
+          <div style={{ display:'flex',gap:7,flexWrap:'wrap',alignItems:'center' }}>
+            {ANNOT_COLORS.map(cl => (
+              <button key={cl} onClick={() => { setColor(cl); if (selTextIdx!==null) setPaths(prev=>prev.map((p,i)=>i===selTextIdx?{...p,color:cl}:p)); }}
+                style={{ width:30,height:30,borderRadius:'50%',background:cl,
+                  border:`3px solid ${color===cl?'white':'transparent'}`,
+                  boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',cursor:'pointer',flexShrink:0 }}/>
+            ))}
+          </div>
+          <div style={{ display:'flex',alignItems:'center',gap:8 }}>
+            <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>ÉPAISSEUR</span>
+            {[1,3,6].map(sz => (
+              <button key={sz} onClick={() => { setSize(sz); if (selTextIdx!==null) setPaths(prev=>prev.map((p,i)=>i===selTextIdx?{...p,size:sz}:p)); }}
+                style={{ width:sz*3+18,height:sz*3+18,borderRadius:'50%',
+                  background:size===sz?'white':'#555',border:`2px solid ${size===sz?'white':'#444'}`,
+                  cursor:'pointer',flexShrink:0 }}/>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Taille globale des logos ── */}
       <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
