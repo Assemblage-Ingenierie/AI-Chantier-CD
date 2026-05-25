@@ -298,13 +298,20 @@ export async function loadProjectPhotos(itemIds) {
 
 // Charge la photo de couverture pour une liste de projets — séparée du SELECT principal
 // pour éviter le HTTP 500 causé par de gros base64.
+// Requêtes par batch de 10 pour éviter des réponses trop volumineuses (base64 covers).
 export async function hydrateChantierPhotos(chantierIds) {
   if (!chantierIds.length) return {};
   try {
     const sb = await getSupabase();
-    // Fetch all photo paths from DB in one query
-    const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', chantierIds);
-    if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); return {}; }
+    const BATCH = 10;
+    const rows = [];
+    for (let i = 0; i < chantierIds.length; i += BATCH) {
+      const batch = chantierIds.slice(i, i + BATCH);
+      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
+      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); continue; }
+      if (data) rows.push(...data);
+    }
+    const data = rows;
 
     const paths = [];
     const pathToId = {};
