@@ -38,32 +38,43 @@ export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E
   ctx.restore();
 }
 
-// Sens portée — double flèche ↔ : ligne droite avec flèches pleines aux deux extrémités
+// Sens portée — \——/ : demi-flèche en haut à droite, demi-flèche en bas à gauche
 export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
-  const len   = Math.hypot(x2 - x1, y2 - y1);
   const lw    = s + 1.5;
-  const aLen  = Math.max(lw * 2.5, Math.min(lw * 3.5, len * 0.2));
+  const aLen  = 10 + s * 1.5;
+  ctx.save();
+  ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  // right end: top half of > (goes upper-left from x2)
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 + Math.cos(angle + Math.PI + Math.PI / 4) * aLen, y2 + Math.sin(angle + Math.PI + Math.PI / 4) * aLen);
+  ctx.stroke();
+  // left end: bottom half of < (goes lower-right from x1)
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 + Math.cos(angle + Math.PI / 4) * aLen, y1 + Math.sin(angle + Math.PI / 4) * aLen);
+  ctx.stroke();
+  ctx.restore();
+}
 
+// Pente sol — flèche simple orientable (drag x1,y1→x2,y2) + label "Sol"
+function drawPenteSolPath(ctx, x1, y1, x2, y2, s, c) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const aLen  = 8 + s * 1.5;
   ctx.save();
   ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = s + 1.5; ctx.lineCap = 'round';
-
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-  // Flèche à x2,y2 (pointe vers x2, ailes vers x1)
   ctx.beginPath();
   ctx.moveTo(x2, y2);
   ctx.lineTo(x2 + Math.cos(angle + Math.PI + Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI + Math.PI / 5) * aLen);
   ctx.lineTo(x2 + Math.cos(angle + Math.PI - Math.PI / 5) * aLen, y2 + Math.sin(angle + Math.PI - Math.PI / 5) * aLen);
   ctx.closePath(); ctx.fill();
-
-  // Flèche à x1,y1 (pointe vers x1, ailes vers x2)
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x1 + Math.cos(angle + Math.PI / 5) * aLen, y1 + Math.sin(angle + Math.PI / 5) * aLen);
-  ctx.lineTo(x1 + Math.cos(angle - Math.PI / 5) * aLen, y1 + Math.sin(angle - Math.PI / 5) * aLen);
-  ctx.closePath(); ctx.fill();
-
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  ctx.font = `bold ${9 + s * 0.7}px Arial`;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.strokeText('Sol', mx + 4, my - 4); ctx.fillText('Sol', mx + 4, my - 4);
   ctx.restore();
 }
 
@@ -86,6 +97,14 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
           drawPorteePath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sizeScale, p.color);
         } else {
           drawPorteePath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sizeScale, p.color);
+        }
+        ctx.restore();
+      } else if (p.symbolId === 'pente_sol') {
+        ctx.save();
+        if (p.x1 != null) {
+          drawPenteSolPath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sizeScale, p.color);
+        } else {
+          drawPenteSolPath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sizeScale, p.color);
         }
         ctx.restore();
       } else {
@@ -206,15 +225,49 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
 }
 
 export const SYMBOLS = [
-  { id:'fissure_plafond', label:'Fissure plafond', short:'↑PL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('↑PL',x-8,y+15); ctx.fillText('↑PL',x-8,y+15); ctx.restore(); } },
-  { id:'fissure_mur', label:'Fissure', short:'FIS', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-8,y-15); ctx.lineTo(x-3,y-6); ctx.lineTo(x+4,y-10); ctx.lineTo(x+7,y+3); ctx.lineTo(x+10,y+15); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FIS',x-10,y+27); ctx.fillText('FIS',x-10,y+27); ctx.restore(); } },
-  { id:'humidite', label:'Humidité', short:'~H~', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.setLineDash([5,3]); ctx.beginPath(); ctx.ellipse(x,y,22,13,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('~H~',x-12,y+5); ctx.fillText('~H~',x-12,y+5); ctx.restore(); } },
-  { id:'danger', label:'Danger', short:'!', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.font=`bold ${14+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('!',x-3.5,y+9); ctx.fillText('!',x-3.5,y+9); ctx.restore(); } },
-  { id:'eclat', label:'Éclatement', short:'ÉCL', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
-  { id:'nc', label:'Non-conformité', short:'NC', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
-  { id:'rouille', label:'Corrosion', short:'Fe', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
-  { id:'portee', label:'Sens portée', short:'↔', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x+17,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+17,y); ctx.lineTo(x+17+Math.cos(Math.PI+Math.PI/5)*aL,y+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(x+17+Math.cos(Math.PI-Math.PI/5)*aL,y+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x-17+Math.cos(Math.PI/5)*aL,y+Math.sin(Math.PI/5)*aL); ctx.lineTo(x-17+Math.cos(-Math.PI/5)*aL,y+Math.sin(-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.restore(); } },
-  { id:'fontis', label:'Fontis', short:'FT', draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-7,y-2); ctx.moveTo(x+7,y-2); ctx.lineTo(x+20,y-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-7,y-2); ctx.lineTo(x-5,y+5); ctx.moveTo(x+7,y-2); ctx.lineTo(x+5,y+5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+10,11,6,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-4,y-10); ctx.lineTo(x,y-5); ctx.lineTo(x+4,y-10); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+24); ctx.fillText('FT',x-5,y+24); ctx.restore(); } },
+  // ── Fissures ──
+  { id:'fissure_verticale', label:'Fissure verticale sur un mur', short:'FV',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-2,y-16); ctx.lineTo(x+4,y-7); ctx.lineTo(x-3,y-1); ctx.lineTo(x+4,y+8); ctx.lineTo(x-1,y+16); ctx.stroke(); ctx.restore(); } },
+  { id:'fissure_oblique', label:"Fissure d'allure oblique sur un mur", short:'FO',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.restore(); } },
+  { id:'fissure_oblique_linteau', label:"Fissure oblique sur un mur au-dessus du linteau d'une baie", short:'FL',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('L.',x-12,y+25); ctx.fillText('L.',x-12,y+25); ctx.restore(); } },
+  { id:'fissure_oblique_allege', label:"Fissure oblique sur une allège de fenêtre", short:'FA',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-12,y+12); ctx.lineTo(x-5,y+4); ctx.lineTo(x+1,y+9); ctx.lineTo(x+8,y+1); ctx.lineTo(x+13,y-10); ctx.stroke(); const ax=x+16,ay=y-15,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('A',x-10,y+25); ctx.fillText('A',x-10,y+25); ctx.restore(); } },
+  { id:'fissure_horizontale', label:"Fissure d'allure horizontale sur mur, façade", short:'FH',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-14,y-3); ctx.quadraticCurveTo(x-10,y-10,x-7,y-3); ctx.quadraticCurveTo(x-4,y+4,x-1,y-3); ctx.quadraticCurveTo(x+3,y-10,x+6,y-3); ctx.quadraticCurveTo(x+9,y+4,x+12,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('M',x-4,y+14); ctx.fillText('M',x-4,y+14); ctx.restore(); } },
+  { id:'fissure_plafond', label:"Fissure au plafond, sur linteau de baie, en sous-face de l'escalier, sur voûtes", short:'PL',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x-14,y-5); ctx.lineTo(x-6,y); ctx.lineTo(x+2,y-6); ctx.lineTo(x+8,y+1); ctx.lineTo(x+14,y-3); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('↑PL',x-8,y+15); ctx.fillText('↑PL',x-8,y+15); ctx.restore(); } },
+  // ── Dégâts ──
+  { id:'degats_eaux', label:"Dégâts des eaux, infiltrations, taches d'humidité", short:'EAU',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.fillStyle=c; const r=2+s*0.4; [[-10,-8],[0,-12],[10,-6],[-13,2],[5,0],[14,5],[-5,10],[4,14],[-12,14]].forEach(([dx,dy])=>{ ctx.beginPath(); ctx.arc(x+dx,y+dy,r,0,Math.PI*2); ctx.fill(); }); ctx.restore(); } },
+  { id:'baie_deformee', label:"Baie déformée, linteau dénivelé par affaissement d'un appui", short:'BD',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-16,y-10+8); ctx.lineTo(x+16,y-10); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.restore(); } },
+  { id:'devers', label:"Dévers d'un élément vertical", short:'DEV',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.fillStyle=c; ctx.beginPath(); ctx.moveTo(x-4,y+16); ctx.lineTo(x+6,y-14); ctx.stroke(); const ax=x+9,ay=y-16,aL=8; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+Math.cos(Math.PI+Math.PI/5)*aL,ay+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(ax+Math.cos(Math.PI-Math.PI/5)*aL,ay+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(ax-aL*1.8,ay); ctx.lineTo(ax,ay); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('P',x+14,y+3); ctx.fillText('P',x+14,y+3); ctx.restore(); } },
+  { id:'pente_sol', label:'Pente du sol (descendant dans le sens de la flèche)', short:'SOL',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aL=8+s*0.3; ctx.beginPath(); ctx.moveTo(x-17,y); ctx.lineTo(x+17,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+17,y); ctx.lineTo(x+17+Math.cos(Math.PI+Math.PI/5)*aL,y+Math.sin(Math.PI+Math.PI/5)*aL); ctx.lineTo(x+17+Math.cos(Math.PI-Math.PI/5)*aL,y+Math.sin(Math.PI-Math.PI/5)*aL); ctx.closePath(); ctx.fill(); ctx.font=`bold ${7+s}px Arial`; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Sol',x-10,y-7); ctx.fillText('Sol',x-10,y-7); ctx.restore(); } },
+  // ── Divers ──
+  { id:'portee', label:'Sens de portée', short:'PO',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1.5; ctx.lineCap='round'; const aLen=10+s*1.5,x1=x-17,y1=y,x2=x+17,y2=y; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2+Math.cos(Math.PI+Math.PI/4)*aLen,y2+Math.sin(Math.PI+Math.PI/4)*aLen); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+Math.cos(Math.PI/4)*aLen,y1+Math.sin(Math.PI/4)*aLen); ctx.stroke(); ctx.restore(); } },
+  { id:'nv', label:'Local non visité', short:'NV',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; const fs=12+s*0.7; ctx.font=`bold ${fs}px Arial`; const tw=ctx.measureText('NV').width,pad=5; ctx.beginPath(); ctx.rect(x-pad,y-fs,tw+pad*2,fs+pad+3); ctx.stroke(); ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NV',x,y); ctx.fillText('NV',x,y); ctx.restore(); } },
+  { id:'danger', label:'Danger', short:'!',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.moveTo(x,y-18); ctx.lineTo(x+16,y+12); ctx.lineTo(x-16,y+12); ctx.closePath(); ctx.stroke(); ctx.font=`bold ${14+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('!',x-3.5,y+9); ctx.fillText('!',x-3.5,y+9); ctx.restore(); } },
+  { id:'eclat', label:'Éclatement', short:'ÉCL',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); for(let i=0;i<8;i++){const a=i*Math.PI/4,r=i%2===0?18:10; i===0?ctx.moveTo(x,y):null; ctx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);} ctx.closePath(); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('ÉCL',x-9,y+28); ctx.fillText('ÉCL',x-9,y+28); ctx.restore(); } },
+  { id:'nc', label:'Non-conformité', short:'NC',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-8,y-8); ctx.lineTo(x+8,y+8); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x+8,y-8); ctx.lineTo(x-8,y+8); ctx.stroke(); ctx.font=`bold ${7+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('NC',x-7,y+26); ctx.fillText('NC',x-7,y+26); ctx.restore(); } },
+  { id:'rouille', label:'Corrosion', short:'Fe',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.stroke(); ctx.font=`bold ${12+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('Fe',x-7,y+4); ctx.fillText('Fe',x-7,y+4); ctx.restore(); } },
+  { id:'fontis', label:'Fontis', short:'FT',
+    draw:(ctx,x,y,s,c)=>{ ctx.save(); ctx.strokeStyle=c; ctx.lineWidth=s+1; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(x-20,y-2); ctx.lineTo(x-7,y-2); ctx.moveTo(x+7,y-2); ctx.lineTo(x+20,y-2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-7,y-2); ctx.lineTo(x-5,y+5); ctx.moveTo(x+7,y-2); ctx.lineTo(x+5,y+5); ctx.stroke(); ctx.setLineDash([3,2]); ctx.beginPath(); ctx.ellipse(x,y+10,11,6,0,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x,y-16); ctx.lineTo(x,y-5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-4,y-10); ctx.lineTo(x,y-5); ctx.lineTo(x+4,y-10); ctx.stroke(); ctx.font=`bold ${8+s}px Arial`; ctx.fillStyle=c; ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeText('FT',x-5,y+24); ctx.fillText('FT',x-5,y+24); ctx.restore(); } },
+];
+
+export const SYMBOL_CATEGORIES = [
+  { id:'fissures', label:'Fissures', ids:['fissure_verticale','fissure_oblique','fissure_oblique_linteau','fissure_oblique_allege','fissure_horizontale','fissure_plafond'] },
+  { id:'degats',   label:'Dégâts',   ids:['degats_eaux','baie_deformee','devers','pente_sol'] },
+  { id:'divers',   label:'Divers',   ids:['portee','nv','danger','eclat','nc','rouille','fontis'] },
 ];
 
 // ── Symboles personnalisés (stockés en localStorage, forme auto-générée) ──────
@@ -316,6 +369,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
   const [textMode,      setTextMode]      = useState('plain');
+  const [symCat,           setSymCat]           = useState('fissures');
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
@@ -378,7 +432,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
 
     if (pendingPortee) {
-      drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+      if (pendingPortee.symbolId === 'pente_sol') {
+        drawPenteSolPath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+      } else {
+        drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+      }
     }
 
     if (pendingShape && tool === 'shape') {
@@ -471,7 +529,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       const ap = paths[selAnnot.idx];
       ctx.save();
       ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
-      if (ap.symbolId === 'portee' && ap.x1 != null) {
+      if ((ap.symbolId === 'portee' || ap.symbolId === 'pente_sol') && ap.x1 != null) {
         ctx.beginPath(); ctx.moveTo(ap.x1, ap.y1); ctx.lineTo(ap.x2, ap.y2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 8, 0, Math.PI * 2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 8, 0, Math.PI * 2); ctx.stroke();
@@ -665,9 +723,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         return;
       }
       setSelAnnot(null);
-      if (sym.id === 'portee') {
+      if (sym.id === 'portee' || sym.id === 'pente_sol') {
         porteeStartRef.current = pos;
-        setPendingPortee({ x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
+        setPendingPortee({ symbolId: sym.id, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
         setDrawing(true);
       } else {
         setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]);
@@ -875,9 +933,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     // Portée en cours de tracé
-    if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
+    if (tool === 'symbol' && (sym.id === 'portee' || sym.id === 'pente_sol') && porteeStartRef.current) {
       const pos = getXY(e, cvRef.current);
-      setPendingPortee({ x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
+      setPendingPortee({ symbolId: sym.id, x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
       return;
     }
     // Polygone : mise à jour position curseur pour preview
@@ -914,14 +972,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setDrawing(false);
       return;
     }
-    // Fin portée
-    if (tool === 'symbol' && sym.id === 'portee' && porteeStartRef.current) {
+    // Fin portée / pente_sol
+    if (tool === 'symbol' && (sym.id === 'portee' || sym.id === 'pente_sol') && porteeStartRef.current) {
       if (pendingPortee) {
+        const sid = sym.id;
         const len = Math.hypot(pendingPortee.x2 - pendingPortee.x1, pendingPortee.y2 - pendingPortee.y1);
         if (len > 8) {
-          setPaths(prev => [...prev, { type:'symbol', symbolId:'portee', x1:pendingPortee.x1, y1:pendingPortee.y1, x2:pendingPortee.x2, y2:pendingPortee.y2, color, size }]);
+          setPaths(prev => [...prev, { type:'symbol', symbolId:sid, x1:pendingPortee.x1, y1:pendingPortee.y1, x2:pendingPortee.x2, y2:pendingPortee.y2, color, size }]);
         } else {
-          setPaths(prev => [...prev, { type:'symbol', symbolId:'portee', x1:pendingPortee.x1 - 35, y1:pendingPortee.y1, x2:pendingPortee.x1 + 35, y2:pendingPortee.y1, color, size }]);
+          setPaths(prev => [...prev, { type:'symbol', symbolId:sid, x1:pendingPortee.x1 - 35, y1:pendingPortee.y1, x2:pendingPortee.x1 + 35, y2:pendingPortee.y1, color, size }]);
         }
       }
       setPendingPortee(null); porteeStartRef.current = null; setDrawing(false); return;
@@ -1144,39 +1203,75 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         <span style={{ color:'#ccc',fontSize:11,fontWeight:700,minWidth:30,textAlign:'right' }}>{annotScale.toFixed(1)}×</span>
       </div>
 
-      {/* ── Symbol picker ── */}
+      {/* ── Symbol picker — catégories ── */}
       {showSyms && tool === 'symbol' && (
-        <div style={{ background:'#1a1a1a',padding:'8px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center' }}>
-          {allSymbols.map(sm => (
-            <div key={sm.id} style={{ position:'relative',flexShrink:0 }}>
-              <button onClick={() => setSym(sm)}
-                style={{ padding:'5px 12px',borderRadius:8,background:sym.id===sm.id?DA.red:'#333',color:sym.id===sm.id?'white':'#ccc',fontSize:12,fontWeight:500,whiteSpace:'nowrap',cursor:'pointer' }}>
-                {sm.label}
+        <div style={{ background:'#1a1a1a', flexShrink:0, borderBottom:'1px solid #333' }}>
+          {/* Onglets */}
+          <div style={{ display:'flex', borderBottom:'1px solid #2a2a2a' }}>
+            {SYMBOL_CATEGORIES.map(cat => (
+              <button key={cat.id} onClick={() => setSymCat(cat.id)}
+                style={{ flex:1, padding:'6px 4px', fontSize:10, fontWeight:700, letterSpacing:0.5,
+                  background:symCat===cat.id?DA.red:'transparent', color:symCat===cat.id?'white':'#777',
+                  border:'none', cursor:'pointer', textTransform:'uppercase', transition:'all 0.15s' }}>
+                {cat.label}
               </button>
-              {sm.isCustom && (
-                <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
-                  style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>
-                  ×
+            ))}
+          </div>
+          {/* Bandeau label complet */}
+          <div style={{ padding:'4px 12px', minHeight:22, display:'flex', alignItems:'center' }}>
+            <span style={{ fontSize:10, color:'#aaa', fontStyle:'italic' }}>{sym?.label || ''}</span>
+          </div>
+          {/* Grille de symboles */}
+          <div style={{ display:'flex', gap:6, padding:'4px 10px 8px', overflowX:'auto', alignItems:'flex-start' }}>
+            {(SYMBOL_CATEGORIES.find(c => c.id === symCat)?.ids || []).map(id => {
+              const sm = getAllSymbols().find(s => s.id === id);
+              if (!sm) return null;
+              const isActive = sym.id === sm.id;
+              return (
+                <button key={sm.id} onClick={() => setSym(sm)}
+                  style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:3,
+                    padding:'6px 8px', borderRadius:8, cursor:'pointer', border:'none',
+                    background:isActive ? DA.red : '#2a2a2a' }}>
+                  <SymMiniCanvas sm={sm} color={color} />
+                  <span style={{ fontSize:9, fontWeight:700, color:isActive?'white':'#999', letterSpacing:0.3, whiteSpace:'nowrap' }}>
+                    {sm.short}
+                  </span>
                 </button>
-              )}
-            </div>
-          ))}
-          {!showNewSym
-            ? <button onClick={() => setShowNewSym(true)}
-                style={{ flexShrink:0,padding:'5px 12px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:12,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF' }}>
-                + Créer
-              </button>
-            : <div style={{ display:'flex',gap:5,alignItems:'center',flexShrink:0 }}>
-                <input autoFocus value={newSymName} onChange={e=>setNewSymName(e.target.value)}
-                  onKeyDown={e=>{if(e.key==='Enter')addCustomSym();if(e.key==='Escape'){setShowNewSym(false);setNewSymName('');}}}
-                  placeholder="Nom du symbole…"
-                  style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',minWidth:120,fontFamily:'inherit' }}/>
-                <button onClick={addCustomSym}
-                  style={{ padding:'4px 10px',background:DA.red,color:'white',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
-                <button onClick={() => {setShowNewSym(false);setNewSymName('');}}
-                  style={{ padding:'4px 7px',background:'#333',color:'#aaa',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>✕</button>
-              </div>
-          }
+              );
+            })}
+            {/* Symboles custom dans "Divers" */}
+            {symCat === 'divers' && getCustomSymbolDefs().map(sm => {
+              const isActive = sym.id === sm.id;
+              return (
+                <div key={sm.id} style={{ position:'relative', flexShrink:0 }}>
+                  <button onClick={() => setSym(sm)}
+                    style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3,
+                      padding:'6px 8px', borderRadius:8, cursor:'pointer', border:'none',
+                      background:isActive ? DA.red : '#2a2a2a' }}>
+                    <SymMiniCanvas sm={sm} color={color} />
+                    <span style={{ fontSize:9, fontWeight:700, color:isActive?'white':'#999', letterSpacing:0.3 }}>{sm.short}</span>
+                  </button>
+                  <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
+                    style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>×</button>
+                </div>
+              );
+            })}
+            {/* Créer custom */}
+            {symCat === 'divers' && (!showNewSym
+              ? <button onClick={() => setShowNewSym(true)}
+                  style={{ flexShrink:0,padding:'6px 10px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF',alignSelf:'center' }}>
+                  + Créer
+                </button>
+              : <div style={{ display:'flex',gap:5,alignItems:'center',flexShrink:0,alignSelf:'center' }}>
+                  <input autoFocus value={newSymName} onChange={e=>setNewSymName(e.target.value)}
+                    onKeyDown={e=>{if(e.key==='Enter')addCustomSym();if(e.key==='Escape'){setShowNewSym(false);setNewSymName('');}}}
+                    placeholder="Nom…"
+                    style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',minWidth:80,fontFamily:'inherit' }}/>
+                  <button onClick={addCustomSym} style={{ padding:'4px 10px',background:DA.red,color:'white',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
+                  <button onClick={() => {setShowNewSym(false);setNewSymName('');}} style={{ padding:'4px 7px',background:'#333',color:'#aaa',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>✕</button>
+                </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1305,10 +1400,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         </div>
       )}
 
-      {/* ── Aide portée ── */}
-      {tool === 'symbol' && sym?.id === 'portee' && !selAnnot && (
+      {/* ── Aide symboles orientables ── */}
+      {tool === 'symbol' && (sym?.id === 'portee' || sym?.id === 'pente_sol') && !selAnnot && (
         <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
-          <span style={{ fontSize:11,color:'#888' }}>Cliquer-glisser pour orienter le sens de portée. Cliquer sur un existant pour le déplacer.</span>
+          <span style={{ fontSize:11,color:'#888' }}>Cliquer-glisser pour orienter. Cliquer sur un existant pour le déplacer.</span>
         </div>
       )}
 
@@ -1389,5 +1484,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     </div>
   );
 });
+
+function SymMiniCanvas({ sm, color }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv || !sm?.draw) return;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, 40, 40);
+    sm.draw(ctx, 20, 20, 1, color);
+  }, [sm, color]);
+  return <canvas ref={canvasRef} width={40} height={40} style={{ display:'block', width:40, height:40 }} />;
+}
 
 export default Annotator;
