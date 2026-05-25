@@ -386,7 +386,6 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   }
 
   if (showPlanPicker) {
-    const alreadyIds = new Set(form.plans.map(p => p.planId));
     return (
       <div className="modal-overlay">
         <div className="modal-sheet" style={{ padding:20 }}>
@@ -396,21 +395,15 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
           </div>
           {planLibrary.length === 0 ? (
             <p style={{ color:DA.grayL, textAlign:'center', padding:24, fontSize:13 }}>Aucun plan dans la bibliothèque du projet</p>
-          ) : planLibrary.map(pl => {
-            const already = alreadyIds.has(pl.id);
-            return (
-              <button key={pl.id} onClick={() => {
-                if (!already) setForm(f => ({ ...f, plans: [...f.plans, { id: crypto.randomUUID(), planId: pl.id, planAnnotations: null }] }));
-                setShowPlanPicker(false);
-              }} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10, background: already ? DA.grayXL : 'white', marginBottom:8, cursor: already ? 'default' : 'pointer', textAlign:'left' }}>
-                {pl.bg && <img src={pl.bg} alt="" style={{ width:56, height:36, objectFit:'cover', borderRadius:4, flexShrink:0 }}/>}
-                <div>
-                  <p style={{ fontSize:13, fontWeight:600, color:DA.black, margin:0 }}>{pl.nom || 'Plan sans nom'}</p>
-                  {already && <p style={{ fontSize:11, color:DA.grayL, margin:0 }}>Déjà ajouté</p>}
-                </div>
-              </button>
-            );
-          })}
+          ) : planLibrary.map(pl => (
+            <button key={pl.id} onClick={() => {
+              setForm(f => ({ ...f, plans: [...f.plans, { id: crypto.randomUUID(), planId: pl.id, planBg: pl.bg || null, planAnnotations: null }] }));
+              setShowPlanPicker(false);
+            }} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10, background:'white', marginBottom:8, cursor:'pointer', textAlign:'left' }}>
+              {pl.bg && <img src={pl.bg} alt="" style={{ width:56, height:36, objectFit:'cover', borderRadius:4, flexShrink:0 }}/>}
+              <p style={{ fontSize:13, fontWeight:600, color:DA.black, margin:0 }}>{pl.nom || 'Plan sans nom'}</p>
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -762,7 +755,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
             {form.plans.map((pl, idx) => {
               const libPlan = planLibrary.find(p => p.id === pl.planId);
-              const bg = libPlan?.bg || null;
+              const bg = pl.planBg || libPlan?.bg || null;
               const exported = pl.planAnnotations?.exported || bg;
               const annotCount = pl.planAnnotations?.paths?.length || 0;
               return (
