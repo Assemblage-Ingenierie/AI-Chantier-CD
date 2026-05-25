@@ -23,11 +23,11 @@ async function uploadToDrive({ data, name, projetNom, visiteLabel, visiteDate })
   } catch { /* silently ignore — Drive upload is best-effort */ }
 }
 
-export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate }) {
+export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [] }) {
   const [form, setForm] = useState(() => {
     const base = item
-      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
-      : { titre:'', commentaire:'', urgence:'rien', photos:[], suivi:'rien', commentaireAlign:'left' };
+      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
+      : { titre:'', commentaire:'', urgence:'rien', photos:[], plans:[], suivi:'rien', commentaireAlign:'left' };
     try {
       const saved = localStorage.getItem(DRAFT_KEY(item?.id));
       if (saved) {
@@ -47,6 +47,8 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
+  const [annotatingPlanIdx, setAnnotatingPlanIdx] = useState(null);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [confirmDelPhotoIdx, setConfirmDelPhotoIdx] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
@@ -361,6 +363,56 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
         }}
         onClose={() => setAnnotatingPhotoIdx(null)}
       />
+    );
+  }
+
+  if (annotatingPlanIdx !== null) {
+    const pl = form.plans[annotatingPlanIdx];
+    const bg = planLibrary.find(p => p.id === pl?.planId)?.bg || null;
+    return (
+      <Annotator
+        bgImage={bg}
+        savedPaths={pl?.planAnnotations?.paths || []}
+        onSave={(paths, exported) => {
+          setForm(f => ({
+            ...f,
+            plans: f.plans.map((p, i) => i === annotatingPlanIdx ? { ...p, planAnnotations: { paths, exported } } : p),
+          }));
+          setAnnotatingPlanIdx(null);
+        }}
+        onClose={() => setAnnotatingPlanIdx(null)}
+      />
+    );
+  }
+
+  if (showPlanPicker) {
+    const alreadyIds = new Set(form.plans.map(p => p.planId));
+    return (
+      <div className="modal-overlay">
+        <div className="modal-sheet" style={{ padding:20 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:16 }}>
+            <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:0 }}>Ajouter un plan</p>
+            <button onClick={() => setShowPlanPicker(false)} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}><Ic n="x" s={20}/></button>
+          </div>
+          {planLibrary.length === 0 ? (
+            <p style={{ color:DA.grayL, textAlign:'center', padding:24, fontSize:13 }}>Aucun plan dans la bibliothèque du projet</p>
+          ) : planLibrary.map(pl => {
+            const already = alreadyIds.has(pl.id);
+            return (
+              <button key={pl.id} onClick={() => {
+                if (!already) setForm(f => ({ ...f, plans: [...f.plans, { id: crypto.randomUUID(), planId: pl.id, planAnnotations: null }] }));
+                setShowPlanPicker(false);
+              }} style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10, background: already ? DA.grayXL : 'white', marginBottom:8, cursor: already ? 'default' : 'pointer', textAlign:'left' }}>
+                {pl.bg && <img src={pl.bg} alt="" style={{ width:56, height:36, objectFit:'cover', borderRadius:4, flexShrink:0 }}/>}
+                <div>
+                  <p style={{ fontSize:13, fontWeight:600, color:DA.black, margin:0 }}>{pl.nom || 'Plan sans nom'}</p>
+                  {already && <p style={{ fontSize:11, color:DA.grayL, margin:0 }}>Déjà ajouté</p>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     );
   }
 
@@ -698,6 +750,47 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
               </div>
             </div>
           )}
+
+          {/* Plans additionnels */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Plans additionnels</label>
+              <button onClick={() => setShowPlanPicker(true)}
+                style={{ fontSize:11,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'4px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                <Ic n="plus" s={11}/> Ajouter
+              </button>
+            </div>
+            {form.plans.map((pl, idx) => {
+              const libPlan = planLibrary.find(p => p.id === pl.planId);
+              const bg = libPlan?.bg || null;
+              const exported = pl.planAnnotations?.exported || bg;
+              const annotCount = pl.planAnnotations?.paths?.length || 0;
+              return (
+                <div key={pl.id} style={{ display:'flex',alignItems:'stretch',marginBottom:8,border:`1px solid ${DA.border}`,borderRadius:10,overflow:'hidden',background:'white' }}>
+                  <div onClick={() => setAnnotatingPlanIdx(idx)} style={{ position:'relative',width:72,height:48,background:'#1a1a1a',flexShrink:0,cursor:'pointer' }}>
+                    {exported && <img src={exported} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>}
+                    <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.35)' }}>
+                      <Ic n="pen" s={13}/>
+                    </div>
+                  </div>
+                  <div style={{ flex:1,minWidth:0,padding:'6px 10px',display:'flex',flexDirection:'column',justifyContent:'center' }}>
+                    <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:'0 0 2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{libPlan?.nom || 'Plan'}</p>
+                    {annotCount > 0
+                      ? <span style={{ fontSize:10,color:DA.red,fontWeight:600 }}>{annotCount} annotation{annotCount > 1 ? 's' : ''}</span>
+                      : <span style={{ fontSize:10,color:DA.grayL }}>Non annoté · hors rapport</span>
+                    }
+                  </div>
+                  <button onClick={() => setForm(f => ({ ...f, plans: f.plans.filter((_,i) => i !== idx) }))}
+                    style={{ padding:'0 12px',border:'none',borderLeft:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:'#B91C1C',display:'flex',alignItems:'center' }}>
+                    <Ic n="del" s={14}/>
+                  </button>
+                </div>
+              );
+            })}
+            {form.plans.length === 0 && (
+              <p style={{ fontSize:11,color:DA.grayL,margin:0 }}>Aucun plan — cliquez sur Ajouter</p>
+            )}
+          </div>
 
           {/* Enregistrer */}
           <div style={{ display:'flex',gap:8,alignItems:'stretch' }}>

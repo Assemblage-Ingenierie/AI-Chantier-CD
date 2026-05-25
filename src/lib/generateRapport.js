@@ -269,6 +269,20 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     if (img) planImages[loc.id] = img;
   }
 
+  // Pré-rendu des plans additionnels par item (uniquement si annotés)
+  const itemPlanImages = {}; // clé: `${itemId}_${planIdx}`
+  for (const loc of localisations) {
+    for (const item of (loc.items || [])) {
+      for (let i = 0; i < (item.plans || []).length; i++) {
+        const pl = item.plans[i];
+        if (!pl.planAnnotations?.paths?.length) continue;
+        const bg = (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale);
+        if (img) itemPlanImages[`${item.id}_${i}`] = img;
+      }
+    }
+  }
+
   // Pré-rendu des icônes de symboles et viewpoint pour les légendes
   const allSymbolIds = new Set();
   localisations.forEach(loc =>
@@ -602,6 +616,23 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         photoOff += validInItem;
         y += phtH + 4;
       }
+
+      // ── Plans additionnels annotés ────────────────────────────────────────────
+      (item.plans || []).forEach((pl, pidx) => {
+        const planImg = itemPlanImages[`${item.id}_${pidx}`];
+        if (!planImg) return;
+        const ih = CW * 0.5;
+        pb(16 + ih);
+        const libNom = (projet.planLibrary || []).find(p => p.id === pl.planId)?.nom;
+        if (libNom) {
+          doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR);
+          doc.text(libNom.toUpperCase(), ML, y + 4); y += 7;
+        }
+        const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+        try { doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST'); } catch {}
+        doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.15); doc.rect(ML, y, CW, ih);
+        y += ih + 4;
+      });
 
       doc.setTextColor(0, 0, 0);
       y += 2; // espacement inter-items (preview marginBottom:5px=1.7mm)
