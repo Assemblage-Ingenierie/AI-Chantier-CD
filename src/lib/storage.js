@@ -374,11 +374,13 @@ export async function hydratePlans(_projectId) {
 // Supprime immédiatement un projet de Supabase (contourne la garde anti-mass-delete).
 // Appelé au moment où l'utilisateur confirme la suppression, en complément du filtre local.
 export async function deleteRemoteProjet(id) {
+  addPersistedDeletedId(id); // persisté immédiatement — survit à un rechargement avant confirmation
   try {
     const sb = await getSupabase();
     const { error } = await sb.from('aichantier_chantiers').delete().eq('id', id);
     if (error) { console.warn('deleteRemoteProjet error:', error); return false; }
     if (_lastRemoteIds) _lastRemoteIds.delete(id);
+    removePersistedDeletedId(id); // suppression confirmée — plus besoin de bloquer les polls
     return true;
   } catch (e) { console.warn('deleteRemoteProjet error:', e); return false; }
 }
@@ -797,6 +799,35 @@ async function saveRemote(ps, dirtyIds = null) {
 // Persistance des IDs remote connus à travers les sessions navigateur.
 // Permet à mergeWithLocal() de distinguer :
 //   - localOnly + dans persistedIds → projet supprimé ailleurs → drop local
+// IDs supprimés localement — persistés pour survivre aux rechargements de page.
+// Empêche mergeWithLocal de restaurer un projet supprimé si la suppression Supabase est encore en cours.
+const PERSISTED_DELETED_IDS_KEY = '_chantierai_deleted_ids_v1';
+
+export function getPersistedDeletedIds() {
+  try {
+    const raw = localStorage.getItem(PERSISTED_DELETED_IDS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+
+function addPersistedDeletedId(id) {
+  try {
+    const ids = getPersistedDeletedIds();
+    ids.add(id);
+    localStorage.setItem(PERSISTED_DELETED_IDS_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
+function removePersistedDeletedId(id) {
+  try {
+    const ids = getPersistedDeletedIds();
+    ids.delete(id);
+    localStorage.setItem(PERSISTED_DELETED_IDS_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
 //   - localOnly + jamais dans persistedIds → vraiment unsynced → push back
 // Sans ça, un appareil offline ré-pousse les projets supprimés ailleurs.
 const PERSISTED_REMOTE_IDS_KEY = '_chantierai_remote_ids_v1';

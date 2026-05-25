@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, deleteRemoteProjet } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 
 const MAX_HISTORY = 20;
@@ -134,7 +134,7 @@ export function useProjets(onSyncStatus) {
   const userModified = useRef(false);
   const savingRef = useRef(false);
   const historyRef = useRef([]);
-  const deletedIdsRef = useRef(new Set());
+  const deletedIdsRef = useRef(getPersistedDeletedIds()); // IDs supprimés — survivent aux rechargements
   const dirtyIds = useRef(new Set());
 
   useEffect(() => { projetsRef.current = projets; }, [projets]);
