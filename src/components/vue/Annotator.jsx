@@ -365,6 +365,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [polyPts,       setPolyPts]       = useState([]);   // sommets du polygone en cours
   const [polyMousePos,  setPolyMousePos]  = useState(null); // prévisualisation curseur
   const lastTapRef = useRef(0);
+  const lastSymPlaceRef = useRef(0);
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
@@ -662,6 +663,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     e.preventDefault();
     if (e.touches?.length >= 2) {
       if (drawing) { setCur([]); setDrawing(false); }
+      // Annule un symbole placé accidentellement par le premier doigt du pinch (<250ms)
+      if (Date.now() - lastSymPlaceRef.current < 250) setPaths(prev => prev.slice(0, -1));
       const [t1, t2] = e.touches;
       const cur = vtRef.current;
       const r = cvRef.current?.getBoundingClientRect();
@@ -729,6 +732,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         setPendingPortee({ symbolId: sym.id, x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
         setDrawing(true);
       } else {
+        lastSymPlaceRef.current = Date.now();
         setPaths(prev => [...prev, { type:'symbol', symbolId:sym.id, x:pos.x, y:pos.y, color, size }]);
       }
       return;
@@ -1332,16 +1336,29 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
               background:shapeFilled?DA.red:'#333',color:shapeFilled?'white':'#aaa',border:'none' }}>
             {shapeFilled ? '◼ Rempli' : '◻ Contour'}
           </button>
-          {shapeFilled && (
-            <>
-              <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>OPACITÉ</span>
-              <input type="range" min="0.05" max="0.85" step="0.05" value={fillOpacity}
-                onChange={e => setFillOpacity(parseFloat(e.target.value))}
-                style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
-              <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(fillOpacity*100)}%</span>
-            </>
-          )}
+          {(() => {
+            const selIdx = selAnnot?.idx;
+            const selSh = selIdx != null ? paths[selIdx] : null;
+            const editSel = selSh?.type === 'shape' && selSh?.filled;
+            const showSlider = shapeFilled || editSel;
+            if (!showSlider) return null;
+            const opVal = editSel ? (selSh.fillOpacity ?? 0.3) : fillOpacity;
+            const onOp = v => editSel
+              ? setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,fillOpacity:v} : p))
+              : setFillOpacity(v);
+            return (
+              <>
+                <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+                <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>
+                  {editSel ? 'OPACITÉ ✏' : 'OPACITÉ'}
+                </span>
+                <input type="range" min="0.05" max="1" step="0.05" value={opVal}
+                  onChange={e => onOp(parseFloat(e.target.value))}
+                  style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
+                <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(opVal*100)}%</span>
+              </>
+            );
+          })()}
           <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
             {shapeTool === 'poly'
               ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
