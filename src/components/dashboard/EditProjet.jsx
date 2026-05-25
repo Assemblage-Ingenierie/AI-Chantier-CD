@@ -9,39 +9,69 @@ const FIELDS = [
   { k: 'adresse',      l: 'Adresse',          ph: 'Ex: 12 rue des Acacias, Lyon'  },
 ];
 
+const RATIO_TUILE = 16 / 9;
+const RATIO_GARDE = 210 / 85;
+
 export default function EditProjet({ projet, onClose, onSave }) {
-  const [f,        setF]        = useState({ nom: projet.nom || '', adresse: projet.adresse || '', photo: projet.photo || null, maitreOuvrage: projet.maitreOuvrage || '' });
-  const [rawPhoto, setRawPhoto] = useState(null);
+  const [f,        setF]       = useState({ nom: projet.nom || '', adresse: projet.adresse || '', photo: projet.photo || null, photoCouverture: projet.photoCouverture || null, maitreOuvrage: projet.maitreOuvrage || '' });
+  const [cropSrc,  setCropSrc] = useState(null);
+  const [cropStep, setCropStep] = useState(null); // 'tuile' | 'garde'
   const fileRef = useRef();
 
   const handleFile = (file) => {
     if (!file) return;
     if (file.size > 25 * 1024 * 1024) { alert('Image trop grande (max 25 Mo)'); return; }
-    setRawPhoto(URL.createObjectURL(file));
+    setCropSrc(URL.createObjectURL(file));
+    setCropStep('tuile');
   };
 
-  const handleCropDone = (dataUrl) => {
-    if (rawPhoto?.startsWith('blob:')) URL.revokeObjectURL(rawPhoto);
-    setRawPhoto(null);
+  const handleTuileDone = (dataUrl) => {
     setF(p => ({ ...p, photo: dataUrl }));
+    setCropStep('garde');
+  };
+
+  const handleGardeDone = (dataUrl) => {
+    setF(p => ({ ...p, photoCouverture: dataUrl }));
+    if (cropSrc?.startsWith('blob:')) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null); setCropStep(null);
   };
 
   const handleCropCancel = () => {
-    if (rawPhoto?.startsWith('blob:')) URL.revokeObjectURL(rawPhoto);
-    setRawPhoto(null);
+    if (cropSrc?.startsWith('blob:')) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null); setCropStep(null);
   };
 
-  if (rawPhoto) return (
-    <div className="modal-overlay">
-      <div className="modal-sheet" style={{ padding:20 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:14 }}>
-          <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:0 }}>Cadrer la photo</p>
-          <button onClick={handleCropCancel} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}><Ic n="x" s={20}/></button>
+  if (cropSrc && cropStep) {
+    const isTuile = cropStep === 'tuile';
+    return (
+      <div className="modal-overlay">
+        <div className="modal-sheet" style={{ padding:20 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14 }}>
+            <div>
+              <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:0 }}>
+                {isTuile ? 'Cadrer — Tuile (app)' : 'Cadrer — Page de garde (rapport)'}
+              </p>
+              <p style={{ fontSize:11, color:DA.grayL, margin:'3px 0 0' }}>
+                Étape {isTuile ? '1' : '2'} sur 2
+              </p>
+            </div>
+            <button onClick={handleCropCancel} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}>
+              <Ic n="x" s={20}/>
+            </button>
+          </div>
+          <CropTool
+            src={cropSrc}
+            ratio={isTuile ? RATIO_TUILE : RATIO_GARDE}
+            outputWidth={1200}
+            outputHeight={isTuile ? 675 : 486}
+            cancelLabel={isTuile ? 'Annuler' : 'Passer'}
+            onDone={isTuile ? handleTuileDone : handleGardeDone}
+            onCancel={handleCropCancel}
+          />
         </div>
-        <CropTool src={rawPhoto} onDone={handleCropDone} onCancel={handleCropCancel}/>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="modal-overlay">
@@ -67,7 +97,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
             ) : (
               <div style={{ textAlign:'center', pointerEvents:'none' }}>
                 <Ic n="cam" s={28}/>
-                <p style={{ fontSize:11, color:DA.grayL, marginTop:6, marginBottom:0 }}>Appuyer pour prendre une photo</p>
+                <p style={{ fontSize:11, color:DA.grayL, marginTop:6, marginBottom:0 }}>Appuyer pour ajouter une photo</p>
               </div>
             )}
           </div>
@@ -79,7 +109,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
             <Ic n="img" s={11}/> Galerie
           </button>
           {f.photo && (
-            <button onClick={e => { e.stopPropagation(); setRawPhoto(f.photo); }}
+            <button onClick={e => { e.stopPropagation(); setCropSrc(f.photo); setCropStep('tuile'); }}
               style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', color:DA.gray }}>
               ✂ Recadrer
             </button>

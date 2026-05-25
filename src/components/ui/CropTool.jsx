@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 
-export default function CropTool({ src, onDone, onCancel }) {
+export default function CropTool({ src, ratio = 16/9, outputWidth = 1200, outputHeight = 675, cancelLabel = 'Annuler', onDone, onCancel }) {
   const containerRef = useRef(null);
   const imgRef       = useRef(null);
   const stRef        = useRef({ dx: 0, dy: 0, s: 1 });
@@ -13,7 +13,7 @@ export default function CropTool({ src, onDone, onCancel }) {
   const refresh = () => forceRender(n => n + 1);
 
   const getCW = () => containerRef.current?.clientWidth  || 320;
-  const getCH = () => containerRef.current?.clientHeight || Math.round(getCW() * 9 / 16);
+  const getCH = () => containerRef.current?.clientHeight || Math.round(getCW() / ratio);
 
   const clamp = (st) => {
     const nat = natRef.current;
@@ -30,12 +30,20 @@ export default function CropTool({ src, onDone, onCancel }) {
     const img = imgRef.current;
     if (!img) return;
     const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return;
     const cw = getCW(), ch = getCH();
     const fitS = Math.max(cw / w, ch / h);
     natRef.current = { w, h };
     stRef.current  = { dx: 0, dy: 0, s: fitS };
     setReady(true);
   };
+
+  // Handle images that load synchronously (data URLs) before onLoad fires
+  useEffect(() => {
+    if (ready) return;
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) handleLoad();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onTouchStart = (e) => {
     e.preventDefault();
@@ -87,13 +95,14 @@ export default function CropTool({ src, onDone, onCancel }) {
     const { dx, dy, s } = stRef.current;
     const iLeft = cw/2 + dx - nat.w*s/2, iTop = ch/2 + dy - nat.h*s/2;
     const canvas = document.createElement('canvas');
-    canvas.width = 1200; canvas.height = 675;
-    canvas.getContext('2d').drawImage(img, -iLeft/s, -iTop/s, cw/s, ch/s, 0, 0, 1200, 675);
+    canvas.width = outputWidth; canvas.height = outputHeight;
+    canvas.getContext('2d').drawImage(img, -iLeft/s, -iTop/s, cw/s, ch/s, 0, 0, outputWidth, outputHeight);
     onDone(canvas.toDataURL('image/webp', 0.85));
   };
 
   const nat = natRef.current;
   const { dx, dy, s } = stRef.current;
+  const pt = `${(100 / ratio).toFixed(4)}%`;
 
   return (
     <div>
@@ -101,7 +110,7 @@ export default function CropTool({ src, onDone, onCancel }) {
         Glissez pour cadrer · Pincez ou molette pour zoomer
       </p>
       <div ref={containerRef}
-        style={{ width:'100%', paddingTop:'56.25%', position:'relative', borderRadius:10,
+        style={{ width:'100%', paddingTop:pt, position:'relative', borderRadius:10,
           overflow:'hidden', background:'#111', cursor:'grab', userSelect:'none', touchAction:'none' }}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}
@@ -127,7 +136,7 @@ export default function CropTool({ src, onDone, onCancel }) {
       <div style={{ display:'flex', gap:8, marginTop:12 }}>
         <button onClick={onCancel}
           style={{ flex:1, padding:'10px 0', border:`1px solid ${DA.border}`, background:'white', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', color:DA.gray }}>
-          Annuler
+          {cancelLabel}
         </button>
         <button onClick={validate} disabled={!ready}
           style={{ flex:2, padding:'10px 0', background: ready ? DA.black : '#ccc', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor: ready ? 'pointer' : 'default', color:'white' }}>

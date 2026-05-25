@@ -321,10 +321,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   doc.setFillColor(...BK); doc.rect(0, 0, W, DARK_H, 'F');
   doc.setFillColor(...RD); doc.rect(0, 0, 4, DARK_H, 'F');
 
-  if (projet.photo) {
+  const coverPhoto = projet.photoCouverture || projet.photo;
+  if (coverPhoto) {
     try {
-      const ext = projet.photo.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-      doc.addImage(projet.photo, ext, 0, 0, W, DARK_H, undefined, 'FAST');
+      const ext = coverPhoto.startsWith('data:image/webp') ? 'WEBP' : coverPhoto.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(coverPhoto, ext, 0, 0, W, DARK_H, undefined, 'FAST');
       try {
         doc.setFillColor(...BK);
         doc.setGState(doc.GState({ opacity: 0.55 }));
