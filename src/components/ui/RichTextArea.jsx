@@ -58,6 +58,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   useImperativeHandle(ref, () => ({
     focus: () => editorRef.current?.focus(),
     getEditor: () => editorRef.current,
+    resetTyping: () => { isTyping.current = false; },
   }));
 
   // Init: convertir markdown → HTML une seule fois au montage

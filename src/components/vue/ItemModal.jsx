@@ -204,6 +204,7 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
     sessionText.current = '';
     setInterimText('');
     setRecording(true);
+    textareaRef.current?.resetTyping?.(); // évite que isTyping bloque la synchro DOM pendant la dictée
     doRecognize();
   };
 
