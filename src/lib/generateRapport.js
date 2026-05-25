@@ -269,6 +269,18 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     if (img) planImages[loc.id] = img;
   }
 
+  // Pré-rendu des plans supplémentaires par zone (uniquement si annotés)
+  const extraPlanImages = {}; // clé: `${locId}_${planIdx}`
+  for (const loc of localisations) {
+    for (let i = 0; i < (loc.extraPlans || []).length; i++) {
+      const ep = loc.extraPlans[i];
+      if (!ep.planAnnotations?.paths?.length) continue;
+      const bg = ep.planBg || (projet.planLibrary || []).find(p => p.id === ep.planId)?.bg || null;
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale);
+      if (img) extraPlanImages[`${loc.id}_${i}`] = img;
+    }
+  }
+
   // Pré-rendu des plans additionnels par item (uniquement si annotés)
   const itemPlanImages = {}; // clé: `${itemId}_${planIdx}`
   for (const loc of localisations) {
@@ -276,7 +288,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       for (let i = 0; i < (item.plans || []).length; i++) {
         const pl = item.plans[i];
         if (!pl.planAnnotations?.paths?.length) continue;
-        const bg = (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
+        const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
         const img = await renderPlanImage(bg, pl.planAnnotations, annotScale);
         if (img) itemPlanImages[`${item.id}_${i}`] = img;
       }
@@ -657,13 +669,28 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         pb(22 + ih + (hasLeg ? 20 : 6));
         secHdr(`Plan — ${loc.nom}`);
         try {
-          const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           y += ih + 2;
         } catch {}
         y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
         y += 2;
       }
+      // Plans supplémentaires annotés de la zone
+      (loc.extraPlans || []).forEach((ep, idx) => {
+        const planImg = extraPlanImages[`${loc.id}_${idx}`];
+        if (!planImg) return;
+        const libNom = (projet.planLibrary || []).find(p => p.id === ep.planId)?.nom;
+        const ih = CW * 0.58;
+        pb(22 + ih + 6);
+        secHdr(`${libNom || 'Plan'} — ${loc.nom}`);
+        try {
+          const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
+          y += ih + 2;
+        } catch {}
+        y += 2;
+      });
     }
 
     y += 5;
