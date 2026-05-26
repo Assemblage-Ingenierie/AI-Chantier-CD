@@ -668,25 +668,32 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     // Plans inline (si !plansEnFin) — principal + supplémentaires à la suite, une seule légende
     if (!plansEnFin) {
       const allZonePlans = [
-        { img: planImages[loc.id], annotations: loc.planAnnotations },
-        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations })),
+        { img: planImages[loc.id], annotations: loc.planAnnotations, breakId: `plan-${loc.id}` },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
       ].filter(p => p.img);
 
       if (allZonePlans.length > 0) {
-        // Combiner toutes les annotations pour la légende unique
         const allAnnotPaths = allZonePlans.flatMap(p => p.annotations?.paths || []);
         const combinedAnnot = allAnnotPaths.length ? { paths: allAnnotPaths } : null;
-        const hasLeg = allAnnotPaths.some(p => p.type === 'symbol');
-        const ih = CW * 0.58;
-        pb(22 + ih + (hasLeg ? 20 : 6));
+        const hasLeg = allAnnotPaths.some(p => p.type === 'symbol') || allAnnotPaths.some(p => p.type === 'viewpoint');
+        const ih = CW * 0.46; // ~80mm — 2 plans + légende tiennent sur une page A4
+        const legH = hasLeg ? 30 : 8;
+
+        pb(22 + ih);
         secHdr(`Plan — ${loc.nom}`);
-        allZonePlans.forEach(({ img: planImg }) => {
-          pb(ih + 4);
+        allZonePlans.forEach(({ img: planImg, breakId }, planI) => {
+          const isLast = planI === allZonePlans.length - 1;
+          // Saut de page forcé entre plans (via mode découpe)
+          if (planI > 0 && pageBreaksSet.has(breakId)) {
+            doc.addPage(); y = 18; hdr();
+          } else {
+            pb(ih + (isLast ? legH : 4));
+          }
           try {
             const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
             doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
-            y += ih + 4;
           } catch {}
+          y += ih + 4;
         });
         y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
         y += 2;

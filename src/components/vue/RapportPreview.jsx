@@ -502,8 +502,10 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
   );
   if (!renderedImg) return null;
   return (
-    <img src={renderedImg} alt={alt || 'Plan'}
-      style={{ width:'100%', display:'block', objectFit:'contain', borderTop:`1px solid ${DA.border}` }}/>
+    <div style={{ borderTop:`1px solid ${DA.border}`, background:'#f9f9f9', maxHeight:340, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <img src={renderedImg} alt={alt || 'Plan'}
+        style={{ width:'100%', maxHeight:340, objectFit:'contain', display:'block' }}/>
+    </div>
   );
 }
 
