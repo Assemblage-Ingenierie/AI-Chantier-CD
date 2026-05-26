@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import CropTool from '../ui/CropTool.jsx';
@@ -17,11 +17,17 @@ export default function EditProjet({ projet, onClose, onSave }) {
   const [cropSrc,  setCropSrc] = useState(null);
   const [cropStep, setCropStep] = useState(null); // 'tuile' | 'garde'
   const fileRef = useRef();
+  const originalSrcRef = useRef(null); // blob URL of original full-res photo, kept for recrop
+
+  useEffect(() => () => { if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current); }, []);
 
   const handleFile = (file) => {
     if (!file) return;
     if (file.size > 25 * 1024 * 1024) { alert('Image trop grande (max 25 Mo)'); return; }
-    setCropSrc(URL.createObjectURL(file));
+    if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current);
+    const blob = URL.createObjectURL(file);
+    originalSrcRef.current = blob;
+    setCropSrc(blob);
     setCropStep('tuile');
   };
 
@@ -32,12 +38,10 @@ export default function EditProjet({ projet, onClose, onSave }) {
 
   const handleGardeDone = (dataUrl) => {
     setF(p => ({ ...p, photoCouverture: dataUrl }));
-    if (cropSrc?.startsWith('blob:')) URL.revokeObjectURL(cropSrc);
     setCropSrc(null); setCropStep(null);
   };
 
   const handleCropCancel = () => {
-    if (cropSrc?.startsWith('blob:')) URL.revokeObjectURL(cropSrc);
     setCropSrc(null); setCropStep(null);
   };
 
@@ -109,7 +113,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
             <Ic n="img" s={11}/> Galerie
           </button>
           {f.photo && (
-            <button onClick={e => { e.stopPropagation(); setCropSrc(f.photo); setCropStep('tuile'); }}
+            <button onClick={e => { e.stopPropagation(); setCropSrc(originalSrcRef.current || f.photo); setCropStep('tuile'); }}
               style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', color:DA.gray }}>
               ✂ Recadrer
             </button>

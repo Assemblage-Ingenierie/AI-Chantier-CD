@@ -6,7 +6,7 @@ import { fetchPlanData } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items, autoAnnot }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items, autoAnnot, annotIdx }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -16,7 +16,12 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     for (const ep of (loc.extraPlans || [])) result.push(ep);
     return result;
   });
-  const [annotatingIdx, setAnnotatingIdx] = useState(autoAnnot && (loc.planBg || loc.planId) ? 0 : null);
+  const directAnnot = annotIdx != null; // opened from thumbnail click — jump straight to annotator
+  const [annotatingIdx, setAnnotatingIdx] = useState(() => {
+    if (annotIdx != null) return annotIdx;
+    if (autoAnnot && (loc.planBg || loc.planId)) return 0;
+    return null;
+  });
   const [rendering, setRendering] = useState(false);
   const [renderErr, setRenderErr] = useState(null);
   const [pendingPdf, setPendingPdf] = useState(null);
@@ -36,8 +41,9 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     }
   };
 
-  const handleSave = async () => {
-    const resolved = await Promise.all(plans.map(async (p) => {
+  const handleSave = async (plansArg) => {
+    const src = plansArg || plans;
+    const resolved = await Promise.all(src.map(async (p) => {
       if (p.planId && !p.planBg) {
         const live = planLibrary?.find(x => x.id === p.planId);
         if (live?.bg) return { ...p, planBg: live.bg, planData: live.data || null };
@@ -68,10 +74,15 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         exportSizeMultiplier={2}
         title={libNom ? `${loc.nom} — ${libNom}` : loc.nom}
         onSave={(paths, exported) => {
-          setPlans(prev => prev.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported } } : x));
-          setAnnotatingIdx(null);
+          const newPlans = plans.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported } } : x);
+          setPlans(newPlans);
+          if (directAnnot) {
+            handleSave(newPlans); // auto-save & close when opened directly from thumbnail
+          } else {
+            setAnnotatingIdx(null);
+          }
         }}
-        onClose={() => setAnnotatingIdx(null)}
+        onClose={() => directAnnot ? onClose() : setAnnotatingIdx(null)}
       />
     );
   }

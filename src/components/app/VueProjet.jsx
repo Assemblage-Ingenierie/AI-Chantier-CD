@@ -487,7 +487,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                         const annotCount = pt.planAnnotations?.paths?.length || 0;
                                         return (
                                           <button key={colIdx}
-                                            onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot: allPlanThumbs.length === 1 })}
+                                            onClick={() => setModal({ t:'plan', locId:loc.id, annotIdx: rowIdx * 2 + colIdx })}
                                             style={{ flex:1, position:'relative', height: thumbH, border:'none', borderLeft: colIdx > 0 ? `1px solid ${DA.border}` : 'none', cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: pt.bg ? '#f4f4f4' : DA.grayXL }}>
                                             {pt.bg ? (
                                               <PlanAnnotThumb bg={pt.bg} annotations={pt.planAnnotations} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
@@ -582,6 +582,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             items={loc?.items || []}
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
+            annotIdx={modal.annotIdx ?? null}
             onClose={() => modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null)}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
