@@ -2,19 +2,21 @@
 
 ---
 
-## 🔴 RÈGLE N°1 — NE JAMAIS POUSSER SANS ACCORD EXPLICITE
+## 🟡 RÈGLE N°1 — PUSH ET MERGE AUTOMATIQUE AUTORISÉS
 
-**À partir de maintenant : ne jamais exécuter `git push` ni merger sur `main` sans avoir demandé confirmation à l'utilisateur.**
+**L'utilisateur a donné accord général pour pusher et merger sur `main` sans demander confirmation à chaque fois, tant que les changements sont sûrs et ne cassent rien.**
 
-Workflow obligatoire pour chaque modification :
+Workflow :
 1. Faire les changements en local
 2. Committer sur la branche feature
-3. **Présenter un résumé clair** de ce qui a changé et pourquoi
-4. **Attendre le feu vert explicite** ("ok tu peux pousser", "vas-y", etc.)
-5. Seulement alors : push + merge sur main
+3. Push sur la branche feature
+4. Merger immédiatement sur `main` si le build passe et qu'aucune zone critique n'est touchée
+5. Pour les changements à risque élevé (persistance, auth, schéma Supabase) : présenter un résumé et attendre confirmation
 
-Exemple de message à envoyer avant de pusher :
-> "Voici ce que j'ai modifié : [résumé]. Aucune autre partie de l'app n'est touchée. Je pousse sur main ?"
+Zones qui nécessitent encore une confirmation explicite :
+- Modifications de `mergeWithLocal`, `saveRemote`, `loadData` (persistance données)
+- Changements de schéma Supabase (migrations)
+- Toute modification qui pourrait provoquer une perte de données utilisateur
 
 ---
 
