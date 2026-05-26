@@ -500,18 +500,41 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
   );
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut }) {
-  // Build list of all plans: primary + extraPlans
+// Splits a zone's plans into page groups based on active breaks Set.
+// Returns array of { plans, topBreakId } where topBreakId is the break that started this group (null for first).
+function splitPlanGroups(loc, planLibrary, breaks) {
+  const lib = planLibrary || [];
+  const primaryBg = loc.planBg || (loc.planId && lib.find(p => p.id === loc.planId)?.bg) || null;
   const allPlans = [];
-  const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-  if (loc.planId || loc.planBg) {
-    allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
-  }
-  for (let i = 0; i < (loc.extraPlans || []).length; i++) {
-    const ep = loc.extraPlans[i];
-    const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
+  if (loc.planId || loc.planBg) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+  (loc.extraPlans || []).forEach((ep, i) => {
+    const epBg = ep.planBg || (ep.planId && lib.find(p => p.id === ep.planId)?.bg) || null;
     allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
+  });
+  if (!allPlans.length) return [];
+  const groups = [];
+  let cur = [];
+  for (const p of allPlans) {
+    if (cur.length > 0 && p.breakId && breaks.has(p.breakId)) { groups.push(cur); cur = [p]; }
+    else cur.push(p);
   }
+  if (cur.length) groups.push(cur);
+  return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
+}
+
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null }) {
+  // Build list of all plans: primary + extraPlans (or use plansSubset override)
+  const allPlans = plansSubset ?? (() => {
+    const plans = [];
+    const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
+    if (loc.planId || loc.planBg) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+    for (let i = 0; i < (loc.extraPlans || []).length; i++) {
+      const ep = loc.extraPlans[i];
+      const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
+      plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
+    }
+    return plans;
+  })();
 
   // Combined legend
   const allPaths = allPlans.flatMap(p => p.annotations?.paths || []);
@@ -533,6 +556,10 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
           </span>
         )}
       </div>
+      {/* Barre d'annulation du saut qui démarre ce segment (non-premier groupe de zone) */}
+      {cutMode && topBreakId && (
+        <PlanCutBar data-print="hide" breakId={topBreakId} forced={true} onCut={onCut}/>
+      )}
       {allPlans.map((p, i) => {
         const forced = p.breakId && pageBreaks.includes(p.breakId);
         return (
@@ -1122,10 +1149,27 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [pageBreaks]);
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const planLocs = useMemo(
-    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg || l.planId || (l.extraPlans || []).length > 0) : [],
-    [localisations, plansEnFin]
-  );
+  const planLocs = useMemo(() => {
+    if (!plansEnFin) return [];
+    const lib = projet.planLibrary || [];
+    const bgResolvable = (planId, planBg, ann) =>
+      !!(ann?.exported || planBg || (planId && lib.find(p => p.id === planId)?.bg));
+    return localisations.filter(l =>
+      bgResolvable(l.planId, l.planBg, l.planAnnotations) ||
+      (l.extraPlans || []).some(ep => bgResolvable(ep.planId, ep.planBg, ep.planAnnotations))
+    );
+  }, [localisations, plansEnFin, projet.planLibrary]);
+
+  // Segments de pages pour plansEnFin : une entrée par page (une zone peut générer N pages via breaks)
+  const planPageSegments = useMemo(() => {
+    if (!plansEnFin) return [];
+    const result = [];
+    for (const loc of planLocs) {
+      const groups = splitPlanGroups(loc, projet.planLibrary, breaks);
+      groups.forEach((g, gi) => result.push({ loc, ...g, segIdx: gi }));
+    }
+    return result;
+  }, [planLocs, projet.planLibrary, breaks, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
   const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks), [locs, plansEnFin, ppl, paraBreaks]);
@@ -1167,7 +1211,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
   const hasTableau    = includeTableauRecap && recapItems.length > 0;
   const hasConclusion = includeConclusion;
-  const totalPages    = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planLocs.length;
+  const totalPages    = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
 
   // Suivi de la page courante via scroll
   useEffect(() => {
@@ -1485,15 +1529,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         })()}
 
         {/* ── PLANS EN FIN DE RAPPORT ── */}
-        {planLocs.map((loc, pi) => {
+        {planPageSegments.map((seg, pi) => {
           const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
-            <React.Fragment key={`plan-end-${loc.id}`}>
+            <React.Fragment key={`plan-end-${seg.loc.id}-${seg.segIdx}`}>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut}/>
+                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId}/>
                 </A4Card>
               </div>
             </React.Fragment>
