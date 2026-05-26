@@ -112,6 +112,22 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
+  const reorderZonePlan = useCallback((locId, fromIdx, toIdx) => {
+    const loc = visitProjet.localisations.find(l => l.id === locId);
+    if (!loc || toIdx < 0) return;
+    // Normalise le plan principal + extraPlans en tableau plat
+    const all = [];
+    if (loc.planId || loc.planBg) all.push({ planId: loc.planId||null, planBg: loc.planBg||null, planData: loc.planData||null, planAnnotations: loc.planAnnotations||null });
+    for (const ep of (loc.extraPlans || [])) all.push({ planId: ep.planId||null, planBg: ep.planBg||null, planData: null, planAnnotations: ep.planAnnotations||null });
+    if (toIdx >= all.length) return;
+    [all[fromIdx], all[toIdx]] = [all[toIdx], all[fromIdx]];
+    const [p, ...extras] = all;
+    patchLoc(locId, {
+      planId: p?.planId||null, planBg: p?.planBg||null, planData: p?.planData||null, planAnnotations: p?.planAnnotations||null,
+      extraPlans: extras.map(e => ({ planId: e.planId, planBg: e.planBg, planAnnotations: e.planAnnotations })),
+    });
+  }, [visitProjet.localisations, patchLoc]);
+
   const onZoneDragEnd = useCallback(() => {
     if (zoneDragDidMove.current && zoneDragIdx !== null && zoneOverIdx !== null) {
       moveZone(zoneDragIdx, zoneOverIdx);
@@ -478,6 +494,20 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                             />
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
+                                {allPlanThumbs.length > 1 && (
+                                  <div style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', background:DA.grayXL, borderBottom:`1px solid ${DA.border}`, flexWrap:'wrap' }}>
+                                    {allPlanThumbs.map((pt, pi) => (
+                                      <div key={pi} style={{ display:'flex', alignItems:'center', gap:2 }}>
+                                        <button onClick={e => { e.stopPropagation(); reorderZonePlan(loc.id, pi, pi-1); }} disabled={pi===0}
+                                          style={{ fontSize:11, lineHeight:1, padding:'2px 5px', borderRadius:4, border:`1px solid ${pi>0?DA.border:'transparent'}`, background:pi>0?'white':'transparent', color:pi>0?DA.gray:DA.border, cursor:pi>0?'pointer':'default' }}>←</button>
+                                        <span style={{ fontSize:9, fontWeight:700, color:DA.gray, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', padding:'0 2px' }}>{pt.nom}</span>
+                                        <button onClick={e => { e.stopPropagation(); reorderZonePlan(loc.id, pi, pi+1); }} disabled={pi===allPlanThumbs.length-1}
+                                          style={{ fontSize:11, lineHeight:1, padding:'2px 5px', borderRadius:4, border:`1px solid ${pi<allPlanThumbs.length-1?DA.border:'transparent'}`, background:pi<allPlanThumbs.length-1?'white':'transparent', color:pi<allPlanThumbs.length-1?DA.gray:DA.border, cursor:pi<allPlanThumbs.length-1?'pointer':'default' }}>→</button>
+                                        {pi < allPlanThumbs.length-1 && <span style={{ color:DA.border, fontSize:10 }}>·</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                                 {Array.from({ length: Math.ceil(allPlanThumbs.length / 2) }, (_, rowIdx) => {
                                   const rowThumbs = allPlanThumbs.slice(rowIdx * 2, rowIdx * 2 + 2);
                                   const thumbH = allPlanThumbs.length > 2 ? (isDesktop ? 260 : 190) : (isDesktop ? 380 : 260);
