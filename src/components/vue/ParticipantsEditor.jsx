@@ -307,7 +307,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
               style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'2px 4px', flexShrink:0, display:'flex', alignItems:'center' }}>
               <Ic n="pen" s={10}/>
             </button>
-            <button onClick={() => handleDeleteContact(c.id)}
+            <button onClick={() => { if (window.confirm(`Supprimer "${c.nom}" du carnet ?`)) handleDeleteContact(c.id); }}
               title="Supprimer du carnet"
               style={{ color:'#FCA5A5', background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px' }}>
               <Ic n="x" s={10}/>
