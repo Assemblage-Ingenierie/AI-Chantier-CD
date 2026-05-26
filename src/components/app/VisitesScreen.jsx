@@ -108,6 +108,35 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const patchVisite = (visiteId, patch) =>
     onUpdateProjet({ visites: visites.map(v => v.id === visiteId ? { ...v, ...patch } : v) });
 
+  const duplicateVisite = (e, sourceId) => {
+    e.stopPropagation();
+    const source = visites.find(v => v.id === sourceId);
+    if (!source) return;
+    const newId = crypto.randomUUID();
+    const today = new Date().toISOString().slice(0, 10);
+    const localisations = (source.localisations || []).map(loc => ({
+      ...loc,
+      id: crypto.randomUUID(),
+      planAnnotations: loc.planAnnotations ? { ...loc.planAnnotations } : null,
+      extraPlans: (loc.extraPlans || []).map(ep => ({ ...ep, planAnnotations: ep.planAnnotations ? { ...ep.planAnnotations } : null })),
+      items: (loc.items || []).map(item => ({
+        ...item,
+        id: crypto.randomUUID(),
+        photos: (item.photos || []).map(ph => ({ ...ph })),
+      })),
+    }));
+    const newVisite = {
+      ...source,
+      id: newId,
+      label: `${source.label || `Visite ${visites.indexOf(source) + 1}`} (copie)`,
+      dateVisite: today,
+      rapportPageBreaks: [],
+      localisations,
+    };
+    onUpdateProjet({ visites: [...visites, newVisite] });
+    onSelectVisite(newId);
+  };
+
   const deleteVisite = (e, visiteId) => {
     e.stopPropagation();
     const v = visites.find(v => v.id === visiteId);
@@ -382,6 +411,13 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     onMouseEnter={e => { if (!isEditing) { e.currentTarget.style.background = DA.redL; e.currentTarget.style.color = DA.red; e.currentTarget.style.borderColor = '#FCA5A5'; } }}
                     onMouseLeave={e => { if (!isEditing) { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.gray; e.currentTarget.style.borderColor = DA.border; } }}>
                     <Ic n="pen" s={15}/>
+                  </button>
+                  <button onClick={e => duplicateVisite(e, v.id)}
+                    title="Dupliquer cette visite"
+                    style={{ width:34, height:34, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#1D4ED8'; e.currentTarget.style.borderColor = '#93C5FD'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.grayL; e.currentTarget.style.borderColor = DA.border; }}>
+                    <Ic n="cpy" s={15}/>
                   </button>
                   {visites.length > 1 && (
                     <button onClick={e => deleteVisite(e, v.id)}
