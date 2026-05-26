@@ -82,6 +82,8 @@ function slimLoc(l) {
     ...l,
     planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
     planAnnotations: slimAnnot(l.planAnnotations) ?? null,
+    // extraPlans : planBg/planData non stockés (trop lourd) — reconstruits depuis planLibrary au chargement
+    extraPlans: (l.extraPlans || []).map(ep => ({ id: ep.id, planId: ep.planId || null, planAnnotations: slimAnnot(ep.planAnnotations) ?? null })),
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,

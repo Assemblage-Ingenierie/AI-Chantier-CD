@@ -509,13 +509,15 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
 
 function PlanBlock({ loc, planIdx = 0, isLastPlan = true, annotScale = 1, onAnnotScaleChange, planLibrary }) {
   // planIdx: 0 = primary plan, n≥1 = extraPlans[n-1]
-  let planBgSrc, planAnnotations, planNom;
+  let planBgSrc, planAnnotations, planNom, planExists;
   if (planIdx === 0) {
+    planExists = !!(loc.planId || loc.planBg);
     planBgSrc = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
     planAnnotations = loc.planAnnotations;
     planNom = planLibrary?.find(p => p.id === loc.planId)?.nom || null;
   } else {
     const ep = (loc.extraPlans || [])[planIdx - 1];
+    planExists = !!(ep?.planId || ep?.planBg);
     planBgSrc = ep?.planBg || (ep?.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
     planAnnotations = ep?.planAnnotations || null;
     planNom = ep?.planId ? planLibrary?.find(p => p.id === ep.planId)?.nom || null : null;
@@ -533,7 +535,7 @@ function PlanBlock({ loc, planIdx = 0, isLastPlan = true, annotScale = 1, onAnno
 
   const thisPaths = planAnnotations?.paths || [];
 
-  if (!planBgSrc && !planAnnotations) return null;
+  if (!planExists) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
