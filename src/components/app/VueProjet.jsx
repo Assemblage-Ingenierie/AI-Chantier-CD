@@ -480,7 +480,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
                                 {Array.from({ length: Math.ceil(allPlanThumbs.length / 2) }, (_, rowIdx) => {
                                   const rowThumbs = allPlanThumbs.slice(rowIdx * 2, rowIdx * 2 + 2);
-                                  const thumbH = allPlanThumbs.length > 2 ? (isDesktop ? 200 : 150) : (isDesktop ? 300 : 200);
+                                  const thumbH = allPlanThumbs.length > 2 ? (isDesktop ? 260 : 190) : (isDesktop ? 380 : 260);
                                   return (
                                     <div key={rowIdx} style={{ display:'flex', borderTop: rowIdx > 0 ? `1px solid ${DA.border}` : 'none' }}>
                                       {rowThumbs.map((pt, colIdx) => {
@@ -582,12 +582,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             items={loc?.items || []}
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
-            onClose={() => setModal(null)}
+            onClose={() => modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null)}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
               const planChanged = prevLoc?.planId !== planId || prevLoc?.planBg !== planBg;
               patchLoc(modal.locId, { planId: planId||null, planBg, planData, planAnnotations, extraPlans: extraPlans||[], _planDirty: planChanged });
-              setModal(null);
+              modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
             }}
             onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
@@ -612,6 +612,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           onChange={newLocs => onUpdateVisit({ localisations: newLocs })}
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
+          onPickPlan={(locId) => setModal({ t:'plan', locId, returnToNiveaux: true })}
           onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
           onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}

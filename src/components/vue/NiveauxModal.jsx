@@ -2,11 +2,8 @@ import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-import { fetchPlanData } from '../../lib/storage.js';
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onDeletePlan, onDeleteAllPlans, onRenamePlan }) {
-  const [pickingForId, setPickingForId] = useState(null);
-  const [loadingPlanForId, setLoadingPlanForId] = useState(null);
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
@@ -14,47 +11,18 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [previewBg, setPreviewBg] = useState(null);
 
   const addLoc = () => {
-    const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null };
+    const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
     onChange([...localisations, newLoc]);
-    if (planLibrary.length > 0) setPickingForId(newLoc.id);
+    if (planLibrary.length > 0 && onPickPlan) onPickPlan(newLoc.id);
   };
 
   const renameLoc = (locId, nom) => {
     onChange(localisations.map(l => l.id === locId ? { ...l, nom } : l));
   };
 
-  const assignPlan = async (locId, plan) => {
-    if (!plan) {
-      // déselectionner
-      onChange(localisations.map(l =>
-        l.id === locId ? { ...l, planId: null, planBg: null, planData: null, _planDirty: true } : l
-      ));
-      setPickingForId(null);
-      return;
-    }
-
-    let bg = plan.bg || null;
-    let data = plan.data || null;
-
-    // Si le blob n'est pas encore hydraté, le charger depuis Supabase
-    if (!bg) {
-      setLoadingPlanForId(locId);
-      const fetched = await fetchPlanData(plan.id);
-      setLoadingPlanForId(null);
-      if (fetched) { bg = fetched.bg; data = fetched.data; }
-    }
-
-    onChange(localisations.map(l => {
-      if (l.id !== locId) return l;
-      const isSamePlan = l.planId === plan.id;
-      return { ...l, planId: plan.id, planBg: bg, planData: data, planAnnotations: isSamePlan ? l.planAnnotations : null, _planDirty: !isSamePlan };
-    }));
-    setPickingForId(null);
-  };
-
   const removePlan = (locId) => {
     onChange(localisations.map(l =>
-      l.id === locId ? { ...l, planId: null, planBg: null, planData: null, _planDirty: true } : l
+      l.id === locId ? { ...l, planId: null, planBg: null, planData: null, extraPlans: [], _planDirty: true } : l
     ));
   };
 
@@ -170,11 +138,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
           <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
             {localisations.map(loc => {
-              const isPicking = pickingForId === loc.id;
-              const isLoading = loadingPlanForId === loc.id;
               const assignedPlan = planLibrary.find(p => p.id === loc.planId);
-              const hasPlan = !!(loc.planId || loc.planBg);
+              const hasPlan = !!(loc.planId || loc.planBg || (loc.extraPlans || []).length > 0);
               const thumbSrc = loc.planBg || assignedPlan?.bg || null;
+              const totalPlans = (loc.planId || loc.planBg ? 1 : 0) + (loc.extraPlans || []).length;
 
               return (
                 <div key={loc.id} style={{ border:`1px solid ${hasPlan ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
@@ -196,12 +163,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
                   {/* Zone plan */}
                   <div style={{ borderTop:`1px solid ${DA.border}`,padding:'10px 12px' }}>
-                    {isLoading ? (
-                      <div style={{ display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'10px 0',color:DA.gray }}>
-                        <Ic n="spn" s={16}/><span style={{ fontSize:12 }}>Chargement du plan…</span>
-                      </div>
-                    ) : hasPlan ? (
-                      /* Plan assigné */
+                    {hasPlan ? (
                       <div style={{ display:'flex',alignItems:'center',gap:10 }}>
                         {thumbSrc ? (
                           <img src={thumbSrc} alt=""
@@ -215,72 +177,31 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         <div style={{ flex:1,minWidth:0 }}>
                           <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                             {assignedPlan?.nom || 'Plan assigné'}
+                            {totalPlans > 1 && <span style={{ fontSize:11,color:DA.red,fontWeight:700,marginLeft:6 }}>+{totalPlans - 1} plan{totalPlans > 2 ? 's' : ''}</span>}
                           </p>
                           <div style={{ display:'flex',gap:8,marginTop:5,flexWrap:'wrap' }}>
-                            <button onClick={() => setPickingForId(isPicking ? null : loc.id)}
+                            <button onClick={() => onPickPlan ? onPickPlan(loc.id) : null}
                               style={{ fontSize:11,color:DA.red,background:'none',border:'none',cursor:'pointer',padding:0,fontWeight:600 }}>
-                              {isPicking ? 'Annuler' : 'Changer'}
+                              Changer
                             </button>
                             <span style={{ color:DA.grayL,fontSize:11 }}>·</span>
                             <button onClick={() => removePlan(loc.id)}
                               style={{ fontSize:11,color:DA.grayL,background:'none',border:'none',cursor:'pointer',padding:0 }}>
-                              Retirer le plan
+                              Retirer
                             </button>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      /* Pas de plan — bouton pour en choisir un */
                       <button
                         onClick={() => {
                           if (planLibrary.length === 0 && onOpenPlanLib) { onClose(); onOpenPlanLib(); return; }
-                          setPickingForId(isPicking ? null : loc.id);
+                          if (onPickPlan) onPickPlan(loc.id);
                         }}
-                        style={{ width:'100%',padding:'8px 12px',background:isPicking ? DA.redL : DA.grayXL,border:`1.5px dashed ${isPicking ? DA.red : DA.border}`,borderRadius:8,fontSize:12,color:isPicking ? DA.red : DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6,transition:'all 0.15s' }}>
+                        style={{ width:'100%',padding:'8px 12px',background:DA.grayXL,border:`1.5px dashed ${DA.border}`,borderRadius:8,fontSize:12,color:DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
                         <Ic n="map" s={13}/>
-                        {isPicking ? 'Annuler' : planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un plan'}
+                        {planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un ou plusieurs plans'}
                       </button>
-                    )}
-
-                    {/* Sélecteur de plan inline */}
-                    {isPicking && !isLoading && (
-                      <div style={{ marginTop:10 }}>
-                        {planLibrary.length === 0 ? (
-                          <div style={{ background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10 }}>
-                            <span style={{ fontSize:12,color:'#92400E',lineHeight:1.4 }}>Bibliothèque vide</span>
-                            {onOpenPlanLib && (
-                              <button onClick={() => { onClose(); onOpenPlanLib(); }}
-                                style={{ fontSize:12,fontWeight:700,color:'#92400E',background:'none',border:'1px solid #D97706',borderRadius:7,padding:'4px 10px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0 }}>
-                                Importer des plans
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-                            <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.5,margin:'0 0 4px' }}>
-                              Choisir dans la bibliothèque
-                            </p>
-                            {planLibrary.map(pl => {
-                              const isSel = loc.planId === pl.id;
-                              return (
-                                <button key={pl.id}
-                                  onClick={() => assignPlan(loc.id, isSel ? null : pl)}
-                                  style={{ display:'flex',alignItems:'center',gap:10,padding:'8px 10px',borderRadius:8,border:`2px solid ${isSel ? DA.red : DA.border}`,background:isSel ? DA.redL : DA.white,cursor:'pointer',textAlign:'left',transition:'all 0.1s' }}>
-                                  {pl.bg && (
-                                    <img src={pl.bg} alt=""
-                                      onClick={e => { e.stopPropagation(); setPreviewBg(pl.bg); }}
-                                      style={{ width:52,height:36,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
-                                  )}
-                                  <p style={{ flex:1,fontWeight:600,fontSize:12,color:isSel ? DA.red : DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-                                    {pl.nom}
-                                  </p>
-                                  {isSel && <Ic n="chk" s={16}/>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
                     )}
                   </div>
                 </div>
