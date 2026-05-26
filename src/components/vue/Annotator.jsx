@@ -180,13 +180,18 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         const x = Math.min(p.x1, p.x2), y = Math.min(p.y1, p.y2);
         const w = Math.abs(p.x2 - p.x1), h = Math.abs(p.y2 - p.y1);
         if (p.filled) { ctx.fillStyle = p.color; ctx.globalAlpha = fo; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+        else { ctx.globalAlpha = p.strokeOpacity ?? 1; }
         ctx.strokeRect(x, y, w, h);
+        ctx.globalAlpha = 1;
       } else if (p.shape === 'ellipse') {
         const cx = (p.x1 + p.x2) / 2, cy = (p.y1 + p.y2) / 2;
         const rx = Math.max(1, Math.abs(p.x2 - p.x1) / 2), ry = Math.max(1, Math.abs(p.y2 - p.y1) / 2);
         if (p.filled) { ctx.fillStyle = p.color; ctx.globalAlpha = fo; ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+        else { ctx.globalAlpha = p.strokeOpacity ?? 1; }
         ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
       } else if (p.shape === 'arrow') {
+        ctx.globalAlpha = p.strokeOpacity ?? 1;
         const angle = Math.atan2(p.y2 - p.y1, p.x2 - p.x1);
         const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
         const aLen = Math.max(12, Math.min(len * 0.35, 28 * ss));
@@ -197,8 +202,11 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.lineTo(p.x2 + Math.cos(angle + Math.PI + Math.PI / 6) * aLen, p.y2 + Math.sin(angle + Math.PI + Math.PI / 6) * aLen);
         ctx.lineTo(p.x2 + Math.cos(angle + Math.PI - Math.PI / 6) * aLen, p.y2 + Math.sin(angle + Math.PI - Math.PI / 6) * aLen);
         ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
       } else if (p.shape === 'line') {
+        ctx.globalAlpha = p.strokeOpacity ?? 1;
         ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+        ctx.globalAlpha = 1;
       } else if (p.shape === 'poly') {
         if (!p.pts || p.pts.length < 2) { ctx.restore(); return; }
         ctx.beginPath();
@@ -206,7 +214,9 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         p.pts.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
         ctx.closePath();
         if (p.filled !== false) { ctx.fillStyle = p.color; ctx.globalAlpha = fo; ctx.fill(); ctx.globalAlpha = 1; }
+        else { ctx.globalAlpha = p.strokeOpacity ?? 1; }
         ctx.stroke();
+        ctx.globalAlpha = 1;
       }
       ctx.restore();
     } else if (p.points?.length) {
@@ -362,9 +372,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(false);
   const [fillOpacity,   setFillOpacity]   = useState(0.3);
+  const [strokeOpacity, setStrokeOpacity] = useState(1);
   const [polyPts,       setPolyPts]       = useState([]);   // sommets du polygone en cours
   const [polyMousePos,  setPolyMousePos]  = useState(null); // prévisualisation curseur
-  const lastTapRef = useRef(0);
+  const lastTapRef = useRef({ time: 0, x: -9999, y: -9999 });
   const lastSymPlaceRef = useRef(0);
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
@@ -442,7 +453,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
 
     if (pendingShape && tool === 'shape') {
-      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity }], symbolScale, strokeScale);
+      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }], symbolScale, strokeScale);
     }
 
     // Poignées des textes (toujours visibles en mode texte)
@@ -558,7 +569,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, polyPts, polyMousePos]);
+  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -572,6 +583,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       if (e.key === 'Escape') {
         setPolyPts([]); setPolyMousePos(null);
+        setTool('select');
+        setShowSyms(false);
+        setSelTextIdx(null); textDragRef.current = null;
+        setActivePh(null);
+        setPendingShape(null); shapeStartRef.current = null;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selAnnot !== null) {
@@ -680,6 +696,81 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     if (gestureRef.current) return;
     const pos = getXY(e, cvRef.current);
+
+    if (tool === 'select') {
+      const cv = cvRef.current;
+      const hitR = 22 * (cv.width / cv.clientWidth);
+      // Resize handles first (if a shape is currently selected)
+      if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
+        const ap = paths[selAnnot.idx];
+        const rhr = 14 * (cv.width / cv.clientWidth);
+        const handles = getShapeHandles(ap);
+        for (const h of handles) {
+          if (Math.hypot(pos.x - h.x, pos.y - h.y) < rhr) {
+            resizeDragRef.current = { handle: h.id, origData: { ...ap, pts: ap.pts ? ap.pts.map(pt => ({...pt})) : undefined }, idx: selAnnot.idx };
+            setDrawing(true);
+            return;
+          }
+        }
+      }
+      // Hit-test all annotations
+      for (let i = paths.length - 1; i >= 0; i--) {
+        const p = paths[i];
+        if (p.type === 'viewpoint' && Math.hypot(p.x - pos.x, p.y - pos.y) < hitR) {
+          setSelAnnot({ idx: i }); setSelTextIdx(null);
+          annotDragRef.current = { idx: i, origData: { ...p }, tapX: pos.x, tapY: pos.y };
+          setDrawing(true); return;
+        }
+        if (p.type === 'symbol') {
+          let hit = false;
+          if ((p.symbolId === 'portee' || p.symbolId === 'pente_sol') && p.x1 != null) {
+            const dx = p.x2 - p.x1, dy = p.y2 - p.y1, len = Math.hypot(dx, dy);
+            if (len > 0) {
+              const t = Math.max(0, Math.min(1, ((pos.x - p.x1) * dx + (pos.y - p.y1) * dy) / (len * len)));
+              hit = Math.hypot(pos.x - (p.x1 + t * dx), pos.y - (p.y1 + t * dy)) < hitR;
+            }
+          } else if (p.x != null) { hit = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR; }
+          if (hit) {
+            setSelAnnot({ idx: i }); setSelTextIdx(null);
+            annotDragRef.current = { idx: i, origData: { ...p }, tapX: pos.x, tapY: pos.y };
+            setDrawing(true); return;
+          }
+        }
+        if (p.type === 'text') {
+          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
+          const fs = (20 + p.size * 4) * txtScale;
+          const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
+          const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
+          const inBox = (p.textMode === 'boxed' || p.textMode === 'arrow') &&
+            pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
+            pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
+          if (inCircle || inBox) {
+            setSelTextIdx(i); setSelAnnot(null);
+            textDragRef.current = { mode: 'box', origX: p.x, origY: p.y, tapX: pos.x, tapY: pos.y };
+            setDrawing(true); return;
+          }
+        }
+        if (p.type === 'shape') {
+          const hitRSh = 18 * (cv.width / cv.clientWidth);
+          let hitShape = false;
+          if (p.shape === 'poly' && p.pts?.length > 1) {
+            const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
+            hitShape = pos.x >= Math.min(...xs) - hitRSh && pos.x <= Math.max(...xs) + hitRSh &&
+              pos.y >= Math.min(...ys) - hitRSh && pos.y <= Math.max(...ys) + hitRSh;
+          } else if (p.x1 != null) {
+            hitShape = pos.x >= Math.min(p.x1, p.x2) - hitRSh && pos.x <= Math.max(p.x1, p.x2) + hitRSh &&
+              pos.y >= Math.min(p.y1, p.y2) - hitRSh && pos.y <= Math.max(p.y1, p.y2) + hitRSh;
+          }
+          if (hitShape) {
+            setSelAnnot({ idx: i }); setSelTextIdx(null);
+            annotDragRef.current = { idx: i, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
+            setDrawing(true); return;
+          }
+        }
+      }
+      setSelAnnot(null); setSelTextIdx(null);
+      return;
+    }
 
     if (tool === 'viewpoint') {
       const cv = cvRef.current;
@@ -792,11 +883,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       // ── Outil polygone : clic = sommet, double-clic/snap = fermeture ──
       if (shapeTool === 'poly') {
         const now = Date.now();
-        const isDbl = now - lastTapRef.current < 380 && polyPts.length >= 2;
-        lastTapRef.current = now;
+        const lt = lastTapRef.current;
+        const snapR = 22 * (cv.width / cv.clientWidth);
+        const isDbl = (now - lt.time < 380) && polyPts.length >= 2 && Math.hypot(pos.x - lt.x, pos.y - lt.y) < snapR;
+        lastTapRef.current = { time: now, x: pos.x, y: pos.y };
         if (isDbl) {
           if (polyPts.length >= 3) {
-            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity }]);
+            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
           }
           setPolyPts([]); setPolyMousePos(null);
           return;
@@ -805,7 +898,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         if (polyPts.length >= 3) {
           const closeR = 18 * (cv.width / cv.clientWidth);
           if (Math.hypot(pos.x - polyPts[0].x, pos.y - polyPts[0].y) < closeR) {
-            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity }]);
+            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
             setPolyPts([]); setPolyMousePos(null);
             return;
           }
@@ -883,14 +976,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     // Déplacement texte : tip de flèche
-    if (tool === 'text' && drawing && selTextIdx !== null && textDragRef.current?.mode === 'tip') {
+    if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'tip') {
       const pos = getXY(e, cvRef.current);
       const { origArrowX, origArrowY, tapX, tapY } = textDragRef.current;
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, arrowX: origArrowX + (pos.x - tapX), arrowY: origArrowY + (pos.y - tapY) } : p));
       return;
     }
     // Déplacement texte : boîte
-    if (tool === 'text' && drawing && selTextIdx !== null && textDragRef.current) {
+    if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current) {
       const pos = getXY(e, cvRef.current);
       const { origX, origY, tapX, tapY } = textDragRef.current;
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + (pos.x - tapX), y: origY + (pos.y - tapY) } : p));
@@ -1001,7 +1094,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       if (pendingShape) {
         const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
         if (len > 6) {
-          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity }]);
+          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
         }
       }
       setPendingShape(null);
@@ -1014,7 +1107,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       annotDragRef.current = null; setDrawing(false); return;
     }
     // Fin du déplacement de texte
-    if (tool === 'text' && selTextIdx !== null && textDragRef.current) {
+    if ((tool === 'text' || tool === 'select') && selTextIdx !== null && textDragRef.current) {
       textDragRef.current = null;
       setDrawing(false);
       return;
@@ -1101,6 +1194,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,flexShrink:0 }}>
             {[
+              { k:'select', n:'sel',  lbl:'Sélect.' },
               { k:'pen',    n:'pen',  lbl:'Dessin'  },
               { k:'text',   n:'txt',  lbl:'Texte'   },
               { k:'shape',  n:'shp',  lbl:'Formes'  },
@@ -1314,58 +1408,71 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       )}
 
       {/* ── Shape sub-panel ── */}
-      {tool === 'shape' && (
-        <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
-          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>FORME</span>
-          {[
-            { k:'rect',    lbl:'▭ Rect.' },
-            { k:'ellipse', lbl:'◯ Ellipse' },
-            { k:'arrow',   lbl:'→ Flèche' },
-            { k:'line',    lbl:'╱ Ligne' },
-            { k:'poly',    lbl:'⬠ Zone libre' },
-          ].map(s => (
-            <button key={s.k} onClick={() => { if (s.k !== shapeTool) { setPolyPts([]); setPolyMousePos(null); } setShapeTool(s.k); }}
+      {(tool === 'shape' || (tool === 'select' && selAnnot !== null && paths[selAnnot.idx]?.type === 'shape')) && (() => {
+        const selIdx = selAnnot?.idx;
+        const selSh = selIdx != null ? paths[selIdx] : null;
+        const hasSelShape = selSh?.type === 'shape';
+        const filledDisplay = hasSelShape ? !!selSh.filled : shapeFilled;
+        const editSel = hasSelShape;
+        const isFilled = hasSelShape ? !!selSh.filled : shapeFilled;
+        const opVal = editSel
+          ? (isFilled ? (selSh.fillOpacity ?? 0.3) : (selSh.strokeOpacity ?? 1))
+          : (shapeFilled ? fillOpacity : strokeOpacity);
+        const onOp = v => {
+          if (editSel) {
+            const key = isFilled ? 'fillOpacity' : 'strokeOpacity';
+            setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,[key]:v} : p));
+          } else {
+            if (shapeFilled) setFillOpacity(v); else setStrokeOpacity(v);
+          }
+        };
+        return (
+          <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
+            {tool === 'shape' && <>
+              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>FORME</span>
+              {[
+                { k:'rect',    lbl:'▭ Rect.' },
+                { k:'ellipse', lbl:'◯ Ellipse' },
+                { k:'arrow',   lbl:'→ Flèche' },
+                { k:'line',    lbl:'╱ Ligne' },
+                { k:'poly',    lbl:'⬠ Zone libre' },
+              ].map(s => (
+                <button key={s.k} onClick={() => { if (s.k !== shapeTool) { setPolyPts([]); setPolyMousePos(null); } setShapeTool(s.k); }}
+                  style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+                    background:shapeTool===s.k?DA.red:'#333',color:shapeTool===s.k?'white':'#aaa',border:'none' }}>
+                  {s.lbl}
+                </button>
+              ))}
+              <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 4px' }}/>
+            </>}
+            <button onClick={() => {
+              if (hasSelShape) setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,filled:!p.filled} : p));
+              if (tool === 'shape') setShapeFilled(v => !v);
+            }}
               style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-                background:shapeTool===s.k?DA.red:'#333',color:shapeTool===s.k?'white':'#aaa',border:'none' }}>
-              {s.lbl}
+                background:filledDisplay?DA.red:'#333',color:filledDisplay?'white':'#aaa',border:'none' }}>
+              {filledDisplay ? '◼ Rempli' : '◻ Contour'}
             </button>
-          ))}
-          <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 4px' }}/>
-          <button onClick={() => setShapeFilled(v => !v)}
-            style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-              background:shapeFilled?DA.red:'#333',color:shapeFilled?'white':'#aaa',border:'none' }}>
-            {shapeFilled ? '◼ Rempli' : '◻ Contour'}
-          </button>
-          {(() => {
-            const selIdx = selAnnot?.idx;
-            const selSh = selIdx != null ? paths[selIdx] : null;
-            const editSel = selSh?.type === 'shape' && selSh?.filled;
-            const showSlider = shapeFilled || editSel;
-            if (!showSlider) return null;
-            const opVal = editSel ? (selSh.fillOpacity ?? 0.3) : fillOpacity;
-            const onOp = v => editSel
-              ? setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,fillOpacity:v} : p))
-              : setFillOpacity(v);
-            return (
-              <>
-                <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-                <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>
-                  {editSel ? 'OPACITÉ ✏' : 'OPACITÉ'}
-                </span>
-                <input type="range" min="0.05" max="1" step="0.05" value={opVal}
-                  onChange={e => onOp(parseFloat(e.target.value))}
-                  style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
-                <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(opVal*100)}%</span>
-              </>
-            );
-          })()}
-          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
-            {shapeTool === 'poly'
-              ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
-              : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
-          </span>
-        </div>
-      )}
+            <>
+              <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>
+                {editSel ? (isFilled ? 'OPACITÉ REMPLI ✏' : 'OPACITÉ CONTOUR ✏') : 'OPACITÉ'}
+              </span>
+              <input type="range" min="0.05" max="1" step="0.05" value={opVal}
+                onChange={e => onOp(parseFloat(e.target.value))}
+                style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
+              <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(opVal*100)}%</span>
+            </>
+            {tool === 'shape' && (
+              <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
+                {shapeTool === 'poly'
+                  ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
+                  : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Sélecteur de mode texte ── */}
       {tool === 'text' && !selText && (
@@ -1463,7 +1570,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
+              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}/>
             {vt.z > 1.05 && (

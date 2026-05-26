@@ -36,6 +36,7 @@ const ICONS = {
   snd: (s) => <svg {...p(s)}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>,
   und: (s) => <svg {...p(s)}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>,
   pen: (s) => <svg {...p(s)}><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>,
+  sel: (s) => <svg {...p(s)}><path d="M5 3l14 9-7 1.5-3.5 7L5 3z" strokeLinejoin="round"/></svg>,
   shp: (s) => <svg {...p(s)}><rect x="3" y="3" width="9" height="9" rx="1.5"/><circle cx="17.5" cy="7.5" r="4.5"/><path d="M3 18l4-5 4 5 3-4 4 5H3z"/></svg>,
   pal: (s) => <svg {...p(s)} fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22C6.49 22 2 17.51 2 12 2 6.49 6.49 2 12 2s10 4.04 10 10c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0 1 12 22z" strokeWidth="1.5"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="13.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="17" cy="11" r="1.5" fill="currentColor" stroke="none"/></svg>,
   srt: (s) => <svg {...p(s)}><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>,
