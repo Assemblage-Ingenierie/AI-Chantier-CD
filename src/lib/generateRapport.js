@@ -815,19 +815,33 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // ── PLANS ANNOTÉS + LÉGENDE ───────────────────────────────────────────────────
 
   if (plansEnFin) {
-    const planLocs = localisations.filter(l => planImages[l.id]);
+    const planLocs = localisations.filter(l => planImages[l.id] || (l.extraPlans || []).some((_, i) => extraPlanImages[`${l.id}_${i}`]));
     planLocs.forEach(loc => {
+      const allZonePlans = [
+        { img: planImages[loc.id], annotations: loc.planAnnotations, breakId: null },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
+      ].filter(p => p.img);
+      if (!allZonePlans.length) return;
+
+      const allAnnotPaths = allZonePlans.flatMap(p => p.annotations?.paths || []);
+      const combinedAnnot = allAnnotPaths.length ? { paths: allAnnotPaths } : null;
+      const ih = CW * 0.46;
+
       doc.addPage(); y = 18; hdr();
-      secHdr(`Plan annoté — ${loc.nom}`);
-      let ay = y;
-      const planImg = planImages[loc.id];
-      try {
-        const ih  = CW * 0.58;
-        const ext = planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-        doc.addImage(planImg, ext, ML, ay, CW, ih, undefined, 'FAST');
-        ay += ih + 4;
-      } catch { ay += 6; }
-      ay = addPlanLegend(doc, loc.planAnnotations, ay, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
+      secHdr(`Plan — ${loc.nom}`);
+      allZonePlans.forEach(({ img: planImg, breakId }, planI) => {
+        if (planI > 0 && pageBreaksSet.has(breakId)) {
+          doc.addPage(); y = 18; hdr();
+        } else {
+          pb(ih + 4);
+        }
+        try {
+          const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
+        } catch {}
+        y += ih + 4;
+      });
+      y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
     });
   }
 
