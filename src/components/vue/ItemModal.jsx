@@ -23,7 +23,7 @@ async function uploadToDrive({ data, name, projetNom, visiteLabel, visiteDate })
   } catch { /* silently ignore — Drive upload is best-effort */ }
 }
 
-export default function ItemModal({ item, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [] }) {
+export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [] }) {
   const [form, setForm] = useState(() => {
     const base = item
       ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
@@ -717,34 +717,61 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
             </div>
           )}
 
-          {/* Vignette plan */}
-          {planBg && (
-            <div style={{ marginBottom:14 }}>
-              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
-                <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>
-                  Plan
-                  {planAnnotations?.paths?.length > 0 && (
-                    <span style={{ marginLeft:6,fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 7px',border:`1px solid #FECACA` }}>
-                      {planAnnotations.paths.length} annotation{planAnnotations.paths.length > 1 ? 's' : ''}
-                    </span>
+          {/* Vignette(s) plan(s) de la zone */}
+          {(() => {
+            const primaryBg = planBg || (planId && planLibrary.find(p => p.id === planId)?.bg) || null;
+            const allZonePlans = [];
+            if (primaryBg || planAnnotations?.exported) {
+              allZonePlans.push({ bg: primaryBg, annotations: planAnnotations, nom: null, isPrimary: true });
+            }
+            for (const ep of extraPlans) {
+              const epBg = ep.planBg || (ep.planId && planLibrary.find(p => p.id === ep.planId)?.bg) || null;
+              if (epBg || ep.planAnnotations?.exported) {
+                allZonePlans.push({ bg: epBg, annotations: ep.planAnnotations, nom: planLibrary.find(p => p.id === ep.planId)?.nom || null, isPrimary: false });
+              }
+            }
+            if (!allZonePlans.length) return null;
+            const totalAnnot = allZonePlans.reduce((n, zp) => n + (zp.annotations?.paths?.length || 0), 0);
+            return (
+              <div style={{ marginBottom:14 }}>
+                <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+                  <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>
+                    Plan{allZonePlans.length > 1 ? `s (${allZonePlans.length})` : ''}
+                    {totalAnnot > 0 && (
+                      <span style={{ marginLeft:6,fontSize:10,background:DA.redL,color:DA.red,borderRadius:10,padding:'2px 7px',border:`1px solid #FECACA` }}>
+                        {totalAnnot} annotation{totalAnnot > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </label>
+                  {primaryBg && (
+                    <button onClick={() => onOpenAnnot(form)}
+                      style={{ fontSize:12,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'5px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:5 }}>
+                      <Ic n="pen" s={12}/> Annoter
+                    </button>
                   )}
-                </label>
-                <button onClick={() => onOpenAnnot(form)}
-                  style={{ fontSize:12,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'5px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:5 }}>
-                  <Ic n="pen" s={12}/> Annoter
-                </button>
-              </div>
-              <div onClick={() => onOpenAnnot(form)}
-                style={{ position:'relative',borderRadius:10,overflow:'hidden',border:`1px solid ${DA.border}`,cursor:'pointer',background:'#1a1a1a' }}>
-                <img src={planAnnotations?.exported || planBg} alt="Plan"
-                  style={{ width:'100%',maxHeight: isDesktop ? 220 : 160,objectFit:'contain',display:'block' }}/>
-                <div style={{ position:'absolute',bottom:0,left:0,right:0,padding:'6px 10px',background:'linear-gradient(transparent,rgba(0,0,0,0.55))',display:'flex',alignItems:'center',gap:5 }}>
-                  <Ic n="pen" s={11} color="white"/>
-                  <span style={{ fontSize:11,color:'white',fontWeight:600 }}>Cliquer pour annoter</span>
+                </div>
+                <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                  {allZonePlans.map((zp, zi) => (
+                    <div key={zi} onClick={zp.isPrimary ? () => onOpenAnnot(form) : undefined}
+                      style={{ position:'relative',borderRadius:10,overflow:'hidden',border:`1px solid ${DA.border}`,cursor:zp.isPrimary?'pointer':'default',background:'#1a1a1a' }}>
+                      <img src={zp.annotations?.exported || zp.bg} alt={zp.nom || 'Plan'}
+                        style={{ width:'100%',maxHeight:isDesktop?200:140,objectFit:'contain',display:'block' }}/>
+                      {zp.nom && (
+                        <div style={{ position:'absolute',top:0,left:0,right:0,padding:'4px 8px',background:'rgba(0,0,0,0.55)' }}>
+                          <span style={{ fontSize:10,color:'white',fontWeight:600 }}>{zp.nom}</span>
+                        </div>
+                      )}
+                      {zp.isPrimary && (
+                        <div style={{ position:'absolute',bottom:0,left:0,right:0,padding:'6px 10px',background:'linear-gradient(transparent,rgba(0,0,0,0.55))',display:'flex',alignItems:'center',gap:5 }}>
+                          <Ic n="pen" s={11}/><span style={{ fontSize:11,color:'white',fontWeight:600 }}>Cliquer pour annoter</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Plans additionnels */}
           <div style={{ marginBottom:14 }}>

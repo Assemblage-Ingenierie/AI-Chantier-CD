@@ -122,7 +122,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       items: (loc.items || []).map(item => ({
         ...item,
         id: crypto.randomUUID(),
-        photos: (item.photos || []).map(ph => ({ ...ph })),
+        // Nouveaux _id stables pour chaque photo → évite doublon d'ID dans le batch upsert Supabase
+      photos: (item.photos || []).map(ph => ({ ...ph, _id: crypto.randomUUID(), id: undefined })),
       })),
     }));
     const newVisite = {

@@ -562,6 +562,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             key={modal.savedForm ? 'annotated' : 'normal'}
             item={initItem}
             planBg={loc?.planBg ?? null}
+            planId={loc?.planId ?? null}
+            extraPlans={loc?.extraPlans ?? []}
             planAnnotations={initItem?.planAnnotations ?? null}
             planLibrary={projet.planLibrary || []}
             onClose={() => setModal(null)}
