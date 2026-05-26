@@ -177,7 +177,7 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
       photoOffset += photos.length;
     }
     if (!plansEnFin) {
-      const hasPlan = loc.planAnnotations?.exported || loc.planBg;
+      const hasPlan = loc.planAnnotations?.exported || loc.planBg || loc.planId || (loc.extraPlans || []).length > 0;
       if (hasPlan) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
     }
   }
@@ -462,17 +462,15 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
   );
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
-  const exported = loc.planAnnotations?.exported;
-  const paths    = loc.planAnnotations?.paths;
-  // planBg peut être null si chargé depuis DB — fallback sur planLibrary via planId
-  const planBg   = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-  const [renderedImg, setRenderedImg] = useState(null);
+function SinglePlanImage({ bg, annotations, annotScale, alt }) {
+  const exported = annotations?.exported;
+  const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
+  const [renderedImg, setRenderedImg] = useState(null);
 
   useEffect(() => {
-    if (!planBg) { setRenderedImg(exported || null); return; }
-    if (!paths?.length) { setRenderedImg(planBg); return; }
+    if (!bg) { setRenderedImg(exported || null); return; }
+    if (!paths?.length) { setRenderedImg(bg); return; }
     const el = new window.Image();
     el.onload = () => {
       const cv  = document.createElement('canvas');
@@ -484,21 +482,45 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
       drawAnnotationPaths(ctx, paths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
-    el.onerror = () => setRenderedImg(exported || planBg);
-    el.src = planBg;
-  }, [exported, paths, planBg, deferredAnnotScale]);
+    el.onerror = () => setRenderedImg(exported || bg);
+    el.src = bg;
+  }, [exported, paths, bg, deferredAnnotScale]);
 
-  // Légende : symboles + viewpoints — taille fixe indépendante du slider
-  const usedIds       = new Set((paths || []).filter(p => p.type === 'symbol').map(p => p.symbolId));
-  const legendSy      = getAllSymbols().filter(s => usedIds.has(s.id));
-  const hasViewpoints = (paths || []).some(p => p.type === 'viewpoint');
-  const showLegend    = legendSy.length > 0 || hasViewpoints;
-
-  if (!renderedImg && !planBg) return (
-    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden', minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
+  if (!renderedImg && !bg) return (
+    <div style={{ minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <span style={{ fontSize:10, color:'#aaa' }}>Plan en cours de chargement…</span>
     </div>
   );
+  if (!renderedImg) return null;
+  return (
+    <img src={renderedImg} alt={alt || 'Plan'}
+      style={{ width:'100%', display:'block', objectFit:'contain', borderTop:`1px solid ${DA.border}` }}/>
+  );
+}
+
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
+  // Build list of all plans: primary + extraPlans
+  const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
+  const allPlans = [];
+  if (primaryBg || loc.planAnnotations) {
+    allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations });
+  }
+  for (const ep of (loc.extraPlans || [])) {
+    const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
+    if (epBg || ep.planAnnotations) {
+      allPlans.push({ bg: epBg, annotations: ep.planAnnotations });
+    }
+  }
+
+  // Combined legend across all plans
+  const allPaths = allPlans.flatMap(p => p.annotations?.paths || []);
+  const usedIds       = new Set(allPaths.filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy      = getAllSymbols().filter(s => usedIds.has(s.id));
+  const hasViewpoints = allPaths.some(p => p.type === 'viewpoint');
+  const showLegend    = legendSy.length > 0 || hasViewpoints;
+  const totalAnnot    = allPaths.length;
+
+  if (!allPlans.length) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
@@ -506,17 +528,16 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary }) {
           Plan — {loc.nom}
         </span>
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
-          {paths?.length > 0 && (
+          {totalAnnot > 0 && (
             <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
-              {paths.length} annotation{paths.length > 1 ? 's' : ''}
+              {totalAnnot} annotation{totalAnnot > 1 ? 's' : ''}
             </span>
           )}
         </div>
       </div>
-      {renderedImg && (
-        <img src={renderedImg} alt={`Plan ${loc.nom}`}
-          style={{ width:'100%', display:'block', objectFit:'contain' }}/>
-      )}
+      {allPlans.map((p, i) => (
+        <SinglePlanImage key={i} bg={p.bg} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`}/>
+      ))}
       {showLegend && (
         <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
           <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
@@ -1054,7 +1075,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const planLocs = useMemo(
-    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg || l.planId) : [],
+    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg || l.planId || (l.extraPlans || []).length > 0) : [],
     [localisations, plansEnFin]
   );
 

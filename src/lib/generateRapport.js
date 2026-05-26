@@ -1,4 +1,5 @@
 import { ensureJsPDF } from './pdfUtils.js';
+import { fetchPlanData } from './storage.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
@@ -274,7 +275,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   for (const loc of localisations) {
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
-      const bg = ep.planBg || (projet.planLibrary || []).find(p => p.id === ep.planId)?.bg || null;
+      let bg = ep.planBg || (projet.planLibrary || []).find(p => p.id === ep.planId)?.bg || null;
+      if (!bg && ep.planId) {
+        const fetched = await fetchPlanData(ep.planId);
+        if (fetched?.bg) bg = fetched.bg;
+      }
       if (!bg) continue;
       const img = await renderPlanImage(bg, ep.planAnnotations, annotScale);
       if (img) extraPlanImages[`${loc.id}_${i}`] = img;
