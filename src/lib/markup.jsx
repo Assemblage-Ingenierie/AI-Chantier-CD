@@ -20,21 +20,27 @@ function isHtml(text) {
     text.includes('<u>') || text.includes('<br') ||
     text.includes('<b>') || text.includes('<i>') ||
     text.includes('<div') || text.includes('<p>') || text.includes('<p ') ||
+    text.includes('<s>') || text.includes('<ul') || text.includes('<li') || text.includes('<strike') ||
     text.includes('&gt;') || text.includes('&lt;') || text.includes('&amp;') ||
     text.includes('&nbsp;')
   );
 }
 
 // Rendu React depuis HTML simple — pas de dangerouslySetInnerHTML.
-// Gère : strong/b, em/i, u (inline) ; br (saut de ligne) ; div/p (paragraphes avec espacement).
+// Gère : strong/b, em/i, u, s/strike (inline) ; br (saut) ; div/p, ul/li (blocs).
 function renderHtml(html) {
   if (!html) return null;
-  // Parser : balises inline + balises bloc (br/div/p, ouvrantes ET fermantes)
-  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>)/gi;
-  const parts = html.split(HTAG);
+  // Pré-traitement : aplatir les listes ul/ol en blocs bullet
+  const flattened = html
+    .replace(/<li[^>]*>/gi, '<div>• ')
+    .replace(/<\/li>/gi, '</div>')
+    .replace(/<\/?(?:ul|ol)[^>]*>/gi, '');
+
+  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<s>|<\/s>|<strike>|<\/strike>|<del>|<\/del>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>)/gi;
+  const parts = flattened.split(HTAG);
   const blocks = [];   // tableau de paragraphes (chacun = array d'éléments inline)
   let current = [];    // bloc en cours de construction
-  const stack = [];    // balises inline ouvertes (strong/em/u)
+  const stack = [];    // balises inline ouvertes (strong/em/u/s)
 
   const finalizeBlock = () => {
     // On garde le bloc même s'il est "vide" pour préserver les lignes blanches intentionnelles
@@ -52,6 +58,8 @@ function renderHtml(html) {
     if (lower === '</em>' || lower === '</i>') { stack.pop(); continue; }
     if (lower === '<u>') { stack.push('u'); continue; }
     if (lower === '</u>') { stack.pop(); continue; }
+    if (lower === '<s>' || lower === '<strike>' || lower === '<del>') { stack.push('s'); continue; }
+    if (lower === '</s>' || lower === '</strike>' || lower === '</del>') { stack.pop(); continue; }
     if (lower === '<br>' || lower === '<br/>') {
       current.push(<br key={`br-${i}`}/>);
       continue;
@@ -75,6 +83,7 @@ function renderHtml(html) {
         if (tag === 'strong') node = <strong key={`${i}-${li}-s${s}`}>{node}</strong>;
         else if (tag === 'em') node = <em key={`${i}-${li}-s${s}`}>{node}</em>;
         else if (tag === 'u') node = <u key={`${i}-${li}-s${s}`}>{node}</u>;
+        else if (tag === 's') node = <s key={`${i}-${li}-s${s}`}>{node}</s>;
       }
       current.push(node);
     });
@@ -132,6 +141,9 @@ export function stripMarkup(text) {
     return decodeEntities(
       text
         .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '• ')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<\/?(?:ul|ol)[^>]*>/gi, '\n')
         .replace(/<\/(div|p)>/gi, '\n')
         .replace(/<(div|p)[^>]*>/gi, '\n')
         .replace(/<[^>]+>/g, '')

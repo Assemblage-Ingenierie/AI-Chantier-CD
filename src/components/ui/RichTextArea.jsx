@@ -20,16 +20,41 @@ function isHtml(text) {
   return text && (
     text.includes('<strong>') || text.includes('<em>') ||
     text.includes('<u>') || text.includes('<br') ||
-    text.includes('<b>') || text.includes('<i>')
+    text.includes('<b>') || text.includes('<i>') ||
+    text.includes('<s>') || text.includes('<ul') || text.includes('<li') || text.includes('<strike')
   );
 }
 
-// Normalise les balises <b>/<i> (insérées par execCommand) vers <strong>/<em>
+// Normalise les balises <b>/<i>/<strike> vers <strong>/<em>/<s>
 function normalizeHtmlOutput(html) {
   if (!html) return html;
   return html
     .replace(/<b>/gi, '<strong>').replace(/<\/b>/gi, '</strong>')
-    .replace(/<i>/gi, '<em>').replace(/<\/i>/gi, '</em>');
+    .replace(/<i>/gi, '<em>').replace(/<\/i>/gi, '</em>')
+    .replace(/<strike>/gi, '<s>').replace(/<\/strike>/gi, '</s>')
+    .replace(/<del>/gi, '<s>').replace(/<\/del>/gi, '</s>');
+}
+
+// Nettoie le HTML collé : garde uniquement les balises supportées, strip tous les attributs
+function cleanPastedHtml(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  function processNode(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    const inner = Array.from(node.childNodes).map(processNode).join('');
+    if (tag === 'strong' || tag === 'b') return `<strong>${inner}</strong>`;
+    if (tag === 'em' || tag === 'i') return `<em>${inner}</em>`;
+    if (tag === 'u') return `<u>${inner}</u>`;
+    if (tag === 's' || tag === 'strike' || tag === 'del') return `<s>${inner}</s>`;
+    if (tag === 'br') return '<br>';
+    if (tag === 'li') return `<li>${inner}</li>`;
+    if (tag === 'ul' || tag === 'ol') return `<ul>${inner}</ul>`;
+    if (['p','div','h1','h2','h3','h4','h5','h6','blockquote'].includes(tag)) return `<div>${inner}</div>`;
+    return inner; // span et autres : contenu brut
+  }
+  return Array.from(tmp.childNodes).map(processNode).join('');
 }
 
 export function normalizeToHtml(text) {
@@ -86,11 +111,17 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (el) onChange(normalizeHtmlOutput(el.innerHTML));
   };
 
-  // Empêcher les collages avec mise en forme complexe
+  // Coller : nettoyer les attributs dangereux, garder la mise en forme simple
   const handlePaste = (e) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    const html = e.clipboardData.getData('text/html');
+    if (html) {
+      document.execCommand('insertHTML', false, cleanPastedHtml(html));
+    } else {
+      // Texte brut : strip les éventuelles balises HTML littérales
+      const text = e.clipboardData.getData('text/plain').replace(/<[^>]*>/g, '');
+      document.execCommand('insertText', false, text);
+    }
   };
 
   // Ctrl+B/I/U → execCommand (natif, WYSIWYG)

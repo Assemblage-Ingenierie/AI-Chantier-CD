@@ -433,9 +433,11 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
   );
 
   const FMT_BTNS = [
-    { label:'G', title:'Gras (Ctrl+B)',      cmd:'bold',      fw:800 },
-    { label:'I', title:'Italique (Ctrl+I)',  cmd:'italic',    fi:'italic' },
-    { label:'S', title:'Souligné (Ctrl+U)',  cmd:'underline', td:'underline' },
+    { label:'G', title:'Gras (Ctrl+B)',      cmd:'bold',           fw:800 },
+    { label:'I', title:'Italique (Ctrl+I)',  cmd:'italic',         fi:'italic' },
+    { label:'S', title:'Souligné (Ctrl+U)', cmd:'underline',      td:'underline' },
+    { label:'S', title:'Barré',              cmd:'strikeThrough',  td:'line-through' },
+    { label:'•', title:'Liste à puces',      cmd:'insertUnorderedList', fw:700, fs:16 },
   ];
   const ALIGN_BTNS = [
     { k:'left',    sym:'←', title:'Aligner à gauche' },
@@ -524,10 +526,10 @@ export default function ItemModal({ item, planBg, planAnnotations, onClose, onSa
 
             {/* Toolbar : G/I/S + séparateur + alignements */}
             <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
-              {FMT_BTNS.map(btn => (
-                <button key={btn.label} type="button" title={btn.title}
+              {FMT_BTNS.map((btn, bi) => (
+                <button key={btn.cmd} type="button" title={btn.title}
                   onMouseDown={e => { e.preventDefault(); document.execCommand(btn.cmd); textareaRef.current?.getEditor()?.focus(); }}
-                  style={{ width:30,height:28,borderRadius:5,border:`1px solid ${DA.border}`,background:'white',color:DA.black,fontSize:13,fontWeight:btn.fw??400,fontStyle:btn.fi??'normal',textDecoration:btn.td??'none',cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                  style={{ width:30,height:28,borderRadius:5,border:`1px solid ${DA.border}`,background:'white',color:DA.black,fontSize:btn.fs??13,fontWeight:btn.fw??400,fontStyle:btn.fi??'normal',textDecoration:btn.td??'none',cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
                   {btn.label}
                 </button>
               ))}
