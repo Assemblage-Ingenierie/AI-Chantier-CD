@@ -177,17 +177,8 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
       photoOffset += photos.length;
     }
     if (!plansEnFin) {
-      const hasPrimary = !!(loc.planAnnotations?.exported || loc.planBg || loc.planId);
-      const extraCount = (loc.extraPlans || []).length;
-      const totalPlanBlocks = (hasPrimary ? 1 : 0) + extraCount;
-      if (totalPlanBlocks > 0) {
-        if (hasPrimary) {
-          blocks.push({ type:'plan', id:`plan-${loc.id}`, loc, planIdx: 0, isLastPlan: extraCount === 0 });
-        }
-        for (let i = 0; i < extraCount; i++) {
-          blocks.push({ type:'plan', id:`plan-${loc.id}_ep_${i}`, loc, planIdx: i + 1, isLastPlan: !hasPrimary ? i === extraCount - 1 : i === extraCount - 1 });
-        }
-      }
+      const hasPlan = !!(loc.planAnnotations?.exported || loc.planBg || loc.planId || (loc.extraPlans || []).length > 0);
+      if (hasPlan) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
     }
   }
   return blocks;
@@ -509,50 +500,59 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
   );
 }
 
-function PlanBlock({ loc, planIdx = 0, isLastPlan = true, annotScale = 1, onAnnotScaleChange, planLibrary }) {
-  // planIdx: 0 = primary plan, n≥1 = extraPlans[n-1]
-  let planBgSrc, planAnnotations, planNom, planExists;
-  if (planIdx === 0) {
-    planExists = !!(loc.planId || loc.planBg);
-    planBgSrc = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-    planAnnotations = loc.planAnnotations;
-    planNom = planLibrary?.find(p => p.id === loc.planId)?.nom || null;
-  } else {
-    const ep = (loc.extraPlans || [])[planIdx - 1];
-    planExists = !!(ep?.planId || ep?.planBg);
-    planBgSrc = ep?.planBg || (ep?.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
-    planAnnotations = ep?.planAnnotations || null;
-    planNom = ep?.planId ? planLibrary?.find(p => p.id === ep.planId)?.nom || null : null;
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut }) {
+  // Build list of all plans: primary + extraPlans
+  const allPlans = [];
+  const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
+  if (loc.planId || loc.planBg) {
+    allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+  }
+  for (let i = 0; i < (loc.extraPlans || []).length; i++) {
+    const ep = loc.extraPlans[i];
+    const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
+    allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
   }
 
-  // Combined legend only on last plan block — gathers all paths from all plans of this zone
-  const allPaths = isLastPlan ? [
-    ...(loc.planAnnotations?.paths || []),
-    ...(loc.extraPlans || []).flatMap(ep => ep.planAnnotations?.paths || []),
-  ] : [];
+  // Combined legend
+  const allPaths = allPlans.flatMap(p => p.annotations?.paths || []);
   const usedIds       = new Set(allPaths.filter(p => p.type === 'symbol').map(p => p.symbolId));
   const legendSy      = getAllSymbols().filter(s => usedIds.has(s.id));
   const hasViewpoints = allPaths.some(p => p.type === 'viewpoint');
-  const showLegend    = isLastPlan && (legendSy.length > 0 || hasViewpoints);
+  const showLegend    = legendSy.length > 0 || hasViewpoints;
 
-  const thisPaths = planAnnotations?.paths || [];
-
-  if (!planExists) return null;
+  if (!allPlans.length) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px', display:'flex', alignItems:'center', gap:6 }}>
         <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          {planNom ? `${loc.nom} — ${planNom}` : `Plan — ${loc.nom}`}
+          Plan — {loc.nom}
         </span>
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:6 }}>
-          {thisPaths.length > 0 && (
-            <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
-              {thisPaths.length} annotation{thisPaths.length > 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
+        {allPaths.length > 0 && (
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', marginLeft:'auto' }}>
+            {allPaths.length} annotation{allPaths.length > 1 ? 's' : ''}
+          </span>
+        )}
       </div>
-      <SinglePlanImage bg={planBgSrc} annotations={planAnnotations} annotScale={annotScale} alt={`Plan ${loc.nom}`}/>
+      {allPlans.map((p, i) => {
+        const forced = p.breakId && pageBreaks.includes(p.breakId);
+        return (
+          <React.Fragment key={i}>
+            {/* Séparateur de saut entre plans — visible uniquement en mode découpe */}
+            {i > 0 && cutMode && (
+              <PlanCutBar
+                data-print="hide"
+                breakId={p.breakId}
+                forced={forced}
+                onCut={onCut}
+              />
+            )}
+            {i > 0 && !cutMode && forced && (
+              <div style={{ height:2, background:DA.red, opacity:0.3 }}/>
+            )}
+            <SinglePlanImage bg={p.bg} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`}/>
+          </React.Fragment>
+        );
+      })}
       {showLegend && (
         <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
           <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
@@ -571,6 +571,39 @@ function PlanBlock({ loc, planIdx = 0, isLastPlan = true, annotScale = 1, onAnno
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function PlanCutBar({ breakId, forced, onCut }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      data-print="hide"
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      onClick={() => onCut && onCut(breakId)}
+      style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:0,
+        background: forced ? DA.red : hov ? '#fff0f0' : '#fffafa',
+        borderTop: `2px ${forced ? 'solid' : 'dashed'} ${forced ? DA.red : hov ? DA.red : '#f0b8b8'}`,
+        borderBottom: `2px ${forced ? 'solid' : 'dashed'} ${forced ? DA.red : hov ? DA.red : '#f0b8b8'}`,
+        padding:'5px 10px', userSelect:'none' }}>
+      <span style={{ fontSize:13, lineHeight:1, color: forced || hov ? 'white' : '#c08080',
+        background: forced ? 'transparent' : hov ? DA.red : 'none',
+        padding: hov && !forced ? '0 4px' : 0, borderRadius:2 }}>✂</span>
+      <span style={{ fontSize:8, fontWeight:700, flex:1, marginLeft:6,
+        color: forced ? 'white' : hov ? DA.red : '#c08080', letterSpacing:0.2 }}>
+        {forced ? 'Saut de page ici — cliquer pour annuler' : 'Couper ici — nouvelle page avant ce plan'}
+      </span>
+      {!forced && (
+        <span style={{ fontSize:7, color: hov ? DA.red : '#d0a0a0',
+          background: hov ? '#ffe0e0' : '#fdf0f0', border:`1px solid ${hov ? '#fca5a5' : '#f0d0d0'}`,
+          borderRadius:3, padding:'1px 6px', whiteSpace:'nowrap' }}>
+          ⊕ Nouvelle page
+        </span>
+      )}
+      {forced && (
+        <span style={{ fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.85)' }}>× Retirer</span>
       )}
     </div>
   );
@@ -1089,20 +1122,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [pageBreaks]);
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const planLocs = useMemo(() => {
-    if (!plansEnFin) return [];
-    return localisations.flatMap(l => {
-      const hasPrimary = !!(l.planAnnotations?.exported || l.planBg || l.planId);
-      const extraCount = (l.extraPlans || []).length;
-      if (!hasPrimary && !extraCount) return [];
-      const entries = [];
-      if (hasPrimary) entries.push({ loc: l, planIdx: 0, isLastPlan: extraCount === 0 });
-      for (let i = 0; i < extraCount; i++) {
-        entries.push({ loc: l, planIdx: i + 1, isLastPlan: i === extraCount - 1 });
-      }
-      return entries;
-    });
-  }, [localisations, plansEnFin]);
+  const planLocs = useMemo(
+    () => plansEnFin ? localisations.filter(l => l.planAnnotations?.exported || l.planBg || l.planId || (l.extraPlans || []).length > 0) : [],
+    [localisations, plansEnFin]
+  );
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
   const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks), [locs, plansEnFin, ppl, paraBreaks]);
@@ -1340,7 +1363,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} planIdx={block.planIdx ?? 0} isLastPlan={block.isLastPlan ?? true} annotScale={annotScale} planLibrary={projet.planLibrary}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
@@ -1391,7 +1414,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} planIdx={block.planIdx ?? 0} isLastPlan={block.isLastPlan ?? true} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
@@ -1462,15 +1485,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         })()}
 
         {/* ── PLANS EN FIN DE RAPPORT ── */}
-        {planLocs.map((entry, pi) => {
+        {planLocs.map((loc, pi) => {
           const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
-            <React.Fragment key={`plan-end-${entry.loc.id}-${entry.planIdx}`}>
+            <React.Fragment key={`plan-end-${loc.id}`}>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={entry.loc} planIdx={entry.planIdx} isLastPlan={entry.isLastPlan} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary}/>
+                  <PlanBlock loc={loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut}/>
                 </A4Card>
               </div>
             </React.Fragment>
