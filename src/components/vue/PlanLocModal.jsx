@@ -220,7 +220,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
               <Ic n="del" s={14}/>
             </button>
           )}
-          <button onClick={handleSave}
+          <button onClick={() => handleSave()}
             style={{ flex:1, background: plans.length > 0 ? DA.red : DA.black, color:'white', border:'none', borderRadius:12, padding:12, fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
           </button>
