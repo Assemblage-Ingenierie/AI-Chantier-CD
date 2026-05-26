@@ -262,20 +262,20 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const GR = [105, 114, 125], LG = [249, 249, 249], WH = [255, 255, 255];
   const AM = [217, 119, 6], GN = [22, 163, 74];
 
-  // Pré-rendu des plans annotés (une seule passe async avant la génération PDF)
+  // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non
   const planImages = {};
   for (const loc of localisations) {
-    const img = await renderPlanImage(loc.planBg, loc.planAnnotations, annotScale);
+    const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale);
     if (img) planImages[loc.id] = img;
   }
 
-  // Pré-rendu des plans supplémentaires par zone (uniquement si annotés)
   const extraPlanImages = {}; // clé: `${locId}_${planIdx}`
   for (const loc of localisations) {
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
-      if (!ep.planAnnotations?.paths?.length) continue;
       const bg = ep.planBg || (projet.planLibrary || []).find(p => p.id === ep.planId)?.bg || null;
+      if (!bg) continue;
       const img = await renderPlanImage(bg, ep.planAnnotations, annotScale);
       if (img) extraPlanImages[`${loc.id}_${i}`] = img;
     }
@@ -660,37 +660,32 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     renderItems(items, hasVP);
 
-    // Plan inline (si !plansEnFin et plan disponible)
+    // Plans inline (si !plansEnFin) — principal + supplémentaires à la suite, une seule légende
     if (!plansEnFin) {
-      const planImg = planImages[loc.id];
-      if (planImg) {
-        const ih      = CW * 0.58;
-        const hasLeg  = (loc.planAnnotations?.paths || []).some(p => p.type === 'symbol');
+      const allZonePlans = [
+        { img: planImages[loc.id], annotations: loc.planAnnotations },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations })),
+      ].filter(p => p.img);
+
+      if (allZonePlans.length > 0) {
+        // Combiner toutes les annotations pour la légende unique
+        const allAnnotPaths = allZonePlans.flatMap(p => p.annotations?.paths || []);
+        const combinedAnnot = allAnnotPaths.length ? { paths: allAnnotPaths } : null;
+        const hasLeg = allAnnotPaths.some(p => p.type === 'symbol');
+        const ih = CW * 0.58;
         pb(22 + ih + (hasLeg ? 20 : 6));
         secHdr(`Plan — ${loc.nom}`);
-        try {
-          const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-          doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
-          y += ih + 2;
-        } catch {}
-        y = addPlanLegend(doc, loc.planAnnotations, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
+        allZonePlans.forEach(({ img: planImg }) => {
+          pb(ih + 4);
+          try {
+            const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+            doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
+            y += ih + 4;
+          } catch {}
+        });
+        y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
         y += 2;
       }
-      // Plans supplémentaires annotés de la zone
-      (loc.extraPlans || []).forEach((ep, idx) => {
-        const planImg = extraPlanImages[`${loc.id}_${idx}`];
-        if (!planImg) return;
-        const libNom = (projet.planLibrary || []).find(p => p.id === ep.planId)?.nom;
-        const ih = CW * 0.58;
-        pb(22 + ih + 6);
-        secHdr(`${libNom || 'Plan'} — ${loc.nom}`);
-        try {
-          const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-          doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
-          y += ih + 2;
-        } catch {}
-        y += 2;
-      });
     }
 
     y += 5;
