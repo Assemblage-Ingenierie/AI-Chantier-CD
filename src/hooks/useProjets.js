@@ -64,6 +64,7 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
                   planData: rl.planData ?? ll.planData,
                   planId: ll.planId ?? rl.planId,
                   planAnnotations: ll.planAnnotations ?? rl.planAnnotations,
+                  extraPlans: ll.extraPlans ?? rl.extraPlans ?? [],
                 };
               }),
             };
@@ -104,6 +105,7 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
               planId: localLoc.planId ?? loc.planId,
               planBg: localLoc.planBg ?? loc.planBg,
               planData: localLoc.planData ?? loc.planData,
+              extraPlans: localLoc.extraPlans ?? loc.extraPlans ?? [],
               items: (loc.items || []).map(item => {
                 const localItem = localLoc.items?.find(i => i.id === item.id);
                 if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };

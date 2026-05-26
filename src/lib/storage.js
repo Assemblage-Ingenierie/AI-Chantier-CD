@@ -107,11 +107,18 @@ function toSlim(ps) {
 // --- Lecture depuis les tables normalisées ---
 
 function buildLocFromRow(loc, itemsByLoc) {
-  // planId est encodé dans plan_annotations._planId (évite une colonne dédiée)
+  // planId et extraPlans sont encodés dans plan_annotations (évite des colonnes dédiées)
   const parsedAnnot = tryParseJson(loc.plan_annotations);
   const planId = parsedAnnot?._planId ?? null;
+  const extraPlans = (parsedAnnot?._extraPlans || []).map(ep => ({
+    id: crypto.randomUUID(),
+    planId: ep.planId || null,
+    planBg: null,
+    planData: null,
+    planAnnotations: ep.paths?.length ? { paths: ep.paths } : null,
+  }));
   const planAnnotations = parsedAnnot
-    ? (({ _planId, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
+    ? (({ _planId, _extraPlans, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
     : null;
   return {
     id:              loc.id,
@@ -120,6 +127,7 @@ function buildLocFromRow(loc, itemsByLoc) {
     planBg:          null,
     planData:        null,
     planAnnotations,
+    extraPlans,
     items: (itemsByLoc[loc.id] ?? []).map(item => ({
       id:              item.id,
       titre:           item.titre ?? '',
@@ -628,12 +636,16 @@ async function saveRemote(ps, dirtyIds = null) {
     // Loc rows — plan_bg/plan_data jamais envoyés dans les locs (timeout 57014).
     // planId est encodé dans plan_annotations._planId pour éviter une colonne dédiée.
     const locRows = allLocsFlat.map((l, i) => {
-      // Construire l'objet plan_annotations : paths existants + _planId si défini
+      // Construire l'objet plan_annotations : paths existants + _planId + _extraPlans si définis
+      const extraPlansToStore = (l.extraPlans || [])
+        .map(ep => ({ ...(ep.planId ? { planId: ep.planId } : {}), ...(ep.planAnnotations?.paths?.length ? { paths: ep.planAnnotations.paths } : {}) }))
+        .filter(ep => ep.planId);
       let annotObj = null;
-      if (l.planId || l.planAnnotations?.paths?.length) {
+      if (l.planId || l.planAnnotations?.paths?.length || extraPlansToStore.length) {
         annotObj = {};
         if (l.planId) annotObj._planId = l.planId;
         if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
+        if (extraPlansToStore.length) annotObj._extraPlans = extraPlansToStore;
       }
       return {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
