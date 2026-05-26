@@ -138,10 +138,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
           <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
             {localisations.map(loc => {
-              const assignedPlan = planLibrary.find(p => p.id === loc.planId);
-              const hasPlan = !!(loc.planId || loc.planBg || (loc.extraPlans || []).length > 0);
-              const thumbSrc = loc.planBg || assignedPlan?.bg || null;
-              const totalPlans = (loc.planId || loc.planBg ? 1 : 0) + (loc.extraPlans || []).length;
+              const allPlanThumbs = [];
+              if (loc.planId || loc.planBg) {
+                const pl = planLibrary.find(p => p.id === loc.planId);
+                allPlanThumbs.push({ bg: loc.planBg || pl?.bg || null, nom: pl?.nom || 'Plan de zone' });
+              }
+              for (const ep of (loc.extraPlans || [])) {
+                const epl = planLibrary.find(p => p.id === ep.planId);
+                allPlanThumbs.push({ bg: ep.planBg || epl?.bg || null, nom: epl?.nom || 'Plan' });
+              }
+              const hasPlan = allPlanThumbs.length > 0;
 
               return (
                 <div key={loc.id} style={{ border:`1px solid ${hasPlan ? DA.red : DA.border}`,borderRadius:12,overflow:'hidden',background:DA.white,transition:'border-color 0.15s' }}>
@@ -162,45 +168,41 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   </div>
 
                   {/* Zone plan */}
-                  <div style={{ borderTop:`1px solid ${DA.border}`,padding:'10px 12px' }}>
+                  <div style={{ borderTop:`1px solid ${DA.border}` }}>
                     {hasPlan ? (
-                      <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-                        {thumbSrc ? (
-                          <img src={thumbSrc} alt=""
-                            onClick={() => setPreviewBg(thumbSrc)}
-                            style={{ width:80,height:54,objectFit:'cover',borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
-                        ) : (
-                          <div style={{ width:80,height:54,borderRadius:7,border:`1px solid ${DA.border}`,flexShrink:0,background:DA.grayXL,display:'flex',alignItems:'center',justifyContent:'center' }}>
-                            <Ic n="map" s={22}/>
-                          </div>
-                        )}
-                        <div style={{ flex:1,minWidth:0 }}>
-                          <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-                            {assignedPlan?.nom || 'Plan assigné'}
-                            {totalPlans > 1 && <span style={{ fontSize:11,color:DA.red,fontWeight:700,marginLeft:6 }}>+{totalPlans - 1} plan{totalPlans > 2 ? 's' : ''}</span>}
-                          </p>
-                          <div style={{ display:'flex',gap:8,marginTop:5,flexWrap:'wrap' }}>
-                            <button onClick={() => onPickPlan ? onPickPlan(loc.id) : null}
-                              style={{ fontSize:11,color:DA.red,background:'none',border:'none',cursor:'pointer',padding:0,fontWeight:600 }}>
-                              Changer
-                            </button>
-                            <span style={{ color:DA.grayL,fontSize:11 }}>·</span>
-                            <button onClick={() => removePlan(loc.id)}
-                              style={{ fontSize:11,color:DA.grayL,background:'none',border:'none',cursor:'pointer',padding:0 }}>
-                              Retirer
-                            </button>
-                          </div>
+                      <>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:6, padding:'10px 12px 6px' }}>
+                          {allPlanThumbs.map((pt, i) => (
+                            <div key={i} style={{ position:'relative', cursor:'zoom-in' }} onClick={() => pt.bg && setPreviewBg(pt.bg)}>
+                              {pt.bg
+                                ? <img src={pt.bg} alt="" style={{ width:72, height:50, objectFit:'cover', borderRadius:6, border:`1px solid ${DA.border}`, display:'block' }}/>
+                                : <div style={{ width:72, height:50, borderRadius:6, border:`1px solid ${DA.border}`, background:DA.grayXL, display:'flex', alignItems:'center', justifyContent:'center' }}><Ic n="map" s={18}/></div>
+                              }
+                              <div style={{ position:'absolute', bottom:2, left:2, right:2, fontSize:9, fontWeight:700, color:'white', textShadow:'0 1px 3px rgba(0,0,0,0.8)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
+                        <div style={{ display:'flex', gap:8, padding:'0 12px 10px' }}>
+                          <button onClick={() => onPickPlan && onPickPlan(loc.id)}
+                            style={{ fontSize:11, color:DA.red, background:'none', border:'none', cursor:'pointer', padding:0, fontWeight:700 }}>
+                            <Ic n="pen" s={10}/> Modifier les plans
+                          </button>
+                          <span style={{ color:DA.grayL, fontSize:11 }}>·</span>
+                          <button onClick={() => removePlan(loc.id)}
+                            style={{ fontSize:11, color:DA.grayL, background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                            Tout retirer
+                          </button>
+                        </div>
+                      </>
                     ) : (
                       <button
                         onClick={() => {
                           if (planLibrary.length === 0 && onOpenPlanLib) { onClose(); onOpenPlanLib(); return; }
                           if (onPickPlan) onPickPlan(loc.id);
                         }}
-                        style={{ width:'100%',padding:'8px 12px',background:DA.grayXL,border:`1.5px dashed ${DA.border}`,borderRadius:8,fontSize:12,color:DA.gray,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+                        style={{ width:'100%', padding:'10px 12px', background:'none', border:'none', fontSize:12, color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
                         <Ic n="map" s={13}/>
-                        {planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un ou plusieurs plans'}
+                        {planLibrary.length === 0 ? 'Importer un plan' : 'Choisir un ou plusieurs plans →'}
                       </button>
                     )}
                   </div>
