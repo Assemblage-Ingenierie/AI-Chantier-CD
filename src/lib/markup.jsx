@@ -27,24 +27,20 @@ function isHtml(text) {
 }
 
 // Rendu React depuis HTML simple — pas de dangerouslySetInnerHTML.
-// Gère : strong/b, em/i, u, s/strike (inline) ; br (saut) ; div/p, ul/li (blocs).
+// Gère : strong/b, em/i, u, s/strike (inline) ; br (saut) ; div/p (blocs) ; ul/li (puces).
 function renderHtml(html) {
   if (!html) return null;
-  // Pré-traitement : aplatir les listes ul/ol en blocs bullet
-  const flattened = html
-    .replace(/<li[^>]*>/gi, '<div>• ')
-    .replace(/<\/li>/gi, '</div>')
-    .replace(/<\/?(?:ul|ol)[^>]*>/gi, '');
 
-  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<s>|<\/s>|<strike>|<\/strike>|<del>|<\/del>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>)/gi;
-  const parts = flattened.split(HTAG);
-  const blocks = [];   // tableau de paragraphes (chacun = array d'éléments inline)
-  let current = [];    // bloc en cours de construction
-  const stack = [];    // balises inline ouvertes (strong/em/u/s)
+  // <li> et ul/ol gérés directement dans le parser (pas de pré-traitement)
+  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<s>|<\/s>|<strike>|<\/strike>|<del>|<\/del>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>|<li[^>]*>|<\/li>|<\/?(?:ul|ol)[^>]*>)/gi;
+  const parts = html.split(HTAG);
+  const blocks = []; // { items: ReactNode[], isBullet: bool }
+  let current = [];
+  let isBullet = false;
+  const stack = [];
 
   const finalizeBlock = () => {
-    // On garde le bloc même s'il est "vide" pour préserver les lignes blanches intentionnelles
-    blocks.push(current);
+    blocks.push({ items: current, isBullet });
     current = [];
   };
 
@@ -64,11 +60,20 @@ function renderHtml(html) {
       current.push(<br key={`br-${i}`}/>);
       continue;
     }
-    // Balises bloc (div/p) — chaque ouvrante OU fermante marque une frontière de paragraphe.
-    // Les frontières consécutives (</div><div>) ne créent qu'UN seul saut de paragraphe.
-    if (lower.startsWith('<div') || lower.startsWith('</div') ||
-        lower.startsWith('<p') || lower.startsWith('</p')) {
+    // Ouverture d'un élément de liste → nouveau bloc puce
+    if (lower.startsWith('<li')) {
       if (current.length > 0) finalizeBlock();
+      isBullet = true;
+      continue;
+    }
+    // Frontières de blocs (div/p/li/ul/ol)
+    if (lower === '</li>' ||
+        lower.startsWith('<div') || lower.startsWith('</div') ||
+        lower.startsWith('<p')   || lower.startsWith('</p')   ||
+        lower.startsWith('<ul')  || lower.startsWith('</ul')  ||
+        lower.startsWith('<ol')  || lower.startsWith('</ol')) {
+      if (current.length > 0) finalizeBlock();
+      if (lower === '</li>' || lower.startsWith('</ul') || lower.startsWith('</ol')) isBullet = false;
       continue;
     }
     // Texte brut — décoder entités + appliquer balises ouvertes
@@ -91,15 +96,35 @@ function renderHtml(html) {
   if (current.length > 0) finalizeBlock();
 
   if (blocks.length === 0) return null;
-  if (blocks.length === 1) return blocks[0]; // un seul bloc : pas besoin de wrapper
 
-  // Chaque paragraphe = <span display:block> avec marge en bas
-  // (span plutôt que div pour rester valide HTML quand le parent est un <p>)
-  return blocks.map((block, i) => (
-    <span key={`p-${i}`} style={{ display: 'block', marginBottom: i < blocks.length - 1 ? '0.7em' : 0 }}>
-      {block}
-    </span>
-  ));
+  // Bloc "vide" = ne contient que des <br> (ligne blanche issue de l'éditeur)
+  // Ces blocs ne sont pas rendus mais ajoutent de la marge aux blocs adjacents.
+  const isBlank = (b) => b.items.length > 0 && b.items.every(n => n && typeof n === 'object' && n.type === 'br');
+
+  const contentBlocks = blocks.filter(b => !isBlank(b));
+  if (contentBlocks.length === 0) return null;
+  if (contentBlocks.length === 1 && !contentBlocks[0].isBullet) return contentBlocks[0].items;
+
+  // Rendu : marge réduite entre blocs consécutifs, plus grande après un bloc vide
+  const result = [];
+  let pendingBlank = false;
+  blocks.forEach((block, i) => {
+    if (isBlank(block)) { pendingBlank = true; return; }
+    const hasNext = blocks.slice(i + 1).some(b => !isBlank(b));
+    const mb = hasNext ? (pendingBlank ? '0.65em' : '0.3em') : 0;
+    pendingBlank = false;
+    result.push(
+      <span key={`p-${i}`} style={{
+        display: 'block',
+        marginBottom: mb,
+        ...(block.isBullet ? { paddingLeft: '1.1em', textIndent: '-1.1em' } : {}),
+      }}>
+        {block.isBullet && '• '}
+        {block.items}
+      </span>
+    );
+  });
+  return result;
 }
 
 // Syntaxe legacy : **gras**, *italique*, __souligné__
