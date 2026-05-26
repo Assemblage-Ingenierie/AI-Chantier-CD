@@ -402,7 +402,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                     const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
-                    const thumbSrc = loc.planBg || assignedPlan?.bg || null;
+                    const allPlanThumbs = [];
+                    if (loc.planId || loc.planBg) {
+                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone' });
+                    }
+                    for (const ep of (loc.extraPlans || [])) {
+                      const epLib = (projet.planLibrary||[]).find(p => p.id === ep.planId);
+                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan' });
+                    }
+                    const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
                       <div key={loc.id}
                         draggable
@@ -441,7 +449,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                               </span>
                             )}
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
-                              style={{ padding:'7px 9px', border:`1px solid ${(loc.planId||loc.planBg) ? DA.red : DA.border}`, background:(loc.planId||loc.planBg) ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:(loc.planId||loc.planBg) ? DA.red : DA.grayL }}>
+                              style={{ padding:'7px 9px', border:`1px solid ${hasAnyPlan ? DA.red : DA.border}`, background:hasAnyPlan ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:hasAnyPlan ? DA.red : DA.grayL }}>
                               <Ic n="map" s={15}/>
                             </button>
                             <button onClick={() => deleteLoc(loc.id, loc.nom)}
@@ -468,43 +476,43 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                 patchItem(loc.id, updated);
                               }}
                             />
-                            {(thumbSrc || loc.planId) ? (
-                              <button
-                                onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot:true })}
-                                style={{ width:'100%', position:'relative', height: isDesktop ? 300 : 200, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: thumbSrc ? '#f4f4f4' : DA.grayXL }}>
-                                {thumbSrc ? (
-                                  <PlanAnnotThumb bg={thumbSrc} annotations={loc.planAnnotations}
-                                    style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-                                ) : (
-                                  <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, color:DA.grayL }}>
-                                    <Ic n="map" s={36}/>
-                                    <span style={{ fontSize:13, fontWeight:700, color:DA.gray }}>{assignedPlan?.nom || 'Plan assigné'}</span>
-                                    <span style={{ fontSize:11, color:DA.grayL }}>Miniature en cours de chargement…</span>
-                                  </div>
-                                )}
-                                {thumbSrc && <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>}
-                                {loc.planAnnotations?.paths?.length > 0 && (
-                                  <div style={{ position:'absolute', top:10, right:10, background:DA.red, color:'white', borderRadius:8, fontSize: isDesktop ? 11 : 10, fontWeight:800, padding:'3px 9px', lineHeight:1.6, display:'flex', alignItems:'center', gap:5 }}>
-                                    <Ic n="pen" s={10}/> {loc.planAnnotations.paths.length} annotation{loc.planAnnotations.paths.length > 1 ? 's' : ''}
-                                  </div>
-                                )}
-                                <div style={{ position:'absolute', bottom:0, left:0, right:0, padding: isDesktop ? '10px 16px' : '8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                                  {thumbSrc && <div>
-                                    <p style={{ margin:0, fontSize: isDesktop ? 14 : 13, fontWeight:800, color:'white', letterSpacing:0.2 }}>{assignedPlan?.nom || 'Plan de zone'}</p>
-                                    <p style={{ margin:'2px 0 0', fontSize: isDesktop ? 11 : 10, color:'rgba(255,255,255,0.65)' }}>
-                                      {loc.planAnnotations?.paths?.length > 0 ? 'Toucher pour modifier' : 'Toucher pour annoter'}
-                                    </p>
-                                  </div>}
-                                  <div style={{ marginLeft:'auto', background:DA.red, color:'white', borderRadius:8, padding: isDesktop ? '7px 14px' : '6px 12px', fontSize: isDesktop ? 12 : 11, fontWeight:700, display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
-                                    <Ic n="pen" s={isDesktop ? 13 : 12}/> Annoter
-                                  </div>
-                                </div>
-                              </button>
+                            {hasAnyPlan ? (
+                              <div style={{ display:'flex', borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
+                                {allPlanThumbs.slice(0, 2).map((pt, i) => {
+                                  const annotCount = pt.planAnnotations?.paths?.length || 0;
+                                  return (
+                                    <button key={i}
+                                      onClick={() => setModal({ t:'plan', locId:loc.id, autoAnnot: allPlanThumbs.length === 1 })}
+                                      style={{ flex:1, position:'relative', height: isDesktop ? 300 : 200, border:'none', borderLeft: i > 0 ? `1px solid ${DA.border}` : 'none', cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: pt.bg ? '#f4f4f4' : DA.grayXL }}>
+                                      {pt.bg ? (
+                                        <PlanAnnotThumb bg={pt.bg} annotations={pt.planAnnotations} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                      ) : (
+                                        <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, color:DA.grayL }}>
+                                          <Ic n="map" s={28}/>
+                                          <span style={{ fontSize:11, fontWeight:700, color:DA.gray, textAlign:'center', padding:'0 8px' }}>{pt.nom}</span>
+                                        </div>
+                                      )}
+                                      {pt.bg && <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>}
+                                      {annotCount > 0 && (
+                                        <div style={{ position:'absolute', top:8, right:8, background:DA.red, color:'white', borderRadius:8, fontSize:10, fontWeight:800, padding:'2px 7px', lineHeight:1.6, display:'flex', alignItems:'center', gap:4 }}>
+                                          <Ic n="pen" s={9}/> {annotCount}
+                                        </div>
+                                      )}
+                                      <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'8px 10px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                                        {pt.bg && <p style={{ margin:0, fontSize:11, fontWeight:800, color:'white', letterSpacing:0.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1, marginRight:6 }}>{pt.nom}</p>}
+                                        <div style={{ marginLeft:'auto', background:DA.red, color:'white', borderRadius:7, padding: isDesktop ? '6px 12px' : '5px 10px', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                                          <Ic n="pen" s={11}/> Annoter
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             ) : (
                               <button
-                                onClick={() => setModal({ t:'niveaux' })}
+                                onClick={() => setModal({ t:'plan', locId:loc.id })}
                                 style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 14px', background:DA.grayXL, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12 }}>
-                                <Ic n="map" s={13}/> {(loc.planId && (projet.planLibrary||[]).find(p=>p.id===loc.planId)?.nom) ? `Plan : ${(projet.planLibrary||[]).find(p=>p.id===loc.planId).nom}` : 'Assigner un plan à cette zone'}
+                                <Ic n="map" s={13}/> Assigner un plan à cette zone
                               </button>
                             )}
                           </div>
