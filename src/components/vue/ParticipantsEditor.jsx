@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { loadGlobalContacts, saveGlobalContact, deleteGlobalContact } from '../../lib/contacts.js';
+import {
+  loadContacts, upsertContact, deleteContact,
+  seedAssemblageContacts, migrateLocalContacts,
+} from '../../lib/contacts.js';
 
-export const ASSEMBLAGE_TEAM = [
+// Hardcoded Assemblage team — used only for the first-time seeding into Supabase.
+const ASSEMBLAGE_TEAM_SEED = [
   { nom: 'Pierre Esselinck',          poste: 'Président',                    email: 'pierre@assemblage.net',     tel: '07 86 51 55 48' },
   { nom: 'Clément Davy',              poste: 'Ingénieur Associé',            email: 'clement@assemblage.net',    tel: '' },
   { nom: 'Thomas Cassetari-Moureaux', poste: 'Ingénieur Structure',          email: 'thomas@assemblage.net',     tel: '06 61 68 68 08' },
@@ -23,7 +27,7 @@ export const ASSEMBLAGE_TEAM = [
   { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net',    tel: '07 65 62 30 87' },
 ];
 
-const EMPTY = { nom: '', poste: '', email: '', tel: '' };
+const EMPTY_FORM = { nom: '', poste: '', email: '', tel: '' };
 const BADGE_W = 24;
 
 // ── Ligne participant ──────────────────────────────────────────────────────────
@@ -32,14 +36,12 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:0, background:DA.grayXL, borderRadius:8,
       border:`1px solid ${DA.border}`, padding:'5px 8px 5px 0' }}>
-      {/* Badge – largeur fixe */}
       <div style={{ width:BADGE_W, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
         {p.isAssemblage
           ? <span style={{ fontSize:7, fontWeight:900, color:DA.red, background:'#FFF0F0', borderRadius:3, padding:'1px 3px', lineHeight:1.3 }}>A!</span>
           : <div style={{ width:6, height:6, borderRadius:'50%', background:'#bbb' }}/>
         }
       </div>
-      {/* Nom + infos */}
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:11, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
         {(p.poste || p.email) && (
@@ -48,7 +50,6 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
           </div>
         )}
       </div>
-      {/* Réordonner ↑↓ */}
       <div style={{ display:'flex', flexDirection:'column', marginLeft:6, gap:1, flexShrink:0 }}>
         <button onClick={onMoveUp} disabled={!onMoveUp}
           style={{ fontSize:9, lineHeight:1, padding:'2px 5px', borderRadius:4,
@@ -63,7 +64,6 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
             color: onMoveDown ? DA.gray : DA.border,
             cursor: onMoveDown ? 'pointer' : 'default' }}>↓</button>
       </div>
-      {/* Toggle présence */}
       <button onClick={onToggle}
         title={isPresent ? 'Marquer absent' : 'Marquer présent'}
         style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:6, border:'none', cursor:'pointer', flexShrink:0, marginLeft:6,
@@ -71,7 +71,6 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
           color: isPresent ? '#16A34A' : DA.red }}>
         {isPresent ? '✓ Présent' : '✗ Absent'}
       </button>
-      {/* Supprimer */}
       <button onClick={onRemove} style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px', marginLeft:4 }}>
         <Ic n="x" s={12}/>
       </button>
@@ -79,16 +78,86 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
   );
 }
 
+// ── Formulaire d'édition inline ────────────────────────────────────────────────
+function InlineEditForm({ contact, onSave, onCancel, saving }) {
+  const [form, setForm] = useState({ nom: contact.nom, poste: contact.poste || '', email: contact.email || '', tel: contact.tel || '' });
+  return (
+    <div style={{ padding:'8px 10px', background:'#FFFBEB', border:`1px solid #FCD34D`, borderRadius:8, display:'flex', flexDirection:'column', gap:4 }}>
+      <div style={{ fontSize:9, fontWeight:800, color:'#92400E', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 }}>
+        {contact.id ? 'Modifier le contact' : 'Nouveau contact'}
+      </div>
+      {[['nom','Nom *'],['poste','Poste / Société'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
+        <input key={k} value={form[k]}
+          onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+          placeholder={lbl}
+          style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6,
+            padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}/>
+      ))}
+      <div style={{ display:'flex', gap:6, marginTop:2 }}>
+        <button onClick={() => onSave({ ...contact, ...form })} disabled={!form.nom.trim() || saving}
+          style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:11, fontWeight:700, border:'none',
+            background: form.nom.trim() && !saving ? DA.black : DA.grayL,
+            color:'white', cursor: form.nom.trim() && !saving ? 'pointer' : 'not-allowed' }}>
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+        <button onClick={onCancel}
+          style={{ padding:'6px 10px', borderRadius:8, fontSize:11, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
+          Annuler
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Composant principal ────────────────────────────────────────────────────────
 export default function ParticipantsEditor({ participants = [], onChange }) {
-  const [showPicker, setShowPicker] = useState(false);
-  const [showExt,    setShowExt]    = useState(() => loadGlobalContacts().length > 0);
-  const [showForm,   setShowForm]   = useState(() => loadGlobalContacts().length === 0);
-  const [form,       setForm]       = useState(EMPTY);
-  const [search,     setSearch]     = useState('');
-  const [extSearch,  setExtSearch]  = useState('');
-  const [saved,      setSaved]      = useState(() => loadGlobalContacts());
-  const [quickSearch, setQuickSearch] = useState('');
+  const [contacts,     setContacts]     = useState([]);
+  const [loadingC,     setLoadingC]     = useState(true);
+  const [showPicker,   setShowPicker]   = useState(false);
+  const [showExt,      setShowExt]      = useState(false);
+  const [showForm,     setShowForm]     = useState(false);
+  const [form,         setForm]         = useState(EMPTY_FORM);
+  const [search,       setSearch]       = useState('');
+  const [extSearch,    setExtSearch]    = useState('');
+  const [quickSearch,  setQuickSearch]  = useState('');
+  const [editingId,    setEditingId]    = useState(null);
+  const [saving,       setSaving]       = useState(false);
+
+  const reloadContacts = useCallback(async () => {
+    try {
+      const all = await loadContacts();
+      setContacts(all);
+      return all;
+    } catch (err) {
+      console.error('Erreur chargement contacts:', err);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await migrateLocalContacts();
+        await seedAssemblageContacts(ASSEMBLAGE_TEAM_SEED);
+        const all = await loadContacts();
+        if (!cancelled) {
+          setContacts(all);
+          const ext = all.filter(c => !c.isAssemblage);
+          setShowExt(ext.length > 0);
+          setShowForm(ext.length === 0);
+        }
+      } catch (err) {
+        console.error('Erreur init contacts:', err);
+      } finally {
+        if (!cancelled) setLoadingC(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const assemblageContacts = contacts.filter(c => c.isAssemblage);
+  const externalContacts   = contacts.filter(c => !c.isAssemblage);
 
   const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'present' }]);
   const remove = (id) => onChange(participants.filter(p => p.id !== id));
@@ -105,44 +174,148 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
     onChange(arr);
   };
 
-  const deleteSaved = (id) => {
-    deleteGlobalContact(id);
-    setSaved(loadGlobalContacts());
+  const handleSaveContact = async (contact) => {
+    setSaving(true);
+    try {
+      const savedId = await upsertContact(contact);
+      await reloadContacts();
+      setEditingId(null);
+      // if it was a new external contact, also add to participants
+      if (!contact.id) {
+        onChange([...participants, { ...contact, id: savedId, isAssemblage: false, presence: 'present' }]);
+        setForm(EMPTY_FORM);
+        setShowForm(false);
+      }
+    } catch (err) {
+      console.error('Erreur sauvegarde contact:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteContact = async (id) => {
+    try {
+      await deleteContact(id);
+      await reloadContacts();
+    } catch (err) {
+      console.error('Erreur suppression contact:', err);
+    }
   };
 
   const addedEmails = new Set(participants.map(p => p.email).filter(Boolean));
 
   const q = quickSearch.trim().toLowerCase();
-  const quickTeam = q ? ASSEMBLAGE_TEAM.filter(t =>
-    t.nom.toLowerCase().includes(q) || t.poste.toLowerCase().includes(q)
+  const quickAssemblage = q ? assemblageContacts.filter(c =>
+    c.nom.toLowerCase().includes(q) || (c.poste || '').toLowerCase().includes(q)
   ) : [];
-  const quickSaved = q ? saved.filter(c =>
+  const quickExternal = q ? externalContacts.filter(c =>
     c.nom.toLowerCase().includes(q) ||
     (c.poste || '').toLowerCase().includes(q) ||
     (c.email || '').toLowerCase().includes(q)
   ) : [];
-  const hasQuickResults = quickTeam.length > 0 || quickSaved.length > 0;
+  const hasQuickResults = quickAssemblage.length > 0 || quickExternal.length > 0;
 
-  const filteredTeam = ASSEMBLAGE_TEAM.filter(t =>
-    !search || t.nom.toLowerCase().includes(search.toLowerCase()) ||
-    t.poste.toLowerCase().includes(search.toLowerCase())
+  const filteredAssemblage = assemblageContacts.filter(c =>
+    !search || c.nom.toLowerCase().includes(search.toLowerCase()) ||
+    (c.poste || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredSaved = saved.filter(c =>
+  const filteredExternal = externalContacts.filter(c =>
     !extSearch || c.nom.toLowerCase().includes(extSearch.toLowerCase()) ||
     (c.poste || '').toLowerCase().includes(extSearch.toLowerCase()) ||
     (c.email || '').toLowerCase().includes(extSearch.toLowerCase())
   );
 
-  const addExternal = () => {
-    if (!form.nom.trim()) return;
-    const contact = { ...form, isAssemblage: false, id: crypto.randomUUID() };
-    saveGlobalContact(contact);
-    const updated = loadGlobalContacts();
-    setSaved(updated);
-    onChange([...participants, { ...contact, presence: 'present' }]);
-    setForm(EMPTY);
-    setShowForm(false);
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  const renderAssemblageRow = (c, inDropdown = false) => {
+    const isAdded = addedEmails.has(c.email);
+    const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('');
+    const isEditing = editingId === c.id;
+    return (
+      <div key={c.id}>
+        {isEditing ? (
+          <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
+            <InlineEditForm
+              contact={c}
+              onSave={handleSaveContact}
+              onCancel={() => setEditingId(null)}
+              saving={saving}
+            />
+          </div>
+        ) : (
+          <div
+            onClick={() => { if (!isAdded && !isEditing) { add({ ...c, isAssemblage: true }); if (inDropdown) setQuickSearch(''); } }}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
+              cursor: isAdded ? 'default' : 'pointer', opacity: isAdded ? 0.4 : 1,
+              borderBottom:`1px solid ${DA.border}`, background:'white', transition:'background 0.1s' }}
+            onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
+            <div style={{ width:26, height:26, borderRadius:'50%', background:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
+              <div style={{ fontSize:9, color:DA.gray }}>{c.poste}{c.tel ? ` · ${c.tel}` : ''}</div>
+            </div>
+            {isAdded && <span style={{ fontSize:9, color:DA.grayL }}>✓</span>}
+            <button
+              onClick={e => { e.stopPropagation(); setEditingId(c.id); }}
+              title="Modifier ce contact"
+              style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'2px 4px', flexShrink:0, display:'flex', alignItems:'center' }}>
+              <Ic n="pen" s={10}/>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderExternalRow = (c, inDropdown = false) => {
+    const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
+    const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('');
+    const isEditing = editingId === c.id;
+    return (
+      <div key={c.id}>
+        {isEditing ? (
+          <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
+            <InlineEditForm
+              contact={c}
+              onSave={handleSaveContact}
+              onCancel={() => setEditingId(null)}
+              saving={saving}
+            />
+          </div>
+        ) : (
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
+            opacity: isAdded ? 0.5 : 1, borderBottom:`1px solid ${DA.border}`, background:'white' }}>
+            <div
+              onClick={() => { if (!isAdded) { add({ ...c, isAssemblage: false }); if (inDropdown) setQuickSearch(''); } }}
+              style={{ display:'flex', alignItems:'center', gap:8, flex:1, minWidth:0, cursor: isAdded ? 'default' : 'pointer' }}>
+              <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
+                <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
+              </div>
+              {isAdded && <span style={{ fontSize:9, color:DA.grayL, flexShrink:0 }}>✓</span>}
+            </div>
+            <button
+              onClick={e => { e.stopPropagation(); setEditingId(c.id); }}
+              title="Modifier ce contact"
+              style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'2px 4px', flexShrink:0, display:'flex', alignItems:'center' }}>
+              <Ic n="pen" s={10}/>
+            </button>
+            <button onClick={() => handleDeleteContact(c.id)}
+              title="Supprimer du carnet"
+              style={{ color:'#FCA5A5', background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px' }}>
+              <Ic n="x" s={10}/>
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -175,29 +348,13 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
               placeholder="Rechercher…"
               style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
           </div>
-          <div style={{ maxHeight:200, overflowY:'auto' }}>
-            {filteredTeam.map(t => {
-              const isAdded = addedEmails.has(t.email);
-              const initials = t.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('');
-              return (
-                <div key={t.email}
-                  onClick={() => { if (!isAdded) add({ ...t, isAssemblage: true }); }}
-                  style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', cursor: isAdded ? 'default' : 'pointer',
-                    opacity: isAdded ? 0.4 : 1, borderBottom:`1px solid ${DA.border}`, background:'white', transition:'background 0.1s' }}
-                  onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
-                  <div style={{ width:26, height:26, borderRadius:'50%', background:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{t.nom}</div>
-                    <div style={{ fontSize:9, color:DA.gray }}>{t.poste}{t.tel ? ` · ${t.tel}` : ''}</div>
-                  </div>
-                  {isAdded && <span style={{ fontSize:9, color:DA.grayL }}>✓</span>}
-                </div>
-              );
-            })}
-            {filteredTeam.length === 0 && <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>}
+          <div style={{ maxHeight:220, overflowY:'auto' }}>
+            {loadingC
+              ? <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Chargement…</div>
+              : filteredAssemblage.length === 0
+                ? <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>
+                : filteredAssemblage.map(c => renderAssemblageRow(c))
+            }
           </div>
         </div>
       )}
@@ -205,9 +362,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
       {/* ── Section Externe ── */}
       {showExt && (
         <div style={{ background:'white', border:`1px solid ${DA.border}`, borderRadius:8, marginBottom:8, boxShadow:'0 2px 10px rgba(0,0,0,0.12)' }}>
-
-          {/* Contacts enregistrés */}
-          {(filteredSaved.length > 0 || extSearch || saved.length > 0) ? (
+          {(filteredExternal.length > 0 || extSearch || externalContacts.length > 0) && (
             <>
               <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
                 <input value={extSearch} onChange={e => setExtSearch(e.target.value)}
@@ -215,42 +370,19 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
                   style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
               </div>
               <div style={{ maxHeight:180, overflowY:'auto' }}>
-                {filteredSaved.map(c => {
-                  const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
-                  const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
-                  return (
-                    <div key={c.id}
-                      style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
-                        opacity: isAdded ? 0.5 : 1, borderBottom:`1px solid ${DA.border}`, background:'white' }}>
-                      <div onClick={() => { if (!isAdded) add({ ...c, isAssemblage: false }); }}
-                        style={{ display:'flex', alignItems:'center', gap:8, flex:1, minWidth:0, cursor: isAdded ? 'default' : 'pointer' }}>
-                        <div style={{ width:26, height:26, borderRadius:'50%', background:'#555', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                          <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
-                        </div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:11, fontWeight:700, color:DA.black }}>{c.nom}</div>
-                          <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{[c.poste, c.email].filter(Boolean).join(' · ')}</div>
-                        </div>
-                        {isAdded && <span style={{ fontSize:9, color:DA.grayL, flexShrink:0 }}>✓</span>}
-                      </div>
-                      {/* Supprimer du carnet */}
-                      <button onClick={() => deleteSaved(c.id)}
-                        title="Supprimer du carnet"
-                        style={{ color:'#FCA5A5', background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px' }}>
-                        <Ic n="x" s={10}/>
-                      </button>
-                    </div>
-                  );
-                })}
-                {filteredSaved.length === 0 && extSearch && (
+                {loadingC
+                  ? <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Chargement…</div>
+                  : filteredExternal.map(c => renderExternalRow(c))
+                }
+                {!loadingC && filteredExternal.length === 0 && extSearch && (
                   <div style={{ padding:10, fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat</div>
                 )}
               </div>
             </>
-          ) : null}
+          )}
 
-          {/* Formulaire nouveau contact */}
-          <div style={{ padding:10, borderTop: saved.length > 0 ? `1px solid ${DA.border}` : 'none' }}>
+          {/* Formulaire nouveau contact externe */}
+          <div style={{ padding:10, borderTop: externalContacts.length > 0 ? `1px solid ${DA.border}` : 'none' }}>
             {!showForm ? (
               <button onClick={() => setShowForm(true)}
                 style={{ width:'100%', fontSize:11, fontWeight:600, padding:'6px 0', borderRadius:8,
@@ -258,28 +390,12 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
                 + Nouveau contact
               </button>
             ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-                <div style={{ fontSize:10, fontWeight:700, color:DA.gray, marginBottom:2 }}>Nouveau contact (enregistré automatiquement)</div>
-                {[['nom','Nom *'],['poste','Poste / Société'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
-                  <input key={k} value={form[k]}
-                    onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
-                    placeholder={lbl}
-                    style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6,
-                      padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}/>
-                ))}
-                <div style={{ display:'flex', gap:6, marginTop:2 }}>
-                  <button onClick={addExternal} disabled={!form.nom.trim()}
-                    style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:11, fontWeight:700, border:'none',
-                      background: form.nom.trim() ? DA.black : DA.grayL,
-                      color:'white', cursor: form.nom.trim() ? 'pointer' : 'not-allowed' }}>
-                    Ajouter
-                  </button>
-                  <button onClick={() => { setShowForm(false); setForm(EMPTY); }}
-                    style={{ padding:'6px 10px', borderRadius:8, fontSize:11, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
-                    Annuler
-                  </button>
-                </div>
-              </div>
+              <InlineEditForm
+                contact={{ nom: form.nom, poste: form.poste, email: form.email, tel: form.tel, isAssemblage: false }}
+                onSave={c => { setForm({ nom: c.nom, poste: c.poste, email: c.email, tel: c.tel }); handleSaveContact({ ...c, isAssemblage: false }); }}
+                onCancel={() => { setShowForm(false); setForm(EMPTY_FORM); }}
+                saving={saving}
+              />
             )}
           </div>
         </div>
@@ -307,14 +423,14 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
             {!hasQuickResults && (
               <div style={{ padding:'12px 10px', fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat pour « {quickSearch} »</div>
             )}
-            {quickTeam.length > 0 && (
+            {quickAssemblage.length > 0 && (
               <>
                 <div style={{ padding:'5px 10px 3px', fontSize:9, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.5 }}>Assemblage</div>
-                {quickTeam.map(t => {
-                  const isAdded = addedEmails.has(t.email);
-                  const initials = t.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
+                {quickAssemblage.map(c => {
+                  const isAdded = addedEmails.has(c.email);
+                  const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
                   return (
-                    <div key={t.email} onClick={() => { if (!isAdded) { add({ ...t, isAssemblage: true }); setQuickSearch(''); } }}
+                    <div key={c.id} onClick={() => { if (!isAdded) { add({ ...c, isAssemblage: true }); setQuickSearch(''); } }}
                       style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px', cursor: isAdded ? 'default' : 'pointer', opacity: isAdded ? 0.45 : 1, borderBottom:`1px solid ${DA.border}` }}
                       onMouseEnter={e => { if (!isAdded) e.currentTarget.style.background = DA.grayXL; }}
                       onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}>
@@ -322,8 +438,8 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
                         <span style={{ fontSize:8, fontWeight:800, color:'white' }}>{initials}</span>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:12, fontWeight:700, color:DA.black }}>{t.nom}</div>
-                        <div style={{ fontSize:10, color:DA.gray }}>{t.poste}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:DA.black }}>{c.nom}</div>
+                        <div style={{ fontSize:10, color:DA.gray }}>{c.poste}</div>
                       </div>
                       {isAdded && <span style={{ fontSize:10, color:DA.grayL }}>✓</span>}
                     </div>
@@ -331,10 +447,10 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
                 })}
               </>
             )}
-            {quickSaved.length > 0 && (
+            {quickExternal.length > 0 && (
               <>
                 <div style={{ padding:'5px 10px 3px', fontSize:9, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.5 }}>Contacts externes</div>
-                {quickSaved.map(c => {
+                {quickExternal.map(c => {
                   const isAdded = addedEmails.has(c.email) || participants.some(p => !p.isAssemblage && p.nom === c.nom);
                   const initials = c.nom.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('');
                   return (
@@ -372,14 +488,14 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           Assemblage
         </button>
         <button
-          onClick={() => { setShowExt(!showExt); setShowPicker(false); if (!showExt) { setExtSearch(''); setSaved(loadGlobalContacts()); } }}
+          onClick={() => { setShowExt(!showExt); setShowPicker(false); if (!showExt) setExtSearch(''); }}
           style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 4px', borderRadius:8,
             border:`1.5px solid ${showExt ? DA.red : DA.border}`,
             background: showExt ? DA.redL : 'white',
             color: showExt ? DA.red : DA.gray, cursor:'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
           <Ic n="usr" s={10}/>
-          Externe {saved.length > 0 && <span style={{ fontSize:9, background: showExt ? DA.red : DA.border, color: showExt ? 'white' : DA.gray, borderRadius:10, padding:'0 5px', marginLeft:2 }}>{saved.length}</span>}
+          Externe {externalContacts.length > 0 && <span style={{ fontSize:9, background: showExt ? DA.red : DA.border, color: showExt ? 'white' : DA.gray, borderRadius:10, padding:'0 5px', marginLeft:2 }}>{externalContacts.length}</span>}
         </button>
       </div>
     </div>
