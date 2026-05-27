@@ -11,16 +11,20 @@ const MAX_HISTORY = 20;
 //   (persistés en localStorage). Permet de distinguer :
 //   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
 //   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
-//   Si null (1ère session), comportement legacy : tout localOnly est traité comme unsynced.
+//   Si null (1ère/legacy session) : seuls les projets déjà dans dirtyIds sont traités comme unsynced.
 function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
+  // When previousRemoteIds is null (first/legacy session), only treat local-only projects
+  // as unsynced if they are explicitly dirty — prevents stale deleted projects from being
+  // re-pushed to Supabase by users who cleared localStorage or never ran the persisted-IDs code.
   const unsynced   = localPs.filter(p =>
     !remoteIds.has(p.id) &&
-    (!previousRemoteIds || !previousRemoteIds.has(p.id))
+    (previousRemoteIds !== null ? !previousRemoteIds.has(p.id) : dirtyIds.has(p.id))
   );
 
   let keptLocal = false;
+  const keptLocalIds = new Set(); // IDs kept local due to newer timestamp (not just dirtyIds)
   const merged = remotePs.map(rp => {
     const lp = localById.get(rp.id);
 
@@ -28,6 +32,7 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
     const isDirty = dirtyIds.has(rp.id);
     if (isDirty || (lp?.updatedAt && rp.updatedAt && lp.updatedAt > rp.updatedAt)) {
       keptLocal = true;
+      if (!isDirty) keptLocalIds.add(rp.id); // needs targeted save, not caught by existing dirtyIds
       if (!lp) return rp;
       // Restore blobs (planBg, planLibrary.bg) stripped by slimLoc in localStorage
       const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
@@ -122,7 +127,7 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
     .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
 
   saveLocalCache(allMerged);
-  return { allMerged, keptLocal, unsynced };
+  return { allMerged, keptLocal, keptLocalIds, unsynced };
 }
 
 export function useProjets(onSyncStatus) {
@@ -158,7 +163,12 @@ export function useProjets(onSyncStatus) {
         if (userModified.current) return;
 
         const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-        const { allMerged, keptLocal, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+        // Mark locally-newer and unsynced projects dirty so saves are targeted.
+        // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
+        // that were deleted by another user between our loadData() and our save.
+        keptLocalIds.forEach(id => dirtyIds.current.add(id));
+        unsynced.forEach(p => dirtyIds.current.add(p.id));
         setProjets(allMerged);
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
@@ -243,6 +253,7 @@ export function useProjets(onSyncStatus) {
   useEffect(() => {
     const flush = () => {
       if (!userModified.current) return;
+      if (!dirtyIds.current.size) return; // nothing unsaved — skip to avoid "save ALL" with stale state
       clearTimeout(debounceRef.current);
       if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
     };
