@@ -342,6 +342,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const annotDragRef   = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
   const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
   const resizeDragRef  = useRef(null); // { handle, origData, idx } — resize poignée forme
+  const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -695,6 +696,35 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (gestureRef.current) return;
+
+    // Long-press (500 ms, mobile uniquement) → bascule en mode sélection
+    if (e.touches?.length === 1 && tool !== 'select') {
+      const t0 = e.touches[0];
+      const lx = t0.clientX, ly = t0.clientY;
+      touchHoldRef.current = setTimeout(() => {
+        touchHoldRef.current = null;
+        setCur([]); setDrawing(false);
+        setPolyPts([]); setPolyMousePos(null);
+        setTool('select');
+        setShowSyms(false);
+        setSelTextIdx(null); textDragRef.current = null;
+        setActivePh(null);
+        setPendingShape(null); shapeStartRef.current = null;
+        navigator.vibrate?.(30);
+      }, 500);
+      // Annuler si le doigt glisse (>8px) — c'est un tracé, pas un long-press
+      const cancel = (mv) => {
+        const t = mv.touches?.[0];
+        if (!t || Math.hypot(t.clientX - lx, t.clientY - ly) > 8) {
+          clearTimeout(touchHoldRef.current); touchHoldRef.current = null;
+          window.removeEventListener('touchmove', cancel);
+          window.removeEventListener('touchend',  cancel);
+        }
+      };
+      window.addEventListener('touchmove',  cancel, { passive: true });
+      window.addEventListener('touchend',   cancel, { once: true });
+    }
+
     const cv = cvRef.current;
     const pos = getXY(e, cv);
 
@@ -1040,6 +1070,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   const onEnd = e => {
     e.preventDefault();
+    if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
     if (gestureRef.current) {
       if (e.touches.length < 2) gestureRef.current = null;
       return;

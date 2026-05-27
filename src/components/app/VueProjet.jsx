@@ -8,6 +8,7 @@ import ItemModal from '../vue/ItemModal.jsx';
 import RapportTab from '../vue/RapportTab.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
+import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator from '../vue/Annotator.jsx';
 
@@ -125,7 +126,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     if (loc.planId || loc.planBg) all.push({ planId: loc.planId||null, planBg: loc.planBg||null, planData: loc.planData||null, planAnnotations: loc.planAnnotations||null });
     for (const ep of (loc.extraPlans || [])) all.push({ planId: ep.planId||null, planBg: ep.planBg||null, planData: null, planAnnotations: ep.planAnnotations||null });
     if (toIdx >= all.length) return;
-    [all[fromIdx], all[toIdx]] = [all[toIdx], all[fromIdx]];
+    const [moved] = all.splice(fromIdx, 1);
+    all.splice(toIdx, 0, moved);
     const [p, ...extras] = all;
     patchLoc(locId, {
       planId: p?.planId||null, planBg: p?.planBg||null, planData: p?.planData||null, planAnnotations: p?.planAnnotations||null,
@@ -495,18 +497,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
                                 {allPlanThumbs.length > 1 && (
-                                  <div style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', background:DA.grayXL, borderBottom:`1px solid ${DA.border}`, flexWrap:'wrap' }}>
-                                    {allPlanThumbs.map((pt, pi) => (
-                                      <div key={pi} style={{ display:'flex', alignItems:'center', gap:2 }}>
-                                        <button onClick={e => { e.stopPropagation(); reorderZonePlan(loc.id, pi, pi-1); }} disabled={pi===0}
-                                          style={{ fontSize:11, lineHeight:1, padding:'2px 5px', borderRadius:4, border:`1px solid ${pi>0?DA.border:'transparent'}`, background:pi>0?'white':'transparent', color:pi>0?DA.gray:DA.border, cursor:pi>0?'pointer':'default' }}>←</button>
-                                        <span style={{ fontSize:9, fontWeight:700, color:DA.gray, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', padding:'0 2px' }}>{pt.nom}</span>
-                                        <button onClick={e => { e.stopPropagation(); reorderZonePlan(loc.id, pi, pi+1); }} disabled={pi===allPlanThumbs.length-1}
-                                          style={{ fontSize:11, lineHeight:1, padding:'2px 5px', borderRadius:4, border:`1px solid ${pi<allPlanThumbs.length-1?DA.border:'transparent'}`, background:pi<allPlanThumbs.length-1?'white':'transparent', color:pi<allPlanThumbs.length-1?DA.gray:DA.border, cursor:pi<allPlanThumbs.length-1?'pointer':'default' }}>→</button>
-                                        {pi < allPlanThumbs.length-1 && <span style={{ color:DA.border, fontSize:10 }}>·</span>}
-                                      </div>
-                                    ))}
-                                  </div>
+                                  <PlanDragBar plans={allPlanThumbs} locId={loc.id} onReorder={reorderZonePlan}/>
                                 )}
                                 {Array.from({ length: Math.ceil(allPlanThumbs.length / 2) }, (_, rowIdx) => {
                                   const rowThumbs = allPlanThumbs.slice(rowIdx * 2, rowIdx * 2 + 2);
