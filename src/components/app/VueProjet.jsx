@@ -112,6 +112,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
+  const patchLoc = useCallback((locId, patch) => {
+    const locs = visitProjet.localisations.map(l => l.id === locId ? { ...l, ...patch } : l);
+    onUpdateVisit({ localisations: locs });
+  }, [visitProjet.localisations, onUpdateVisit]);
+
   const reorderZonePlan = useCallback((locId, fromIdx, toIdx) => {
     const loc = visitProjet.localisations.find(l => l.id === locId);
     if (!loc || toIdx < 0) return;
@@ -141,11 +146,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
   useEffect(() => {
     setOpenLocIds(new Set((selectedVisite?.localisations || []).map(l => l.id)));
   }, [selectedVisiteId]);
-
-  const patchLoc = useCallback((locId, patch) => {
-    const locs = visitProjet.localisations.map(l => l.id === locId ? { ...l, ...patch } : l);
-    onUpdateVisit({ localisations: locs });
-  }, [visitProjet.localisations, onUpdateVisit]);
 
   const patchItem = useCallback((locId, item) => {
     const locs = visitProjet.localisations.map(l => {
