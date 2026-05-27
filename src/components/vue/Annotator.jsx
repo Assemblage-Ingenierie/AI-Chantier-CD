@@ -964,22 +964,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
       return;
     }
+    const pos = getXY(e, cvRef.current);
     // Placement flèche : mise à jour de la ligne de prévisualisation
     if (tool === 'text' && drawing && arrowPlaceRef.current) {
-      const pos = getXY(e, cvRef.current);
       setPendingArrowLine({ tipX: arrowPlaceRef.current.x, tipY: arrowPlaceRef.current.y, boxX: pos.x, boxY: pos.y });
       return;
     }
     // Déplacement texte : tip de flèche
     if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'tip') {
-      const pos = getXY(e, cvRef.current);
       const { origArrowX, origArrowY, tapX, tapY } = textDragRef.current;
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, arrowX: origArrowX + (pos.x - tapX), arrowY: origArrowY + (pos.y - tapY) } : p));
       return;
     }
     // Déplacement texte : boîte
     if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current) {
-      const pos = getXY(e, cvRef.current);
       const { origX, origY, tapX, tapY } = textDragRef.current;
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + (pos.x - tapX), y: origY + (pos.y - tapY) } : p));
       return;
@@ -987,7 +985,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     // Déplacement symbole/viewpoint sélectionné
     // Resize forme
     if (drawing && resizeDragRef.current) {
-      const pos = getXY(e, cvRef.current);
       const { handle, origData, idx } = resizeDragRef.current;
       setPaths(prev => prev.map((p, i) => {
         if (i !== idx) return p;
@@ -1006,7 +1003,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (drawing && selAnnot !== null && annotDragRef.current) {
-      const pos = getXY(e, cvRef.current);
       const { origData, tapX, tapY } = annotDragRef.current;
       const dx = pos.x - tapX, dy = pos.y - tapY;
       setPaths(prev => prev.map((p, i) => {
@@ -1019,7 +1015,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
-      const pos = getXY(e, cvRef.current);
       const dx = pos.x - vpStart.current.x;
       const dy = pos.y - vpStart.current.y;
       setPendingVP({ x: vpStart.current.x, y: vpStart.current.y, angle: Math.atan2(dy, dx) });
@@ -1027,22 +1022,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     // Portée en cours de tracé
     if (tool === 'symbol' && (sym.id === 'portee' || sym.id === 'pente_sol') && porteeStartRef.current) {
-      const pos = getXY(e, cvRef.current);
       setPendingPortee({ symbolId: sym.id, x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
       return;
     }
     // Polygone : mise à jour position curseur pour preview
     if (tool === 'shape' && shapeTool === 'poly' && polyPts.length > 0) {
-      setPolyMousePos(getXY(e, cvRef.current));
+      setPolyMousePos(pos);
       return;
     }
     // Forme en cours de tracé
     if (tool === 'shape' && drawing && shapeStartRef.current && !annotDragRef.current) {
-      const pos = getXY(e, cvRef.current);
       setPendingShape({ x1: shapeStartRef.current.x, y1: shapeStartRef.current.y, x2: pos.x, y2: pos.y });
       return;
     }
-    setCur(prev => [...prev, getXY(e, cvRef.current)]);
+    setCur(prev => [...prev, pos]);
   };
 
   const onEnd = e => {
