@@ -1176,6 +1176,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const selText = selTextIdx !== null ? paths[selTextIdx] : null;
   const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
 
+  // Derived values for shape sub-panel (computed before return to avoid IIFE-in-JSX minification issues)
+  const _selShapeIdx = selAnnot !== null ? selAnnot.idx : -1;
+  const _selShape = _selShapeIdx >= 0 && paths[_selShapeIdx]?.type === 'shape' ? paths[_selShapeIdx] : null;
+  const shapePanelVisible = tool === 'shape' || (tool === 'select' && _selShape !== null);
+  const shapeFillDisplay = _selShape ? !!_selShape.filled : shapeFilled;
+  const shapePanelFilled = _selShape ? !!_selShape.filled : shapeFilled;
+  const shapePanelOpVal = _selShape
+    ? (shapePanelFilled ? (_selShape.fillOpacity ?? 0.3) : (_selShape.strokeOpacity ?? 1))
+    : (shapeFilled ? fillOpacity : strokeOpacity);
+  const shapePanelOpLabel = _selShape
+    ? (shapePanelFilled ? 'OPACITÉ REMPLI ✏' : 'OPACITÉ CONTOUR ✏')
+    : 'OPACITÉ';
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
 
@@ -1408,27 +1421,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       )}
 
       {/* ── Shape sub-panel ── */}
-      {(tool === 'shape' || (tool === 'select' && selAnnot !== null && paths[selAnnot.idx]?.type === 'shape')) && (() => {
-        const selIdx = selAnnot?.idx;
-        const selSh = selIdx != null ? paths[selIdx] : null;
-        const hasSelShape = selSh?.type === 'shape';
-        const filledDisplay = hasSelShape ? !!selSh.filled : shapeFilled;
-        const editSel = hasSelShape;
-        const isFilled = hasSelShape ? !!selSh.filled : shapeFilled;
-        const opVal = editSel
-          ? (isFilled ? (selSh.fillOpacity ?? 0.3) : (selSh.strokeOpacity ?? 1))
-          : (shapeFilled ? fillOpacity : strokeOpacity);
-        const onOp = v => {
-          if (editSel) {
-            const key = isFilled ? 'fillOpacity' : 'strokeOpacity';
-            setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,[key]:v} : p));
-          } else {
-            if (shapeFilled) setFillOpacity(v); else setStrokeOpacity(v);
-          }
-        };
-        return (
-          <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
-            {tool === 'shape' && <>
+      {shapePanelVisible && (
+        <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
+          {tool === 'shape' && (
+            <>
               <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0 }}>FORME</span>
               {[
                 { k:'rect',    lbl:'▭ Rect.' },
@@ -1444,35 +1440,37 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 </button>
               ))}
               <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 4px' }}/>
-            </>}
-            <button onClick={() => {
-              if (hasSelShape) setPaths(prev => prev.map((p,i) => i===selIdx ? {...p,filled:!p.filled} : p));
-              if (tool === 'shape') setShapeFilled(v => !v);
-            }}
-              style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-                background:filledDisplay?DA.red:'#333',color:filledDisplay?'white':'#aaa',border:'none' }}>
-              {filledDisplay ? '◼ Rempli' : '◻ Contour'}
-            </button>
-            <>
-              <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>
-                {editSel ? (isFilled ? 'OPACITÉ REMPLI ✏' : 'OPACITÉ CONTOUR ✏') : 'OPACITÉ'}
-              </span>
-              <input type="range" min="0.05" max="1" step="0.05" value={opVal}
-                onChange={e => onOp(parseFloat(e.target.value))}
-                style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
-              <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(opVal*100)}%</span>
             </>
-            {tool === 'shape' && (
-              <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
-                {shapeTool === 'poly'
-                  ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
-                  : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
-              </span>
-            )}
-          </div>
-        );
-      })()}
+          )}
+          <button onClick={() => {
+            if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,filled:!p.filled} : p));
+            if (tool === 'shape') setShapeFilled(prev => !prev);
+          }}
+            style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+              background:shapeFillDisplay?DA.red:'#333',color:shapeFillDisplay?'white':'#aaa',border:'none' }}>
+            {shapeFillDisplay ? '◼ Rempli' : '◻ Contour'}
+          </button>
+          <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>{shapePanelOpLabel}</span>
+          <input type="range" min="0.05" max="1" step="0.05" value={shapePanelOpVal}
+            onChange={e => {
+              const nv = parseFloat(e.target.value);
+              if (_selShape) {
+                const opKey = shapePanelFilled ? 'fillOpacity' : 'strokeOpacity';
+                setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,[opKey]:nv} : p));
+              } else if (shapeFilled) { setFillOpacity(nv); } else { setStrokeOpacity(nv); }
+            }}
+            style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
+          <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(shapePanelOpVal*100)}%</span>
+          {tool === 'shape' && (
+            <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
+              {shapeTool === 'poly'
+                ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
+                : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Sélecteur de mode texte ── */}
       {tool === 'text' && !selText && (
