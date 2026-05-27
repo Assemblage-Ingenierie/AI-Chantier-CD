@@ -682,23 +682,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       // Annule un symbole placé accidentellement par le premier doigt du pinch (<250ms)
       if (Date.now() - lastSymPlaceRef.current < 250) setPaths(prev => prev.slice(0, -1));
       const [t1, t2] = e.touches;
-      const cur = vtRef.current;
+      const vtCur = vtRef.current;
       const r = cvRef.current?.getBoundingClientRect();
       gestureRef.current = {
         startDist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
-        startZ: cur.z, startPx: cur.px, startPy: cur.py,
+        startZ: vtCur.z, startPx: vtCur.px, startPy: vtCur.py,
         midX: (t1.clientX + t2.clientX) / 2,
         midY: (t1.clientY + t2.clientY) / 2,
-        ncX: r ? r.left + r.width / 2 - cur.px : 0,
-        ncY: r ? r.top + r.height / 2 - cur.py : 0,
+        ncX: r ? r.left + r.width / 2 - vtCur.px : 0,
+        ncY: r ? r.top + r.height / 2 - vtCur.py : 0,
       };
       return;
     }
     if (gestureRef.current) return;
-    const pos = getXY(e, cvRef.current);
+    const cv = cvRef.current;
+    const pos = getXY(e, cv);
 
     if (tool === 'select') {
-      const cv = cvRef.current;
       const hitR = 22 * (cv.width / cv.clientWidth);
       // Resize handles first (if a shape is currently selected)
       if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
@@ -773,7 +773,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
 
     if (tool === 'viewpoint') {
-      const cv = cvRef.current;
       const hitR = 22 * (cv.width / cv.clientWidth);
       let hitIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
@@ -793,7 +792,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (tool === 'symbol') {
-      const cv = cvRef.current;
       const hitR = 22 * (cv.width / cv.clientWidth);
       let hitIdx = -1;
       for (let i = paths.length - 1; i >= 0; i--) {
@@ -829,7 +827,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (tool === 'text') {
-      const cv = cvRef.current;
       const hitR = 28 * (cv.width / cv.clientWidth);
       // Vérifier d'abord la poignée de flèche (tip)
       for (let i = paths.length - 1; i >= 0; i--) {
@@ -849,8 +846,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         const p = paths[i];
         if (p.type !== 'text') continue;
         const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
-        const cv2 = cvRef.current;
-        const txtScale = cv2 ? (cv2.width / cv2.clientWidth) * 0.5 * annotScale : 1;
+        const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
         const fs = (20 + p.size * 4) * txtScale;
         const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
         const inBox = (p.textMode === 'boxed' || p.textMode === 'arrow') &&
@@ -877,7 +873,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (tool === 'shape') {
-      const cv = cvRef.current;
       const hitR = 18 * (cv.width / cv.clientWidth);
 
       // ── Outil polygone : clic = sommet, double-clic/snap = fermeture ──
