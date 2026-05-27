@@ -1512,8 +1512,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         </div>
       )}
 
-      {/* ── Panneau édition texte sélectionné ── */}
-      {tool === 'text' && selText && (
+      {/* ── Panneau édition texte sélectionné (texte OU sélection) ── */}
+      {selText && (
         <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap' }}>
           <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>Texte :</span>
           <input
@@ -1598,37 +1598,28 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
                 ×{vt.z.toFixed(1)} ↺
               </button>
             )}
-            {/* Modal saisie texte — centré sur le canvas */}
+            {/* Barre de saisie texte — compacte, en haut du canvas, sans overlay bloquant */}
             {textPt && (
-              <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',zIndex:10,background:'rgba(0,0,0,0.5)',padding:16 }}
-                onClick={e => { if (e.target === e.currentTarget) setTextPt(null); }}>
-                <div style={{ background:'#1e1e1e',borderRadius:18,boxShadow:'0 14px 50px rgba(0,0,0,0.85)',padding:'22px 20px 18px',display:'flex',flexDirection:'column',gap:16,width:'100%',maxWidth:380,border:'1px solid #3a3a3a' }}>
-                  <div style={{ display:'flex',alignItems:'center',gap:10 }}>
-                    <span style={{ fontSize:14,fontWeight:700,color:'#fff' }}>
-                      {textMode==='plain' ? '✏️ Texte libre' : textMode==='boxed' ? '▭ Texte encadré' : '↗ Texte avec flèche'}
-                    </span>
-                    <button onClick={() => setTextPt(null)} style={{ marginLeft:'auto',background:'none',border:'none',color:'#666',fontSize:22,cursor:'pointer',padding:'0 4px',lineHeight:1,flexShrink:0 }}>×</button>
-                  </div>
-                  <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
-                    placeholder="Saisir le texte…"
-                    style={{ fontSize:16,border:'2px solid #444',borderRadius:10,padding:'13px 14px',outline:'none',background:'#111',color:'white',fontFamily:'inherit',boxSizing:'border-box',width:'100%' }}/>
-                  <div style={{ display:'flex',gap:10 }}>
-                    <button onClick={addText}
-                      style={{ flex:1,background:DA.red,color:'white',borderRadius:10,padding:'14px',fontSize:15,fontWeight:700,cursor:'pointer',border:'none' }}>
-                      Placer ✓
-                    </button>
-                    <button onClick={() => setTextPt(null)}
-                      style={{ background:'#333',color:'#aaa',borderRadius:10,padding:'14px 18px',fontSize:15,cursor:'pointer',border:'none' }}>
-                      ✕
-                    </button>
-                  </div>
-                  {textMode === 'arrow' && textPt.arrowX != null && (
-                    <p style={{ fontSize:11,color:'#666',textAlign:'center',margin:0,lineHeight:1.4 }}>
-                      La flèche pointera là où vous avez appuyé — déplacez la pointe après placement avec l'outil Texte
-                    </p>
-                  )}
-                </div>
+              <div style={{ position:'absolute',top:8,left:8,right:8,zIndex:10,
+                display:'flex',alignItems:'center',gap:6,
+                background:'rgba(20,20,20,0.96)',borderRadius:12,
+                boxShadow:'0 4px 24px rgba(0,0,0,0.7)',padding:'8px 10px',
+                border:'1px solid #3a3a3a' }}>
+                <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
+                  placeholder="Saisir le texte…"
+                  style={{ flex:1,fontSize:15,border:'1px solid #444',borderRadius:8,padding:'10px 12px',
+                    outline:'none',background:'#111',color:'white',fontFamily:'inherit',minWidth:0 }}/>
+                <button onClick={addText}
+                  style={{ background:DA.red,color:'white',borderRadius:8,padding:'10px 14px',
+                    fontSize:15,fontWeight:700,cursor:'pointer',border:'none',flexShrink:0 }}>
+                  ✓
+                </button>
+                <button onClick={() => setTextPt(null)}
+                  style={{ background:'#333',color:'#aaa',borderRadius:8,padding:'10px 12px',
+                    fontSize:14,cursor:'pointer',border:'none',flexShrink:0 }}>
+                  ✕
+                </button>
               </div>
             )}
           </div>
