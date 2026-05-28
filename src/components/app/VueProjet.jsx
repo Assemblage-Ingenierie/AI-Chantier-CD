@@ -669,9 +669,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
       {modal?.t === 'plan' && (() => {
         const loc = visitProjet.localisations.find(l => l.id === modal.locId);
+        // If this loc has no annotations yet but another loc shares the same planId and already has
+        // annotations, pre-populate so the user sees them immediately on open.
+        const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
+        const sharedPlanAnnot = (!loc?.planAnnotations?.paths?.length && loc?.planId)
+          ? allLocsFlat.find(l => l.id !== modal.locId && l.planId === loc.planId && l.planAnnotations?.paths?.length)?.planAnnotations ?? null
+          : null;
+        const locForModal = sharedPlanAnnot ? { ...loc, planAnnotations: sharedPlanAnnot } : loc;
         return (
           <PlanLocModal
-            loc={loc}
+            loc={locForModal}
             items={loc?.items || []}
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
@@ -680,7 +687,36 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
               const planChanged = prevLoc?.planId !== planId || prevLoc?.planBg !== planBg;
-              patchLoc(modal.locId, { planId: planId||null, planBg, planData, planAnnotations, extraPlans: extraPlans||[], _planDirty: planChanged });
+              // Build annotation map: planId → annotations (for primary plan + all extraPlans)
+              const annotByPlanId = new Map();
+              if (planId) annotByPlanId.set(planId, planAnnotations ?? null);
+              for (const ep of (extraPlans || [])) {
+                if (ep.planId) annotByPlanId.set(ep.planId, ep.planAnnotations ?? null);
+              }
+              // Update all visites: full update for target loc + propagate annotations to all
+              // other locs that share the same planId (primary or extra plan).
+              const updatedVisites = (projet.visites || []).map(v => ({
+                ...v,
+                localisations: (v.localisations || []).map(l => {
+                  if (l.id === modal.locId) {
+                    return { ...l, planId: planId||null, planBg, planData, planAnnotations, extraPlans: extraPlans||[], _planDirty: planChanged };
+                  }
+                  let updated = l;
+                  if (l.planId && annotByPlanId.has(l.planId)) {
+                    updated = { ...updated, planAnnotations: annotByPlanId.get(l.planId) };
+                  }
+                  const newEPs = (l.extraPlans || []).map(ep =>
+                    ep.planId && annotByPlanId.has(ep.planId)
+                      ? { ...ep, planAnnotations: annotByPlanId.get(ep.planId) }
+                      : ep
+                  );
+                  if (newEPs.some((ep, i) => ep !== (l.extraPlans || [])[i])) {
+                    updated = { ...updated, extraPlans: newEPs };
+                  }
+                  return updated;
+                }),
+              }));
+              onUpdate({ visites: updatedVisites });
               modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
             }}
             onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
