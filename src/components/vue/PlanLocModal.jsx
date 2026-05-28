@@ -68,10 +68,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
 
   if (annotatingIdx !== null) {
     const p = plans[annotatingIdx];
-    const libNom = planLibrary?.find(x => x.id === p?.planId)?.nom;
+    const libEntry = p?.planId ? planLibrary?.find(x => x.id === p.planId) : null;
+    const libNom = libEntry?.nom;
     return (
       <Annotator
-        bgImage={p?.planBg || null}
+        bgImage={p?.planBg || libEntry?.bg || null}
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
         exportSizeMultiplier={2}
