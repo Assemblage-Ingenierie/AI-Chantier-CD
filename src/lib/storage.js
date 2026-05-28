@@ -83,7 +83,7 @@ function slimLoc(l) {
     planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
     planAnnotations: slimAnnot(l.planAnnotations) ?? null,
     // extraPlans : planBg/planData non stockés (trop lourd) — reconstruits depuis planLibrary au chargement
-    extraPlans: (l.extraPlans || []).map(ep => ({ id: ep.id, planId: ep.planId || null, planAnnotations: slimAnnot(ep.planAnnotations) ?? null })),
+    extraPlans: (l.extraPlans || []).map(ep => ({ id: ep.id, planId: ep.planId || null, planAnnotations: slimAnnot(ep.planAnnotations) ?? null, reportHidden: ep.reportHidden ?? false })),
     // eslint-disable-next-line no-unused-vars
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,
@@ -112,15 +112,17 @@ function buildLocFromRow(loc, itemsByLoc) {
   // planId et extraPlans sont encodés dans plan_annotations (évite des colonnes dédiées)
   const parsedAnnot = tryParseJson(loc.plan_annotations);
   const planId = parsedAnnot?._planId ?? null;
+  const planReportHidden = parsedAnnot?._planReportHidden ?? false;
   const extraPlans = (parsedAnnot?._extraPlans || []).map(ep => ({
     id: crypto.randomUUID(),
     planId: ep.planId || null,
     planBg: null,
     planData: null,
     planAnnotations: ep.paths?.length ? { paths: ep.paths } : null,
+    reportHidden: ep.reportHidden ?? false,
   }));
   const planAnnotations = parsedAnnot
-    ? (({ _planId, _extraPlans, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
+    ? (({ _planId, _extraPlans, _planReportHidden, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
     : null;
   return {
     id:              loc.id,
@@ -129,6 +131,7 @@ function buildLocFromRow(loc, itemsByLoc) {
     planBg:          null,
     planData:        null,
     planAnnotations,
+    planReportHidden,
     extraPlans,
     items: (itemsByLoc[loc.id] ?? []).map(item => ({
       id:              item.id,
@@ -639,12 +642,13 @@ async function saveRemote(ps, dirtyIds = null) {
     const locRows = allLocsFlat.map((l, i) => {
       // Construire l'objet plan_annotations : paths existants + _planId + _extraPlans si définis
       const extraPlansToStore = (l.extraPlans || [])
-        .map(ep => ({ ...(ep.planId ? { planId: ep.planId } : {}), ...(ep.planAnnotations?.paths?.length ? { paths: ep.planAnnotations.paths } : {}) }))
+        .map(ep => ({ ...(ep.planId ? { planId: ep.planId } : {}), ...(ep.planAnnotations?.paths?.length ? { paths: ep.planAnnotations.paths } : {}), ...(ep.reportHidden ? { reportHidden: true } : {}) }))
         .filter(ep => ep.planId);
       let annotObj = null;
-      if (l.planId || l.planAnnotations?.paths?.length || extraPlansToStore.length) {
+      if (l.planId || l.planAnnotations?.paths?.length || extraPlansToStore.length || l.planReportHidden) {
         annotObj = {};
         if (l.planId) annotObj._planId = l.planId;
+        if (l.planReportHidden) annotObj._planReportHidden = true;
         if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
         if (extraPlansToStore.length) annotObj._extraPlans = extraPlansToStore;
       }
@@ -656,7 +660,8 @@ async function saveRemote(ps, dirtyIds = null) {
     });
 
     // Supprimer uniquement les locs des visites connues localement — jamais celles d'une visite
-    // créée sur un autre appareil (unknownDbVisits) pour éviter la perte de données cross-device.
+    // créée sur un autre appareil pour éviter la perte de données cross-device.
+    const localVisitIds = new Set((p.visites || []).map(v => v.id));
     const removedLocIds = (dbLocsRes.data || [])
       .filter(l => !currLocIds.has(l.id) && localVisitIds.has(l.visite_id))
       .map(l => l.id);

@@ -12,6 +12,24 @@ import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator from '../vue/Annotator.jsx';
 
+async function rotateBg90CW(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.naturalHeight;
+      cv.height = img.naturalWidth;
+      const ctx = cv.getContext('2d');
+      ctx.translate(cv.width / 2, cv.height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+      resolve(cv.toDataURL('image/jpeg', 0.9));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 function PlanAnnotThumb({ bg, annotations, style }) {
   // annotations?.exported = image pré-composée (plan + annotations) générée par l'Annotateur
   // C'est une base64 data URL → affichage instantané, coordonnées correctes, pas de canvas
@@ -423,11 +441,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                     const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
                     const allPlanThumbs = [];
                     if (loc.planId || loc.planBg) {
-                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden });
+                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden, planId: loc.planId });
                     }
                     for (const ep of (loc.extraPlans || [])) {
                       const epLib = (projet.planLibrary||[]).find(p => p.id === ep.planId);
-                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden });
+                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden, planId: ep.planId });
                     }
                     const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
@@ -544,11 +562,38 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                                 <Ic n="pen" s={9}/> {annotCount}
                                               </div>
                                             )}
-                                            <button onClick={toggleReportHidden}
-                                              title={pt.reportHidden ? 'Afficher dans le rapport' : 'Masquer du rapport'}
-                                              style={{ position:'absolute', top:6, left:6, zIndex:2, background: pt.reportHidden ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: pt.reportHidden ? '#bbb' : DA.gray, padding:0 }}>
-                                              <Ic n="eye" s={12}/>
-                                            </button>
+                                            <div style={{ position:'absolute', top:6, left:6, zIndex:2, display:'flex', gap:4 }}>
+                                              <button onClick={toggleReportHidden}
+                                                title={pt.reportHidden ? 'Afficher dans le rapport' : 'Masquer du rapport'}
+                                                style={{ background: pt.reportHidden ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: pt.reportHidden ? '#bbb' : DA.gray, padding:0 }}>
+                                                <Ic n="eye" s={12}/>
+                                              </button>
+                                              {pt.bg && (
+                                                <button
+                                                  title="Pivoter le plan 90° à droite"
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const rotated = await rotateBg90CW(pt.bg);
+                                                    const newLibrary = (projet.planLibrary || []).map(pl =>
+                                                      pl.id === pt.planId ? { ...pl, bg: rotated } : pl
+                                                    );
+                                                    const newVisites = (projet.visites || []).map(v => ({
+                                                      ...v,
+                                                      localisations: (v.localisations || []).map(l => ({
+                                                        ...l,
+                                                        planBg: l.planId === pt.planId ? rotated : l.planBg,
+                                                        extraPlans: (l.extraPlans || []).map(ep =>
+                                                          ep.planId === pt.planId ? { ...ep, planBg: rotated } : ep
+                                                        ),
+                                                      })),
+                                                    }));
+                                                    onUpdate({ planLibrary: newLibrary, visites: newVisites });
+                                                  }}
+                                                  style={{ background:'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:DA.gray, padding:0 }}>
+                                                  <Ic n="rotc" s={12}/>
+                                                </button>
+                                              )}
+                                            </div>
                                             <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'6px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                                               {pt.bg && <p style={{ margin:0, fontSize:10, fontWeight:800, color:'white', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1, marginRight:4 }}>{pt.nom}</p>}
                                               <div style={{ marginLeft:'auto', background:DA.red, color:'white', borderRadius:6, padding:'4px 8px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>

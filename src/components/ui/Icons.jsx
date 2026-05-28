@@ -52,6 +52,7 @@ const ICONS = {
   cpy: (s) => <svg {...p(s)}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
   sld: (s) => <svg {...p(s)}><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
   eras: (s) => <svg {...p(s)}><path d="M20 20H7L3 16l10-10 7 7-4.5 4.5"/><path d="M6.5 17.5l4-4"/></svg>,
+  rotc: (s) => <svg {...p(s)}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>,
   txt: (s) => <svg {...p(s)}><line x1="17" y1="10" x2="3" y2="10"/><path d="M21 6H3"/><path d="M21 14H3"/><line x1="11" y1="18" x2="3" y2="18"/></svg>,
   sym: (s) => <svg {...p(s)}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="8" y="3" width="8" height="4" rx="1"/></svg>,
 };
