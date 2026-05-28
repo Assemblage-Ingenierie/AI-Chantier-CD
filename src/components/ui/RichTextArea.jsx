@@ -21,6 +21,7 @@ function isHtml(text) {
     text.includes('<strong>') || text.includes('<em>') ||
     text.includes('<u>') || text.includes('<br') ||
     text.includes('<b>') || text.includes('<i>') ||
+    text.includes('<div') || text.includes('<p>') ||
     text.includes('<s>') || text.includes('<ul') || text.includes('<li') || text.includes('<strike')
   );
 }

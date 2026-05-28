@@ -30,6 +30,11 @@ function isHtml(text) {
 // Gère : strong/b, em/i, u, s/strike (inline) ; br (saut) ; div/p (blocs) ; ul/li (puces).
 function renderHtml(html) {
   if (!html) return null;
+  // Rétrocompatibilité : anciens commentaires dont les balises bloc ont été encodées en entités
+  // par normalizeToHtml() quand isHtml() ne vérifiait pas <div>/<p>.
+  if (html.includes('&lt;') || html.includes('&gt;')) {
+    html = html.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del)[^;]*?)&gt;/gi, '<$1>');
+  }
 
   // <li> et ul/ol gérés directement dans le parser (pas de pré-traitement)
   const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<s>|<\/s>|<strike>|<\/strike>|<del>|<\/del>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>|<li[^>]*>|<\/li>|<\/?(?:ul|ol)[^>]*>)/gi;

@@ -567,9 +567,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
             <div style={{ display:'flex',gap:8,marginTop:8 }}>
               <button
-                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recording) startDictaphone(); }}
-                onPointerUp={() => { if (recording) stopDictaphone(); }}
-                onPointerCancel={() => { if (recording) stopDictaphone(); }}
+                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recordingRef.current) startDictaphone(); }}
+                onPointerUp={() => { if (recordingRef.current) stopDictaphone(); }}
+                onPointerCancel={() => { if (recordingRef.current) stopDictaphone(); }}
                 style={{ flex:1,padding:'12px 14px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s',boxShadow:recording?'inset 0 2px 6px rgba(0,0,0,0.25)':'0 2px 8px rgba(185,28,28,0.35)' }}>
                 <Ic n={recording ? 'spn' : 'mic'} s={16}/>
                 {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}

@@ -1224,42 +1224,46 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
         {/* Rangée 1 : outils + undo + sauvegarder */}
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,flexShrink:0 }}>
-            {[
-              { k:'select', n:'sel',  lbl:'Sélect.' },
-              { k:'pen',    n:'pen',  lbl:'Dessin'  },
-              { k:'text',   n:'txt',  lbl:'Texte'   },
-              { k:'shape',  n:'shp',  lbl:'Formes'  },
-              { k:'symbol', n:'sym',  lbl:'Symbole' },
-            ].map(t => (
-              <button key={t.k}
-                onClick={() => {
-                  setTool(t.k);
-                  if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
-                  if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
-                  if (t.k !== 'viewpoint') setActivePh(null);
-                  if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
-                  setSelAnnot(null); annotDragRef.current = null;
-                }}
-                style={{ padding:isMob?'9px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
-                  color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:52 }}>
-                <Ic n={t.n} s={22}/>
-                {!isMob && <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>}
-              </button>
-            ))}
-            {/* Palette — dans le groupe sur mobile */}
-            {isMob && (
-              <button onClick={() => setShowPalette(v => !v)}
-                style={{ padding:'9px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
-                  color:showPalette?'white':color,transition:'all 0.15s',
-                  display:'flex',alignItems:'center',justifyContent:'center',minWidth:44 }}
-                title="Couleurs et épaisseur">
-                <Ic n="pal" s={22}/>
-              </button>
-            )}
+          {/* Outils — scrollables sur mobile si écran trop étroit */}
+          <div style={{ flex:1,overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
+            <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,width:'max-content' }}>
+              {[
+                { k:'select', n:'sel',  lbl:'Sélect.' },
+                { k:'pen',    n:'pen',  lbl:'Dessin'  },
+                { k:'text',   n:'txt',  lbl:'Texte'   },
+                { k:'shape',  n:'shp',  lbl:'Formes'  },
+                { k:'symbol', n:'sym',  lbl:'Symbole' },
+              ].map(t => (
+                <button key={t.k}
+                  onClick={() => {
+                    setTool(t.k);
+                    if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
+                    if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
+                    if (t.k !== 'viewpoint') setActivePh(null);
+                    if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
+                    setSelAnnot(null); annotDragRef.current = null;
+                  }}
+                  style={{ padding:isMob?'9px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                    color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:52 }}>
+                  <Ic n={t.n} s={22}/>
+                  {!isMob && <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>}
+                </button>
+              ))}
+              {/* Palette — dans le groupe sur mobile */}
+              {isMob && (
+                <button onClick={() => setShowPalette(v => !v)}
+                  style={{ padding:'9px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
+                    color:showPalette?'white':color,transition:'all 0.15s',
+                    display:'flex',alignItems:'center',justifyContent:'center',minWidth:44 }}
+                  title="Couleurs et épaisseur">
+                  <Ic n="pal" s={22}/>
+                </button>
+              )}
+            </div>
           </div>
-          <div style={{ marginLeft:'auto',display:'flex',gap:6,flexShrink:0 }}>
+          {/* Actions fixes — toujours visibles même si les outils débordent */}
+          <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             <button onClick={onClose}
               style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
                 display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:44 }}
