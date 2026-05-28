@@ -148,6 +148,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <p style={{ fontSize:12,color:'#92400E',margin:0,flex:1 }}>Aucun plan — appuyez sur <strong>+ Importer</strong> pour commencer.</p>
               </div>
             ) : (
+              <>
               {repairErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,padding:'6px 10px',marginBottom:6,fontSize:11,color:'#B91C1C' }}>⚠️ {repairErr}</div>}
               <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
               <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
@@ -194,6 +195,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   </div>
                 ))}
               </div>
+              </>
             )}
           </div>
           {localisations.length === 0 && (

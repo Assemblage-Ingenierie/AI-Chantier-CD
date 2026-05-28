@@ -80,16 +80,14 @@ export async function renderPdfPage(pdfData, pageNum) {
       useSystemFonts: true,
     }).promise;
     const pg = await pdf.getPage(pageNum);
-    // Limiter à 1200px de large max pour réduire la taille du blob stocké en DB
     const rawVp = pg.getViewport({ scale: 1 });
-    const scale = Math.min(2.0, 1200 / rawVp.width);
+    const scale = Math.min(2.0, 1800 / rawVp.width);
     const vp = pg.getViewport({ scale });
     const cv = document.createElement('canvas');
     cv.width = Math.round(vp.width);
     cv.height = Math.round(vp.height);
     await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-    // WebP à 82% : ~10× plus léger que PNG, qualité suffisante pour miniature de plan
-    const result = cv.toDataURL('image/webp', 0.82);
+    const result = cv.toDataURL('image/webp', 0.92);
     cv.width = 0;
     cv.height = 0;
     return result;

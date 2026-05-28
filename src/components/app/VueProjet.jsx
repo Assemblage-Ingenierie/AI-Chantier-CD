@@ -722,6 +722,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             }}
             onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+            onAddToLibrary={newPlans => {
+              const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
+              onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
+              savePlanBgNow(projet.id, arr);
+            }}
           />
         );
       })()}

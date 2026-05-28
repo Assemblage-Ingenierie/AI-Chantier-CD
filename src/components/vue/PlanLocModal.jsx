@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage } from '../../lib/pdfUtils.js';
@@ -6,7 +6,7 @@ import { fetchPlanData } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, items, autoAnnot, annotIdx }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -24,11 +24,14 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   });
   const [rendering, setRendering] = useState(false);
   const [renderErr, setRenderErr] = useState(null);
-  const [pendingPdf, setPendingPdf] = useState(null);
-  const [showPicker, setShowPicker] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState('');
   const [confirmDelId, setConfirmDelId] = useState(null);
+  const [importPdfQueue, setImportPdfQueue] = useState([]); // [{pdf, nom}]
+  const [importPdfQueueIdx, setImportPdfQueueIdx] = useState(0);
+  const [importPdfQueueResults, setImportPdfQueueResults] = useState([]);
+  const [showImportPicker, setShowImportPicker] = useState(false);
+  const importFileRef = useRef();
 
   const zonePhotos = (items || []).flatMap(it => (it.photos || []).filter(ph => ph.data));
   const selectedIds = new Set(plans.map(p => p.planId).filter(Boolean));
@@ -87,19 +90,103 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     );
   }
 
-  if (showPicker && pendingPdf) return (
-    <PdfPagePicker pdfData={pendingPdf} onSelect={async pageNum => {
-      setShowPicker(false); setRendering(true); setRenderErr(null);
-      const img = await renderPdfPage(pendingPdf, pageNum);
-      if (img) {
-        setPlans(prev => {
-          const idx = prev.findIndex(p => !p.planBg && p.planData === pendingPdf);
-          if (idx >= 0) return prev.map((p, i) => i === idx ? { ...p, planBg: img } : p);
-          return [...prev, { id: crypto.randomUUID(), planId: null, planBg: img, planData: pendingPdf, planAnnotations: null }];
-        });
-      } else setRenderErr('Impossible de rendre cette page.');
-      setPendingPdf(null); setRendering(false);
-    }} onClose={() => { setShowPicker(false); setPendingPdf(null); }}/>
+  const handleImportFile = e => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    e.target.value = '';
+    setRenderErr(null);
+    const pdfs = [], images = [], bad = [];
+    for (const f of files) {
+      if (f.size > 20 * 1024 * 1024) { bad.push(f.name); continue; }
+      if (f.type === 'application/pdf') pdfs.push(f);
+      else if (f.type.startsWith('image/')) images.push(f);
+      else bad.push(f.name);
+    }
+    if (bad.length) setRenderErr(`Ignoré(s) — trop volumineux ou format non supporté : ${bad.join(', ')}`);
+    images.forEach(f => {
+      const nom = f.name.replace(/\.[^.]+$/, '');
+      const r = new FileReader();
+      r.onload = ev => {
+        const newPlan = { id: crypto.randomUUID(), nom, bg: ev.target.result, data: null };
+        if (onAddToLibrary) onAddToLibrary([newPlan]);
+        setPlans(prev => [...prev, { id: crypto.randomUUID(), planId: newPlan.id, planBg: newPlan.bg, planData: null, planAnnotations: null }]);
+      };
+      r.readAsDataURL(f);
+    });
+    if (pdfs.length > 0) {
+      Promise.all(pdfs.map(f => new Promise(res => {
+        const nom = f.name.replace(/\.[^.]+$/, '');
+        const r = new FileReader();
+        r.onload = ev => res({ pdf: ev.target.result, nom });
+        r.readAsDataURL(f);
+      }))).then(queue => {
+        setImportPdfQueue(queue);
+        setImportPdfQueueIdx(0);
+        setImportPdfQueueResults([]);
+        setShowImportPicker(true);
+      });
+    }
+  };
+
+  const handleImportPagesSelected = async selectedNums => {
+    const { pdf: pdfData, nom: baseName } = importPdfQueue[importPdfQueueIdx];
+    setShowImportPicker(false);
+    setRendering(true);
+    setRenderErr(null);
+    const newResults = [];
+    try {
+      for (let idx = 0; idx < selectedNums.length; idx++) {
+        const pageNum = selectedNums[idx];
+        const img = await renderPdfPage(pdfData, pageNum);
+        if (img) {
+          const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
+          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
+        }
+        await new Promise(r => setTimeout(r, 30));
+      }
+    } catch (e) {
+      setRenderErr('Erreur rendu PDF : ' + e.message);
+    }
+    setRendering(false);
+    const allResults = [...importPdfQueueResults, ...newResults];
+    const nextIdx = importPdfQueueIdx + 1;
+    if (nextIdx < importPdfQueue.length) {
+      setImportPdfQueueResults(allResults);
+      setImportPdfQueueIdx(nextIdx);
+      setShowImportPicker(true);
+    } else {
+      if (allResults.length > 0) {
+        if (onAddToLibrary) onAddToLibrary(allResults);
+        setPlans(prev => [
+          ...prev,
+          ...allResults.map(pl => ({ id: crypto.randomUUID(), planId: pl.id, planBg: pl.bg, planData: pl.data, planAnnotations: null })),
+        ]);
+      } else setRenderErr("Aucune page n'a pu être rendue.");
+      setImportPdfQueue([]);
+      setImportPdfQueueIdx(0);
+      setImportPdfQueueResults([]);
+    }
+  };
+
+  if (showImportPicker && importPdfQueue.length > 0) return (
+    <PdfPagePicker
+      pdfData={importPdfQueue[importPdfQueueIdx].pdf}
+      label={importPdfQueue.length > 1 ? `${importPdfQueue[importPdfQueueIdx].nom} (${importPdfQueueIdx + 1}/${importPdfQueue.length})` : importPdfQueue[importPdfQueueIdx].nom}
+      onSelectMany={handleImportPagesSelected}
+      onClose={() => {
+        setShowImportPicker(false);
+        if (importPdfQueueResults.length > 0) {
+          if (onAddToLibrary) onAddToLibrary(importPdfQueueResults);
+          setPlans(prev => [
+            ...prev,
+            ...importPdfQueueResults.map(pl => ({ id: crypto.randomUUID(), planId: pl.id, planBg: pl.bg, planData: pl.data, planAnnotations: null })),
+          ]);
+        }
+        setImportPdfQueue([]);
+        setImportPdfQueueIdx(0);
+        setImportPdfQueueResults([]);
+      }}
+    />
   );
 
   return (
@@ -112,7 +199,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
               <p style={{ fontSize:11, color:DA.gray, margin:'3px 0 0' }}>
                 {planLibrary?.length > 0
                   ? `${planLibrary.length} plan${planLibrary.length>1?'s':''} disponible${planLibrary.length>1?'s':''} · ${plans.length} sélectionné${plans.length>1?'s':''}`
-                  : "Aucun plan dans la bibliothèque — importez d'abord via le bouton 📋 en haut"}
+                  : 'Bibliothèque vide — importez un plan via le bouton ci-dessous'}
               </p>
             </div>
             <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}><Ic n="x" s={20}/></button>
@@ -130,7 +217,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
           {planLibrary?.length === 0 && (
             <div style={{ background:'#FFFBEB', border:'1px solid #FCD34D', borderRadius:10, padding:'12px 14px', marginBottom:14 }}>
               <p style={{ fontSize:12, fontWeight:600, color:'#92400E', margin:'0 0 4px' }}>📋 Bibliothèque vide</p>
-              <p style={{ fontSize:11, color:'#92400E', margin:0 }}>Appuyez sur le bouton <strong>📋</strong> en haut à droite du projet pour importer vos plans une fois.</p>
+              <p style={{ fontSize:11, color:'#92400E', margin:0 }}>Utilisez le bouton ci-dessous pour importer un plan PDF ou image directement.</p>
             </div>
           )}
 
@@ -213,17 +300,24 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
           )}
         </div>
 
-        <div style={{ padding:'12px 14px 20px', borderTop:`1px solid ${DA.border}`, flexShrink:0, display:'flex', gap:8 }}>
-          {plans.length > 0 && (
-            <button onClick={() => setPlans([])}
-              style={{ padding:'12px 16px', background:'white', color:DA.red, border:'1px solid #FCA5A5', borderRadius:12, fontSize:12, fontWeight:600, cursor:'pointer' }}>
-              <Ic n="del" s={14}/>
-            </button>
-          )}
-          <button onClick={() => handleSave()}
-            style={{ flex:1, background: plans.length > 0 ? DA.red : DA.black, color:'white', border:'none', borderRadius:12, padding:12, fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-            <Ic n="chk" s={15}/> Terminer
+        <div style={{ padding:'12px 14px 20px', borderTop:`1px solid ${DA.border}`, flexShrink:0, display:'flex', flexDirection:'column', gap:8 }}>
+          <button onClick={() => importFileRef.current.click()} disabled={rendering}
+            style={{ width:'100%', background: rendering ? DA.grayL : DA.black, color:'white', border:'none', borderRadius:12, padding:12, fontSize:13, fontWeight:700, cursor: rendering ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+            <Ic n="plus" s={15}/> Importer un nouveau plan (PDF, JPG, PNG)
           </button>
+          <input ref={importFileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleImportFile}/>
+          <div style={{ display:'flex', gap:8 }}>
+            {plans.length > 0 && (
+              <button onClick={() => setPlans([])}
+                style={{ padding:'12px 16px', background:'white', color:DA.red, border:'1px solid #FCA5A5', borderRadius:12, fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                <Ic n="del" s={14}/>
+              </button>
+            )}
+            <button onClick={() => handleSave()}
+              style={{ flex:1, background: plans.length > 0 ? DA.red : DA.black, color:'white', border:'none', borderRadius:12, padding:12, fontSize:13, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+              <Ic n="chk" s={15}/> Terminer
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -98,7 +98,7 @@ function toSlim(ps) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
-    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })), // bg retiré du localStorage (trop lourd → quota) — rechargé depuis DB via hydratePlanLibrary
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null })), // garder bg (miniature PNG) pour affichage immédiat — data (PDF brut) trop lourd
     visites: (p.visites || []).map(v => ({
       ...v,
       localisations: (v.localisations || []).map(slimLoc),
