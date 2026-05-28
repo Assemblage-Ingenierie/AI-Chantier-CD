@@ -4,7 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage } from '../../lib/pdfUtils.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onClose }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose }) {
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
@@ -15,7 +15,12 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState('');
   const [previewBg, setPreviewBg] = useState(null);
+  const [repairTargetId, setRepairTargetId] = useState(null);
+  const [repairPdfData, setRepairPdfData] = useState(null);
+  const [showRepairPicker, setShowRepairPicker] = useState(false);
+  const [repairingId, setRepairingId] = useState(null);
   const fileRef = useRef();
+  const repairFileRef = useRef();
 
   const handleFile = e => {
     const files = Array.from(e.target.files);
@@ -106,6 +111,51 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     setEditingNom('');
   };
 
+  const handleRepairFile = e => {
+    const f = e.target.files?.[0];
+    if (!f || !repairTargetId) return;
+    e.target.value = '';
+    setRenderErr(null);
+    if (f.type === 'application/pdf') {
+      const r = new FileReader();
+      r.onload = ev => { setRepairPdfData(ev.target.result); setShowRepairPicker(true); };
+      r.readAsDataURL(f);
+    } else if (f.type.startsWith('image/')) {
+      const r = new FileReader();
+      r.onload = ev => { onRepairBg(repairTargetId, ev.target.result); setRepairTargetId(null); };
+      r.readAsDataURL(f);
+    } else {
+      setRenderErr('Format non supporté. Utilisez PDF, JPG ou PNG.');
+      setRepairTargetId(null);
+    }
+  };
+
+  const handleRepairPageSelected = async selectedNums => {
+    setShowRepairPicker(false);
+    const pageNum = selectedNums[0];
+    if (!pageNum || !repairPdfData || !repairTargetId) return;
+    setRepairingId(repairTargetId);
+    try {
+      const img = await renderPdfPage(repairPdfData, pageNum);
+      if (img) onRepairBg(repairTargetId, img);
+      else setRenderErr("Impossible de rendre cette page.");
+    } catch (err) {
+      setRenderErr('Erreur rendu : ' + err.message);
+    }
+    setRepairingId(null);
+    setRepairTargetId(null);
+    setRepairPdfData(null);
+  };
+
+  if (showRepairPicker && repairPdfData) return (
+    <PdfPagePicker
+      pdfData={repairPdfData}
+      label="Choisir la page du plan"
+      onSelectMany={handleRepairPageSelected}
+      onClose={() => { setShowRepairPicker(false); setRepairTargetId(null); setRepairPdfData(null); }}
+    />
+  );
+
   if (showPicker && pdfQueue.length > 0) return (
     <PdfPagePicker
       pdfData={pdfQueue[pdfQueueIdx].pdf}
@@ -166,8 +216,11 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
           )}
           <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
             {planLibrary.map(pl => (
-              <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${DA.border}`,background:DA.white }}>
-                {pl.bg && <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>}
+              <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
+                {pl.bg
+                  ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
+                  : <div style={{ width:64,height:44,borderRadius:6,border:`1px dashed #FCA5A5`,flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={18}/></div>
+                }
                 <div style={{ flex:1,minWidth:0 }}>
                   {editingId === pl.id ? (
                     <input
@@ -183,7 +236,17 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
                   )}
                   <p style={{ fontSize:10,color:DA.grayL,margin:'2px 0 0' }}>{pl.data ? 'Document PDF' : 'Image'}</p>
                 </div>
-                <div style={{ display:'flex',gap:4,flexShrink:0 }}>
+                <div style={{ display:'flex',gap:4,flexShrink:0,alignItems:'center' }}>
+                  {!pl.bg && onRepairBg && (
+                    <button
+                      onClick={() => { setRepairTargetId(pl.id); repairFileRef.current.click(); }}
+                      disabled={repairingId === pl.id}
+                      title="Réimporter l'image de ce plan (sans perdre les zones)"
+                      style={{ padding:'4px 7px',color:'#B91C1C',background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,whiteSpace:'nowrap' }}>
+                      {repairingId === pl.id ? <Ic n="spn" s={12}/> : <Ic n="und" s={12}/>}
+                      Réimporter
+                    </button>
+                  )}
                   {onRename && (
                     <button onClick={() => startRename(pl)}
                       style={{ padding:6,color:'#ccc',background:'none',border:'none',cursor:'pointer' }}
@@ -209,6 +272,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             <Ic n="plus" s={16}/> Ajouter un plan (PDF, JPG, PNG)
           </button>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleFile}/>
+          <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
           <button onClick={onClose}
             style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
