@@ -597,16 +597,15 @@ async function saveRemote(ps, dirtyIds = null) {
       }
     }
 
-    // ── Parallèle : lecture état DB actuel (avant upsert pour éviter d'écraser des visites créées ailleurs) ──
-    const [dbLocsRes, dbChantierRes] = await Promise.all([
-      sb.from('aichantier_chantier_localisations').select('id,visite_id').eq('chantier_id', p.id),
-      sb.from('aichantier_chantiers').select('visites').eq('id', p.id).maybeSingle(),
-    ]);
+    // ── Lecture des locs DB actuelles (pour détection des locs orphelines à supprimer) ──
+    const dbLocsRes = await sb.from('aichantier_chantier_localisations').select('id,visite_id').eq('chantier_id', p.id);
 
-    // Fusionner les visites locales avec celles en DB non connues localement (créées sur un autre appareil).
-    const localVisitIds = new Set(visitesMetadata.map(v => v.id));
-    const unknownDbVisits = (dbChantierRes.data?.visites || []).filter(v => !localVisitIds.has(v.id));
-    const mergedVisitesMetadata = [...visitesMetadata, ...unknownDbVisits];
+    // Visites : on fait confiance à la liste locale exactement.
+    // mergeWithLocal/pollRemote intègre déjà les visites créées ailleurs dans l'état React
+    // avant d'arriver ici. Lire le DB et merger ici (ancienne approche) ramenait les
+    // visites supprimées car elles n'étaient pas encore retirées de Supabase au moment
+    // de la lecture parallèle, juste avant l'upsert.
+    const mergedVisitesMetadata = visitesMetadata;
 
     // ── Upsert chantier avec visites fusionnées ────────────────────────────────
     const chantierRes = await sb.from('aichantier_chantiers').upsert({
