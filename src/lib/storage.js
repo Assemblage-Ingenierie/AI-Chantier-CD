@@ -98,7 +98,7 @@ function toSlim(ps) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
-    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null })), // garder bg (miniature PNG) pour affichage immédiat
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: null, data: null })), // bg retiré du localStorage (trop lourd → quota) — rechargé depuis DB via hydratePlanLibrary
     visites: (p.visites || []).map(v => ({
       ...v,
       localisations: (v.localisations || []).map(slimLoc),
@@ -921,6 +921,21 @@ export function saveLocalCache(ps) {
     _mem[SK] = slim;
   } catch {}
 }
+
+// Sauvegarde immédiate du bg d'un plan en DB — appelée dès l'import ou la réparation,
+// sans attendre le cycle de sauvegarde différée (2 s). Prévient la perte si rechargement rapide.
+export async function savePlanBgNow(chantierId, plans) {
+  if (!chantierId || !plans?.length) return;
+  try {
+    const sb = await getSupabase();
+    const rows = plans
+      .filter(pl => pl.id && pl.bg)
+      .map((pl, i) => ({ id: pl.id, chantier_id: chantierId, nom: pl.nom ?? '', bg: pl.bg, sort_order: i }));
+    if (!rows.length) return;
+    await sb.from('aichantier_chantier_plans').upsert(rows, { onConflict: 'id' });
+  } catch (e) { console.warn('savePlanBgNow:', e); }
+}
+
 
 export async function saveData(ps, onStatus, dirtyIds = null) {
   try {

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { savePlanBgNow } from '../../lib/storage.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -728,10 +729,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
       {modal?.t === 'planLib' && (
         <PlanLibraryModal
           planLibrary={projet.planLibrary || []}
-          onAdd={plans => onUpdate({ planLibrary: [...(projet.planLibrary || []), ...(Array.isArray(plans) ? plans : [plans])] })}
+          onAdd={plans => {
+            const arr = Array.isArray(plans) ? plans : [plans];
+            onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
+            savePlanBgNow(projet.id, arr);
+          }}
           onDelete={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
-          onRepairBg={(id, newBg) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) })}
+          onRepairBg={(id, newBg) => {
+            const pl = (projet.planLibrary || []).find(p => p.id === id);
+            onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) });
+            if (pl) savePlanBgNow(projet.id, [{ ...pl, bg: newBg }]);
+          }}
           onClose={() => setModal(null)}
         />
       )}
@@ -747,7 +756,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
           onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
-          onRepairBg={(id, newBg) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) })}
+          onRepairBg={(id, newBg) => {
+            const pl = (projet.planLibrary || []).find(p => p.id === id);
+            onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) });
+            if (pl) savePlanBgNow(projet.id, [{ ...pl, bg: newBg }]);
+          }}
         />
       )}
     </div>
