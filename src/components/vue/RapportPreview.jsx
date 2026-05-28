@@ -506,8 +506,9 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   const lib = planLibrary || [];
   const primaryBg = loc.planBg || (loc.planId && lib.find(p => p.id === loc.planId)?.bg) || null;
   const allPlans = [];
-  if (loc.planId || loc.planBg) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+  if ((loc.planId || loc.planBg) && !loc.planReportHidden) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
   (loc.extraPlans || []).forEach((ep, i) => {
+    if (ep.reportHidden) return;
     const epBg = ep.planBg || (ep.planId && lib.find(p => p.id === ep.planId)?.bg) || null;
     allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
   });
@@ -527,9 +528,10 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
   const allPlans = plansSubset ?? (() => {
     const plans = [];
     const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-    if (loc.planId || loc.planBg) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+    if ((loc.planId || loc.planBg) && !loc.planReportHidden) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
+      if (ep.reportHidden) continue;
       const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
       plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
     }

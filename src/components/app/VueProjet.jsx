@@ -123,15 +123,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
     if (!loc || toIdx < 0) return;
     // Normalise le plan principal + extraPlans en tableau plat
     const all = [];
-    if (loc.planId || loc.planBg) all.push({ planId: loc.planId||null, planBg: loc.planBg||null, planData: loc.planData||null, planAnnotations: loc.planAnnotations||null });
-    for (const ep of (loc.extraPlans || [])) all.push({ planId: ep.planId||null, planBg: ep.planBg||null, planData: null, planAnnotations: ep.planAnnotations||null });
+    if (loc.planId || loc.planBg) all.push({ planId: loc.planId||null, planBg: loc.planBg||null, planData: loc.planData||null, planAnnotations: loc.planAnnotations||null, reportHidden: !!loc.planReportHidden });
+    for (const ep of (loc.extraPlans || [])) all.push({ planId: ep.planId||null, planBg: ep.planBg||null, planData: null, planAnnotations: ep.planAnnotations||null, reportHidden: !!ep.reportHidden });
     if (toIdx >= all.length) return;
     const [moved] = all.splice(fromIdx, 1);
     all.splice(toIdx, 0, moved);
     const [p, ...extras] = all;
     patchLoc(locId, {
       planId: p?.planId||null, planBg: p?.planBg||null, planData: p?.planData||null, planAnnotations: p?.planAnnotations||null,
-      extraPlans: extras.map(e => ({ planId: e.planId, planBg: e.planBg, planAnnotations: e.planAnnotations })),
+      planReportHidden: !!p?.reportHidden,
+      extraPlans: extras.map(e => ({ planId: e.planId, planBg: e.planBg, planAnnotations: e.planAnnotations, reportHidden: !!e.reportHidden })),
     });
   }, [visitProjet.localisations, patchLoc]);
 
@@ -422,11 +423,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                     const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
                     const allPlanThumbs = [];
                     if (loc.planId || loc.planBg) {
-                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone' });
+                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden });
                     }
                     for (const ep of (loc.extraPlans || [])) {
                       const epLib = (projet.planLibrary||[]).find(p => p.id === ep.planId);
-                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan' });
+                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden });
                     }
                     const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
@@ -506,6 +507,20 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                     <div key={rowIdx} style={{ display:'flex', borderTop: rowIdx > 0 ? `1px solid ${DA.border}` : 'none' }}>
                                       {rowThumbs.map((pt, colIdx) => {
                                         const annotCount = pt.planAnnotations?.paths?.length || 0;
+                                        const globalIdx = rowIdx * 2 + colIdx;
+                                        const hasPrimary = !!(loc.planId || loc.planBg);
+                                        const toggleReportHidden = (e) => {
+                                          e.stopPropagation();
+                                          if (globalIdx === 0 && hasPrimary) {
+                                            patchLoc(loc.id, { planReportHidden: !loc.planReportHidden });
+                                          } else {
+                                            const epIdx = hasPrimary ? globalIdx - 1 : globalIdx;
+                                            const newEPs = (loc.extraPlans||[]).map((ep, i) =>
+                                              i === epIdx ? { ...ep, reportHidden: !ep.reportHidden } : ep
+                                            );
+                                            patchLoc(loc.id, { extraPlans: newEPs });
+                                          }
+                                        };
                                         return (
                                           <button key={colIdx}
                                             onClick={() => setModal({ t:'plan', locId:loc.id, annotIdx: rowIdx * 2 + colIdx })}
@@ -518,12 +533,22 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                                                 <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textAlign:'center', padding:'0 6px' }}>{pt.nom}</span>
                                               </div>
                                             )}
+                                            {pt.reportHidden && (
+                                              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.42)', zIndex:1, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+                                                <span style={{ color:'white', fontSize:10, fontWeight:700, background:'rgba(0,0,0,0.55)', padding:'3px 8px', borderRadius:6 }}>Masqué du rapport</span>
+                                              </div>
+                                            )}
                                             {pt.bg && <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>}
                                             {annotCount > 0 && (
-                                              <div style={{ position:'absolute', top:6, right:6, background:DA.red, color:'white', borderRadius:8, fontSize:10, fontWeight:800, padding:'2px 6px', lineHeight:1.6, display:'flex', alignItems:'center', gap:3 }}>
+                                              <div style={{ position:'absolute', top:6, right:6, zIndex:2, background:DA.red, color:'white', borderRadius:8, fontSize:10, fontWeight:800, padding:'2px 6px', lineHeight:1.6, display:'flex', alignItems:'center', gap:3 }}>
                                                 <Ic n="pen" s={9}/> {annotCount}
                                               </div>
                                             )}
+                                            <button onClick={toggleReportHidden}
+                                              title={pt.reportHidden ? 'Afficher dans le rapport' : 'Masquer du rapport'}
+                                              style={{ position:'absolute', top:6, left:6, zIndex:2, background: pt.reportHidden ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: pt.reportHidden ? '#bbb' : DA.gray, padding:0 }}>
+                                              <Ic n="eye" s={12}/>
+                                            </button>
                                             <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'6px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                                               {pt.bg && <p style={{ margin:0, fontSize:10, fontWeight:800, color:'white', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1, marginRight:4 }}>{pt.nom}</p>}
                                               <div style={{ marginLeft:'auto', background:DA.red, color:'white', borderRadius:6, padding:'4px 8px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
