@@ -711,6 +711,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
           onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+          onRepairBg={(id, newBg) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) })}
         />
       )}
     </div>

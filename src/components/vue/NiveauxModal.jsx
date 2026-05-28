@@ -1,14 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
+import { renderPdfPage } from '../../lib/pdfUtils.js';
+import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
   const [previewBg, setPreviewBg] = useState(null);
+  const [repairTargetId, setRepairTargetId] = useState(null);
+  const [repairPdfData, setRepairPdfData] = useState(null);
+  const [showRepairPicker, setShowRepairPicker] = useState(false);
+  const [repairingId, setRepairingId] = useState(null);
+  const [repairErr, setRepairErr] = useState(null);
+  const repairFileRef = useRef();
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
@@ -25,6 +33,51 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       l.id === locId ? { ...l, planId: null, planBg: null, planData: null, extraPlans: [], _planDirty: true } : l
     ));
   };
+
+  const handleRepairFile = e => {
+    const f = e.target.files?.[0];
+    if (!f || !repairTargetId) return;
+    e.target.value = '';
+    setRepairErr(null);
+    if (f.type === 'application/pdf') {
+      const r = new FileReader();
+      r.onload = ev => { setRepairPdfData(ev.target.result); setShowRepairPicker(true); };
+      r.readAsDataURL(f);
+    } else if (f.type.startsWith('image/')) {
+      const r = new FileReader();
+      r.onload = ev => { if (onRepairBg) onRepairBg(repairTargetId, ev.target.result); setRepairTargetId(null); };
+      r.readAsDataURL(f);
+    } else {
+      setRepairErr('Format non supporté.');
+      setRepairTargetId(null);
+    }
+  };
+
+  const handleRepairPageSelected = async selectedNums => {
+    setShowRepairPicker(false);
+    const pageNum = selectedNums[0];
+    if (!pageNum || !repairPdfData || !repairTargetId) return;
+    setRepairingId(repairTargetId);
+    try {
+      const img = await renderPdfPage(repairPdfData, pageNum);
+      if (img && onRepairBg) onRepairBg(repairTargetId, img);
+      else setRepairErr("Impossible de rendre cette page.");
+    } catch (err) {
+      setRepairErr('Erreur : ' + err.message);
+    }
+    setRepairingId(null);
+    setRepairTargetId(null);
+    setRepairPdfData(null);
+  };
+
+  if (showRepairPicker && repairPdfData) return (
+    <PdfPagePicker
+      pdfData={repairPdfData}
+      label="Choisir la page du plan"
+      onSelectMany={handleRepairPageSelected}
+      onClose={() => { setShowRepairPicker(false); setRepairTargetId(null); setRepairPdfData(null); }}
+    />
+  );
 
   if (previewBg) return (
     <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
@@ -95,10 +148,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <p style={{ fontSize:12,color:'#92400E',margin:0,flex:1 }}>Aucun plan — appuyez sur <strong>+ Importer</strong> pour commencer.</p>
               </div>
             ) : (
+              {repairErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,padding:'6px 10px',marginBottom:6,fontSize:11,color:'#B91C1C' }}>⚠️ {repairErr}</div>}
+              <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
               <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
                 {planLibrary.map(pl => (
-                  <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${DA.border}`,background:DA.white }}>
-                    {pl.bg && <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>}
+                  <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
+                    {pl.bg
+                      ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
+                      : <div style={{ width:44,height:30,borderRadius:5,border:'1px dashed #FCA5A5',flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={14}/></div>
+                    }
                     {editingPlanId === pl.id ? (
                       <input autoFocus value={editingPlanNom}
                         onChange={e => setEditingPlanNom(e.target.value)}
@@ -108,6 +166,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     ) : (
                       <p onClick={() => { if (onRenamePlan) { setEditingPlanId(pl.id); setEditingPlanNom(pl.nom); } }}
                         style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:onRenamePlan?'text':'default' }}>{pl.nom}</p>
+                    )}
+                    {!pl.bg && onRepairBg && (
+                      <button
+                        onClick={() => { setRepairTargetId(pl.id); repairFileRef.current.click(); }}
+                        disabled={repairingId === pl.id}
+                        title="Réimporter l'image de ce plan"
+                        style={{ padding:'3px 7px',color:'#B91C1C',background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:5,cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,whiteSpace:'nowrap',flexShrink:0 }}>
+                        {repairingId === pl.id ? <Ic n="spn" s={11}/> : <Ic n="und" s={11}/>}
+                        Réimporter
+                      </button>
                     )}
                     {onDeletePlan && (confirmDelPlanId === pl.id ? (
                       <>
