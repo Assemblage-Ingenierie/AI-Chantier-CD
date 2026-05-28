@@ -69,7 +69,15 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
                   planData: rl.planData ?? ll.planData,
                   planId: ll.planId ?? rl.planId,
                   planAnnotations: ll.planAnnotations ?? rl.planAnnotations,
-                  extraPlans: ll.extraPlans ?? rl.extraPlans ?? [],
+                  // dirty path: local is authoritative; union with remote-only extraPlans
+                  // added from another device while this device had pending changes
+                  extraPlans: (() => {
+                    const localEPs = ll.extraPlans ?? [];
+                    const remoteEPs = rl.extraPlans ?? [];
+                    const localPlanIds = new Set(localEPs.filter(ep => ep.planId).map(ep => ep.planId));
+                    const remoteOnly = remoteEPs.filter(ep => ep.planId && !localPlanIds.has(ep.planId));
+                    return [...localEPs, ...remoteOnly];
+                  })(),
                 };
               }),
             };
@@ -130,7 +138,21 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
                 planId: localLoc.planId ?? loc.planId,
                 planBg: localLoc.planBg ?? loc.planBg,
                 planData: localLoc.planData ?? loc.planData,
-                extraPlans: localLoc.extraPlans ?? loc.extraPlans ?? [],
+                // non-dirty path: remote is authoritative for extraPlans membership;
+                // preserve locally-hydrated planBg blobs to avoid grey thumbnails.
+                // [] !== null — must check length, not use ?? which would keep stale []
+                extraPlans: (() => {
+                  const remoteEPs = loc.extraPlans ?? [];
+                  const localEPs = localLoc.extraPlans ?? [];
+                  const localByPlanId = new Map(localEPs.filter(ep => ep.planId).map(ep => [ep.planId, ep]));
+                  if (remoteEPs.length) {
+                    return remoteEPs.map(ep => {
+                      const local = ep.planId ? localByPlanId.get(ep.planId) : null;
+                      return local ? { ...ep, planBg: local.planBg ?? ep.planBg, planData: local.planData ?? ep.planData } : ep;
+                    });
+                  }
+                  return localEPs; // remote has none: keep local (not yet saved, or remote load partial)
+                })(),
                 items: (loc.items || []).map(item => {
                   const localItem = localLoc.items?.find(i => i.id === item.id);
                   if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };
