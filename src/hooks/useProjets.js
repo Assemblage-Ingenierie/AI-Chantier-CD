@@ -83,41 +83,63 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
     const photo = lp.photo ?? rp.photo ?? null;
     if (rp.statut === 'archive') return { ...rp, photo, visites: lp.visites ?? rp.visites };
 
-    // Preserve plan library blobs hydrated locally (remote always returns bg:null/data:null)
+    // Preserve plan library blobs hydrated locally (remote always returns bg:null/data:null).
+    // Union strategy: also keep local-only plans (imported but not yet in DB — e.g., save
+    // crashed after chantier upsert bumped updated_at but before plans upsert ran).
     const localPlanById = new Map((lp.planLibrary || []).map(pl => [pl.id, pl]));
+    const remotePlanIds = new Set((rp.planLibrary || []).map(pl => pl.id));
+    const localOnlyPlans = (lp.planLibrary || []).filter(pl => !remotePlanIds.has(pl.id));
+    if (localOnlyPlans.length > 0) {
+      // Mark dirty so these plans are saved on the next sync
+      keptLocalIds.add(rp.id);
+      keptLocal = true;
+    }
 
     return {
       ...rp,
       photo,
-      planLibrary: (rp.planLibrary || []).map(rpl => {
-        const lpl = localPlanById.get(rpl.id);
-        if (!lpl) return rpl;
-        return { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data };
-      }),
+      planLibrary: [
+        ...(rp.planLibrary || []).map(rpl => {
+          const lpl = localPlanById.get(rpl.id);
+          if (!lpl) return rpl;
+          return { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data };
+        }),
+        ...localOnlyPlans,
+      ],
       visites: (rp.visites || []).map(rv => {
         const lv = lp.visites?.find(v => v.id === rv.id);
         if (!lv) return rv;
+        // Union strategy for locs: keep local-only zones (added but not yet in DB)
+        const remoteLocIds = new Set((rv.localisations || []).map(l => l.id));
+        const localOnlyLocs = (lv.localisations || []).filter(ll => !remoteLocIds.has(ll.id));
+        if (localOnlyLocs.length > 0) {
+          keptLocalIds.add(rp.id);
+          keptLocal = true;
+        }
         return {
           ...rv,
           // Préserver les champs locaux enrichis que le remote peut ne pas avoir encore
           ingenieur: lv.ingenieur || rv.ingenieur || '',
-          localisations: (rv.localisations || []).map(loc => {
-            const localLoc = lv.localisations?.find(l => l.id === loc.id);
-            if (!localLoc) return loc;
-            return {
-              ...loc,
-              // Preserve planId + locally-hydrated plan blobs (remote returns null for these)
-              planId: localLoc.planId ?? loc.planId,
-              planBg: localLoc.planBg ?? loc.planBg,
-              planData: localLoc.planData ?? loc.planData,
-              extraPlans: localLoc.extraPlans ?? loc.extraPlans ?? [],
-              items: (loc.items || []).map(item => {
-                const localItem = localLoc.items?.find(i => i.id === item.id);
-                if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };
-                return item;
-              }),
-            };
-          }),
+          localisations: [
+            ...(rv.localisations || []).map(loc => {
+              const localLoc = lv.localisations?.find(l => l.id === loc.id);
+              if (!localLoc) return loc;
+              return {
+                ...loc,
+                // Preserve planId + locally-hydrated plan blobs (remote returns null for these)
+                planId: localLoc.planId ?? loc.planId,
+                planBg: localLoc.planBg ?? loc.planBg,
+                planData: localLoc.planData ?? loc.planData,
+                extraPlans: localLoc.extraPlans ?? loc.extraPlans ?? [],
+                items: (loc.items || []).map(item => {
+                  const localItem = localLoc.items?.find(i => i.id === item.id);
+                  if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };
+                  return item;
+                }),
+              };
+            }),
+            ...localOnlyLocs,
+          ],
         };
       }),
     };
@@ -229,7 +251,12 @@ export function useProjets(onSyncStatus) {
       const remotePs = await loadData();
       if (!remotePs.length) return;
       const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-      const { allMerged } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+      // If local-only plans/locs were found, mark dirty and trigger a save
+      if (keptLocalIds.size > 0) {
+        keptLocalIds.forEach(id => dirtyIds.current.add(id));
+        userModified.current = true;
+      }
       // Only re-render if something actually changed
       const changed = allMerged.some((rp, i) => {
         const lp = projetsRef.current[i];
