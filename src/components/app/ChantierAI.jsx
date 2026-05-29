@@ -23,8 +23,14 @@ export default function ChantierAI({ profile, onLogout }) {
   const [ouvert, setOuvert] = useState(null);
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try { await refreshNow(); } finally { setRefreshing(false); }
+  };
 
   // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
   useEffect(() => {
@@ -170,6 +176,11 @@ export default function ChantierAI({ profile, onLogout }) {
           {onLogout && (
             <button onClick={onLogout} style={{ background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
           )}
+          <button onClick={handleRefresh} disabled={refreshing} title="Actualiser depuis le serveur"
+            style={{ display:'flex',alignItems:'center',gap:4,background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:5,cursor:refreshing?'default':'pointer' }}>
+            {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
+            Actualiser
+          </button>
           <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?DA.redL:syncStatus==='saving'?'#FEF3C7':DA.grayXL,transition:'background 0.3s' }}>
             {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor,transition:'background 0.3s' }}/>}
             <span style={{ color:syncStatus==='error'?DA.red:syncStatus==='saving'?DA.urgAmb:DA.grayL,fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>

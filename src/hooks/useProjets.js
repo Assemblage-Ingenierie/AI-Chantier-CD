@@ -295,14 +295,10 @@ export function useProjets(onSyncStatus) {
     }
   }, []);
 
-  // Poll every 30s when the page is visible
-  useEffect(() => {
-    if (!remoteLoaded) return;
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') pollRemote();
-    }, 30000);
-    return () => clearInterval(id);
-  }, [remoteLoaded, pollRemote]);
+  // Plus de poll périodique (économie egress Supabase ~90%). La synchro distante
+  // se fait : au chargement de l'app, au retour sur l'app (visibilitychange ≥15s),
+  // et à la demande via le bouton "Actualiser" (refreshNow). La sauvegarde locale
+  // reste automatique — aucune donnée n'est mise en péril.
 
   useEffect(() => {
     const flush = () => {
@@ -585,5 +581,10 @@ export function useProjets(onSyncStatus) {
 
   const canUndo = () => historyRef.current.length > 0;
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo };
+  // Synchro distante à la demande (bouton "Actualiser"). Renvoie une promesse
+  // pour permettre l'affichage d'un spinner. Sans effet si une sauvegarde est
+  // en cours ou si des modifs locales sont en attente (pollRemote s'auto-protège).
+  const refreshNow = useCallback(() => pollRemote(), [pollRemote]);
+
+  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow };
 }

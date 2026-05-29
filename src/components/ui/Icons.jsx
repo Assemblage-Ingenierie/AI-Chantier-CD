@@ -17,6 +17,7 @@ const p = (s) => ({
 
 const ICONS = {
   x: (s) => <svg {...p(s)}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  rld: (s) => <svg {...p(s)}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
   plus: (s) => <svg {...p(s)}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   chk: (s) => <svg {...p(s)}><polyline points="20 6 9 17 4 12"/></svg>,
   chv: (s) => <svg {...p(s)}><polyline points="6 9 12 15 18 9"/></svg>,
