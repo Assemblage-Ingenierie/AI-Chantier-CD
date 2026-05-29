@@ -540,6 +540,13 @@ export function useProjets(onSyncStatus) {
   };
 
   const hydratePlanLibrary = async (projectId) => {
+    // Skip remote fetch if every plan already has bg in memory (from localStorage or previous fetch)
+    const proj = projetsRef.current.find(p => p.id === projectId);
+    const plans = proj?.planLibrary || [];
+    if (plans.length > 0 && plans.every(pl => pl.bg != null)) {
+      return Object.fromEntries(plans.map(pl => [pl.id, { bg: pl.bg, data: pl.data ?? null }]));
+    }
+
     const plansMap = await hydratePlanLibraryRemote(projectId);
     if (!plansMap || !Object.keys(plansMap).length) return plansMap || {};
     setProjets(ps => ps.map(p => {
