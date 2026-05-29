@@ -52,6 +52,11 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
       const newRemoteVisits = (rp.visites || []).filter(rv => !localVisitIds.has(rv.id));
       return {
         ...lp,
+        // statut (archive/actif) : champ unique toujours sauvegardé immédiatement.
+        // Si cet appareil n'a aucune modif en attente (isDirty faux) et n'est ici qu'à
+        // cause d'un updatedAt local plus récent (décalage d'horloge entre appareils),
+        // on ne doit PAS écraser la décision d'archivage de la DB avec un statut périmé.
+        statut: isDirty ? lp.statut : (rp.statut ?? lp.statut),
         planLibrary: mergedPlanLibrary,
         visites: [
           ...(lp.visites || []).map(lv => {
