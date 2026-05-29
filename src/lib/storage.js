@@ -691,10 +691,13 @@ async function saveRemote(ps, dirtyIds = null) {
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
-      // Single SELECT for both existence check and bg-missing check (halves the read count)
-      const dbPlansRes = await sb.from('aichantier_chantier_plans').select('id,bg').eq('chantier_id', p.id);
+      // Two parallel tiny queries (id only — never select bg here, it's a large blob)
+      const [dbPlansRes, dbPlansNoBgRes] = await Promise.all([
+        sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id),
+        sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null),
+      ]);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
-      const dbPlansNoBg = new Set((dbPlansRes.data || []).filter(pl => !pl.bg).map(pl => pl.id));
+      const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
       const planRows = (p.planLibrary || []).map((pl, i) => {
