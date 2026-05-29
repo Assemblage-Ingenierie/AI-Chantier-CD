@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 
-const LS_KEY = 'aichantier_install_dismissed';
+const LS_KEY = 'aichantier_install_dismissed_ts';
+const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
 function isMobileDevice() {
-  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || window.innerWidth < 900;
+}
+function isDismissed() {
+  const ts = localStorage.getItem(LS_KEY);
+  if (!ts) return false;
+  return Date.now() - Number(ts) < DISMISS_TTL_MS;
 }
 function isIOS() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
@@ -23,8 +29,8 @@ export default function InstallPrompt() {
     if (!isMobileDevice()) return;
     // Déjà installé en standalone → pas besoin
     if (isStandalone()) return;
-    // Déjà cliqué "Compris" ou "Plus tard"
-    if (localStorage.getItem(LS_KEY)) return;
+    // Déjà cliqué "Compris" ou "Plus tard" il y a moins de 7 jours
+    if (isDismissed()) return;
 
     if (isIOS()) {
       setMode('ios');
@@ -57,7 +63,7 @@ export default function InstallPrompt() {
   }, []);
 
   const dismiss = () => {
-    localStorage.setItem(LS_KEY, '1');
+    localStorage.setItem(LS_KEY, String(Date.now()));
     setShow(false);
   };
 
@@ -130,20 +136,23 @@ export default function InstallPrompt() {
         </div>
       )}
 
-      {/* Android manuel : instructions Chrome */}
+      {/* Android manuel : instructions Chrome / Samsung Internet */}
       {mode === 'android-manual' && (
         <div style={{ background:'rgba(255,255,255,0.08)',borderRadius:12,padding:'12px 14px',display:'flex',flexDirection:'column',gap:10 }}>
           <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
             <span style={{ background:'#34C759',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>1</span>
             <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
-              Appuyez sur <strong style={{ color:'white' }}>⋮</strong> (3 points) en haut à droite de Chrome
+              Appuyez sur <strong style={{ color:'white' }}>⋮</strong> (3 points) en haut à droite du navigateur
             </div>
           </div>
           <div style={{ display:'flex',alignItems:'flex-start',gap:10 }}>
             <span style={{ background:'#34C759',borderRadius:8,padding:'5px 8px',fontSize:12,fontWeight:700,color:'white',flexShrink:0,lineHeight:1 }}>2</span>
             <div style={{ color:'rgba(255,255,255,0.85)',fontSize:13,lineHeight:1.5 }}>
-              Appuyez sur <strong style={{ color:'white' }}>"Ajouter à l'écran d'accueil"</strong>
+              Appuyez sur <strong style={{ color:'white' }}>"Ajouter à l'écran d'accueil"</strong> ou <strong style={{ color:'white' }}>"Installer l'application"</strong>
             </div>
+          </div>
+          <div style={{ color:'rgba(255,255,255,0.4)',fontSize:11,lineHeight:1.4 }}>
+            Sur Samsung Internet : menu ⋮ → "Ajouter page à" → "Écran d'accueil"
           </div>
           <button onClick={dismiss} style={{ marginTop:2,padding:'10px 0',borderRadius:10,border:'none',background:'rgba(255,255,255,0.13)',color:'rgba(255,255,255,0.75)',fontSize:13,cursor:'pointer',fontWeight:700 }}>
             Compris ✓
