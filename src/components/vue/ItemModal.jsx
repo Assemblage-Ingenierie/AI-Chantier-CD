@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';

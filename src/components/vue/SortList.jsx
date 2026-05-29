@@ -3,7 +3,7 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 import { renderMarkup } from '../../lib/markup.jsx';
 
-const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
 export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto }) {
   const [confirmDelId, setConfirmDelId] = useState(null);

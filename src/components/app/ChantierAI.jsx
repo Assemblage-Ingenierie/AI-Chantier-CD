@@ -148,7 +148,7 @@ export default function ChantierAI({ profile, onLogout }) {
     </div>
   );
 
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 900;
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100dvh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
