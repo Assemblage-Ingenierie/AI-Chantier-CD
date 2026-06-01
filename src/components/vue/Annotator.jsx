@@ -343,6 +343,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
   const resizeDragRef  = useRef(null); // { handle, origData, idx } — resize poignée forme
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
+  const panRef         = useRef(null); // drag clic-droit/molette → pan
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -441,7 +442,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         ctx.scale(symbolScale, symbolScale);
         ctx.translate(-pendingVP.x, -pendingVP.y);
       }
-      drawVP(ctx, { ...pendingVP, label: activePh?.label || `V${vpCount + 1}`, color, size });
+      drawVP(ctx, { ...pendingVP, label: `V${vpCount + 1}`, color, size });
       ctx.restore();
     }
 
@@ -607,22 +608,27 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     return () => window.removeEventListener('keydown', onKey);
   }, [selAnnot, selTextIdx]);
 
-  // Ctrl+molette — zoom centré sur le curseur
+  // Molette / pinch trackpad — zoom centré sur le curseur
   const onWheel = useCallback(e => {
-    if (!e.ctrlKey) return;
     e.preventDefault();
     const cv = cvRef.current;
     if (!cv) return;
+    // Sur écran tactile (pointer:coarse) le navigateur envoie des events wheel avec ctrlKey=true
+    // pour le pinch — on les laisse passer. Les scrolls normaux sans ctrlKey sont ignorés sur touch.
+    if (window.matchMedia('(pointer: coarse)').matches && !e.ctrlKey) return;
     const rect = cv.getBoundingClientRect();
     const mx = e.clientX - (rect.left + rect.width  / 2);
     const my = e.clientY - (rect.top  + rect.height / 2);
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    // Normalise selon deltaMode (pixels / lignes / pages)
+    const raw = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaMode === 2 ? e.deltaY * 300 : e.deltaY;
+    const factor = Math.pow(0.998, raw); // ex: raw=120 (1 cran souris) → ×0.79
     const cur = vtRef.current;
     const newZ = Math.min(6, Math.max(1, cur.z * factor));
     if (newZ === cur.z) return;
     const r = newZ / cur.z;
-    const newPx = mx - (mx - cur.px) * r;
-    const newPy = my - (my - cur.py) * r;
+    // Formule correcte : le point sous le curseur reste fixe
+    const newPx = cur.px + mx * (1 - r);
+    const newPy = cur.py + my * (1 - r);
     const maxPx = cv.clientWidth  * (newZ - 1) / 2;
     const maxPy = cv.clientHeight * (newZ - 1) / 2;
     const next = { z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) };
@@ -696,6 +702,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       return;
     }
     if (gestureRef.current) return;
+
+    // Clic-droit ou molette enfoncée → pan (bureau uniquement)
+    if (!e.touches && (e.button === 2 || e.button === 1)) {
+      e.preventDefault();
+      panRef.current = { startPx: vtRef.current.px, startPy: vtRef.current.py, startMx: e.clientX, startMy: e.clientY };
+      return;
+    }
 
     // Long-press (500 ms, mobile uniquement) → bascule en mode sélection
     if (e.touches?.length === 1 && tool !== 'select') {
@@ -994,6 +1007,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
       return;
     }
+    // Pan clic-droit / molette
+    if (panRef.current && !e.touches) {
+      const { startPx, startPy, startMx, startMy } = panRef.current;
+      const cv = cvRef.current;
+      const nz = vtRef.current.z;
+      const newPx = startPx + (e.clientX - startMx);
+      const newPy = startPy + (e.clientY - startMy);
+      const maxPx = cv ? cv.clientWidth  * (nz - 1) / 2 : 9999;
+      const maxPy = cv ? cv.clientHeight * (nz - 1) / 2 : 9999;
+      const next = { z: nz, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) };
+      vtRef.current = next;
+      setVt(next);
+      return;
+    }
+
     const pos = getXY(e, cvRef.current);
     // Placement flèche : mise à jour de la ligne de prévisualisation
     if (tool === 'text' && drawing && arrowPlaceRef.current) {
@@ -1070,6 +1098,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
 
   const onEnd = e => {
     e.preventDefault();
+    if (panRef.current) { panRef.current = null; return; }
     if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
     if (gestureRef.current) {
       if (e.touches.length < 2) gestureRef.current = null;
@@ -1133,7 +1162,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
-      const label = activePh?.label || `V${vpCount + 1}`;
+      const label = `V${vpCount + 1}`; // toujours séquentiel — évite les doublons
       setPaths(prev => [...prev, {
         type: 'viewpoint',
         x: pendingVP?.x ?? vpStart.current.x,
@@ -1185,9 +1214,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const validPhotos = (photos || []).filter(ph => ph.data).slice(0, 12);
 
   const selectPhoto = (ph, i) => {
-    const label = `V${i + 1}`;
-    const isActive = activePh?.label === label;
-    setActivePh(isActive ? null : { label, src: ph.data });
+    const isActive = activePh?.photoIdx === i;
+    setActivePh(isActive ? null : { photoIdx: i, src: ph.data });
     setTool('viewpoint');
     setShowSyms(false);
   };
@@ -1593,7 +1621,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
             <canvas ref={cvRef}
               style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
-              onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}/>
+              onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}
+              onContextMenu={e => e.preventDefault()}/>
             {vt.z > 1.05 && (
               <button
                 onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}
@@ -1639,8 +1668,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
           <span style={{ color:'#666',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,flexShrink:0 }}>Vues :</span>
           {validPhotos.map((ph, i) => {
-            const label = `V${i + 1}`;
-            const isActive = activePh?.label === label;
+            const isActive = activePh?.photoIdx === i;
             return (
               <button key={i} onClick={() => selectPhoto(ph, i)}
                 title={ph.name || `Photo ${i + 1}`}

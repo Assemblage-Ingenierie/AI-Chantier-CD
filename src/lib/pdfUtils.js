@@ -104,5 +104,5 @@ export function renderPdfPage(pdfData, pageNum) {
 
 // Rendu haute qualité — uniquement pour l'annotateur, non stocké
 export function renderPdfPageHQ(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 4.0, 3500, 0.88);
+  return _renderPage(pdfData, pageNum, 5.0, 3800, 0.93);
 }

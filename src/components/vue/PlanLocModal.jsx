@@ -34,11 +34,30 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const importFileRef = useRef();
   const [hqBg, setHqBg] = useState(null);
   const [hqLoading, setHqLoading] = useState(false);
+  const hqCacheRef = useRef({}); // idx → hq dataURL, pré-rendu dès l'ouverture de la modale
 
-  // Quand on ouvre l'annotateur, rend en haute qualité depuis planData si disponible,
-  // sinon charge depuis Supabase si le bg stocké est basse résolution.
+  // Pré-rend en HQ dès l'ouverture de la modale pour tous les plans en mémoire → ouverture instantanée
+  useEffect(() => {
+    plans.forEach((p, i) => {
+      if (!p?.planData) return;
+      renderPdfPageHQ(p.planData, 1)
+        .then(hq => { if (hq) hqCacheRef.current[i] = hq; })
+        .catch(() => {});
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Quand on ouvre l'annotateur : utilise le cache si prêt, sinon lance le rendu HQ
   useEffect(() => {
     if (annotatingIdx === null) { setHqBg(null); setHqLoading(false); return; }
+
+    // Cache déjà prêt (pré-rendu) → ouverture instantanée
+    if (hqCacheRef.current[annotatingIdx]) {
+      const hq = hqCacheRef.current[annotatingIdx];
+      setHqBg(hq);
+      setPlans(prev => prev.map((pl, i) => i === annotatingIdx ? { ...pl, planBg: hq } : pl));
+      return;
+    }
+
     const p = plans[annotatingIdx];
     const planData = p?.planData || null;
     const planId   = p?.planId   || null;
@@ -51,6 +70,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
       try {
         const hq = await renderPdfPageHQ(pdf, 1);
         if (!cancelled && hq) {
+          hqCacheRef.current[annotatingIdx] = hq;
           setHqBg(hq);
           setPlans(prev => prev.map((pl, i) => i === annotatingIdx ? { ...pl, planBg: hq } : pl));
         }
@@ -64,7 +84,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     } else if (planId && existingBg) {
       const img = new Image();
       img.onload = async () => {
-        if (img.naturalWidth >= 2000) return; // déjà bonne qualité
+        if (img.naturalWidth >= 2800) return; // déjà bonne qualité
         const fetched = await fetchPlanData(planId).catch(() => null);
         if (!cancelled && fetched?.data) doUpgrade(fetched.data);
       };
