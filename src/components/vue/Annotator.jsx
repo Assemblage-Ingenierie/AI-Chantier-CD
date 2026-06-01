@@ -369,8 +369,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [drawing,    setDrawing]    = useState(false);
   const [bgOk,       setBgOk]       = useState(false);
   const [showSyms,   setShowSyms]   = useState(false);
-  const [textPt,     setTextPt]     = useState(null);  // placement d'un nouveau texte
-  const [textV,      setTextV]      = useState('');
+  const [inlineEditIdx, setInlineEditIdx] = useState(null); // null=nouveau, number=édition existant
+  const [inlineEditPos, setInlineEditPos] = useState(null); // { left, top } CSS relatif au container canvas
+  const [inlineEditVal, setInlineEditVal] = useState('');
+  const inlineEditCanvasPt = useRef(null); // coords canvas du tap pour les nouveaux textes
   const [selTextIdx, setSelTextIdx] = useState(null);  // index dans paths du texte sélectionné
   const [activePh,   setActivePh]   = useState(null);
   const [pendingVP,  setPendingVP]  = useState(null);
@@ -939,9 +941,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
+        // Démarrer en mode drag — si l'utilisateur ne bouge pas (tap), onEnd ouvrira l'édition inline
         setSelTextIdx(existIdx);
         setDrawing(true);
-        textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y };
+        textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y, moved: false, textVal: paths[existIdx].text || '' };
         return;
       }
       setSelTextIdx(null);
@@ -951,8 +954,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         setPendingArrowLine({ tipX: pos.x, tipY: pos.y, boxX: pos.x, boxY: pos.y });
         setDrawing(true);
       } else {
-        setTextPt(pos);
-        setTextV('');
+        // Tap zone vide → édition inline directement au point de tap
+        inlineEditCanvasPt.current = { x: pos.x, y: pos.y };
+        setInlineEditIdx(null);
+        setInlineEditPos(toScreenPos(pos.x, pos.y));
+        setInlineEditVal('');
       }
       return;
     }
@@ -1078,7 +1084,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Déplacement texte : boîte
     if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current) {
       const { origX, origY, tapX, tapY } = textDragRef.current;
-      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + (pos.x - tapX), y: origY + (pos.y - tapY) } : p));
+      const dx = pos.x - tapX, dy = pos.y - tapY;
+      if (Math.hypot(dx, dy) > 5) textDragRef.current.moved = true;
+      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX + dx, y: origY + dy } : p));
       return;
     }
     // Déplacement symbole/viewpoint sélectionné
@@ -1152,8 +1160,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const dist = Math.hypot(box.boxX - tip.x, box.boxY - tip.y);
       const boxX = dist > 12 ? box.boxX : tip.x + 60;
       const boxY = dist > 12 ? box.boxY : tip.y - 40;
-      setTextPt({ x: boxX, y: boxY, arrowX: tip.x, arrowY: tip.y });
-      setTextV('');
+      inlineEditCanvasPt.current = { x: boxX, y: boxY, arrowX: tip.x, arrowY: tip.y };
+      setInlineEditIdx(null);
+      setInlineEditPos(toScreenPos(boxX, boxY));
+      setInlineEditVal('');
       setPendingArrowLine(null);
       arrowPlaceRef.current = null;
       setDrawing(false);
@@ -1195,9 +1205,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (selAnnot !== null && annotDragRef.current) {
       annotDragRef.current = null; setDrawing(false); return;
     }
-    // Fin du déplacement de texte
+    // Fin du déplacement de texte — si tap (pas de drag), ouvrir l'édition inline
     if ((tool === 'text' || tool === 'select') && selTextIdx !== null && textDragRef.current) {
+      const { moved, origX, origY, textVal } = textDragRef.current;
+      if (!moved && tool === 'text') {
+        // Revenir à la position d'origine (micro-mouvement tactile) et ouvrir l'édition
+        setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX, y: origY } : p));
+        const capturedIdx = selTextIdx;
+        setInlineEditIdx(capturedIdx);
+        setInlineEditPos(toScreenPos(origX, origY));
+        setInlineEditVal(textVal);
+      }
       textDragRef.current = null;
+      if (tool === 'text') setSelTextIdx(null);
       setDrawing(false);
       return;
     }
@@ -1221,15 +1241,40 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     setCur([]); setDrawing(false);
   };
 
-  const addText = () => {
-    if (!textV.trim() || !textPt) { setTextPt(null); return; }
-    const entry = { type:'text', text:textV.trim(), x:textPt.x, y:textPt.y, color, size, textMode };
-    if (textMode === 'arrow') {
-      entry.arrowX = textPt.arrowX ?? (textPt.x + 50);
-      entry.arrowY = textPt.arrowY ?? (textPt.y + 50);
+  const toScreenPos = (canvasX, canvasY) => {
+    const cv = cvRef.current;
+    const container = canvasWrapRef.current;
+    if (!cv || !container) return { left: 0, top: 0 };
+    const cr = cv.getBoundingClientRect();
+    const wr = container.getBoundingClientRect();
+    return {
+      left: cr.left - wr.left + (canvasX / cv.width) * cr.width,
+      top:  cr.top  - wr.top  + (canvasY / cv.height) * cr.height,
+    };
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineEditIdx(null);
+    setInlineEditPos(null);
+    setInlineEditVal('');
+    inlineEditCanvasPt.current = null;
+  };
+
+  const confirmInlineEdit = () => {
+    const val = inlineEditVal.trim();
+    if (inlineEditIdx !== null) {
+      if (val) setPaths(prev => prev.map((p, i) => i === inlineEditIdx ? { ...p, text: val } : p));
+      else setPaths(p => p.filter((_, i) => i !== inlineEditIdx));
+    } else if (val && inlineEditCanvasPt.current) {
+      const pt = inlineEditCanvasPt.current;
+      const entry = { type: 'text', text: val, x: pt.x, y: pt.y, color, size, textMode };
+      if (textMode === 'arrow') {
+        entry.arrowX = pt.arrowX ?? (pt.x + 50);
+        entry.arrowY = pt.arrowY ?? (pt.y - 50);
+      }
+      setPaths(prev => [...prev, entry]);
     }
-    setPaths(prev => [...prev, entry]);
-    setTextPt(null); setTextV('');
+    cancelInlineEdit();
   };
 
   const addCustomSym = () => {
@@ -1582,7 +1627,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             </button>
           ))}
           <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>
-            {textMode === 'arrow' ? '① Appuyez là où pointe la flèche  ② Glissez jusqu\'au texte' : '① Tapez sur le plan  ② Tapez un texte existant pour le modifier'}
+            {textMode === 'arrow' ? '① Appuyez là où pointe la flèche  ② Glissez jusqu\'au texte' : 'Tapez pour écrire — tapez sur un texte existant pour le modifier directement'}
           </span>
         </div>
       )}
@@ -1674,28 +1719,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 ×{vt.z.toFixed(1)} ↺
               </button>
             )}
-            {/* Barre de saisie texte — compacte, en haut du canvas, sans overlay bloquant */}
-            {textPt && (
-              <div style={{ position:'absolute',top:8,left:8,right:8,zIndex:10,
-                display:'flex',alignItems:'center',gap:6,
-                background:'rgba(20,20,20,0.96)',borderRadius:12,
-                boxShadow:'0 4px 24px rgba(0,0,0,0.7)',padding:'8px 10px',
-                border:'1px solid #3a3a3a' }}>
-                <input autoFocus value={textV} onChange={e=>setTextV(e.target.value)}
-                  onKeyDown={e=>{ if(e.key==='Enter')addText(); if(e.key==='Escape')setTextPt(null); }}
-                  placeholder="Saisir le texte…"
-                  style={{ flex:1,fontSize:15,border:'1px solid #444',borderRadius:8,padding:'10px 12px',
-                    outline:'none',background:'#111',color:'white',fontFamily:'inherit',minWidth:0 }}/>
-                <button onClick={addText}
-                  style={{ background:DA.red,color:'white',borderRadius:8,padding:'10px 14px',
-                    fontSize:15,fontWeight:700,cursor:'pointer',border:'none',flexShrink:0 }}>
-                  ✓
-                </button>
-                <button onClick={() => setTextPt(null)}
-                  style={{ background:'#333',color:'#aaa',borderRadius:8,padding:'10px 12px',
-                    fontSize:14,cursor:'pointer',border:'none',flexShrink:0 }}>
-                  ✕
-                </button>
+            {/* Saisie inline — apparaît directement au point de tap */}
+            {inlineEditPos && (
+              <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
+                transform:'translate(-4px, -36px)', pointerEvents:'auto',
+                display:'flex', alignItems:'center', gap:4 }}>
+                <input autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter')confirmInlineEdit(); if(e.key==='Escape')cancelInlineEdit(); }}
+                  placeholder="Texte…"
+                  style={{ fontSize:14, background:'rgba(20,20,20,0.95)', color:'white',
+                    border:'2px solid '+DA.red, borderRadius:6, padding:'6px 10px',
+                    outline:'none', minWidth:90, maxWidth:220, fontFamily:'inherit',
+                    boxShadow:'0 3px 14px rgba(0,0,0,0.65)' }}/>
+                {inlineEditIdx !== null && (
+                  <button onMouseDown={e=>e.preventDefault()} onTouchStart={e=>e.preventDefault()}
+                    onClick={()=>{ setPaths(p=>p.filter((_,i)=>i!==inlineEditIdx)); cancelInlineEdit(); }}
+                    style={{ background:'#B91C1C',color:'white',border:'none',borderRadius:6,
+                      padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center',flexShrink:0 }}>
+                    <Ic n="del" s={12}/>
+                  </button>
+                )}
+                <button onMouseDown={e=>e.preventDefault()} onTouchStart={e=>e.preventDefault()}
+                  onClick={cancelInlineEdit}
+                  style={{ background:'#333',color:'#aaa',border:'none',borderRadius:6,
+                    padding:'6px 9px',cursor:'pointer',fontSize:13,flexShrink:0 }}>✕</button>
               </div>
             )}
           </div>
