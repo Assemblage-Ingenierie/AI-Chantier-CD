@@ -747,22 +747,31 @@ async function saveRemote(ps, dirtyIds = null) {
       const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
-      const planRows = (p.planLibrary || []).map((pl, i) => {
-        const id = pl.id || crypto.randomUUID();
-        const row = { id, chantier_id: p.id, nom: pl.nom ?? '', sort_order: i };
-        // Send bg for new plans or plans missing bg in DB (repair after timeout) — never resend if already stored
-        const isNew = !dbPlanIds.has(id);
-        const missingBg = dbPlansNoBg.has(id);
-        if (pl.bg != null && (isNew || missingBg)) row.bg = pl.bg;
-        return row;
-      });
+      // CRITIQUE — deux upserts séparés et HOMOGÈNES (mêmes clés sur toutes les lignes).
+      // PostgREST normalise un upsert batch sur l'UNION des clés : mélanger des lignes
+      // avec et sans `bg` écrase bg=NULL sur celles qui ne le portent pas → plans fantômes
+      // (cartes "Plan" vides) car toute sauvegarde effaçait le bg des autres plans.
+      // 1) Métadonnées de TOUS les plans, sans jamais inclure `bg` → bg jamais touché.
+      const metaRows = (p.planLibrary || []).map((pl, i) => ({
+        id: pl.id || crypto.randomUUID(),
+        chantier_id: p.id, nom: pl.nom ?? '', sort_order: i,
+      }));
+      // 2) bg uniquement pour les nouveaux plans ou ceux dont le bg manque en base
+      //    (réparation après timeout). Batch homogène : toutes les lignes portent bg.
+      const bgRows = (p.planLibrary || [])
+        .filter(pl => pl.bg != null && (!dbPlanIds.has(pl.id) || dbPlansNoBg.has(pl.id)))
+        .map(pl => ({ id: pl.id, chantier_id: p.id, bg: pl.bg }));
       // Safety guard: if local plan list is empty but DB has plans, skip deletion.
       // Local can be empty because plans weren't hydrated yet (bg/data loaded lazily).
-      if (planRows.length === 0 && dbPlanIds.size > 0) return;
+      if (metaRows.length === 0 && dbPlanIds.size > 0) return;
       await Promise.all([
         removedPlanIds.length ? sb.from('aichantier_chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
-        planRows.length       ? sb.from('aichantier_chantier_plans').upsert(planRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
+        metaRows.length       ? sb.from('aichantier_chantier_plans').upsert(metaRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
       ]);
+      // bg en second (les lignes méta existent désormais) — batch homogène, n'écrase aucun bg existant.
+      if (bgRows.length) {
+        await sb.from('aichantier_chantier_plans').upsert(bgRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); });
+      }
     })();
 
     const dbItemsByLoc = groupBy(dbItemsRes?.data || [], 'localisation_id');
