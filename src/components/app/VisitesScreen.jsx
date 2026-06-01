@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
-export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok' }) {
+export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
 
@@ -195,6 +195,13 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2 }} spellCheck={false}>{projet.nom}</p>
             {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
+          {onRefresh && (
+            <button onClick={onRefresh} disabled={refreshing}
+              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:6, color:'rgba(255,255,255,0.65)', padding:'5px 8px', cursor:refreshing?'default':'pointer', display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
+              {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
+              <span style={{ fontSize:10, fontWeight:600 }}>Actu.</span>
+            </button>
+          )}
           {(() => {
             const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
             const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur' : 'Sauvegardé';

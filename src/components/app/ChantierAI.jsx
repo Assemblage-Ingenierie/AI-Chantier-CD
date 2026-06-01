@@ -29,7 +29,14 @@ export default function ChantierAI({ profile, onLogout }) {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    try { await refreshNow(); } finally { setRefreshing(false); }
+    try {
+      await refreshNow();
+      // Re-hydrate plan library + plan blobs to refresh expired signed URLs when a project is open
+      if (ouvert) {
+        const lm = await hydratePlanLibrary(ouvert.id);
+        await hydratePlans(ouvert.id, lm);
+      }
+    } finally { setRefreshing(false); }
   };
 
   // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
@@ -254,6 +261,8 @@ export default function ChantierAI({ profile, onLogout }) {
             projet={projets.find(p => p.id === ouvert.id) ?? ouvert}
             visiteId={selectedVisiteId}
             onBack={() => setSelectedVisiteId(null)}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
             onUpdate={upd => updateProjet(ouvert.id, upd)}
             setBackHandler={setBackHandler}
             syncStatus={syncStatus}
@@ -265,6 +274,8 @@ export default function ChantierAI({ profile, onLogout }) {
             onSelectVisite={setSelectedVisiteId}
             onUpdateProjet={upd => updateProjet(ouvert.id, upd)}
             syncStatus={syncStatus}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
           />
         ) : (
           <div style={{ height:'100%',overflowY:'auto' }}>
