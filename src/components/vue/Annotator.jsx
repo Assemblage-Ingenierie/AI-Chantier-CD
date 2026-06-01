@@ -313,6 +313,20 @@ export function getAllSymbols() {
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
 
+// Mise à l'échelle de toutes les coordonnées d'annotation (LQ ↔ HQ)
+function scalePaths(paths, sx, sy) {
+  if (!paths || (sx === 1 && sy === 1)) return paths;
+  return paths.map(p => {
+    const s = { ...p };
+    if (s.x  != null) { s.x  = s.x  * sx; s.y  = s.y  * sy; }
+    if (s.x1 != null) { s.x1 = s.x1 * sx; s.y1 = s.y1 * sy; s.x2 = s.x2 * sx; s.y2 = s.y2 * sy; }
+    if (s.arrowX != null) { s.arrowX = s.arrowX * sx; s.arrowY = s.arrowY * sy; }
+    if (s.pts)    s.pts    = s.pts.map(pt => ({ ...pt, x: pt.x * sx, y: pt.y * sy }));
+    if (s.points) s.points = s.points.map(pt => ({ ...pt, x: pt.x * sx, y: pt.y * sy }));
+    return s;
+  });
+}
+
 // Poignées de redimensionnement selon le type de forme
 function getShapeHandles(ap) {
   if (ap.shape === 'rect' || ap.shape === 'ellipse') {
@@ -332,7 +346,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -344,6 +358,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const resizeDragRef  = useRef(null); // { handle, origData, idx } — resize poignée forme
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
+  const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -388,6 +403,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
+  const [bgVersion,        setBgVersion]        = useState(0);   // incrémenté pour forcer redraw après swap HQ
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -397,6 +413,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     vtRef.current = { z: 1, px: 0, py: 0 };
     setPaths(savedPaths || []); // reset annotations quand la photo change
     setSelTextIdx(null);
+    hqScaleRef.current = 1; // reset scale lors du changement de plan
   }, [bgImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Exposer getAnnotation() pour auto-save depuis le parent (navigation entre photos)
@@ -415,7 +432,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
       drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
       ectx.restore();
-      return { paths, annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
+      const sc = hqScaleRef.current;
+      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
     },
   }), [paths, annotScale, exportSizeMultiplier]);
 
@@ -571,7 +589,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -675,6 +693,29 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
     };
     load();
   }, [bgImage]);
+
+  // Quand une version HQ du plan arrive (rendue en arrière-plan depuis PlanLocModal) :
+  // agrandit le canvas à la résolution HQ, swap l'image, et met à l'échelle les annotations existantes.
+  useEffect(() => {
+    if (!hqImage) return;
+    const img = new window.Image();
+    img.onload = () => {
+      const cv = cvRef.current;
+      if (!cv || !bgRef.current || bgRef.current.naturalWidth === 0) return;
+      const sx = img.naturalWidth  / bgRef.current.naturalWidth;
+      const sy = img.naturalHeight / bgRef.current.naturalHeight;
+      cv.width  = img.naturalWidth;
+      cv.height = img.naturalHeight;
+      bgRef.current = img;
+      hqScaleRef.current = sx;
+      // Mise à l'échelle des paths existants + forçage du redraw
+      if (sx !== 1 || sy !== 1) {
+        setPaths(prev => scalePaths(prev, sx, sy));
+      }
+      setBgVersion(v => v + 1);
+    };
+    img.src = hqImage;
+  }, [hqImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getXY = (e, cv) => {
     const r = cv.getBoundingClientRect(), sx = cv.width / r.width, sy = cv.height / r.height;
@@ -1321,7 +1362,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, savedPaths, onSave, o
               const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
               drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
               ectx.restore();
-              onSave(paths, ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
+              // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
+              const sc = hqScaleRef.current;
+              onSave(scalePaths(paths, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
             }}
               style={{ padding:isMob?'7px 10px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
