@@ -133,12 +133,18 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
             ...(rv.localisations || []).map(loc => {
               const localLoc = lv.localisations?.find(l => l.id === loc.id);
               if (!localLoc) return loc;
+              // Non-dirty path : le remote fait autorité sur l'affectation du plan (cet appareil
+              // n'a aucune modif en attente). On garde le planId local seulement en fallback si le
+              // remote n'en a pas. On ne préserve le planBg/planData hydraté localement QUE si
+              // l'affectation n'a pas changé — sinon l'image de l'ancien plan resterait collée à une
+              // loc qui pointe désormais vers un autre plan (cas : plan réaffecté/annoté sur PC).
+              const mergedPlanId = loc.planId ?? localLoc.planId;
+              const samePlanAssign = mergedPlanId != null && mergedPlanId === localLoc.planId;
               return {
                 ...loc,
-                // Preserve planId + locally-hydrated plan blobs (remote returns null for these)
-                planId: localLoc.planId ?? loc.planId,
-                planBg: localLoc.planBg ?? loc.planBg,
-                planData: localLoc.planData ?? loc.planData,
+                planId: mergedPlanId,
+                planBg: samePlanAssign ? (localLoc.planBg ?? loc.planBg) : loc.planBg,
+                planData: samePlanAssign ? (localLoc.planData ?? loc.planData) : loc.planData,
                 // non-dirty path: remote is authoritative for extraPlans membership;
                 // preserve locally-hydrated planBg blobs to avoid grey thumbnails.
                 // [] !== null — must check length, not use ?? which would keep stale []
