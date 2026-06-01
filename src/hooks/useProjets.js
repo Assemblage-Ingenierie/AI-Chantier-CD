@@ -35,18 +35,16 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
       if (!isDirty) keptLocalIds.add(rp.id); // needs targeted save, not caught by existing dirtyIds
       if (!lp) return rp;
       // Restore blobs (planBg, planLibrary.bg) stripped by slimLoc in localStorage
-      const remotePlanById = new Map((rp.planLibrary || []).map(pl => [pl.id, pl]));
-      // Union strategy: keep local plans + add any remote plans not yet in local.
-      // Prevents stale local cache (planLibrary:[]) from accidentally wiping DB plans.
-      const localPlanIds = new Set((lp.planLibrary || []).map(pl => pl.id));
-      const newRemotePlans = (rp.planLibrary || []).filter(rpl => !localPlanIds.has(rpl.id));
-      const mergedPlanLibrary = [
-        ...(lp.planLibrary || []).map(pl => {
-          const rpl = remotePlanById.get(pl.id);
-          return rpl ? { ...pl, bg: rpl.bg ?? pl.bg, data: rpl.data ?? pl.data } : pl;
-        }),
-        ...newRemotePlans,
-      ];
+      const localPlanById_d = new Map((lp.planLibrary || []).map(pl => [pl.id, pl]));
+      // Dirty path : le serveur fait quand même autorité sur la MEMBERSHIP des plans
+      // (même stratégie que le non-dirty path). L'ancienne union ressuscitait les plans
+      // supprimés sur un autre appareil : mobile dirty → sauvegarde avec l'ancien plan →
+      // résurrection permanente. Les plans réellement nouveaux (ajoutés en local non encore
+      // synchros) sont déjà dans React state et seront envoyés par le prochain saveData.
+      const mergedPlanLibrary = (rp.planLibrary || []).map(rpl => {
+        const lpl = localPlanById_d.get(rpl.id);
+        return lpl ? { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data } : rpl;
+      });
       // Visites distantes inconnues localement (créées sur un autre appareil pendant qu'on était dirty).
       const localVisitIds = new Set((lp.visites || []).map(v => v.id));
       const newRemoteVisits = (rp.visites || []).filter(rv => !localVisitIds.has(rv.id));

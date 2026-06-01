@@ -12,110 +12,115 @@ function decodeEntities(s) {
     .replace(/&#39;/g, "'");
 }
 
-// Détecte si le contenu est du HTML (nouveau format) ou du markdown (legacy).
-// Inclut les balises de saut de ligne insérées par contenteditable (div/p).
+// Détecte si le contenu est du HTML — regex plus robuste que includes() pour gérer
+// les balises avec attributs comme <u style="...">, <span class="...">.
 function isHtml(text) {
-  return text && (
-    text.includes('<strong>') || text.includes('<em>') ||
-    text.includes('<u>') || text.includes('<br') ||
-    text.includes('<b>') || text.includes('<i>') ||
-    text.includes('<div') || text.includes('<p>') || text.includes('<p ') ||
-    text.includes('<s>') || text.includes('<ul') || text.includes('<li') || text.includes('<strike') ||
-    text.includes('&gt;') || text.includes('&lt;') || text.includes('&amp;') ||
-    text.includes('&nbsp;')
-  );
+  if (!text) return false;
+  return /<\/?(strong|b|em|i|u|s|strike|del|br|div|p|ul|ol|li|span|h[1-6]|blockquote)\b/i.test(text)
+    || text.includes('&gt;') || text.includes('&lt;') || text.includes('&amp;') || text.includes('&nbsp;');
 }
 
-// Rendu React depuis HTML simple — pas de dangerouslySetInnerHTML.
-// Gère : strong/b, em/i, u, s/strike (inline) ; br (saut) ; div/p (blocs) ; ul/li (puces).
+// Rendu React depuis HTML via le DOM — gère TOUS les attributs (style, class…), entités,
+// balises bloc/inline/liste. Remplace l'ancien parser HTAG qui ne reconnaissait pas
+// les balises avec attributs (<u style="font-family:inherit"> restait en texte brut).
 function renderHtml(html) {
   if (!html) return null;
-  // Rétrocompatibilité : anciens commentaires dont les balises bloc ont été encodées en entités
-  // par normalizeToHtml() quand isHtml() ne vérifiait pas <div>/<p>.
-  if (html.includes('&lt;') || html.includes('&gt;')) {
-    html = html.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del)[^;]*?)&gt;/gi, '<$1>');
+  // Rétrocompat : anciens commentaires dont les balises ont été encodées en entités.
+  // Le pattern (?:[^&]|&(?!gt;))*? tolère les ; dans les valeurs CSS (font-family: inherit;).
+  let prepared = html;
+  if (prepared.includes('&lt;') || prepared.includes('&gt;')) {
+    prepared = prepared.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del|span)(?:[^&]|&(?!gt;))*?)&gt;/gi, '<$1>');
   }
 
-  // <li> et ul/ol gérés directement dans le parser (pas de pré-traitement)
-  const HTAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<s>|<\/s>|<strike>|<\/strike>|<del>|<\/del>|<br\s*\/?>|<\/div>|<div[^>]*>|<\/p>|<p[^>]*>|<li[^>]*>|<\/li>|<\/?(?:ul|ol)[^>]*>)/gi;
-  const parts = html.split(HTAG);
-  const blocks = []; // { items: ReactNode[], isBullet: bool }
+  const container = document.createElement('div');
+  container.innerHTML = prepared;
+
+  let key = 0;
+  const k = () => key++;
+  const blocks = [];
   let current = [];
   let isBullet = false;
-  const stack = [];
 
-  const finalizeBlock = () => {
-    blocks.push({ items: current, isBullet });
-    current = [];
+  const flush = () => {
+    if (current.length > 0) {
+      blocks.push({ items: [...current], isBullet });
+      current = [];
+      isBullet = false;
+    }
   };
 
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    if (!p) continue;
-    const lower = p.toLowerCase().replace(/\s*\/\s*>$/, '>');
-    if (lower === '<strong>' || lower === '<b>') { stack.push('strong'); continue; }
-    if (lower === '</strong>' || lower === '</b>') { stack.pop(); continue; }
-    if (lower === '<em>' || lower === '<i>') { stack.push('em'); continue; }
-    if (lower === '</em>' || lower === '</i>') { stack.pop(); continue; }
-    if (lower === '<u>') { stack.push('u'); continue; }
-    if (lower === '</u>') { stack.pop(); continue; }
-    if (lower === '<s>' || lower === '<strike>' || lower === '<del>') { stack.push('s'); continue; }
-    if (lower === '</s>' || lower === '</strike>' || lower === '</del>') { stack.pop(); continue; }
-    if (lower === '<br>' || lower === '<br/>') {
-      current.push(<br key={`br-${i}`}/>);
-      continue;
+  const BLOCK_TAGS = new Set(['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
+
+  const walk = (node, b, it, u, s) => {
+    if (node.nodeType === 3) { // TEXT_NODE — DOM décode les entités automatiquement
+      const text = node.textContent;
+      if (!text) return;
+      text.split('\n').forEach((line, i) => {
+        if (i > 0) flush();
+        if (!line) return;
+        let el = line;
+        if (s) el = <s key={k()}>{el}</s>;
+        if (u) el = <u key={k()}>{el}</u>;
+        if (it) el = <em key={k()}>{el}</em>;
+        if (b) el = <strong key={k()}>{el}</strong>;
+        current.push(el);
+      });
+      return;
     }
-    // Ouverture d'un élément de liste → nouveau bloc puce
-    if (lower.startsWith('<li')) {
-      if (current.length > 0) finalizeBlock();
-      isBullet = true;
-      continue;
+    if (node.nodeType !== 1) return;
+    const tag = node.tagName.toLowerCase();
+
+    if (tag === 'br') { flush(); return; }
+
+    if (BLOCK_TAGS.has(tag)) {
+      flush();
+      for (const child of node.childNodes) walk(child, b, it, u, s);
+      flush();
+      return;
     }
-    // Frontières de blocs (div/p/li/ul/ol)
-    if (lower === '</li>' ||
-        lower.startsWith('<div') || lower.startsWith('</div') ||
-        lower.startsWith('<p')   || lower.startsWith('</p')   ||
-        lower.startsWith('<ul')  || lower.startsWith('</ul')  ||
-        lower.startsWith('<ol')  || lower.startsWith('</ol')) {
-      if (current.length > 0) finalizeBlock();
-      if (lower === '</li>' || lower.startsWith('</ul') || lower.startsWith('</ol')) isBullet = false;
-      continue;
-    }
-    // Texte brut — décoder entités + appliquer balises ouvertes
-    const decoded = decodeEntities(p);
-    const lines = decoded.split('\n');
-    lines.forEach((line, li) => {
-      if (li > 0) current.push(<br key={`nl-${i}-${li}`}/>);
-      if (!line) return;
-      let node = line;
-      for (let s = stack.length - 1; s >= 0; s--) {
-        const tag = stack[s];
-        if (tag === 'strong') node = <strong key={`${i}-${li}-s${s}`}>{node}</strong>;
-        else if (tag === 'em') node = <em key={`${i}-${li}-s${s}`}>{node}</em>;
-        else if (tag === 'u') node = <u key={`${i}-${li}-s${s}`}>{node}</u>;
-        else if (tag === 's') node = <s key={`${i}-${li}-s${s}`}>{node}</s>;
+
+    if (tag === 'ul' || tag === 'ol') {
+      flush();
+      for (const child of node.childNodes) {
+        if (child.nodeType !== 1 || child.tagName.toLowerCase() !== 'li') continue;
+        flush();
+        isBullet = true;
+        for (const liChild of child.childNodes) walk(liChild, b, it, u, s);
+        flush();
       }
-      current.push(node);
-    });
-  }
-  if (current.length > 0) finalizeBlock();
+      return;
+    }
 
-  if (blocks.length === 0) return null;
+    if (tag === 'li') {
+      flush();
+      isBullet = true;
+      for (const child of node.childNodes) walk(child, b, it, u, s);
+      flush();
+      return;
+    }
 
-  // Bloc "vide" = ne contient que des <br> (ligne blanche issue de l'éditeur)
-  // Ces blocs ne sont pas rendus mais ajoutent de la marge aux blocs adjacents.
-  const isBlank = (b) => b.items.length > 0 && b.items.every(n => n && typeof n === 'object' && n.type === 'br');
+    const nb = b || tag === 'strong' || tag === 'b';
+    const ni = it || tag === 'em' || tag === 'i';
+    const nu = u || tag === 'u';
+    const ns = s || tag === 's' || tag === 'strike' || tag === 'del';
+    // span et balises inconnues : passage transparent (style ignoré, contenu rendu)
+    for (const child of node.childNodes) walk(child, nb, ni, nu, ns);
+  };
 
-  const contentBlocks = blocks.filter(b => !isBlank(b));
-  if (contentBlocks.length === 0) return null;
+  walk(container, false, false, false, false);
+
+  if (!blocks.length) return null;
+
+  const isBlank = (bl) => bl.items.every(n => n && typeof n === 'object' && n.type === 'br');
+  const contentBlocks = blocks.filter(bl => !isBlank(bl));
+  if (!contentBlocks.length) return null;
   if (contentBlocks.length === 1 && !contentBlocks[0].isBullet) return contentBlocks[0].items;
 
-  // Rendu : marge réduite entre blocs consécutifs, plus grande après un bloc vide
   const result = [];
   let pendingBlank = false;
   blocks.forEach((block, i) => {
     if (isBlank(block)) { pendingBlank = true; return; }
-    const hasNext = blocks.slice(i + 1).some(b => !isBlank(b));
+    const hasNext = blocks.slice(i + 1).some(bl => !isBlank(bl));
     const mb = hasNext ? (pendingBlank ? '0.65em' : '0.3em') : 0;
     pendingBlank = false;
     result.push(

@@ -117,11 +117,26 @@ function estimateBlockH(block, ppl) {
 function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
   const blocks = [];
   const cols   = Math.min(ppl, 3);
+
+  // Pré-passe : Vxx globaux uniques — seulement les viewpoints avec photoIdx (liés à une photo).
+  // Clé : `${locId}_${zonePhotoIdx}` → numéro Vxx global (1, 2, 3…)
+  // Numérotation dans l'ordre d'apparition des zones, puis par photoIdx croissant dans chaque zone.
+  const vxxPhotoMap = new Map();
+  let globalVxx = 0;
+  for (const loc of locs) {
+    if (!(loc.items || []).some(i => i.titre)) continue;
+    const vps = (loc.planAnnotations?.paths || [])
+      .filter(p => p.type === 'viewpoint' && p.photoIdx != null);
+    [...vps].sort((a, b) => a.photoIdx - b.photoIdx).forEach(vp => {
+      const key = `${loc.id}_${vp.photoIdx}`;
+      if (!vxxPhotoMap.has(key)) vxxPhotoMap.set(key, ++globalVxx);
+    });
+  }
+
   for (const loc of locs) {
     const items = (loc.items || []).filter(i => i.titre);
     if (!items.length) continue;
     blocks.push({ type:'zone', id:loc.id, loc });
-    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
     let photoOffset = 0;
     for (const item of items) {
       const photos  = (item.photos || []).filter(p => p.data);
@@ -153,9 +168,9 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
         textChunks.forEach(({ text, id }, idx) => {
           if (text) {
             blocks.push({ type:'item', id, item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
-              textContent:text, vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+              textContent:text, vpPhotoOffset:photoOffset, vxxPhotoMap });
           } else if (idx === 0 && !photos.length) {
-            blocks.push({ type:'item', id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, hasViewpoints:hasVP });
+            blocks.push({ type:'item', id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, vxxPhotoMap });
           }
         });
       }
@@ -169,7 +184,7 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
             id: s === 0 ? `${item.id}_ph` : `${item.id}_ph${s}`,
             item, locId:loc.id, mode:'photos',
             photoStart: s, photoCount: count,
-            vpPhotoOffset: photoOffset + s, hasViewpoints:hasVP,
+            vpPhotoOffset: photoOffset + s, vxxPhotoMap,
           });
         }
       }
@@ -352,7 +367,7 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
   return <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>;
 }
 
-function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1 }) {
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1 }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
   const photos = (photoStart != null)
@@ -422,11 +437,14 @@ function ItemBlock({ item, ppl, onEdit, vpPhotoOffset = 0, hasViewpoints = false
                 <img src={useComposed ? ph.annotated : (ph.annotated || ph.data)} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
                 {hasAnnotations && !useComposed && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
-                {hasViewpoints && (
-                  <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
-                    V{vpPhotoOffset + pi + 1}
-                  </div>
-                )}
+                {(() => {
+                  const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
+                  return vxxNum != null ? (
+                    <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
+                      V{vxxNum}
+                    </div>
+                  ) : null;
+                })()}
               </div>
             );
           })}
@@ -1410,7 +1428,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} vpPhotoOffset={block.vpPhotoOffset ?? 0} hasViewpoints={block.hasViewpoints ?? false} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
             ))}
@@ -1464,8 +1482,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
+                              locId={block.locId}
                               vpPhotoOffset={block.vpPhotoOffset ?? 0}
-                              hasViewpoints={block.hasViewpoints ?? false}
+                              vxxPhotoMap={block.vxxPhotoMap}
                               photoStart={block.photoStart}
                               photoCount={block.photoCount}
                               cutMode={cutMode}

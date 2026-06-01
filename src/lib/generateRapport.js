@@ -142,7 +142,7 @@ function parseHtmlSegments(html) {
   // (&lt;div&gt;) — on les restaure en vraies balises avant de parser via le DOM.
   let prepared = html;
   if (prepared.includes('&lt;') || prepared.includes('&gt;')) {
-    prepared = prepared.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del|span)[^;]*?)&gt;/gi, '<$1>');
+    prepared = prepared.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del|span)(?:[^&]|&(?!gt;))*?)&gt;/gi, '<$1>');
   }
   const container = document.createElement('div');
   container.innerHTML = prepared;
@@ -545,11 +545,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.setTextColor(0, 0, 0); y += 10;
   };
 
-  const renderItems = (items, hasViewpoints = false) => {
-    const TX   = ML + 4;      // x texte gauche (4mm padding, preview: 9px=3mm)
-    const TW   = CW - 20;     // 154mm — texte large avec marge sécurité anti-overflow
-    const GRAY = [245, 245, 245]; // #F5F5F5 — header gris comme preview ItemBlock
-    const BDR  = [228, 228, 228]; // border gris clair
+  const renderItems = (items, vxxPhotoMap = null, locId = null) => {
+    const TX   = ML + 4;
+    const TW   = CW - 20;
+    const GRAY = [245, 245, 245];
+    const BDR  = [228, 228, 228];
     const tLH  = 4.2, cLH = 4.2;
     let photoOff = 0;
 
@@ -667,12 +667,12 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           const py2 = y + 3 + Math.floor(pi / cols) * (phH_ + 2);
           try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
           doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.1); doc.rect(px, py2, phW, phH_);
-          if (hasViewpoints) {
-            const vLabel = `V${photoOff + validInItem + 1}`;
+          const vxxNum = vxxPhotoMap?.get(`${locId}_${photoOff + validInItem}`);
+          if (vxxNum != null) {
             doc.setFillColor(255, 255, 255); doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.1);
             doc.roundedRect(px + 1, py2 + 1, 7, 3.5, 0.8, 0.8, 'FD');
             doc.setFontSize(5); doc.setFont('helvetica', 'bold'); doc.setTextColor(50, 50, 50);
-            doc.text(vLabel, px + 4.5, py2 + 3.5, { align: 'center' });
+            doc.text(`V${vxxNum}`, px + 4.5, py2 + 3.5, { align: 'center' });
             doc.setTextColor(0, 0, 0);
           }
           validInItem++;
@@ -703,14 +703,26 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     });
   };
 
+  // Pré-passe : Vxx globaux uniques (même logique que RapportPreview)
+  const vxxPhotoMapPdf = new Map();
+  let globalVxxPdf = 0;
+  for (const loc of localisations) {
+    if (!(loc.items || []).length) continue;
+    const vps = (loc.planAnnotations?.paths || [])
+      .filter(p => p.type === 'viewpoint' && p.photoIdx != null);
+    [...vps].sort((a, b) => a.photoIdx - b.photoIdx).forEach(vp => {
+      const key = `${loc.id}_${vp.photoIdx}`;
+      if (!vxxPhotoMapPdf.has(key)) vxxPhotoMapPdf.set(key, ++globalVxxPdf);
+    });
+  }
+
   localisations.forEach(loc => {
     const items = loc.items || [];
     if (!items.length) return;
     // pb(50) : garantit entête zone + début premier item sur la même page
     if (pageBreaksSet.has(loc.id)) { doc.addPage(); y = 18; hdr(); } else { pb(50); }
     secHdr(loc.nom);
-    const hasVP = (loc.planAnnotations?.paths || []).some(p => p.type === 'viewpoint');
-    renderItems(items, hasVP);
+    renderItems(items, vxxPhotoMapPdf, loc.id);
 
     // Plans inline (si !plansEnFin) — principal + supplémentaires à la suite, une seule légende
     if (!plansEnFin) {

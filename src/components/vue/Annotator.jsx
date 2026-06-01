@@ -1224,13 +1224,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
-      const label = `V${vpCount + 1}`; // toujours séquentiel — évite les doublons
+      const label = `V${vpCount + 1}`;
       setPaths(prev => [...prev, {
         type: 'viewpoint',
         x: pendingVP?.x ?? vpStart.current.x,
         y: pendingVP?.y ?? vpStart.current.y,
         angle: pendingVP?.angle ?? 0,
         label, color, size,
+        photoIdx: activePh?.photoIdx ?? null,
       }]);
       setPendingVP(null);
       vpStart.current = null;
