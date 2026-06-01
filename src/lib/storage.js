@@ -405,6 +405,17 @@ export async function deleteRemoteProjet(id) {
   } catch (e) { console.warn('deleteRemoteProjet error:', e); return false; }
 }
 
+// Suppression immédiate d'un plan depuis Supabase — contourne la sauvegarde différée (debounce 2s).
+// Utilisé quand l'utilisateur supprime un plan de la bibliothèque : garantit la suppression même
+// si l'app est fermée avant que la sauvegarde générale ne s'exécute.
+export async function deleteRemotePlan(chantierId, planId) {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.from('aichantier_chantier_plans').delete().eq('id', planId).eq('chantier_id', chantierId);
+    if (error) console.warn('deleteRemotePlan error:', error);
+  } catch (e) { console.warn('deleteRemotePlan error:', e); }
+}
+
 // Migre les photos legacy (base64 en DB) vers Supabase Storage — une à la fois pour éviter les timeouts.
 // Retourne un objet { [photoId]: storageUrl } pour les photos migrées avec succès.
 export async function migratePhotosToStorage(legacyPhotoIds) {

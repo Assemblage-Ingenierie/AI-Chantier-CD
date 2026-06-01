@@ -57,7 +57,7 @@ const VISIT_FIELDS = new Set([
   'includeConclusion','conclusion','conclusionAlign','ingenieur',
 ]);
 
-export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
+export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
@@ -763,7 +763,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
               onUpdate({ visites: updatedVisites });
               modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
             }}
-            onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
@@ -782,7 +782,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
             savePlanBgNow(projet.id, arr);
           }}
-          onDelete={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDelete={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           onRepairBg={(id, newBg) => {
             const pl = (projet.planLibrary || []).find(p => p.id === id);
@@ -801,7 +801,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
           onPickPlan={(locId) => setModal({ t:'plan', locId, returnToNiveaux: true })}
-          onDeletePlan={id => onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
           onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           onRepairBg={(id, newBg) => {

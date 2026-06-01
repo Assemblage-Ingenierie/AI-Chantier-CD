@@ -23,7 +23,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [ouvert, setOuvert] = useState(null);
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -265,6 +265,7 @@ export default function ChantierAI({ profile, onLogout }) {
             onRefresh={handleRefresh}
             refreshing={refreshing}
             onUpdate={upd => updateProjet(ouvert.id, upd)}
+            onDeletePlan={id => deletePlanFromLibrary(ouvert.id, id)}
             setBackHandler={setBackHandler}
             syncStatus={syncStatus}
           />

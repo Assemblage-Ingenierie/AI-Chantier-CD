@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 
 const MAX_HISTORY = 20;
@@ -345,6 +345,20 @@ export function useProjets(onSyncStatus) {
     deleteRemoteProjet(id);
   };
 
+  // Suppression immédiate d'un plan — contourne le debounce et supprime directement en DB.
+  // Évite la résurrection du plan si l'app est fermée avant la sauvegarde différée.
+  const deletePlanFromLibrary = (projectId, planId) => {
+    pushHistory();
+    dirtyIds.current.add(projectId);
+    userModified.current = true;
+    setProjets(ps => ps.map(p => p.id !== projectId ? p : {
+      ...p,
+      updatedAt: new Date().toISOString(),
+      planLibrary: (p.planLibrary || []).filter(pl => pl.id !== planId),
+    }));
+    deleteRemotePlan(projectId, planId);
+  };
+
   const addProjet = (data) => {
     pushHistory();
     userModified.current = true;
@@ -600,5 +614,5 @@ export function useProjets(onSyncStatus) {
   // en cours ou si des modifs locales sont en attente (pollRemote s'auto-protège).
   const refreshNow = useCallback(() => pollRemote(), [pollRemote]);
 
-  return { projets, setProjets, updateProjet, deleteProjet, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow };
+  return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow };
 }
