@@ -67,8 +67,8 @@ export function pdfDataToBuffer(pdfData) {
   }
 }
 
-// ─── Rendu d'une page PDF en image PNG ────────────────────────────────────────
-export async function renderPdfPage(pdfData, pageNum) {
+// ─── Rendu d'une page PDF en image WebP ──────────────────────────────────────
+async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
   try {
     await ensurePdfJs();
     if (!window.pdfjsLib || !pdfData) return null;
@@ -81,13 +81,13 @@ export async function renderPdfPage(pdfData, pageNum) {
     }).promise;
     const pg = await pdf.getPage(pageNum);
     const rawVp = pg.getViewport({ scale: 1 });
-    const scale = Math.min(2.0, 1800 / rawVp.width);
+    const scale = Math.min(maxScale, maxWidth / rawVp.width);
     const vp = pg.getViewport({ scale });
     const cv = document.createElement('canvas');
     cv.width = Math.round(vp.width);
     cv.height = Math.round(vp.height);
     await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-    const result = cv.toDataURL('image/webp', 0.92);
+    const result = cv.toDataURL('image/webp', quality);
     cv.width = 0;
     cv.height = 0;
     return result;
@@ -95,4 +95,14 @@ export async function renderPdfPage(pdfData, pageNum) {
     console.error('renderPdfPage:', e);
     return null;
   }
+}
+
+// Rendu standard — miniature stockée (localStorage + Supabase)
+export function renderPdfPage(pdfData, pageNum) {
+  return _renderPage(pdfData, pageNum, 2.5, 2200, 0.87);
+}
+
+// Rendu haute qualité — uniquement pour l'annotateur, non stocké
+export function renderPdfPageHQ(pdfData, pageNum) {
+  return _renderPage(pdfData, pageNum, 4.0, 3500, 0.88);
 }
