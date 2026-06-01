@@ -1252,7 +1252,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (sym?.id === id) setSym(SYMBOLS[0]);
   };
 
-  const validPhotos = (photos || []).filter(ph => ph.data).slice(0, 12);
+  const validPhotos = (photos || []).filter(ph => ph.data);
 
   const selectPhoto = (ph, i) => {
     const isActive = activePh?.photoIdx === i;
