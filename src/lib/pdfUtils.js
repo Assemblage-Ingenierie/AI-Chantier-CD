@@ -68,6 +68,9 @@ export function pdfDataToBuffer(pdfData) {
 }
 
 // ─── Rendu d'une page PDF en image WebP ──────────────────────────────────────
+// Limite d'aire canvas — iOS Safari plafonne à ~16,7 M px par canvas.
+const MAX_CANVAS_AREA = 16_000_000;
+
 async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
   try {
     await ensurePdfJs();
@@ -81,8 +84,13 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
     }).promise;
     const pg = await pdf.getPage(pageNum);
     const rawVp = pg.getViewport({ scale: 1 });
-    const scale = Math.min(maxScale, maxWidth / rawVp.width);
-    const vp = pg.getViewport({ scale });
+    let scale = Math.min(maxScale, maxWidth / rawVp.width);
+    let vp = pg.getViewport({ scale });
+    // Garde-fou iOS : ne jamais dépasser l'aire max canvas
+    if (vp.width * vp.height > MAX_CANVAS_AREA) {
+      scale *= Math.sqrt(MAX_CANVAS_AREA / (vp.width * vp.height));
+      vp = pg.getViewport({ scale });
+    }
     const cv = document.createElement('canvas');
     cv.width = Math.round(vp.width);
     cv.height = Math.round(vp.height);
@@ -97,12 +105,12 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
   }
 }
 
-// Rendu standard — miniature stockée (localStorage + Supabase)
+// Rendu standard — miniature stockée (localStorage + Supabase, affichage immédiat)
 export function renderPdfPage(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 2.5, 2200, 0.87);
 }
 
-// Rendu haute qualité — uniquement pour l'annotateur, non stocké
+// Rendu haute qualité — image HD stockée dans Supabase Storage, affichée dans l'annotateur
 export function renderPdfPageHQ(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 5.0, 3800, 0.93);
+  return _renderPage(pdfData, pageNum, 8.0, 4500, 0.85);
 }

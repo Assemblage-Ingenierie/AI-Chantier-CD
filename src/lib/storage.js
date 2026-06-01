@@ -98,7 +98,7 @@ function toSlim(ps) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
-    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null })), // garder bg (miniature PNG) pour affichage immédiat — data (PDF brut) trop lourd
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null, hd: null })), // garder bg (miniature) pour affichage immédiat — data (PDF brut) et hd (image HD) trop lourds pour le cache
     visites: (p.visites || []).map(v => ({
       ...v,
       localisations: (v.localisations || []).map(slimLoc),
@@ -454,6 +454,42 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, b
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
   } catch (e) { console.warn('Storage upload error:', e); return null; }
+}
+
+// Upload de l'image HD d'un plan (WebP haute résolution) dans le bucket `photos`.
+// Retourne le chemin relatif (stocké dans la colonne `data` du plan) ou null.
+async function uploadPlanHd(sb, chantierId, planId, base64) {
+  try {
+    const resp = await fetch(base64);
+    const blob = await resp.blob();
+    const path = `plans/${chantierId}/${planId}.webp`;
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
+    if (error) { console.warn('uploadPlanHd error:', error); return null; }
+    return path;
+  } catch (e) { console.warn('uploadPlanHd error:', e); return null; }
+}
+
+// Récupère l'image HD d'un plan sous forme de data URL (évite le canvas "tainted" à l'export).
+// Lit le chemin Storage dans la colonne `data`, génère une signed URL, puis la convertit.
+export async function fetchPlanHdDataUrl(planId) {
+  try {
+    const sb = await getSupabase();
+    const { data: row, error } = await sb.from('aichantier_chantier_plans')
+      .select('data').eq('id', planId).single();
+    if (error || !row?.data) return null;
+    const path = row.data;
+    if (path.startsWith('data:')) return path; // legacy éventuel : déjà un data URL
+    const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
+    if (!signed?.signedUrl) return null;
+    const resp = await fetch(signed.signedUrl);
+    const blob = await resp.blob();
+    return await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+  } catch (e) { console.warn('fetchPlanHdDataUrl error:', e); return null; }
 }
 
 async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, projectSlug) {
@@ -930,9 +966,17 @@ export async function savePlanBgNow(chantierId, plans) {
   if (!chantierId || !plans?.length) return;
   try {
     const sb = await getSupabase();
-    const rows = plans
+    const rows = await Promise.all(plans
       .filter(pl => pl.id && pl.bg)
-      .map((pl, i) => ({ id: pl.id, chantier_id: chantierId, nom: pl.nom ?? '', bg: pl.bg, sort_order: i }));
+      .map(async (pl, i) => {
+        const row = { id: pl.id, chantier_id: chantierId, nom: pl.nom ?? '', bg: pl.bg, sort_order: i };
+        // Image HD → Supabase Storage (bucket photos), chemin stocké dans la colonne `data`
+        if (typeof pl.hd === 'string' && pl.hd.startsWith('data:')) {
+          const path = await uploadPlanHd(sb, chantierId, pl.id, pl.hd);
+          if (path) row.data = path;
+        }
+        return row;
+      }));
     if (!rows.length) return;
     await sb.from('aichantier_chantier_plans').upsert(rows, { onConflict: 'id' });
   } catch (e) { console.warn('savePlanBgNow:', e); }

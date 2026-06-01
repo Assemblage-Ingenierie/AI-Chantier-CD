@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
-import { fetchPlanData } from '../../lib/storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -34,26 +34,33 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const importFileRef = useRef();
   const [hqImageData, setHqImageData] = useState(null); // rendu HQ du plan ouvert, swappé en arrière-plan
 
-  // Rendu HQ en arrière-plan dès l'ouverture d'un plan dans l'annotateur
+  // Image HD du plan ouvert — swappée en arrière-plan sur la miniature LQ (affichée instantanément)
   useEffect(() => {
     if (annotatingIdx === null) { setHqImageData(null); return; }
     setHqImageData(null);
     const p = plans[annotatingIdx];
-    const libEntry = p?.planId ? planLibrary?.find(x => x.id === p.planId) : null;
-    const planData = p?.planData || libEntry?.data || null;
-    const planId   = p?.planId  || null;
+    const planId   = p?.planId || null;
+    const libEntry = planId ? planLibrary?.find(x => x.id === planId) : null;
     let cancelled = false;
-    const doHQ = async (pdf) => {
-      try {
-        const hq = await renderPdfPageHQ(pdf, 1);
-        if (!cancelled && hq) setHqImageData(hq);
-      } catch { /* fail silently — LQ reste affiché */ }
-    };
-    if (planData) {
-      doHQ(planData);
-    } else if (planId) {
-      fetchPlanData(planId).then(f => { if (!cancelled && f?.data) doHQ(f.data); }).catch(() => {});
-    }
+    (async () => {
+      // 1. Image HD déjà en mémoire (plan fraîchement importé)
+      if (typeof libEntry?.hd === 'string' && libEntry.hd.startsWith('data:')) {
+        setHqImageData(libEntry.hd); return;
+      }
+      // 2. Image HD stockée dans Supabase Storage
+      if (planId) {
+        const durl = await fetchPlanHdDataUrl(planId);
+        if (!cancelled && durl) { setHqImageData(durl); return; }
+      }
+      // 3. Fallback : rendre depuis le PDF en mémoire si présent (sans planId, ou HD pas encore stockée)
+      const pdf = p?.planData || libEntry?.data || null;
+      if (!cancelled && typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) {
+        try {
+          const hq = await renderPdfPageHQ(pdf, 1);
+          if (!cancelled && hq) setHqImageData(hq);
+        } catch { /* LQ reste affiché */ }
+      }
+    })();
     return () => { cancelled = true; };
   }, [annotatingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -75,7 +82,8 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         const live = planLibrary?.find(x => x.id === p.planId);
         if (live?.bg) return { ...p, planBg: live.bg, planData: live.data || null };
         const fetched = await fetchPlanData(p.planId);
-        if (fetched) return { ...p, planBg: fetched.bg, planData: fetched.data };
+        // fetched.data = chemin Storage de l'image HD (pas un PDF) → ne pas l'utiliser comme planData
+        if (fetched) return { ...p, planBg: fetched.bg, planData: null };
       }
       return p;
     }));
@@ -166,7 +174,9 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         const img = await renderPdfPage(pdfData, pageNum);
         if (img) {
           const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
-          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
+          // Image HD (haute résolution) rendue ici où le n° de page est connu → uploadée par savePlanBgNow
+          const hd = await renderPdfPageHQ(pdfData, pageNum);
+          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData, hd: hd || null });
         }
         await new Promise(r => setTimeout(r, 30));
       }
