@@ -23,6 +23,34 @@ async function uploadToDrive({ data, name, projetNom, visiteLabel, visiteDate })
   } catch { /* silently ignore — Drive upload is best-effort */ }
 }
 
+function encodeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function patchHtmlText(html, del, add) {
+  if (!del) return html;
+  const searchEnc = encodeHtml(del);
+  const replaceEnc = encodeHtml(add);
+  const TAG_RE = /(<[^>]*>)/g;
+  const parts = [];
+  let pos = 0, m;
+  TAG_RE.lastIndex = 0;
+  while ((m = TAG_RE.exec(html)) !== null) {
+    if (m.index > pos) parts.push({ tag: false, s: html.slice(pos, m.index) });
+    parts.push({ tag: true, s: m[0] });
+    pos = m.index + m[0].length;
+  }
+  if (pos < html.length) parts.push({ tag: false, s: html.slice(pos) });
+  let replaced = false;
+  return parts.map(p => {
+    if (p.tag || replaced) return p.s;
+    const idx = p.s.indexOf(searchEnc);
+    if (idx < 0) return p.s;
+    replaced = true;
+    return p.s.slice(0, idx) + replaceEnc + p.s.slice(idx + searchEnc.length);
+  }).join('');
+}
+
 export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [] }) {
   const [form, setForm] = useState(() => {
     const base = item
@@ -259,9 +287,12 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
   const applyDiff = (all = false) => {
     const segs = all ? spellDiff.segments.map(s => s.type === 'fix' ? { ...s, active: true } : s) : spellDiff.segments;
-    const plain = segs.map(s => s.type === 'eq' ? s.text : (s.active ? s.add : s.del)).join('');
-    const html = plain.replace(/\n/g, '<br>');
-    setForm(f => ({ ...f, commentaire: html }));
+    let result = form.commentaire;
+    for (const seg of segs) {
+      if (seg.type !== 'fix' || !seg.active || !seg.del) continue;
+      result = patchHtmlText(result, seg.del, seg.add);
+    }
+    setForm(f => ({ ...f, commentaire: result }));
     setSpellDiff(null);
     bumpSync();
   };
@@ -457,18 +488,17 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
   return (
     <div className="modal-overlay" style={{ zIndex:40 }}>
-      <div className="modal-sheet">
-        <div style={{ padding: isDesktop ? '20px 24px' : 20 }}>
-
-          {/* Header */}
-          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:draftRestored ? 8 : 16 }}>
+      <div className="modal-sheet-flex">
+        {/* Sticky header */}
+        <div style={{ padding: isDesktop ? '16px 24px 12px' : '14px 16px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0 }}>
+          <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:draftRestored ? 8 : 0 }}>
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
             <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
           {draftRestored && (
-            <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginBottom:14 }}>
+            <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginTop:8 }}>
               <span style={{ fontSize:11,color:'#92400E',fontWeight:600 }}>📝 Brouillon restauré</span>
               <button onClick={() => { setDraftRestored(false); try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} setForm(item ? { ...item, photos:(item.photos||[]).filter(ph=>ph.data), suivi:item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' } : { titre:'',commentaire:'',urgence:'rien',photos:[],suivi:'rien',commentaireAlign:'left' }); }}
                 style={{ marginLeft:'auto',fontSize:10,color:'#92400E',background:'none',border:'1px solid #FCD34D',borderRadius:5,padding:'2px 7px',cursor:'pointer',fontWeight:600 }}>
@@ -476,8 +506,10 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               </button>
             </div>
           )}
-
           {fileInputs}
+        </div>
+        {/* Scrollable content */}
+        <div style={{ flex:1, overflowY:'auto', padding: isDesktop ? '16px 24px' : '14px 16px' }}>
 
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
@@ -730,7 +762,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 allZonePlans.push({ bg: epBg, annotations: ep.planAnnotations, nom: planLibrary.find(p => p.id === ep.planId)?.nom || null, isPrimary: false });
               }
             }
-            if (!allZonePlans.length) return null;
+            if (!allZonePlans.length && !form.plans.length) return null;
             const totalAnnot = allZonePlans.reduce((n, zp) => n + (zp.annotations?.paths?.length || 0), 0);
             return (
               <div style={{ marginBottom:14 }}>
@@ -743,12 +775,18 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                       </span>
                     )}
                   </label>
-                  {primaryBg && (
-                    <button onClick={() => onOpenAnnot(form)}
-                      style={{ fontSize:12,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'5px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:5 }}>
-                      <Ic n="pen" s={12}/> Annoter
+                  <div style={{ display:'flex', gap:6 }}>
+                    {primaryBg && (
+                      <button onClick={() => onOpenAnnot(form)}
+                        style={{ fontSize:12,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'5px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:5 }}>
+                        <Ic n="pen" s={12}/> Annoter
+                      </button>
+                    )}
+                    <button onClick={() => setShowPlanPicker(true)}
+                      style={{ fontSize:11,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'4px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                      <Ic n="plus" s={11}/> Ajouter
                     </button>
-                  )}
+                  </div>
                 </div>
                 <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
                   {allZonePlans.map((zp, zi) => (
@@ -769,52 +807,40 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                     </div>
                   ))}
                 </div>
+                {form.plans.map((pl, idx) => {
+                  const libPlan = planLibrary.find(p => p.id === pl.planId);
+                  const bg = pl.planBg || libPlan?.bg || null;
+                  const exported = pl.planAnnotations?.exported || bg;
+                  const annotCount = pl.planAnnotations?.paths?.length || 0;
+                  return (
+                    <div key={pl.id} style={{ display:'flex',alignItems:'stretch',marginTop:8,border:`1px solid ${DA.border}`,borderRadius:10,overflow:'hidden',background:'white' }}>
+                      <div onClick={() => setAnnotatingPlanIdx(idx)} style={{ position:'relative',width:72,height:48,background:'#1a1a1a',flexShrink:0,cursor:'pointer' }}>
+                        {exported && <img src={exported} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>}
+                        <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.35)' }}>
+                          <Ic n="pen" s={13}/>
+                        </div>
+                      </div>
+                      <div style={{ flex:1,minWidth:0,padding:'6px 10px',display:'flex',flexDirection:'column',justifyContent:'center' }}>
+                        <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:'0 0 2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{libPlan?.nom || 'Plan'}</p>
+                        {annotCount > 0
+                          ? <span style={{ fontSize:10,color:DA.red,fontWeight:600 }}>{annotCount} annotation{annotCount > 1 ? 's' : ''}</span>
+                          : <span style={{ fontSize:10,color:DA.grayL }}>Non annoté · hors rapport</span>
+                        }
+                      </div>
+                      <button onClick={() => setForm(f => ({ ...f, plans: f.plans.filter((_,i) => i !== idx) }))}
+                        style={{ padding:'0 12px',border:'none',borderLeft:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:'#B91C1C',display:'flex',alignItems:'center' }}>
+                        <Ic n="del" s={14}/>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
 
-          {/* Plans additionnels */}
-          <div style={{ marginBottom:14 }}>
-            <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
-              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Plans additionnels</label>
-              <button onClick={() => setShowPlanPicker(true)}
-                style={{ fontSize:11,fontWeight:600,color:DA.red,background:DA.redL,border:`1px solid #FECACA`,borderRadius:8,padding:'4px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
-                <Ic n="plus" s={11}/> Ajouter
-              </button>
-            </div>
-            {form.plans.map((pl, idx) => {
-              const libPlan = planLibrary.find(p => p.id === pl.planId);
-              const bg = pl.planBg || libPlan?.bg || null;
-              const exported = pl.planAnnotations?.exported || bg;
-              const annotCount = pl.planAnnotations?.paths?.length || 0;
-              return (
-                <div key={pl.id} style={{ display:'flex',alignItems:'stretch',marginBottom:8,border:`1px solid ${DA.border}`,borderRadius:10,overflow:'hidden',background:'white' }}>
-                  <div onClick={() => setAnnotatingPlanIdx(idx)} style={{ position:'relative',width:72,height:48,background:'#1a1a1a',flexShrink:0,cursor:'pointer' }}>
-                    {exported && <img src={exported} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>}
-                    <div style={{ position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.35)' }}>
-                      <Ic n="pen" s={13}/>
-                    </div>
-                  </div>
-                  <div style={{ flex:1,minWidth:0,padding:'6px 10px',display:'flex',flexDirection:'column',justifyContent:'center' }}>
-                    <p style={{ fontSize:12,fontWeight:600,color:DA.black,margin:'0 0 2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{libPlan?.nom || 'Plan'}</p>
-                    {annotCount > 0
-                      ? <span style={{ fontSize:10,color:DA.red,fontWeight:600 }}>{annotCount} annotation{annotCount > 1 ? 's' : ''}</span>
-                      : <span style={{ fontSize:10,color:DA.grayL }}>Non annoté · hors rapport</span>
-                    }
-                  </div>
-                  <button onClick={() => setForm(f => ({ ...f, plans: f.plans.filter((_,i) => i !== idx) }))}
-                    style={{ padding:'0 12px',border:'none',borderLeft:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:'#B91C1C',display:'flex',alignItems:'center' }}>
-                    <Ic n="del" s={14}/>
-                  </button>
-                </div>
-              );
-            })}
-            {form.plans.length === 0 && (
-              <p style={{ fontSize:11,color:DA.grayL,margin:0 }}>Aucun plan — cliquez sur Ajouter</p>
-            )}
-          </div>
-
-          {/* Enregistrer */}
+        </div>
+        {/* Sticky footer */}
+        <div style={{ padding: isDesktop ? '12px 24px' : '12px 16px', borderTop:`1px solid ${DA.border}`, background:'white', flexShrink:0 }}>
           <div style={{ display:'flex',gap:8,alignItems:'stretch' }}>
             {!planBg && (
               <button onClick={() => setShowPlan(true)}
@@ -827,7 +853,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               Enregistrer l'observation
             </button>
           </div>
-
         </div>
       </div>
 

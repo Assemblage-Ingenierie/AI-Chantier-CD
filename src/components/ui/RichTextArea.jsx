@@ -17,7 +17,9 @@ function mdToHtml(text) {
 
 // Vérifie si une valeur est déjà du HTML ou du markdown legacy (insensible à la casse)
 function isHtml(text) {
-  return !!text && /<\/?(strong|em|u|br|b|i|div|p|s|ul|ol|li|strike|span)\b/i.test(text);
+  if (!text) return false;
+  if (/&(amp|lt|gt|nbsp|quot);/i.test(text)) return true;
+  return /<\/?(strong|em|u|br|b|i|div|p|s|ul|ol|li|strike|span)\b/i.test(text);
 }
 
 // Répare un texte où des balises ont été échappées une ou plusieurs fois
