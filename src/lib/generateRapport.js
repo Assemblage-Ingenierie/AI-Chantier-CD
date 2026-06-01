@@ -117,8 +117,74 @@ function addPlanLegend(doc, annot, y, ML, CW, W, MR, RD, GR, symbolIcons = {}, v
 
 
 // Analyse HTML/markdown en segments typés [{text, bold, italic, underline}]
+// Détecte du HTML réel (balises ouvrantes/fermantes connues) OU des entités HTML.
+// Tolère les attributs (<strong style="...">, <span class="...">) et les balises de bloc/liste.
+function looksLikeHtml(text) {
+  return /<\/?(strong|b|em|i|u|s|strike|del|br|div|p|ul|ol|li|span|h[1-6]|blockquote)\b[^>]*>/i.test(text)
+    || /&(amp|lt|gt|nbsp|quot|apos|#\d+|#x[0-9a-f]+);/i.test(text);
+}
+
+// Parse du HTML riche en segments {text,bold,italic,underline} via le DOM.
+// Le DOM décode automatiquement les entités (&amp;→&, &nbsp;→espace) et tolère
+// les attributs/balises inconnues — plus aucune balise brute ne se retrouve dans le PDF.
+function parseHtmlSegments(html) {
+  const segs = [];
+  const pushText = (t, b, it, u) => {
+    if (!t) return;
+    t.split('\n').forEach((line, i) => {
+      if (i > 0) segs.push({ text: '\n', bold: false, italic: false, underline: false });
+      if (line) segs.push({ text: line, bold: b, italic: it, underline: u });
+    });
+  };
+  const nl = () => segs.push({ text: '\n', bold: false, italic: false, underline: false });
+  const BLOCK = new Set(['div', 'p', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
+  // Rétrocompat : anciens commentaires dont les balises ont été encodées en entités
+  // (&lt;div&gt;) — on les restaure en vraies balises avant de parser via le DOM.
+  let prepared = html;
+  if (prepared.includes('&lt;') || prepared.includes('&gt;')) {
+    prepared = prepared.replace(/&lt;(\/?(?:div|p|br|ul|ol|li|strong|b|em|i|u|s|strike|del|span)[^;]*?)&gt;/gi, '<$1>');
+  }
+  const container = document.createElement('div');
+  container.innerHTML = prepared;
+  const walk = (node, b, it, u) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) { // TEXT_NODE
+        const txt = child.textContent.replace(/[ \t\r\n]+/g, ' ');
+        if (txt) pushText(txt, b, it, u);
+        continue;
+      }
+      if (child.nodeType !== 1) continue; // pas un élément
+      const tag = child.tagName.toLowerCase();
+      if (tag === 'br') { nl(); continue; }
+      const nb = b || tag === 'strong' || tag === 'b';
+      const ni = it || tag === 'em' || tag === 'i';
+      const nu = u || tag === 'u';
+      const isBlock = BLOCK.has(tag);
+      if (isBlock) nl();
+      if (tag === 'li') pushText('• ', b, it, u);
+      walk(child, nb, ni, nu);
+      if (isBlock) nl();
+    }
+  };
+  walk(container, false, false, false);
+  // Nettoyer : retirer les sauts de ligne en tête/queue et fusionner les runs (max 1 ligne vide)
+  while (segs.length && segs[0].text === '\n') segs.shift();
+  while (segs.length && segs[segs.length - 1].text === '\n') segs.pop();
+  const out = [];
+  let nlRun = 0;
+  for (const s of segs) {
+    if (s.text === '\n') { nlRun++; if (nlRun > 2) continue; }
+    else nlRun = 0;
+    out.push(s);
+  }
+  return out;
+}
+
 function parseSegments(text) {
   if (!text) return [];
+  if (looksLikeHtml(text)) {
+    try { return parseHtmlSegments(text); } catch { /* fallback ci-dessous */ }
+  }
   const segs = [];
   const push = (t, b, it, u) => {
     t.split('\n').forEach((line, i) => {
@@ -126,36 +192,17 @@ function parseSegments(text) {
       if (line) segs.push({ text: line, bold: b, italic: it, underline: u });
     });
   };
-  const hasHtml = /<(strong|\/strong|b|\/b|em|\/em|i|\/i|u|\/u|br)[\s/>]/i.test(text);
-  if (hasHtml) {
-    const TAG = /(<strong>|<\/strong>|<b>|<\/b>|<em>|<\/em>|<i>|<\/i>|<u>|<\/u>|<br\s*\/?>)/gi;
-    const parts = text.split(TAG);
-    const stack = [];
-    for (const p of parts) {
-      if (!p) continue;
-      const lo = p.toLowerCase().replace(/<br\s*\/?>/, '<br>').trim();
-      if (lo === '<strong>' || lo === '<b>') { stack.push('b'); continue; }
-      if (lo === '</strong>' || lo === '</b>') { const i = stack.lastIndexOf('b'); if (i >= 0) stack.splice(i, 1); continue; }
-      if (lo === '<em>' || lo === '<i>') { stack.push('i'); continue; }
-      if (lo === '</em>' || lo === '</i>') { const i = stack.lastIndexOf('i'); if (i >= 0) stack.splice(i, 1); continue; }
-      if (lo === '<u>') { stack.push('u'); continue; }
-      if (lo === '</u>') { const i = stack.lastIndexOf('u'); if (i >= 0) stack.splice(i, 1); continue; }
-      if (lo === '<br>') { segs.push({ text: '\n', bold: false, italic: false, underline: false }); continue; }
-      push(p, stack.includes('b'), stack.includes('i'), stack.includes('u'));
-    }
-  } else {
-    const MD = /(\*\*[^*\n]+\*\*|__[^_\n]+__|_[^_\n]+_|\*[^*\n]+\*)/g;
-    let last = 0, m;
-    while ((m = MD.exec(text)) !== null) {
-      if (m.index > last) push(text.slice(last, m.index), false, false, false);
-      const s = m[0];
-      if (s.startsWith('**')) push(s.slice(2, -2), true, false, false);
-      else if (s.startsWith('__')) push(s.slice(2, -2), false, false, true);
-      else push(s.slice(1, -1), false, true, false);
-      last = m.index + s.length;
-    }
-    if (last < text.length) push(text.slice(last), false, false, false);
+  const MD = /(\*\*[^*\n]+\*\*|__[^_\n]+__|_[^_\n]+_|\*[^*\n]+\*)/g;
+  let last = 0, m;
+  while ((m = MD.exec(text)) !== null) {
+    if (m.index > last) push(text.slice(last, m.index), false, false, false);
+    const s = m[0];
+    if (s.startsWith('**')) push(s.slice(2, -2), true, false, false);
+    else if (s.startsWith('__')) push(s.slice(2, -2), false, false, true);
+    else push(s.slice(1, -1), false, true, false);
+    last = m.index + s.length;
   }
+  if (last < text.length) push(text.slice(last), false, false, false);
   return segs;
 }
 
