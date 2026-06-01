@@ -13,6 +13,18 @@ import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator from '../vue/Annotator.jsx';
 
+// Compare two plan background URLs ignoring signed-URL query params (token expiry).
+// Two locs are on the same physical plan only if their planBg points to the same file.
+function samePlan(bg1, bg2) {
+  if (!bg1 || !bg2) return false;
+  if (bg1 === bg2) return true;
+  try {
+    const p1 = new URL(bg1).pathname;
+    const p2 = new URL(bg2).pathname;
+    return p1.length > 1 && p1 === p2;
+  } catch { return false; }
+}
+
 async function rotateBg90CW(dataUrl) {
   return new Promise(resolve => {
     const img = new Image();
@@ -676,7 +688,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
         let mergedAnnotations = loc?.planAnnotations ?? null;
         if (loc?.planId) {
           const otherLocs = allLocsFlat.filter(
-            l => l.id !== modal.locId && l.planId === loc.planId && l.planAnnotations?.paths?.length
+            l => l.id !== modal.locId && l.planId === loc.planId && samePlan(l.planBg, loc.planBg) && l.planAnnotations?.paths?.length
           );
           if (otherLocs.length > 0) {
             const ownPaths = loc?.planAnnotations?.paths || [];
@@ -707,14 +719,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
               const planChanged = prevLoc?.planId !== planId || prevLoc?.planBg !== planBg;
-              // Build annotation map: planId → annotations (for primary plan + all extraPlans)
+              // Build annotation map: planId → { planAnnotations, planBg }
+              // planBg is stored so that propagation is gated on samePlan() — prevents cross-plan contamination
+              // when two unrelated zones accidentally share the same planId.
               const annotByPlanId = new Map();
-              if (planId) annotByPlanId.set(planId, planAnnotations ?? null);
+              if (planId) annotByPlanId.set(planId, { planAnnotations: planAnnotations ?? null, planBg: planBg ?? null });
               for (const ep of (extraPlans || [])) {
-                if (ep.planId) annotByPlanId.set(ep.planId, ep.planAnnotations ?? null);
+                if (ep.planId) annotByPlanId.set(ep.planId, { planAnnotations: ep.planAnnotations ?? null, planBg: ep.planBg ?? null });
               }
               // Update all visites: full update for target loc + propagate annotations to all
-              // other locs that share the same planId (primary or extra plan).
+              // other locs that share the same planId AND the same plan image.
               const updatedVisites = (projet.visites || []).map(v => ({
                 ...v,
                 localisations: (v.localisations || []).map(l => {
@@ -723,13 +737,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
                   }
                   let updated = l;
                   if (l.planId && annotByPlanId.has(l.planId)) {
-                    updated = { ...updated, planAnnotations: annotByPlanId.get(l.planId) };
+                    const entry = annotByPlanId.get(l.planId);
+                    if (samePlan(l.planBg, entry.planBg)) {
+                      updated = { ...updated, planAnnotations: entry.planAnnotations };
+                    }
                   }
-                  const newEPs = (l.extraPlans || []).map(ep =>
-                    ep.planId && annotByPlanId.has(ep.planId)
-                      ? { ...ep, planAnnotations: annotByPlanId.get(ep.planId) }
-                      : ep
-                  );
+                  const newEPs = (l.extraPlans || []).map(ep => {
+                    if (!ep.planId || !annotByPlanId.has(ep.planId)) return ep;
+                    const entry = annotByPlanId.get(ep.planId);
+                    return samePlan(ep.planBg, entry.planBg) ? { ...ep, planAnnotations: entry.planAnnotations } : ep;
+                  });
                   if (newEPs.some((ep, i) => ep !== (l.extraPlans || [])[i])) {
                     updated = { ...updated, extraPlans: newEPs };
                   }
