@@ -406,6 +406,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
   const [bgVersion,        setBgVersion]        = useState(0);   // incrémenté pour forcer redraw après swap HQ
+  const [photoStripBig,    setPhotoStripBig]    = useState(false); // agrandir les miniatures de la bande "Vues"
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -1756,14 +1757,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Bande de photos (sans labels V1/V2) ── */}
       {validPhotos.length > 0 && (
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
-          <span style={{ color:'#666',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,flexShrink:0 }}>Vues :</span>
+          <button onClick={() => setPhotoStripBig(v => !v)}
+            title={photoStripBig ? 'Réduire les vignettes' : 'Agrandir les vignettes'}
+            style={{ flexShrink:0,display:'flex',flexDirection:'column',alignItems:'center',gap:1,background:photoStripBig?DA.red:'#333',border:'none',borderRadius:7,padding:'5px 8px',cursor:'pointer',color:photoStripBig?'white':'#aaa',lineHeight:1 }}>
+            <Ic n="img" s={15}/>
+            <span style={{ fontSize:9,fontWeight:800,letterSpacing:0.3 }}>{photoStripBig ? 'Vues −' : 'Vues +'}</span>
+          </button>
           {validPhotos.map((ph, i) => {
             const isActive = activePh?.photoIdx === i;
+            const sz = photoStripBig ? 104 : 56;
             return (
               <button key={i} onClick={() => selectPhoto(ph, i)}
                 title={ph.name || `Photo ${i + 1}`}
-                style={{ flexShrink:0,padding:0,background:'none',border:`2.5px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s' }}>
-                <img src={ph.data} alt="" style={{ width:48,height:48,objectFit:'cover',display:'block' }}/>
+                style={{ flexShrink:0,padding:0,background:'none',border:`3px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s,width 0.15s,height 0.15s' }}>
+                <img src={ph.data} alt="" style={{ width:sz,height:sz,objectFit:'cover',display:'block' }}/>
               </button>
             );
           })}
