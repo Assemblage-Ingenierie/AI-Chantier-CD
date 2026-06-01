@@ -101,7 +101,10 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
     // crashed after chantier upsert bumped updated_at but before plans upsert ran).
     const localPlanById = new Map((lp.planLibrary || []).map(pl => [pl.id, pl]));
     const remotePlanIds = new Set((rp.planLibrary || []).map(pl => pl.id));
-    const localOnlyPlans = (lp.planLibrary || []).filter(pl => !remotePlanIds.has(pl.id));
+    // Only keep local-only plans that have bg already set. Plans without bg that are absent
+    // from remote are stale/deleted remnants (removed on another device). Legitimately
+    // new-but-unsynced plans always have bg set at import time.
+    const localOnlyPlans = (lp.planLibrary || []).filter(pl => !remotePlanIds.has(pl.id) && pl.bg != null);
     if (localOnlyPlans.length > 0) {
       // Mark dirty so these plans are saved on the next sync
       keptLocalIds.add(rp.id);
