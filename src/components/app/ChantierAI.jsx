@@ -31,10 +31,11 @@ export default function ChantierAI({ profile, onLogout }) {
     setRefreshing(true);
     try {
       await refreshNow();
-      // Re-hydrate plan library + plan blobs to refresh expired signed URLs when a project is open
+      // Re-hydrate plan library + plan blobs (force) to refresh missing/stale plan backgrounds
+      // when a project is open — corrige les plans gris après synchro depuis un autre appareil.
       if (ouvert) {
-        const lm = await hydratePlanLibrary(ouvert.id);
-        await hydratePlans(ouvert.id, lm);
+        const lm = await hydratePlanLibrary(ouvert.id, { force: true });
+        await hydratePlans(ouvert.id, lm, { force: true });
       }
     } finally { setRefreshing(false); }
   };

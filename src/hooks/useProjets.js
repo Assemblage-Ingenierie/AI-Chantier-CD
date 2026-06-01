@@ -473,11 +473,17 @@ export function useProjets(onSyncStatus) {
     }
   };
 
-  const hydratePlans = async (projectId, libraryMap) => {
+  const hydratePlans = async (projectId, libraryMap, { force = false } = {}) => {
     const plansMap = await hydratePlansRemote(projectId);
 
-    // First pass: apply what we have from DB and library map
+    // First pass: apply what we have from DB and library map.
+    // En mode force (bouton Actualiser) : on réapplique le bg de la bibliothèque même
+    // si la loc a déjà un planBg, pour corriger les fonds de plan périmés/manquants.
     const locsNeedingPdfRender = new Map(); // planId → Set<locId>
+    const resolveBg = (p, planId) =>
+      libraryMap?.[planId]?.bg || (p.planLibrary || []).find(pl => pl.id === planId)?.bg || null;
+    const resolveData = (p, planId) =>
+      libraryMap?.[planId]?.data || (p.planLibrary || []).find(pl => pl.id === planId)?.data || null;
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -485,21 +491,31 @@ export function useProjets(onSyncStatus) {
         visites: (p.visites || []).map(v => ({
           ...v,
           localisations: (v.localisations || []).map(loc => {
+            // Rafraîchir aussi les plans additionnels (extraPlans) dont le bg est dérivé du planId
+            const newEPs = (loc.extraPlans || []).map(ep => {
+              if (!ep.planId || (!force && ep.planBg)) return ep;
+              const epBg = resolveBg(p, ep.planId);
+              return epBg ? { ...ep, planBg: epBg, planData: resolveData(p, ep.planId) } : ep;
+            });
+            const epsChanged = newEPs.some((ep, i) => ep !== (loc.extraPlans || [])[i]);
+            const withEPs = epsChanged ? { ...loc, extraPlans: newEPs } : loc;
+
             const fromDb = plansMap?.[loc.id];
-            if (fromDb) return { ...loc, planBg: fromDb.planBg ?? loc.planBg, planData: fromDb.planData ?? loc.planData };
-            if (loc.planId && !loc.planBg) {
-              const libBg = libraryMap?.[loc.planId]?.bg
-                || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.bg;
+            if (fromDb) return { ...withEPs, planBg: fromDb.planBg ?? withEPs.planBg, planData: fromDb.planData ?? withEPs.planData };
+            if (loc.planId && (force || !loc.planBg)) {
+              const libBg = resolveBg(p, loc.planId);
               if (libBg) {
-                const libData = libraryMap?.[loc.planId]?.data
-                  || (p.planLibrary || []).find(pl => pl.id === loc.planId)?.data || null;
-                return { ...loc, planBg: libBg, planData: libData, _planDirty: true };
+                // _planDirty seulement quand on remplit un bg manquant (évite un ré-upload
+                // inutile lors d'un simple rafraîchissement forcé d'une loc déjà hydratée)
+                return loc.planBg
+                  ? { ...withEPs, planBg: libBg, planData: resolveData(p, loc.planId) }
+                  : { ...withEPs, planBg: libBg, planData: resolveData(p, loc.planId), _planDirty: true };
               }
               // Queue for PDF rendering fallback
               if (!locsNeedingPdfRender.has(loc.planId)) locsNeedingPdfRender.set(loc.planId, new Set());
               locsNeedingPdfRender.get(loc.planId).add(loc.id);
             }
-            return loc;
+            return withEPs;
           }),
         })),
       };
@@ -540,11 +556,13 @@ export function useProjets(onSyncStatus) {
     }));
   };
 
-  const hydratePlanLibrary = async (projectId) => {
+  const hydratePlanLibrary = async (projectId, { force = false } = {}) => {
     // Skip remote fetch if every plan already has bg in memory (from localStorage or previous fetch)
+    // — sauf en mode force (bouton Actualiser) : on veut alors rafraîchir depuis le serveur,
+    // car projetsRef.current peut être périmé juste après un poll (mise à jour via useEffect).
     const proj = projetsRef.current.find(p => p.id === projectId);
     const plans = proj?.planLibrary || [];
-    if (plans.length > 0 && plans.every(pl => pl.bg != null)) {
+    if (!force && plans.length > 0 && plans.every(pl => pl.bg != null)) {
       return Object.fromEntries(plans.map(pl => [pl.id, { bg: pl.bg, data: pl.data ?? null }]));
     }
 
