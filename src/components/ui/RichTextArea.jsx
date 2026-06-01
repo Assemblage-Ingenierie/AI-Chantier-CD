@@ -79,11 +79,15 @@ export function normalizeToHtml(text) {
 // Extraire le texte brut sans balises (pour PDF, IA, etc.)
 export function htmlToPlain(html) {
   if (!html) return '';
-  return unescapeStrayTags(html)
+  const stripped = unescapeStrayTags(html)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/\n{3,}/g, '\n\n');
+  // Décoder les entités HTML résiduelles (&amp; → &, &lt; → <, etc.)
+  const tmp = document.createElement('textarea');
+  tmp.innerHTML = stripped;
+  return tmp.value;
 }
 
 const RichTextArea = forwardRef(function RichTextArea(
