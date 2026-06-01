@@ -15,15 +15,27 @@ function mdToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-// Vérifie si une valeur est déjà du HTML ou du markdown legacy
+// Vérifie si une valeur est déjà du HTML ou du markdown legacy (insensible à la casse)
 function isHtml(text) {
-  return text && (
-    text.includes('<strong>') || text.includes('<em>') ||
-    text.includes('<u>') || text.includes('<br') ||
-    text.includes('<b>') || text.includes('<i>') ||
-    text.includes('<div') || text.includes('<p>') ||
-    text.includes('<s>') || text.includes('<ul') || text.includes('<li') || text.includes('<strike')
-  );
+  return !!text && /<\/?(strong|em|u|br|b|i|div|p|s|ul|ol|li|strike|span)\b/i.test(text);
+}
+
+// Répare un texte où des balises ont été échappées une ou plusieurs fois
+// (ex: "&lt;div&gt;" ou "&amp;lt;div&amp;gt;" affichés comme texte littéral).
+// Décode les entités jusqu'à retrouver le vrai HTML, sans toucher aux "<" légitimes
+// (ex: "section < 5mm" → le "&lt;" suivi d'un espace n'est pas une balise).
+function unescapeStrayTags(text) {
+  if (!text) return text;
+  let out = text;
+  for (let i = 0; i < 4; i++) {
+    if (!/&(amp;)*lt;\/?(div|p|br|strong|em|u|s|b|i|ul|ol|li|span|strike)\b/i.test(out)) break;
+    const tmp = document.createElement('textarea');
+    tmp.innerHTML = out;
+    const decoded = tmp.value;
+    if (decoded === out) break;
+    out = decoded;
+  }
+  return out;
 }
 
 // Normalise les balises <b>/<i>/<strike> vers <strong>/<em>/<s>
@@ -60,16 +72,18 @@ function cleanPastedHtml(html) {
 
 export function normalizeToHtml(text) {
   if (!text) return '';
-  return isHtml(text) ? text : mdToHtml(text);
+  const repaired = unescapeStrayTags(text);
+  return isHtml(repaired) ? repaired : mdToHtml(repaired);
 }
 
 // Extraire le texte brut sans balises (pour PDF, IA, etc.)
 export function htmlToPlain(html) {
   if (!html) return '';
-  return html
+  return unescapeStrayTags(html)
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, '');
+    .replace(/<\/(p|div)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 const RichTextArea = forwardRef(function RichTextArea(

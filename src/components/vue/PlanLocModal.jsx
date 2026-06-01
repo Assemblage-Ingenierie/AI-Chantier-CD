@@ -52,9 +52,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
 
     // Cache déjà prêt (pré-rendu) → ouverture instantanée
     if (hqCacheRef.current[annotatingIdx]) {
-      const hq = hqCacheRef.current[annotatingIdx];
-      setHqBg(hq);
-      setPlans(prev => prev.map((pl, i) => i === annotatingIdx ? { ...pl, planBg: hq } : pl));
+      setHqBg(hqCacheRef.current[annotatingIdx]);
       return;
     }
 
@@ -72,7 +70,6 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         if (!cancelled && hq) {
           hqCacheRef.current[annotatingIdx] = hq;
           setHqBg(hq);
-          setPlans(prev => prev.map((pl, i) => i === annotatingIdx ? { ...pl, planBg: hq } : pl));
         }
       } finally {
         if (!cancelled) setHqLoading(false);
