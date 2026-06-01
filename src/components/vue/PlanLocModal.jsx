@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { renderPdfPage } from '../../lib/pdfUtils.js';
 import { fetchPlanData } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
@@ -32,64 +32,6 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const [importPdfQueueResults, setImportPdfQueueResults] = useState([]);
   const [showImportPicker, setShowImportPicker] = useState(false);
   const importFileRef = useRef();
-  const [hqBg, setHqBg] = useState(null);
-  const [hqLoading, setHqLoading] = useState(false);
-  const hqCacheRef = useRef({}); // idx → hq dataURL, pré-rendu dès l'ouverture de la modale
-
-  // Pré-rend en HQ dès l'ouverture de la modale pour tous les plans en mémoire → ouverture instantanée
-  useEffect(() => {
-    plans.forEach((p, i) => {
-      if (!p?.planData) return;
-      renderPdfPageHQ(p.planData, 1)
-        .then(hq => { if (hq) hqCacheRef.current[i] = hq; })
-        .catch(() => {});
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Quand on ouvre l'annotateur : utilise le cache si prêt, sinon lance le rendu HQ
-  useEffect(() => {
-    if (annotatingIdx === null) { setHqBg(null); setHqLoading(false); return; }
-
-    // Cache déjà prêt (pré-rendu) → ouverture instantanée
-    if (hqCacheRef.current[annotatingIdx]) {
-      setHqBg(hqCacheRef.current[annotatingIdx]);
-      return;
-    }
-
-    const p = plans[annotatingIdx];
-    const planData = p?.planData || null;
-    const planId   = p?.planId   || null;
-    const existingBg = p?.planBg || null;
-
-    let cancelled = false;
-
-    const doUpgrade = async (pdf) => {
-      setHqLoading(true);
-      try {
-        const hq = await renderPdfPageHQ(pdf, 1);
-        if (!cancelled && hq) {
-          hqCacheRef.current[annotatingIdx] = hq;
-          setHqBg(hq);
-        }
-      } finally {
-        if (!cancelled) setHqLoading(false);
-      }
-    };
-
-    if (planData) {
-      doUpgrade(planData);
-    } else if (planId && existingBg) {
-      const img = new Image();
-      img.onload = async () => {
-        if (img.naturalWidth >= 2800) return; // déjà bonne qualité
-        const fetched = await fetchPlanData(planId).catch(() => null);
-        if (!cancelled && fetched?.data) doUpgrade(fetched.data);
-      };
-      img.src = existingBg;
-    }
-
-    return () => { cancelled = true; };
-  }, [annotatingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const zonePhotos = (items || []).flatMap(it => (it.photos || []).filter(ph => ph.data));
   const selectedIds = new Set(plans.map(p => p.planId).filter(Boolean));
@@ -125,18 +67,12 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   };
 
   if (annotatingIdx !== null) {
-    if (hqLoading) return (
-      <div style={{ position:'fixed', inset:0, background:DA.bg, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, zIndex:9999 }}>
-        <Ic n="spn" s={28} style={{ color:DA.gray }}/>
-        <span style={{ color:DA.gray, fontSize:13 }}>Chargement qualité HD…</span>
-      </div>
-    );
     const p = plans[annotatingIdx];
     const libEntry = p?.planId ? planLibrary?.find(x => x.id === p.planId) : null;
     const libNom = libEntry?.nom;
     return (
       <Annotator
-        bgImage={hqBg || p?.planBg || libEntry?.bg || null}
+        bgImage={p?.planBg || libEntry?.bg || null}
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
         exportSizeMultiplier={2}
