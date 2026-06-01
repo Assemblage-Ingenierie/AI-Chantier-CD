@@ -6,6 +6,7 @@ import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
+import { computeVpNumbering } from '../../lib/vpNumbering.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -114,24 +115,9 @@ function estimateBlockH(block, ppl) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set()) {
+function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map()) {
   const blocks = [];
   const cols   = Math.min(ppl, 3);
-
-  // Pré-passe : Vxx globaux uniques — seulement les viewpoints avec photoIdx (liés à une photo).
-  // Clé : `${locId}_${zonePhotoIdx}` → numéro Vxx global (1, 2, 3…)
-  // Numérotation dans l'ordre d'apparition des zones, puis par photoIdx croissant dans chaque zone.
-  const vxxPhotoMap = new Map();
-  let globalVxx = 0;
-  for (const loc of locs) {
-    if (!(loc.items || []).some(i => i.titre)) continue;
-    const vps = (loc.planAnnotations?.paths || [])
-      .filter(p => p.type === 'viewpoint' && p.photoIdx != null);
-    [...vps].sort((a, b) => a.photoIdx - b.photoIdx).forEach(vp => {
-      const key = `${loc.id}_${vp.photoIdx}`;
-      if (!vxxPhotoMap.has(key)) vxxPhotoMap.set(key, ++globalVxx);
-    });
-  }
 
   for (const loc of locs) {
     const items = (loc.items || []).filter(i => i.titre);
@@ -480,7 +466,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
   );
 }
 
-function SinglePlanImage({ bg, annotations, annotScale, alt }) {
+function SinglePlanImage({ bg, annotations, annotScale, alt, vpNumByPath = null }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
@@ -489,6 +475,14 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
   useEffect(() => {
     if (!bg) { setRenderedImg(exported || null); return; }
     if (!paths?.length) { setRenderedImg(bg); return; }
+    // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
+    const drawPaths = vpNumByPath
+      ? paths.map(p => {
+          if (p.type !== 'viewpoint') return p;
+          const n = vpNumByPath.get(p);
+          return n != null ? { ...p, label: `V${n}` } : p;
+        })
+      : paths;
     const el = new window.Image();
     el.onload = () => {
       const cv  = document.createElement('canvas');
@@ -497,12 +491,12 @@ function SinglePlanImage({ bg, annotations, annotScale, alt }) {
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
       const sizeScale = (cv.width / 1400) * deferredAnnotScale;
-      drawAnnotationPaths(ctx, paths, sizeScale);
+      drawAnnotationPaths(ctx, drawPaths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
     el.onerror = () => setRenderedImg(exported || bg);
     el.src = bg;
-  }, [exported, paths, bg, deferredAnnotScale]);
+  }, [exported, paths, bg, deferredAnnotScale, vpNumByPath]);
 
   if (!renderedImg && !bg) return (
     <div style={{ minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -541,7 +535,7 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override)
   const allPlans = plansSubset ?? (() => {
     const plans = [];
@@ -596,7 +590,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
             {i > 0 && !cutMode && forced && (
               <div style={{ height:2, background:DA.red, opacity:0.3 }}/>
             )}
-            <SinglePlanImage bg={p.bg} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`}/>
+            <SinglePlanImage bg={p.bg} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath}/>
           </React.Fragment>
         );
       })}
@@ -1152,6 +1146,9 @@ function usePreviewScale(scrollRef) {
 const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+  // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
+  // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
+  const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
 
   // breaks effectifs = breaks manuels + breaks dérivés des découpages de paragraphes
   const paraBreaks = useMemo(() =>
@@ -1192,7 +1189,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [planLocs, projet.planLibrary, breaks, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks), [locs, plansEnFin, ppl, paraBreaks]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -1427,7 +1424,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
@@ -1478,7 +1475,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
@@ -1558,7 +1555,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId}/>
+                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId} vpNumByPath={vpNumByPath}/>
                 </A4Card>
               </div>
             </React.Fragment>

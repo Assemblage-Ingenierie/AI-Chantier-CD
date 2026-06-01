@@ -4,11 +4,12 @@ import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
+import { computeVpNumbering } from './vpNumbering.js';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
-async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null) {
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null) {
   if (planId) {
     const hd = await fetchPlanHdDataUrl(planId);
     if (hd) planBg = hd;
@@ -17,6 +18,14 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   const paths    = planAnnotations?.paths;
   if (!planBg) return exported ?? null;
   if (!paths?.length) return planBg;
+  // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
+  const drawPaths = vpNumByPath
+    ? paths.map(p => {
+        if (p.type !== 'viewpoint') return p;
+        const n = vpNumByPath.get(p);
+        return n != null ? { ...p, label: `V${n}` } : p;
+      })
+    : paths;
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
@@ -26,7 +35,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
       const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
-      drawAnnotationPaths(ctx, paths, sizeScale);
+      drawAnnotationPaths(ctx, drawPaths, sizeScale);
       resolve(cv.toDataURL('image/png'));
     };
     img.onerror = () => resolve(exported ?? planBg);
@@ -314,11 +323,15 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const GR = [105, 114, 125], LG = [249, 249, 249], WH = [255, 255, 255];
   const AM = [217, 119, 6], GN = [22, 163, 74];
 
+  // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée AVANT le pré-rendu
+  // des plans pour réécrire les labels des marqueurs. Logique partagée avec l'aperçu écran.
+  const { vxxPhotoMap: vxxPhotoMapPdf, vpNumByPath: vpNumByPathPdf } = computeVpNumbering(localisations);
+
   // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non
   const planImages = {};
   for (const loc of localisations) {
     const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
-    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null);
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf);
     if (img) planImages[loc.id] = img;
   }
 
@@ -332,7 +345,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         if (fetched?.bg) bg = fetched.bg;
       }
       if (!bg && !ep.planId) continue;
-      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null);
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf);
       if (img) extraPlanImages[`${loc.id}_${i}`] = img;
     }
   }
@@ -345,7 +358,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const pl = item.plans[i];
         if (!pl.planAnnotations?.paths?.length) continue;
         const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
-        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null);
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf);
         if (img) itemPlanImages[`${item.id}_${i}`] = img;
       }
     }
@@ -706,19 +719,6 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       y += 2; // espacement inter-items (preview marginBottom:5px=1.7mm)
     });
   };
-
-  // Pré-passe : Vxx globaux uniques (même logique que RapportPreview)
-  const vxxPhotoMapPdf = new Map();
-  let globalVxxPdf = 0;
-  for (const loc of localisations) {
-    if (!(loc.items || []).length) continue;
-    const vps = (loc.planAnnotations?.paths || [])
-      .filter(p => p.type === 'viewpoint' && p.photoIdx != null);
-    [...vps].sort((a, b) => a.photoIdx - b.photoIdx).forEach(vp => {
-      const key = `${loc.id}_${vp.photoIdx}`;
-      if (!vxxPhotoMapPdf.has(key)) vxxPhotoMapPdf.set(key, ++globalVxxPdf);
-    });
-  }
 
   localisations.forEach(loc => {
     const items = loc.items || [];
