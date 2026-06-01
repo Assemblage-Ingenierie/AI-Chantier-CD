@@ -670,13 +670,32 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, setBackH
 
       {modal?.t === 'plan' && (() => {
         const loc = visitProjet.localisations.find(l => l.id === modal.locId);
-        // If this loc has no annotations yet but another loc shares the same planId and already has
-        // annotations, pre-populate so the user sees them immediately on open.
+        // Merge annotations from ALL locs sharing the same planId.
+        // Deduplication by JSON string prevents doubling when locs are already in sync after a propagation save.
         const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
-        const sharedPlanAnnot = (!loc?.planAnnotations?.paths?.length && loc?.planId)
-          ? allLocsFlat.find(l => l.id !== modal.locId && l.planId === loc.planId && l.planAnnotations?.paths?.length)?.planAnnotations ?? null
-          : null;
-        const locForModal = sharedPlanAnnot ? { ...loc, planAnnotations: sharedPlanAnnot } : loc;
+        let mergedAnnotations = loc?.planAnnotations ?? null;
+        if (loc?.planId) {
+          const otherLocs = allLocsFlat.filter(
+            l => l.id !== modal.locId && l.planId === loc.planId && l.planAnnotations?.paths?.length
+          );
+          if (otherLocs.length > 0) {
+            const ownPaths = loc?.planAnnotations?.paths || [];
+            const seen = new Set(ownPaths.map(p => JSON.stringify(p)));
+            const foreign = otherLocs.flatMap(l => l.planAnnotations.paths)
+              .filter(p => !seen.has(JSON.stringify(p)));
+            if (foreign.length > 0) {
+              // Renumber VP labels sequentially to avoid collisions from independent annotations
+              let vpIdx = 1;
+              const mergedPaths = [...ownPaths, ...foreign].map(p =>
+                p.type === 'viewpoint' ? { ...p, label: `V${vpIdx++}` } : p
+              );
+              mergedAnnotations = { ...(loc?.planAnnotations || {}), paths: mergedPaths };
+            }
+          }
+        }
+        const locForModal = mergedAnnotations && mergedAnnotations !== loc?.planAnnotations
+          ? { ...loc, planAnnotations: mergedAnnotations }
+          : loc;
         return (
           <PlanLocModal
             loc={locForModal}
