@@ -96,32 +96,25 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
     const photo = lp.photo ?? rp.photo ?? null;
     if (rp.statut === 'archive') return { ...rp, photo, visites: lp.visites ?? rp.visites };
 
-    // Preserve plan library blobs hydrated locally (remote always returns bg:null/data:null).
-    // Union strategy: also keep local-only plans (imported but not yet in DB — e.g., save
-    // crashed after chantier upsert bumped updated_at but before plans upsert ran).
+    // Non-dirty path → le serveur fait autorité sur la MEMBERSHIP de la bibliothèque de plans
+    // (cet appareil n'a aucune modif en attente et n'est pas plus récent que le remote).
+    // On préserve uniquement les blobs bg/data hydratés localement pour les plans qui existent
+    // ENCORE sur le serveur. Les plans présents en local mais absents du remote ont été
+    // supprimés sur un autre appareil → on les abandonne.
+    // ⚠️ L'ancien comportement "union" les ré-ajoutait et marquait le projet dirty, ce qui
+    // (1) ressuscitait les plans supprimés à la prochaine sauvegarde ET (2) bloquait le poll
+    // « Actualiser » (pollRemote skip tant que dirtyIds n'est pas vide). Les plans réellement
+    // nouveaux non synchronisés passent par le chemin dirty plus haut, qui garde son union.
     const localPlanById = new Map((lp.planLibrary || []).map(pl => [pl.id, pl]));
-    const remotePlanIds = new Set((rp.planLibrary || []).map(pl => pl.id));
-    // Only keep local-only plans that have bg already set. Plans without bg that are absent
-    // from remote are stale/deleted remnants (removed on another device). Legitimately
-    // new-but-unsynced plans always have bg set at import time.
-    const localOnlyPlans = (lp.planLibrary || []).filter(pl => !remotePlanIds.has(pl.id) && pl.bg != null);
-    if (localOnlyPlans.length > 0) {
-      // Mark dirty so these plans are saved on the next sync
-      keptLocalIds.add(rp.id);
-      keptLocal = true;
-    }
 
     return {
       ...rp,
       photo,
-      planLibrary: [
-        ...(rp.planLibrary || []).map(rpl => {
-          const lpl = localPlanById.get(rpl.id);
-          if (!lpl) return rpl;
-          return { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data };
-        }),
-        ...localOnlyPlans,
-      ],
+      planLibrary: (rp.planLibrary || []).map(rpl => {
+        const lpl = localPlanById.get(rpl.id);
+        if (!lpl) return rpl;
+        return { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data };
+      }),
       visites: (rp.visites || []).map(rv => {
         const lv = lp.visites?.find(v => v.id === rv.id);
         if (!lv) return rv;
