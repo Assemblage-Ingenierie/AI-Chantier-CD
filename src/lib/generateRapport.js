@@ -1,5 +1,5 @@
 import { ensureJsPDF } from './pdfUtils.js';
-import { fetchPlanData } from './storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl } from './storage.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
@@ -8,7 +8,11 @@ import { getBrandingUrl } from './branding.js';
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
-async function renderPlanImage(planBg, planAnnotations, annotScale = 1) {
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null) {
+  if (planId) {
+    const hd = await fetchPlanHdDataUrl(planId);
+    if (hd) planBg = hd;
+  }
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
   if (!planBg) return exported ?? null;
@@ -314,7 +318,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const planImages = {};
   for (const loc of localisations) {
     const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
-    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale);
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null);
     if (img) planImages[loc.id] = img;
   }
 
@@ -327,8 +331,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const fetched = await fetchPlanData(ep.planId);
         if (fetched?.bg) bg = fetched.bg;
       }
-      if (!bg) continue;
-      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale);
+      if (!bg && !ep.planId) continue;
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null);
       if (img) extraPlanImages[`${loc.id}_${i}`] = img;
     }
   }
@@ -341,7 +345,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const pl = item.plans[i];
         if (!pl.planAnnotations?.paths?.length) continue;
         const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
-        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale);
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null);
         if (img) itemPlanImages[`${item.id}_${i}`] = img;
       }
     }
