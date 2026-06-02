@@ -3,16 +3,16 @@
 // visite différents — les marqueurs étaient auparavant numérotés par plan (V${vpCount+1}).
 //
 //  • vxxPhotoMap : badge affiché SUR la photo — clé `${locId}_${photoIdx}` → numéro.
-//  • vpNumByPath : label du marqueur dessiné SUR le plan — clé = l'objet path → numéro.
+//  • vpNumByPath : label du marqueur dessiné SUR le plan.
+//    Lookup prioritaire : vp._vpId (string UUID stable après sérialisation JSON).
+//    Fallback : référence objet (rétrocompat session courante sans rechargement).
 //
 // Le compteur est partagé : un marqueur et la photo qu'il vise portent le même numéro.
 // Deux marqueurs visant la même photo (même photoIdx dans la même zone) partagent le numéro.
 // Un marqueur non lié à une photo (photoIdx null, ancien) reçoit quand même un numéro unique.
-// Itère TOUTES les localisations dans l'ordre → numéros identiques en mode inline et
-// en mode « plans en fin », et entre l'aperçu écran et le PDF.
 export function computeVpNumbering(localisations) {
   const vxxPhotoMap = new Map();
-  const vpNumByPath = new Map();
+  const vpNumByPath = new Map(); // double-keyed: object ref ET _vpId (si présent)
   let g = 0;
   for (const loc of (localisations || [])) {
     const planPaths = [
@@ -24,13 +24,21 @@ export function computeVpNumbering(localisations) {
       let num;
       if (vp.photoIdx != null) {
         const key = `${loc.id}_${vp.photoIdx}`;
-        if (vxxPhotoMap.has(key)) num = vxxPhotoMap.get(key); // même photo → même numéro
+        if (vxxPhotoMap.has(key)) num = vxxPhotoMap.get(key);
         else { num = ++g; vxxPhotoMap.set(key, num); }
       } else {
-        num = ++g; // marqueur non lié à une photo : numéro unique quand même
+        num = ++g;
       }
-      vpNumByPath.set(vp, num);
+      vpNumByPath.set(vp, num);             // rétrocompat : objet ref
+      if (vp._vpId) vpNumByPath.set(vp._vpId, num); // stable UUID → survit JSON round-trip
     }
   }
   return { vxxPhotoMap, vpNumByPath };
+}
+
+// Lookup helper : préfère _vpId (stable), bascule sur ref objet (compat ancien code).
+export function getVpNum(vpNumByPath, vp) {
+  if (!vpNumByPath) return null;
+  const n = vp._vpId ? vpNumByPath.get(vp._vpId) : undefined;
+  return n != null ? n : vpNumByPath.get(vp) ?? null;
 }

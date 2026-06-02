@@ -6,7 +6,7 @@ import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { computeVpNumbering } from '../../lib/vpNumbering.js';
+import { computeVpNumbering, getVpNum } from '../../lib/vpNumbering.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -479,7 +479,7 @@ function SinglePlanImage({ bg, annotations, annotScale, alt, vpNumByPath = null 
     const drawPaths = vpNumByPath
       ? paths.map(p => {
           if (p.type !== 'viewpoint') return p;
-          const n = vpNumByPath.get(p);
+          const n = getVpNum(vpNumByPath, p);
           return n != null ? { ...p, label: `V${n}` } : p;
         })
       : paths;

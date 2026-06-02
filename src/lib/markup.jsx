@@ -74,8 +74,14 @@ function renderHtml(html) {
 
     if (BLOCK_TAGS.has(tag)) {
       flush();
+      const beforeCount = blocks.length;
+      const beforeLen = current.length;
       for (const child of node.childNodes) walk(child, b, it, u, s);
-      flush();
+      if (current.length > 0) flush();
+      else if (blocks.length === beforeCount && beforeLen === 0 && blocks.length > 0) {
+        // Div/p vide (ou contenant seulement <br>) entre du contenu → ligne vide
+        blocks.push({ items: [], isBullet: false });
+      }
       return;
     }
 
@@ -111,21 +117,23 @@ function renderHtml(html) {
 
   if (!blocks.length) return null;
 
-  const isBlank = (bl) => bl.items.every(n => n && typeof n === 'object' && n.type === 'br');
+  const isBlank = (bl) => bl.items.length === 0 || bl.items.every(n => n && typeof n === 'object' && n.type === 'br');
   const contentBlocks = blocks.filter(bl => !isBlank(bl));
   if (!contentBlocks.length) return null;
   if (contentBlocks.length === 1 && !contentBlocks[0].isBullet) return contentBlocks[0].items;
 
   const result = [];
-  let pendingBlank = false;
+  let blanksBefore = 0; // nombre de lignes vides consécutives avant le prochain bloc
   blocks.forEach((block, i) => {
-    if (isBlank(block)) { pendingBlank = true; return; }
+    if (isBlank(block)) { blanksBefore++; return; }
     const hasNext = blocks.slice(i + 1).some(bl => !isBlank(bl));
-    const mb = hasNext ? (pendingBlank ? '0.65em' : '0.3em') : 0;
-    pendingBlank = false;
+    const mt = blanksBefore > 0 ? `${blanksBefore * 0.75}em` : undefined;
+    const mb = hasNext ? '0.3em' : 0;
+    blanksBefore = 0;
     result.push(
       <span key={`p-${i}`} style={{
         display: 'block',
+        ...(mt ? { marginTop: mt } : {}),
         marginBottom: mb,
         ...(block.isBullet ? { paddingLeft: '1.1em', textIndent: '-1.1em' } : {}),
       }}>

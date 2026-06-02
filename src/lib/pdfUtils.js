@@ -107,14 +107,14 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
 
 // Rendu standard — miniature stockée (localStorage + Supabase, affichage immédiat)
 export function renderPdfPage(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 4.0, 3000, 0.93);
+  return _renderPage(pdfData, pageNum, 4.0, 4500, 0.95);
 }
 
 // Rendu de PLUSIEURS pages en une passe : parse le PDF UNE seule fois (au lieu d'un
 // getDocument par page) et rend les pages en parallèle par lots. Énorme gain à l'import
 // (10 pages = 1 parse + rendus concurrents, au lieu de 10 parses séquentiels).
 export async function renderPdfPages(pdfData, pageNums, {
-  maxScale = 4.0, maxWidth = 3000, quality = 0.93, concurrency = 4, onProgress,
+  maxScale = 4.0, maxWidth = 4500, quality = 0.95, concurrency = 4, onProgress,
 } = {}) {
   await ensurePdfJs();
   if (!window.pdfjsLib || !pdfData || !pageNums?.length) return [];

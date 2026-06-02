@@ -4,7 +4,7 @@ import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
-import { computeVpNumbering } from './vpNumbering.js';
+import { computeVpNumbering, getVpNum } from './vpNumbering.js';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
@@ -22,7 +22,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   const drawPaths = vpNumByPath
     ? paths.map(p => {
         if (p.type !== 'viewpoint') return p;
-        const n = vpNumByPath.get(p);
+        const n = getVpNum(vpNumByPath, p);
         return n != null ? { ...p, label: `V${n}` } : p;
       })
     : paths;
@@ -510,9 +510,25 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     doc.text('PRÉSENCE', cPres, py + 5, { align: 'right' });
     doc.setTextColor(0, 0, 0); py += 8;
 
+    // Redessine l'en-tête du tableau après un saut de page (continuation intervenants)
+    const drawParticipantsHeader = () => {
+      doc.setFillColor(40, 40, 40); doc.roundedRect(ML, py, CW, 7, 1, 1, 'F');
+      doc.setFontSize(6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...WH);
+      doc.text('NOM / POSTE', cNom, py + 5);
+      doc.text('TEL.', cTel, py + 5);
+      doc.text('EMAIL', cEmail, py + 5);
+      doc.text('PRÉSENCE (suite)', cPres, py + 5, { align: 'right' });
+      doc.setTextColor(0, 0, 0); py += 8;
+    };
+
     participants.forEach((pt, i) => {
       const isPresent = !pt.presence || pt.presence === 'present';
       const rowH = pt.poste ? 13 : 8;
+      // Saut de page si plus de place
+      if (py + rowH > H - 15) {
+        doc.addPage(); hdr(); py = 22;
+        drawParticipantsHeader();
+      }
       const bg = i % 2 === 0 ? 249 : 255;
       doc.setFillColor(bg, bg, bg); doc.rect(ML, py, CW, rowH, 'F');
       doc.setDrawColor(228, 228, 228); doc.setLineWidth(0.1); doc.rect(ML, py, CW, rowH);

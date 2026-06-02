@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { getVpNum } from '../../lib/vpNumbering.js';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
@@ -396,6 +397,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [polyMousePos,  setPolyMousePos]  = useState(null); // prévisualisation curseur
   const lastTapRef = useRef({ time: 0, x: -9999, y: -9999 });
   const lastSymPlaceRef = useRef(0);
+  const [stripZoom,  setStripZoom]  = useState(null);
+  const stripLPRef   = useRef({ timer: null, fired: false });
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
@@ -414,9 +417,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   useEffect(() => {
     setVt({ z: 1, px: 0, py: 0 });
     vtRef.current = { z: 1, px: 0, py: 0 };
-    setPaths(savedPaths || []); // reset annotations quand la photo change
+    // Migre les viewpoints sans _vpId pour que la numérotation globale survive le JSON round-trip
+    const raw = savedPaths || [];
+    const needsMigration = raw.some(p => p.type === 'viewpoint' && !p._vpId);
+    setPaths(needsMigration ? raw.map(p => p.type === 'viewpoint' && !p._vpId ? { ...p, _vpId: crypto.randomUUID() } : p) : raw);
     setSelTextIdx(null);
-    hqScaleRef.current = 1; // reset scale lors du changement de plan
+    hqScaleRef.current = 1;
   }, [bgImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Exposer getAnnotation() pour auto-save depuis le parent (navigation entre photos)
@@ -1233,6 +1239,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const label = `V${vpCount + 1}`;
       setPaths(prev => [...prev, {
         type: 'viewpoint',
+        _vpId: crypto.randomUUID(),
         x: pendingVP?.x ?? vpStart.current.x,
         y: pendingVP?.y ?? vpStart.current.y,
         angle: pendingVP?.angle ?? 0,
@@ -1313,6 +1320,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     setTool('viewpoint');
     setShowSyms(false);
   };
+
+  const startStripLP = (src) => {
+    clearTimeout(stripLPRef.current.timer);
+    stripLPRef.current.fired = false;
+    stripLPRef.current.timer = setTimeout(() => { stripLPRef.current.fired = true; setStripZoom(src); }, 280);
+  };
+  const endStripLP = () => { clearTimeout(stripLPRef.current.timer); setStripZoom(null); };
 
   const selText = selTextIdx !== null ? paths[selTextIdx] : null;
   const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -1729,29 +1743,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             )}
             {/* Saisie inline — apparaît directement au point de tap */}
             {inlineEditPos && (
-              <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
-                transform:'translate(-4px, -36px)', pointerEvents:'auto',
-                display:'flex', alignItems:'center', gap:4 }}>
-                <input autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
-                  onKeyDown={e=>{ if(e.key==='Enter')confirmInlineEdit(); if(e.key==='Escape')cancelInlineEdit(); }}
-                  placeholder="Texte…"
-                  style={{ fontSize:14, background:'rgba(20,20,20,0.95)', color:'white',
-                    border:'2px solid '+DA.red, borderRadius:6, padding:'6px 10px',
-                    outline:'none', minWidth:90, maxWidth:220, fontFamily:'inherit',
-                    boxShadow:'0 3px 14px rgba(0,0,0,0.65)' }}/>
-                {inlineEditIdx !== null && (
-                  <button onMouseDown={e=>e.preventDefault()} onTouchStart={e=>e.preventDefault()}
-                    onClick={()=>{ setPaths(p=>p.filter((_,i)=>i!==inlineEditIdx)); cancelInlineEdit(); }}
-                    style={{ background:'#B91C1C',color:'white',border:'none',borderRadius:6,
-                      padding:'6px 8px',cursor:'pointer',display:'flex',alignItems:'center',flexShrink:0 }}>
-                    <Ic n="del" s={12}/>
-                  </button>
-                )}
-                <button onMouseDown={e=>e.preventDefault()} onTouchStart={e=>e.preventDefault()}
-                  onClick={cancelInlineEdit}
-                  style={{ background:'#333',color:'#aaa',border:'none',borderRadius:6,
-                    padding:'6px 9px',cursor:'pointer',fontSize:13,flexShrink:0 }}>✕</button>
-              </div>
+              <>
+                <div style={{ position:'absolute', inset:0, zIndex:19 }}
+                  onPointerDown={() => confirmInlineEdit()}/>
+                <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
+                  transform:'translate(-4px, -36px)', pointerEvents:'auto' }}>
+                  <input autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
+                    onKeyDown={e=>{
+                      if(e.key==='Enter'){ e.preventDefault(); confirmInlineEdit(); }
+                      if(e.key==='Escape'){ e.preventDefault(); cancelInlineEdit(); }
+                      if((e.key==='Delete'||e.key==='Backspace') && !inlineEditVal){
+                        e.preventDefault();
+                        if(inlineEditIdx !== null) setPaths(p=>p.filter((_,i)=>i!==inlineEditIdx));
+                        cancelInlineEdit();
+                      }
+                    }}
+                    placeholder="Texte…"
+                    style={{ fontSize:14, background:'rgba(20,20,20,0.95)', color:'white',
+                      border:'2px solid '+DA.red, borderRadius:6, padding:'6px 10px',
+                      outline:'none', minWidth:160,
+                      width:(Math.max(160, inlineEditVal.length * 10 + 40))+'px',
+                      maxWidth:'80vw', fontFamily:'inherit',
+                      boxShadow:'0 3px 14px rgba(0,0,0,0.65)' }}/>
+                </div>
+              </>
             )}
           </div>
         ) : (
@@ -1761,6 +1776,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         )}
       </div>
 
+      {stripZoom && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+          <img src={stripZoom} alt="" style={{ maxWidth:'96vw', maxHeight:'94vh', objectFit:'contain', borderRadius:6, boxShadow:'0 8px 50px rgba(0,0,0,0.7)' }}/>
+        </div>
+      )}
       {/* ── Bande de photos (sans labels V1/V2) ── */}
       {validPhotos.length > 0 && (
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
@@ -1774,7 +1794,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             const isActive = activePh?.photoIdx === i;
             const sz = photoStripBig ? 104 : 56;
             return (
-              <button key={i} onClick={() => selectPhoto(ph, i)}
+              <button key={i}
+                onClick={() => { if (!stripLPRef.current.fired) selectPhoto(ph, i); stripLPRef.current.fired = false; }}
+                onPointerDown={() => startStripLP(ph.data)}
+                onPointerUp={endStripLP}
+                onPointerCancel={endStripLP}
                 title={ph.name || `Photo ${i + 1}`}
                 style={{ flexShrink:0,padding:0,background:'none',border:`3px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s,width 0.15s,height 0.15s' }}>
                 <img src={ph.data} alt="" style={{ width:sz,height:sz,objectFit:'cover',display:'block' }}/>
