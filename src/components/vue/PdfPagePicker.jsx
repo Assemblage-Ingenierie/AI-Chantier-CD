@@ -3,6 +3,11 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
 
+// Rendu parallèle par lots — rend CONCURRENCY pages à la fois.
+// Chaque lot met à jour l'affichage dès qu'il est terminé → les miniatures
+// apparaissent par vagues plutôt qu'une par une.
+const CONCURRENCY = 6;
+
 export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose }) {
   const [pages, setPages]       = useState([]);
   const [selected, setSelected] = useState(new Set());
@@ -25,17 +30,30 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         const allSel = new Set(Array.from({ length: count }, (_, i) => i + 1));
         if (!cancelled) setSelected(allSel);
 
-        const arr = [];
-        for (let i = 1; i <= count; i++) {
-          if (cancelled) return;
+        // Rendu parallèle : on prépare les tâches pour toutes les pages, puis
+        // on les exécute CONCURRENCY à la fois pour ne pas saturer le thread UI.
+        const renderPage = async (i) => {
           const pg = await pdf.getPage(i);
-          const vp = pg.getViewport({ scale: 0.4 });
+          const vp = pg.getViewport({ scale: 0.5 });
           const cv = document.createElement('canvas');
           cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
           await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-          const thumb = cv.toDataURL('image/webp', 0.7);
+          const thumb = cv.toDataURL('image/webp', 0.75);
           cv.width = 0; cv.height = 0;
-          if (!cancelled) { arr.push({ num: i, thumb }); setPages([...arr]); }
+          return { num: i, thumb };
+        };
+
+        const results = new Array(count);
+        for (let start = 0; start < count; start += CONCURRENCY) {
+          if (cancelled) return;
+          const batch = [];
+          for (let k = start; k < Math.min(start + CONCURRENCY, count); k++) {
+            batch.push(renderPage(k + 1).then(r => { results[k] = r; }));
+          }
+          await Promise.all(batch);
+          if (cancelled) return;
+          // Mise à jour par lot : évite N re-renders par page
+          setPages(results.slice(0, start + CONCURRENCY).filter(Boolean));
         }
         if (!cancelled) setLoading(false);
       } catch (e) {
@@ -64,7 +82,7 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
           <p style={{ color:'white', fontWeight:700, fontSize:14, margin:0 }}>Choisir les pages à importer</p>
           {label && <p style={{ color:'rgba(255,255,255,0.7)', fontSize:12, margin:'1px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</p>}
           <p style={{ color:'rgba(255,255,255,0.45)', fontSize:11, margin:'2px 0 0' }}>
-            {selected.size} / {pages.length} page{pages.length !== 1 ? 's' : ''} sélectionnée{selected.size !== 1 ? 's' : ''}
+            {selected.size} / {pages.length}{loading ? '…' : ''} page{pages.length !== 1 ? 's' : ''} sélectionnée{selected.size !== 1 ? 's' : ''}
           </p>
         </div>
         <div style={{ display:'flex', gap:8 }}>
@@ -90,15 +108,15 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
             <span style={{ fontSize:13 }}>Chargement des pages…</span>
           </div>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(110px, 1fr))', gap:10 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:12 }}>
           {pages.map(({ num, thumb }) => {
             const sel = selected.has(num);
             return (
               <div key={num} onClick={() => toggle(num)} style={{ cursor:'pointer', borderRadius:8, overflow:'hidden', border:`3px solid ${sel ? DA.red : 'rgba(255,255,255,0.1)'}`, position:'relative', background:'#2a2a2a', transition:'border-color 0.1s' }}>
                 <img src={thumb} alt={`Page ${num}`} style={{ width:'100%', display:'block' }}/>
-                <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.6)', padding:'3px 6px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span style={{ color:'white', fontSize:10, fontWeight:600 }}>p. {num}</span>
-                  {sel && <span style={{ color:DA.red, fontSize:12, fontWeight:700 }}>✓</span>}
+                <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.6)', padding:'4px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <span style={{ color:'white', fontSize:11, fontWeight:600 }}>p. {num}</span>
+                  {sel && <span style={{ color:DA.red, fontSize:13, fontWeight:700 }}>✓</span>}
                 </div>
               </div>
             );
@@ -108,3 +126,4 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
     </div>
   );
 }
+

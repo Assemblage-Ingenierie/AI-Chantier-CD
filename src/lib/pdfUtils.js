@@ -107,7 +107,7 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
 
 // Rendu standard — miniature stockée (localStorage + Supabase, affichage immédiat)
 export function renderPdfPage(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 2.5, 2200, 0.87);
+  return _renderPage(pdfData, pageNum, 4.0, 3000, 0.93);
 }
 
 // Rendu haute qualité — image HD stockée dans Supabase Storage, affichée dans l'annotateur
