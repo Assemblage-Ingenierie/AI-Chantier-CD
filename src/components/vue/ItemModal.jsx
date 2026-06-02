@@ -86,6 +86,10 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
+  const [reformulating, setReformulating] = useState(false);
+  const [reformError, setReformError] = useState('');
+  const [reformList, setReformList] = useState(null); // [{ extrait, propositions:[], raison }]
+  const [reformApplied, setReformApplied] = useState(new Set());
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -322,6 +326,46 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
+  };
+
+  // Propositions de reformulation — distinct de la correction ortho (qui reste intacte).
+  // L'IA repère les passages lourds/répétitifs/maladroits et propose des réécritures à sens
+  // strictement préservé, applicables individuellement (même mécanisme que les corrections).
+  const reformulate = async () => {
+    if (!form.commentaire?.trim() || reformulating) return;
+    setReformulating(true);
+    setReformError('');
+    setReformList(null);
+    setReformApplied(new Set());
+    try {
+      const plain = htmlToPlain(form.commentaire);
+      const d = await callAIProxy({
+        feature: 'reformulation',
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2000,
+        system: 'Tu es un relecteur expert en français technique (rapports de visite de chantier). Repère les passages lourds, répétitifs ou maladroits et propose des reformulations plus claires et fluides, EN PRÉSERVANT STRICTEMENT le sens, le ton professionnel et le vocabulaire technique. Ne corrige pas l\'orthographe, ne raccourcis pas l\'information, n\'invente rien. Pour chaque passage améliorable, donne 1 ou 2 reformulations. Réponds UNIQUEMENT avec un JSON valide, sans aucun texte autour : [{"extrait":"<passage copié mot pour mot depuis le texte original>","propositions":["reformulation 1","reformulation 2"],"raison":"répétition|lourdeur|formulation"}]. L\'extrait doit être recopié à l\'identique depuis le texte fourni. Si rien n\'est à améliorer, réponds exactement [].',
+        messages: [{ role: 'user', content: plain }],
+      });
+      const raw = d.content?.[0]?.text?.trim() || '';
+      let list;
+      try { list = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
+      catch { throw new Error('Réponse IA illisible — réessaie'); }
+      if (!Array.isArray(list)) list = [];
+      // Ne garder que les extraits réellement présents dans le texte (patch fiable)
+      list = list.filter(s => s && typeof s.extrait === 'string' && plain.includes(s.extrait)
+        && Array.isArray(s.propositions) && s.propositions.some(p => p && p.trim()));
+      if (!list.length) setReformError('Aucune reformulation pertinente ✓');
+      else setReformList(list);
+    } catch (e) { setReformError(e.message || 'Erreur IA'); }
+    setReformulating(false);
+  };
+
+  const applyReform = (idx, prop) => {
+    const seg = reformList?.[idx];
+    if (!seg || reformApplied.has(idx)) return;
+    setForm(f => ({ ...f, commentaire: patchHtmlText(f.commentaire, seg.extrait, prop) }));
+    setReformApplied(prev => new Set([...prev, idx]));
+    bumpSync();
   };
 
   const compressPhoto = (file) => new Promise(res => {
@@ -607,6 +651,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
               </button>
               {form.commentaire?.trim() && (
+                <button onClick={reformulate} disabled={reformulating}
+                  style={{ padding:'12px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap',flexShrink:0 }}>
+                  {reformulating ? <Ic n="spn" s={13}/> : <Ic n="spk" s={13}/>}
+                  {reformulating ? 'Analyse…' : isDesktop ? 'Reformuler avec l\'IA' : 'Reformuler'}
+                </button>
+              )}
+              {form.commentaire?.trim() && (
                 <button onClick={fixSpelling} disabled={correcting}
                   style={{ padding:'12px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap',flexShrink:0 }}>
                   {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
@@ -614,6 +665,46 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 </button>
               )}
             </div>
+
+            {/* Volet REFORMULATION — affiché en premier (au-dessus de l'orthographe) */}
+            {reformError && (
+              <div style={{ marginTop:6,padding:'7px 10px',background: reformError.includes('✓') ? '#F0FDF4' : '#FEF2F2',border:`1px solid ${reformError.includes('✓') ? '#BBF7D0' : '#FECACA'}`,borderRadius:8,fontSize:12,color:reformError.includes('✓') ? '#15803D' : '#B91C1C' }}>
+                {reformError}
+              </div>
+            )}
+
+            {reformList && reformList.length > 0 && (
+              <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
+                <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB', gap:8 }}>
+                  <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Reformulations proposées</span>
+                  <button onClick={() => { setReformList(null); setReformApplied(new Set()); }}
+                    style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                    ✕
+                  </button>
+                </div>
+                <div style={{ padding:'4px 0', background:'white' }}>
+                  {reformList.map((seg, idx) => {
+                    const done = reformApplied.has(idx);
+                    return (
+                      <div key={idx} style={{ padding:'10px 12px', borderTop: idx > 0 ? '1px solid #F3F4F6' : 'none', opacity: done ? 0.55 : 1 }}>
+                        <div style={{ fontSize:11, color:'#9CA3AF', textDecoration: done ? 'none' : 'line-through', marginBottom:6, lineHeight:1.5 }}>
+                          {seg.extrait}
+                        </div>
+                        {seg.propositions.filter(p => p && p.trim()).map((prop, pi) => (
+                          <div key={pi} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:6 }}>
+                            <span style={{ flex:1, fontSize:12, color:'#1F2937', lineHeight:1.5 }}>{prop}</span>
+                            <button onClick={() => applyReform(idx, prop)} disabled={done}
+                              style={{ flexShrink:0, background: done ? '#9CA3AF' : '#059669', color:'white', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:700, cursor: done ? 'default' : 'pointer' }}>
+                              {done ? '✓' : 'Appliquer'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {spellError && (
               <div style={{ marginTop:6,padding:'7px 10px',background: spellError.includes('✓') ? '#F0FDF4' : '#FEF2F2',border:`1px solid ${spellError.includes('✓') ? '#BBF7D0' : '#FECACA'}`,borderRadius:8,fontSize:12,color:spellError.includes('✓') ? '#15803D' : '#B91C1C' }}>
