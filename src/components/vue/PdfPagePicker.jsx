@@ -3,10 +3,10 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
 
-// Rendu parallèle par lots — rend CONCURRENCY pages à la fois.
-// Chaque lot met à jour l'affichage dès qu'il est terminé → les miniatures
-// apparaissent par vagues plutôt qu'une par une.
-const CONCURRENCY = 6;
+// Rendu en pool : CONCURRENCY workers tournent en parallèle, chaque page s'affiche
+// dès qu'elle est prête — plus d'attente de lot (l'ancien batch de 6 faisait tout apparaître
+// d'un bloc puis grande pause avant le lot suivant).
+const CONCURRENCY = 8;
 const LONG_PRESS_MS = 280;
 
 export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose }) {
@@ -47,18 +47,27 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
           return { num: i, thumb };
         };
 
-        const results = new Array(count);
-        for (let start = 0; start < count; start += CONCURRENCY) {
-          if (cancelled) return;
-          const batch = [];
-          for (let k = start; k < Math.min(start + CONCURRENCY, count); k++) {
-            batch.push(renderPage(k + 1).then(r => { results[k] = r; }));
+        // Pool concurrent : CONCURRENCY workers, chaque page s'affiche dès qu'elle est prête.
+        // Maintient l'ordre d'affichage (résultats indexés par position) sans attendre que
+        // tout un lot soit terminé avant de mettre à jour l'UI.
+        const results = new Array(count).fill(null);
+        let completed = 0;
+        let nextIdx = 0;
+        const worker = async () => {
+          while (true) {
+            const k = nextIdx++;
+            if (k >= count || cancelled) return;
+            try {
+              results[k] = await renderPage(k + 1);
+              completed++;
+              if (!cancelled) {
+                setPages(results.filter(Boolean));
+                if (completed === count) setLoading(false);
+              }
+            } catch { /* page isolée en erreur → on continue */ }
           }
-          await Promise.all(batch);
-          if (cancelled) return;
-          // Mise à jour par lot : évite N re-renders par page
-          setPages(results.slice(0, start + CONCURRENCY).filter(Boolean));
-        }
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, count) }, worker));
         if (!cancelled) setLoading(false);
       } catch (e) {
         if (!cancelled) { setError(e.message); setLoading(false); }
