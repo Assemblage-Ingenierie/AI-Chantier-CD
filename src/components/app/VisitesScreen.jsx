@@ -1,7 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { callAIProxy } from '../../lib/aiProxy.js';
 
 function stripHtml(html) {
   return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -10,34 +9,6 @@ function stripHtml(html) {
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
-  const [summaryLoading, setSummaryLoading] = useState({}); // visiteId → bool
-
-  const generateSummary = useCallback(async (visite) => {
-    const items = (visite.localisations || []).flatMap(l => l.items || []);
-    if (!items.length) return;
-    setSummaryLoading(s => ({ ...s, [visite.id]: true }));
-    try {
-      const lines = items.slice(0, 20).map(it => {
-        const titre = it.titre || 'Observation';
-        const comment = stripHtml(it.commentaire || '').slice(0, 200);
-        const urg = it.urgence === 'haute' ? ' [URGENT]' : it.urgence === 'moyenne' ? ' [À planifier]' : '';
-        return `• ${titre}${urg}${comment ? ' — ' + comment : ''}`;
-      }).join('\n');
-      const result = await callAIProxy({
-        feature: `summary_${visite.id}`,
-        system: 'Tu es un assistant de suivi de chantier. Réponds UNIQUEMENT avec un résumé concis en 2-3 phrases courtes en français, sans titre ni introduction. Mets en avant ce qui est urgent ou critique.',
-        messages: [{ role: 'user', content: `Résume en 2-3 phrases les points essentiels de cette visite chantier :\n${lines}` }],
-      });
-      const text = result?.content?.[0]?.text || result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (!text) return;
-      const updated = (projet.visites || []).map(v => v.id === visite.id ? { ...v, aiSummary: text.trim() } : v);
-      onUpdateProjet({ visites: updated });
-    } catch (e) {
-      console.warn('generateSummary:', e.message);
-    } finally {
-      setSummaryLoading(s => ({ ...s, [visite.id]: false }));
-    }
-  }, [projet.visites, onUpdateProjet]);
 
   const formatDate = (d) => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' })
@@ -280,10 +251,19 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             const rawItems   = (v.localisations || []).flatMap(l => l.items || []);
             const obsCount   = rawItems.length;
             const urgCount   = rawItems.filter(it => it.urgence === 'haute').length;
-            const urgTitres  = rawItems.filter(it => it.urgence === 'haute' && it.titre).map(it => it.titre);
-            const moyTitres  = rawItems.filter(it => it.urgence === 'moyenne' && it.titre).map(it => it.titre);
-            const aFaireTitres = rawItems.filter(it => ['a_faire','en_cours','prochaine'].includes(it.suivi) && it.titre).map(it => it.titre);
             const zonesCount = (v.localisations || []).length;
+            // Bullets : items pertinents triés par priorité (urgents, en cours, à faire, prochain)
+            // Ignore les "fait" et les items sans info utile
+            const SUIVI_RANK = { en_cours:0, a_faire:1, prochaine:2, rien:3, fait:99 };
+            const bulletItems = rawItems
+              .filter(it => it.suivi !== 'fait' && (it.urgence === 'haute' || it.urgence === 'moyenne' || ['en_cours','a_faire','prochaine'].includes(it.suivi)))
+              .sort((a, b) => {
+                const ua = a.urgence === 'haute' ? -1 : a.urgence === 'moyenne' ? 0 : 1;
+                const ub = b.urgence === 'haute' ? -1 : b.urgence === 'moyenne' ? 0 : 1;
+                if (ua !== ub) return ua - ub;
+                return (SUIVI_RANK[a.suivi] ?? 3) - (SUIVI_RANK[b.suivi] ?? 3);
+              })
+              .slice(0, 4);
             const isDragging = dragIdx === i;
             const isOver     = overIdx === i && dragIdx !== i;
             const isEditing  = editingId === v.id;
@@ -373,48 +353,32 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       </div>
                     )}
 
-                    {/* Résumé IA ou aperçu des observations */}
-                    {rawItems.length > 0 && (
-                      <div style={{ paddingTop:10, borderTop:`1px solid ${DA.border}` }}>
-                        {v.aiSummary ? (
-                          <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
-                            <span style={{ fontSize:10, fontWeight:800, color:'#059669', background:'#ECFDF5', borderRadius:4, padding:'2px 7px', flexShrink:0, marginTop:1 }}>IA</span>
-                            <p style={{ fontSize:12, color:'#333', margin:0, lineHeight:1.45, flex:1 }}>{v.aiSummary}</p>
-                            <button
-                              onClick={e => { e.stopPropagation(); generateSummary(v); }}
-                              disabled={summaryLoading[v.id]}
-                              title="Regénérer le résumé"
-                              style={{ background:'none', border:'none', color:DA.grayL, cursor:'pointer', padding:2, flexShrink:0 }}>
-                              <Ic n={summaryLoading[v.id] ? 'spn' : 'ref'} s={11}/>
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              {/* Aperçu : jusqu'à 2 items les plus importants */}
-                              {rawItems
-                                .sort((a, b) => (a.urgence === 'haute' ? 0 : a.urgence === 'moyenne' ? 1 : 2) - (b.urgence === 'haute' ? 0 : b.urgence === 'moyenne' ? 1 : 2))
-                                .slice(0, 2)
-                                .map((it, k) => {
-                                  const snippet = stripHtml(it.commentaire || it.titre || '').slice(0, 90);
-                                  if (!snippet) return null;
-                                  return (
-                                    <p key={k} style={{ fontSize:11, color:'#555', margin:'0 0 2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                      {it.urgence === 'haute' && <span style={{ color:'#B91C1C', fontWeight:800, marginRight:4 }}>⚠</span>}
-                                      {snippet}
-                                    </p>
-                                  );
-                                })}
+                    {/* Aperçu bullet points : items prioritaires de la visite */}
+                    {bulletItems.length > 0 && (
+                      <div style={{ paddingTop:10, borderTop:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', gap:5 }}>
+                        {bulletItems.map((it, k) => {
+                          const snippet = stripHtml(it.commentaire || it.titre || '').slice(0, 100);
+                          if (!snippet) return null;
+                          const isUrgent   = it.urgence === 'haute';
+                          const isMoyen    = it.urgence === 'moyenne';
+                          const isEnCours  = it.suivi === 'en_cours';
+                          const isProchain = it.suivi === 'prochaine';
+                          const badge = isUrgent  ? { txt:'Urgent',    color:'#B91C1C', bg:'#FFF0F0' }
+                                      : isMoyen   ? { txt:'À planifier',color:'#92400E', bg:'#FFFBEB' }
+                                      : isEnCours ? { txt:'En cours',  color:'#1D4ED8', bg:'#EFF6FF' }
+                                      : isProchain? { txt:'Prochain',  color:'#4B5563', bg:'#F3F4F6' }
+                                      :             { txt:'À faire',   color:'#1D4ED8', bg:'#EFF6FF' };
+                          return (
+                            <div key={k} style={{ display:'flex', alignItems:'baseline', gap:6, minWidth:0 }}>
+                              <span style={{ fontSize:10, fontWeight:800, color:badge.color, background:badge.bg, borderRadius:4, padding:'1px 6px', flexShrink:0, whiteSpace:'nowrap' }}>
+                                {badge.txt}
+                              </span>
+                              <span style={{ fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+                                {snippet}
+                              </span>
                             </div>
-                            <button
-                              onClick={e => { e.stopPropagation(); generateSummary(v); }}
-                              disabled={summaryLoading[v.id]}
-                              style={{ flexShrink:0, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:8, padding:'5px 10px', fontSize:11, fontWeight:700, color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap' }}>
-                              <Ic n={summaryLoading[v.id] ? 'spn' : 'spk'} s={11}/>
-                              {summaryLoading[v.id] ? 'IA…' : 'Résumé IA'}
-                            </button>
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
