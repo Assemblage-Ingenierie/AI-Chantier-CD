@@ -109,50 +109,58 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // ── Gestion du retour arrière — comportement natif (l'app ne se ferme jamais) ──
-  // Sur Android Chrome PWA, le swipe edge est committé par l'OS AVANT que popstate ne
-  // se déclenche : re-pousser une entrée DANS le handler arrive toujours trop tard
-  // (c'était la cause des « deux retours ferment l'app »). Stratégie robuste : garder
-  // un buffer de sentinelles TOUJOURS très profond, rechargé à CHAQUE navigation (pas
-  // seulement dans le handler). Aucune rafale de swipes ne peut alors l'épuiser → le
-  // retour navigue dans l'app mais ne la ferme jamais (on quitte via l'OS, comme un natif).
+  // ── Gestion du retour arrière + DIAGNOSTIC (#navdebug) ─────────────────────
+  // Buffer de sentinelles modéré, protégé par try/catch (Chrome throttle pushState
+  // à ~100 appels/30s → au-delà il LÈVE une exception). Diagnostic activable via
+  // l'URL #navdebug pour observer le comportement réel sur appareil (history.length,
+  // popstate, exceptions pushState) — impossible à reproduire hors Android PWA.
+  const navDebugOn = typeof window !== 'undefined' && window.location.hash.includes('navdebug');
+  const [navDebug, setNavDebug] = useState([]);
+  const logNav = useCallback((msg) => {
+    if (!navDebugOn) return;
+    const line = `${new Date().toISOString().slice(17, 23)} ${msg} H=${history.length}`;
+    setNavDebug(d => [...d.slice(-11), line]);
+  }, [navDebugOn]);
+
   const armBuffer = useCallback((n) => {
-    for (let i = 0; i < n; i++) history.pushState({ pwaSentinel: true }, '');
-  }, []);
+    let pushed = 0;
+    for (let i = 0; i < n; i++) {
+      try { history.pushState({ pwaSentinel: true }, ''); pushed++; }
+      catch (e) { logNav(`pushState THREW @${i} ${e.name}`); break; }
+    }
+    return pushed;
+  }, [logNav]);
 
-  // Buffer initial profond
   useEffect(() => {
-    history.replaceState({ pwaSentinel: true }, '');
-    armBuffer(15);
-  }, [armBuffer]);
-
-  // Recharge le buffer à chaque transition de navigation (ouverture projet / visite) →
-  // il reste profond en permanence, même après plusieurs retours consécutifs.
-  useEffect(() => {
-    armBuffer(6);
-  }, [ouvert?.id, selectedVisiteId, armBuffer]);
+    try { history.replaceState({ pwaSentinel: true }, ''); } catch { /* noop */ }
+    const p = armBuffer(8);
+    logNav(`mount armed=${p}`);
+  }, [armBuffer, logNav]);
 
   useEffect(() => {
     let _lastNav = 0;
     const handler = () => {
-      // Réarme aussi ici (filet de sécurité) puis traite l'action de navigation.
-      armBuffer(3);
+      logNav(`popstate ouv=${!!ouvertRef.current} vis=${!!selectedVisiteIdRef.current} child=${!!childBackHandler.current}`);
+      // Réarme le buffer (consomme 1, repousse 2 → solde +1 si pushState fonctionne).
+      armBuffer(2);
       // Debounce : deux appuis très rapprochés (< 350ms) ne reculent que d'un niveau.
       const now = Date.now();
-      if (now - _lastNav < 350) return;
+      if (now - _lastNav < 350) { logNav('debounced'); return; }
       _lastNav = now;
 
       if (childBackHandler.current?.()) {
-        // modal/overlay géré par l'écran enfant
+        logNav('child handled');
       } else if (selectedVisiteIdRef.current) {
-        setSelectedVisiteId(null);
+        setSelectedVisiteId(null); logNav('-> visite=null');
       } else if (ouvertRef.current) {
-        setOuvert(null);
+        setOuvert(null); logNav('-> ouvert=null');
+      } else {
+        logNav('rien à dépiler (racine)');
       }
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
-  }, [armBuffer]);
+  }, [armBuffer, logNav]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -346,6 +354,15 @@ export default function ChantierAI({ profile, onLogout }) {
         <div style={{ position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:'rgba(30,30,30,0.92)',color:'#fff',padding:'10px 20px',borderRadius:10,fontSize:13,fontWeight:600,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',zIndex:9999,pointerEvents:'none',display:'flex',alignItems:'center',gap:8 }}>
           <Ic n="und" s={15}/>
           {undoToast}
+        </div>
+      )}
+
+      {navDebugOn && (
+        <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:99999, background:'rgba(0,0,0,0.92)', color:'#0f0', fontSize:10, fontFamily:'monospace', padding:'6px 8px', maxHeight:180, overflowY:'auto', lineHeight:1.5 }}>
+          <div style={{ color:'#ff0', fontWeight:700 }}>
+            navAPI={String('navigation' in window)} · dm={window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'} · H={history.length}
+          </div>
+          {navDebug.map((l, i) => <div key={i}>{l}</div>)}
         </div>
       )}
     </div>
