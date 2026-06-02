@@ -109,31 +109,35 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // ── Gestion du retour arrière (buffer de sentinelles popstate) ─────────────
-  // Sur Android Chrome, l'app se ferme dès qu'un appui « retour » atteindrait l'entrée 0,
-  // AVANT même que popstate ne se déclenche → le seul rempart est d'avoir toujours assez
-  // d'entrées devant. Buffer initial profond + re-push inconditionnel à chaque popstate.
-  useEffect(() => {
-    history.replaceState({ pwaSentinel: true }, '');
-    for (let i = 0; i < 8; i++) history.pushState({ pwaSentinel: true }, '');
+  // ── Gestion du retour arrière — comportement natif (l'app ne se ferme jamais) ──
+  // Sur Android Chrome PWA, le swipe edge est committé par l'OS AVANT que popstate ne
+  // se déclenche : re-pousser une entrée DANS le handler arrive toujours trop tard
+  // (c'était la cause des « deux retours ferment l'app »). Stratégie robuste : garder
+  // un buffer de sentinelles TOUJOURS très profond, rechargé à CHAQUE navigation (pas
+  // seulement dans le handler). Aucune rafale de swipes ne peut alors l'épuiser → le
+  // retour navigue dans l'app mais ne la ferme jamais (on quitte via l'OS, comme un natif).
+  const armBuffer = useCallback((n) => {
+    for (let i = 0; i < n; i++) history.pushState({ pwaSentinel: true }, '');
   }, []);
 
-  // Sentinel supplémentaire à chaque ouverture de projet → garantit qu'en revenant
-  // de VueProjet vers VisitesScreen, il reste encore une entrée devant l'entrée 0
+  // Buffer initial profond
   useEffect(() => {
-    if (ouvert) history.pushState({ pwaSentinel: true }, '');
-  }, [ouvert?.id]);
+    history.replaceState({ pwaSentinel: true }, '');
+    armBuffer(15);
+  }, [armBuffer]);
+
+  // Recharge le buffer à chaque transition de navigation (ouverture projet / visite) →
+  // il reste profond en permanence, même après plusieurs retours consécutifs.
+  useEffect(() => {
+    armBuffer(6);
+  }, [ouvert?.id, selectedVisiteId, armBuffer]);
 
   useEffect(() => {
     let _lastNav = 0;
     const handler = () => {
-      // Réarme le buffer EN PREMIER et INCONDITIONNELLEMENT : chaque popstate consomme 1 entrée,
-      // on en repousse 2 → solde toujours +1, le buffer ne peut JAMAIS s'épuiser.
-      history.pushState({ pwaSentinel: true }, '');
-      history.pushState({ pwaSentinel: true }, '');
-
-      // Debounce de l'ACTION de navigation uniquement : deux appuis très rapprochés (< 350ms)
-      // ne font reculer que d'un seul niveau dans l'app.
+      // Réarme aussi ici (filet de sécurité) puis traite l'action de navigation.
+      armBuffer(3);
+      // Debounce : deux appuis très rapprochés (< 350ms) ne reculent que d'un niveau.
       const now = Date.now();
       if (now - _lastNav < 350) return;
       _lastNav = now;
@@ -148,7 +152,7 @@ export default function ChantierAI({ profile, onLogout }) {
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
-  }, []); // refs, pas de dépendances
+  }, [armBuffer]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
