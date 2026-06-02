@@ -114,7 +114,25 @@ export default function ChantierAI({ profile, onLogout }) {
   // à ~100 appels/30s → au-delà il LÈVE une exception). Diagnostic activable via
   // l'URL #navdebug pour observer le comportement réel sur appareil (history.length,
   // popstate, exceptions pushState) — impossible à reproduire hors Android PWA.
-  const navDebugOn = typeof window !== 'undefined' && window.location.hash.includes('navdebug');
+  // Activation robuste : #navdebug dans l'URL (persisté en localStorage car la PWA se
+  // relance toujours sur "/" sans le hash) OU flag localStorage déjà posé. #navdebugoff coupe.
+  const [navDebugOn, setNavDebugOn] = useState(() => {
+    try {
+      const h = window.location.hash || '';
+      if (h.includes('navdebugoff')) { localStorage.removeItem('_navdebug'); return false; }
+      if (h.includes('navdebug')) { localStorage.setItem('_navdebug', '1'); return true; }
+      return localStorage.getItem('_navdebug') === '1';
+    } catch { return false; }
+  });
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash || '';
+      if (h.includes('navdebugoff')) { try { localStorage.removeItem('_navdebug'); } catch {} setNavDebugOn(false); }
+      else if (h.includes('navdebug')) { try { localStorage.setItem('_navdebug', '1'); } catch {} setNavDebugOn(true); }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const [navDebug, setNavDebug] = useState([]);
   const logNav = useCallback((msg) => {
     if (!navDebugOn) return;
