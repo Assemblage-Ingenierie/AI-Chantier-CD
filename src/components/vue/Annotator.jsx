@@ -828,12 +828,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           const fs = (20 + p.size * 4) * txtScale;
           const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
           const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
-          const inBox = (p.textMode === 'boxed' || p.textMode === 'arrow') &&
+          // Boîte de clic sur TOUTE l'étendue du texte (et plus seulement boxed/arrow) :
+          // un clic n'importe où sur le texte le sélectionne.
+          const inBox =
             pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
             pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
           if (inCircle || inBox) {
+            const wasSelected = selTextIdx === i;
             setSelTextIdx(i); setSelAnnot(null);
-            textDragRef.current = { mode: 'box', origX: p.x, origY: p.y, tapX: pos.x, tapY: pos.y };
+            textDragRef.current = { mode: 'box', origX: p.x, origY: p.y, tapX: pos.x, tapY: pos.y, moved: false, textVal: p.text || '', wasSelected };
             setDrawing(true); return;
           }
         }
@@ -936,16 +939,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
         const fs = (20 + p.size * 4) * txtScale;
         const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
-        const inBox = (p.textMode === 'boxed' || p.textMode === 'arrow') &&
+        // Boîte de clic sur TOUTE l'étendue du texte (et plus seulement boxed/arrow).
+        const inBox =
           pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
           pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
-        // Démarrer en mode drag — si l'utilisateur ne bouge pas (tap), onEnd ouvrira l'édition inline
+        // 1er tap = sélection (drag possible). 2e tap sur un texte déjà sélectionné = édition (géré au relâchement).
+        const wasSelected = selTextIdx === existIdx;
         setSelTextIdx(existIdx);
         setDrawing(true);
-        textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y, moved: false, textVal: paths[existIdx].text || '' };
+        textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y, moved: false, textVal: paths[existIdx].text || '', wasSelected };
         return;
       }
       setSelTextIdx(null);
@@ -1206,20 +1211,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (selAnnot !== null && annotDragRef.current) {
       annotDragRef.current = null; setDrawing(false); return;
     }
-    // Fin du déplacement de texte — si tap (pas de drag), ouvrir l'édition inline
+    // Fin d'interaction texte : déplacement, sélection (1er tap) ou édition (2e tap).
     if ((tool === 'text' || tool === 'select') && selTextIdx !== null && textDragRef.current) {
-      const { moved, origX, origY, textVal } = textDragRef.current;
-      if (!moved && tool === 'text') {
-        // Revenir à la position d'origine (micro-mouvement tactile) et ouvrir l'édition
+      const { moved, origX, origY, textVal, wasSelected } = textDragRef.current;
+      textDragRef.current = null;
+      setDrawing(false);
+      if (moved) return; // déplacement terminé → on garde la sélection
+      if (tool === 'text' && wasSelected) {
+        // 2e tap sur un texte déjà sélectionné → édition du contenu
         setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX, y: origY } : p));
-        const capturedIdx = selTextIdx;
-        setInlineEditIdx(capturedIdx);
+        setInlineEditIdx(selTextIdx);
         setInlineEditPos(toScreenPos(origX, origY));
         setInlineEditVal(textVal);
+        setSelTextIdx(null);
       }
-      textDragRef.current = null;
-      if (tool === 'text') setSelTextIdx(null);
-      setDrawing(false);
+      // 1er tap → la sélection est conservée (le prochain tap ouvrira l'édition)
       return;
     }
     if (!drawing) return;
