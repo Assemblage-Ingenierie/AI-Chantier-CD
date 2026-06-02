@@ -1,4 +1,4 @@
-const CACHE = 'aichantier-v3';
+const CACHE = 'aichantier-v4';
 
 // Ressources connues à pré-cacher au premier install
 const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
@@ -7,6 +7,11 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
   );
+});
+
+// Permet à la page de demander l'activation immédiate du nouveau SW (cf. main.jsx).
+self.addEventListener('message', e => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
 // Nettoie les anciens caches à l'activation
