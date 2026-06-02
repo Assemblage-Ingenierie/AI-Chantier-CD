@@ -94,8 +94,10 @@ export default function ChantierAI({ profile, onLogout }) {
   // --- Navigation arrière (swipe iOS / bouton Android) ---
   const ouvertRef = useRef(ouvert);
   const selectedVisiteIdRef = useRef(selectedVisiteId);
-  useEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
-  useEffect(() => { selectedVisiteIdRef.current = selectedVisiteId; }, [selectedVisiteId]);
+  // useLayoutEffect : met à jour les refs IMMÉDIATEMENT après le rendu (sync),
+  // évite que le handler popstate lise des valeurs obsolètes juste après un setState
+  React.useLayoutEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
+  React.useLayoutEffect(() => { selectedVisiteIdRef.current = selectedVisiteId; }, [selectedVisiteId]);
 
   // Lazy loading photos : charger uniquement la visite sélectionnée
   useEffect(() => {

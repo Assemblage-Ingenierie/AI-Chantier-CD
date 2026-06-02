@@ -710,6 +710,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   useEffect(() => {
     if (!bgImage) return;
     setBgOk(false); // masque le canvas pendant le chargement → évite l'écran noir
+    let cancelled = false;
     const load = async () => {
       // Convertir les URLs distantes en data URL pour éviter le "tainted canvas"
       let src = bgImage;
@@ -725,8 +726,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           });
         } catch { /* garder l'URL d'origine en fallback */ }
       }
+      if (cancelled) return;
       const img = new window.Image();
       img.onload = () => {
+        if (cancelled) return;
         const cv = cvRef.current;
         if (!cv) return;
         cv.width = img.naturalWidth;
@@ -734,10 +737,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         bgRef.current = img;
         setBgOk(true);
       };
-      img.onerror = () => setBgOk(true);
+      img.onerror = () => { if (!cancelled) setBgOk(true); };
       img.src = src;
     };
     load();
+    return () => { cancelled = true; };
   }, [bgImage]);
 
   // Quand une version HQ du plan arrive (rendue en arrière-plan depuis PlanLocModal) :

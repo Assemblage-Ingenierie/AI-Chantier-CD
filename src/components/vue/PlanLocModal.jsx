@@ -61,7 +61,10 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
       const pdf = p?.planData || libEntry?.data || null;
       if (!cancelled && typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) {
         try {
-          const hq = await renderPdfPageHQ(pdf, 1);
+          // Extraire le numéro de page depuis le nom du plan (ex: "PDF — Page 3")
+          const nomMatch = libEntry?.nom?.match(/[-—]\s*Page\s*(\d+)/i);
+          const pageNum = nomMatch ? parseInt(nomMatch[1], 10) : 1;
+          const hq = await renderPdfPageHQ(pdf, pageNum);
           if (!cancelled && hq) setHqImageData(hq);
         } catch { /* LQ reste affiché */ }
       }
