@@ -151,11 +151,21 @@ export default function ChantierAI({ profile, onLogout }) {
     }
   }, []);
 
-  const [navDebug, setNavDebug] = useState([]);
+  // Journal PERSISTANT (localStorage) → survit à la fermeture de l'app, pour voir le retour
+  // qui ferme. `i=` = position réelle dans l'historique (Navigation API). Un « mount » au
+  // milieu de la séquence = un rechargement (reset) intempestif.
+  const [navDebug, setNavDebug] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('_navlog') || '[]'); } catch { return []; }
+  });
   const logNav = useCallback((msg) => {
     if (!navDebugOn) return;
-    const line = `${new Date().toISOString().slice(17, 23)} ${msg} H=${history.length}`;
-    setNavDebug(d => [...d.slice(-11), line]);
+    const idx = (typeof window !== 'undefined' && window.navigation?.currentEntry) ? window.navigation.currentEntry.index : '?';
+    const line = `${new Date().toISOString().slice(17, 23)} ${msg} H=${history.length} i=${idx}`;
+    setNavDebug(d => {
+      const next = [...d.slice(-19), line];
+      try { localStorage.setItem('_navlog', JSON.stringify(next)); } catch {}
+      return next;
+    });
   }, [navDebugOn]);
 
   const armBuffer = useCallback((n) => {
@@ -397,11 +407,12 @@ export default function ChantierAI({ profile, onLogout }) {
       )}
 
       {navDebugOn && (
-        <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:99999, background:'rgba(0,0,0,0.92)', color:'#0f0', fontSize:10, fontFamily:'monospace', padding:'6px 8px', maxHeight:180, overflowY:'auto', lineHeight:1.5 }}>
+        <div onClick={() => { try { localStorage.removeItem('_navlog'); } catch {} setNavDebug([]); }}
+          style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:99999, background:'rgba(0,0,0,0.92)', color:'#0f0', fontSize:10, fontFamily:'monospace', padding:'6px 8px', maxHeight:200, overflowY:'auto', lineHeight:1.5 }}>
           <div style={{ color:'#ff0', fontWeight:700 }}>
-            navAPI={String('navigation' in window)} · dm={window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'} · H={history.length}
+            navAPI={String('navigation' in window)} · dm={window.matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'browser'} · H={history.length} (tap = vider)
           </div>
-          {navDebug.map((l, i) => <div key={i}>{l}</div>)}
+          {navDebug.map((l, i) => <div key={i} style={l.includes('RELOAD') ? { color:'#f55', fontWeight:700 } : undefined}>{l}</div>)}
         </div>
       )}
     </div>

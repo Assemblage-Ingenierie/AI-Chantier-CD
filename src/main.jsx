@@ -33,6 +33,12 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (reloaded) return;
       reloaded = true;
+      // Trace dans le journal de diagnostic (persistant) pour repérer un reload intempestif.
+      try {
+        const prev = JSON.parse(localStorage.getItem('_navlog') || '[]');
+        prev.push(`${new Date().toISOString().slice(17, 23)} *** RELOAD (controllerchange) ***`);
+        localStorage.setItem('_navlog', JSON.stringify(prev.slice(-20)));
+      } catch {}
       window.location.reload();
     });
   });
