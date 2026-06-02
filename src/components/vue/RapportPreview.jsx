@@ -473,15 +473,18 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
   const deferredAnnotScale = React.useDeferredValue(annotScale);
   const [renderedImg, setRenderedImg] = useState(null);
   const [fetchedBg, setFetchedBg] = useState(null);
+  const [bgFetchDone, setBgFetchDone] = useState(false);
   const [hdBg, setHdBg] = useState(null); // image HD (Storage) — qualité rapport, indépendante du bg d'affichage 2500px
 
   // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
   // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
   // Supabase → le rapport ne reste plus bloqué sur « Plan en cours de chargement ».
   useEffect(() => {
-    if (bg || !planId) return;
+    if (bg || !planId) { setBgFetchDone(true); return; }
     let cancelled = false;
-    fetchPlanData(planId).then(r => { if (!cancelled && r?.bg) setFetchedBg(r.bg); });
+    fetchPlanData(planId).then(r => {
+      if (!cancelled) { if (r?.bg) setFetchedBg(r.bg); setBgFetchDone(true); }
+    });
     return () => { cancelled = true; };
   }, [bg, planId]);
 
@@ -522,7 +525,8 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     el.src = bgSrc;
   }, [exported, paths, bg, fetchedBg, hdBg, deferredAnnotScale, vpNumByPath]);
 
-  if (!renderedImg && !bg && !fetchedBg) return (
+  // Chargement en attente uniquement si le fetch n'est pas encore terminé
+  if (!renderedImg && !bg && !fetchedBg && !bgFetchDone) return (
     <div style={{ minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <span style={{ fontSize:10, color:'#aaa' }}>Plan en cours de chargement…</span>
     </div>
@@ -540,14 +544,28 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
 // Returns array of { plans, topBreakId } where topBreakId is the break that started this group (null for first).
 function splitPlanGroups(loc, planLibrary, breaks) {
   const lib = planLibrary || [];
+  const hiddenPaths = new Map();
+  const collectHidden = (planId, ann) => {
+    const pts = ann?.paths;
+    if (pts?.length && planId) hiddenPaths.set(planId, [...(hiddenPaths.get(planId) || []), ...pts]);
+  };
   const primaryBg = loc.planBg || (loc.planId && lib.find(p => p.id === loc.planId)?.bg) || null;
   const allPlans = [];
-  if ((loc.planId || loc.planBg) && !loc.planReportHidden) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+  if (loc.planId || loc.planBg) {
+    if (loc.planReportHidden) collectHidden(loc.planId, loc.planAnnotations);
+    else allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+  }
   (loc.extraPlans || []).forEach((ep, i) => {
-    if (ep.reportHidden) return;
+    if (ep.reportHidden) { collectHidden(ep.planId, ep.planAnnotations); return; }
     const epBg = ep.planBg || (ep.planId && lib.find(p => p.id === ep.planId)?.bg) || null;
     allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
   });
+  if (hiddenPaths.size > 0) {
+    allPlans.forEach((p, i) => {
+      const extra = p.planId ? hiddenPaths.get(p.planId) : null;
+      if (extra?.length) allPlans[i] = { ...p, annotations: { ...p.annotations, paths: [...(p.annotations?.paths || []), ...extra] } };
+    });
+  }
   if (!allPlans.length) return [];
   const groups = [];
   let cur = [];
@@ -560,16 +578,35 @@ function splitPlanGroups(loc, planLibrary, breaks) {
 }
 
 function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null }) {
-  // Build list of all plans: primary + extraPlans (or use plansSubset override)
+  // Build list of all plans: primary + extraPlans (or use plansSubset override).
+  // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
+  // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
   const allPlans = plansSubset ?? (() => {
     const plans = [];
+    // Collecte des paths des plans masqués, regroupés par planId
+    const hiddenPaths = new Map();
+    const collectHidden = (planId, ann) => {
+      const pts = ann?.paths;
+      if (pts?.length && planId) hiddenPaths.set(planId, [...(hiddenPaths.get(planId) || []), ...pts]);
+    };
     const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-    if ((loc.planId || loc.planBg) && !loc.planReportHidden) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+    if (loc.planId || loc.planBg) {
+      if (loc.planReportHidden) collectHidden(loc.planId, loc.planAnnotations);
+      else plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+    }
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
-      if (ep.reportHidden) continue;
+      if (ep.reportHidden) { collectHidden(ep.planId, ep.planAnnotations); continue; }
       const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
       plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
+    }
+    // Fusion des paths masqués dans le plan visible correspondant
+    if (hiddenPaths.size > 0) {
+      return plans.map(p => {
+        const extra = p.planId ? hiddenPaths.get(p.planId) : null;
+        if (!extra?.length) return p;
+        return { ...p, annotations: { ...p.annotations, paths: [...(p.annotations?.paths || []), ...extra] } };
+      });
     }
     return plans;
   })();

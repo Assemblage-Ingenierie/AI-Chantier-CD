@@ -106,17 +106,17 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
 }
 
 // Rendu standard — image d'AFFICHAGE stockée (localStorage + Supabase, affichage immédiat).
-// Taille modérée (2500px) → chargement quasi instantané. La qualité du RAPPORT ne dépend pas
+// 3500px max / scale 4.0 → net même sur grands écrans. La qualité du RAPPORT ne dépend pas
 // de cette image : il récupère l'image HD séparée (fetchPlanHdDataUrl / renderPdfPageHQ).
 export function renderPdfPage(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 4.0, 2500, 0.9);
+  return _renderPage(pdfData, pageNum, 4.0, 3500, 0.9);
 }
 
 // Rendu de PLUSIEURS pages en une passe : parse le PDF UNE seule fois (au lieu d'un
 // getDocument par page) et rend les pages en parallèle par lots. Énorme gain à l'import
 // (10 pages = 1 parse + rendus concurrents, au lieu de 10 parses séquentiels).
 export async function renderPdfPages(pdfData, pageNums, {
-  maxScale = 4.0, maxWidth = 2500, quality = 0.9, concurrency = 4, onProgress,
+  maxScale = 4.0, maxWidth = 3500, quality = 0.9, concurrency = 4, onProgress,
 } = {}) {
   await ensurePdfJs();
   if (!window.pdfjsLib || !pdfData || !pageNums?.length) return [];
