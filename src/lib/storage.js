@@ -133,16 +133,30 @@ function buildLocFromRow(loc, itemsByLoc) {
     planAnnotations,
     planReportHidden,
     extraPlans,
-    items: (itemsByLoc[loc.id] ?? []).map(item => ({
-      id:              item.id,
-      titre:           item.titre ?? '',
-      suivi:           item.suivi ?? 'rien',
-      urgence:         item.urgence ?? 'basse',
-      commentaire:     item.commentaire ?? '',
-      planAnnotations: tryParseJson(item.plan_annotations),
-      photos:          [],
-      _photosHydrated: false,
-    })),
+    items: (itemsByLoc[loc.id] ?? []).map(item => {
+      const parsedAnnot = tryParseJson(item.plan_annotations);
+      // Plans de bibliothèque attachés à l'item — encodés dans _plans pour éviter une colonne dédiée
+      const plans = (parsedAnnot?._plans || []).map(pl => ({
+        id: pl.id || crypto.randomUUID(),
+        planId: pl.planId,
+        planBg: null,  // hydraté depuis planLibrary à l'affichage
+        planAnnotations: pl.paths?.length ? { paths: pl.paths } : null,
+      }));
+      const planAnnotations = parsedAnnot?._plans
+        ? (({ _plans, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
+        : parsedAnnot;
+      return {
+        id:              item.id,
+        titre:           item.titre ?? '',
+        suivi:           item.suivi ?? 'rien',
+        urgence:         item.urgence ?? 'basse',
+        commentaire:     item.commentaire ?? '',
+        planAnnotations,
+        plans,
+        photos:          [],
+        _photosHydrated: false,
+      };
+    }),
   };
 }
 
@@ -812,7 +826,21 @@ async function saveRemote(ps, dirtyIds = null) {
           id: itemId, localisation_id: locId,
           titre: item.titre ?? '', suivi: item.suivi ?? 'rien',
           urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
-          plan_annotations: item.planAnnotations ? JSON.stringify(slimAnnot(item.planAnnotations)) : null,
+          plan_annotations: (() => {
+            const ann = item.planAnnotations ? { ...slimAnnot(item.planAnnotations) } : {};
+            // Plans bibliothèque de l'item encodés dans _plans (même colonne, pas de colonne dédiée)
+            if (item.plans?.length) {
+              const slimPlans = item.plans
+                .filter(pl => pl.planId)
+                .map(pl => ({
+                  id: pl.id,
+                  planId: pl.planId,
+                  ...(pl.planAnnotations?.paths?.length ? { paths: pl.planAnnotations.paths } : {}),
+                }));
+              if (slimPlans.length) ann._plans = slimPlans;
+            }
+            return Object.keys(ann).length ? JSON.stringify(ann) : null;
+          })(),
           sort_order: ii,
         });
         const hasLocal = (item.photos || []).some(ph => ph.data || ph.storage_url);

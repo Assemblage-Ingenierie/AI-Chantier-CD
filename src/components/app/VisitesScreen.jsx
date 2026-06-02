@@ -7,41 +7,48 @@ function stripHtml(html) {
   return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-const SNIPPET_KEY = '_aisnippets_v1';
-const loadSnippetCache = () => { try { return JSON.parse(localStorage.getItem(SNIPPET_KEY) || '{}'); } catch { return {}; } };
-const saveSnippetCache = (o) => { try { localStorage.setItem(SNIPPET_KEY, JSON.stringify(o)); } catch {}; };
+const VSUMMARY_KEY = '_aivsummaries_v1';
+const loadVSummaryCache = () => { try { return JSON.parse(localStorage.getItem(VSUMMARY_KEY) || '{}'); } catch { return {}; } };
+const saveVSummaryCache = (o) => { try { localStorage.setItem(VSUMMARY_KEY, JSON.stringify(o)); } catch {}; };
 
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
-  const [snippets, setSnippets] = useState(() => loadSnippetCache());
-  const snippetGenRef = useRef(false);
+  const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
+  const summaryGenRef = useRef(false);
 
-  // Auto-génère des résumés courts pour les items sans snippet en cache
+  // Auto-génère un résumé thématique par visite (ex: "Étanchéité, démolition, SOGED")
   useEffect(() => {
-    if (snippetGenRef.current) return;
-    const cache = loadSnippetCache();
-    const allItems = visites.flatMap(v => (v.localisations || []).flatMap(l => l.items || []));
-    const missing = allItems.filter(it => it.id && !cache[it.id] && stripHtml(it.commentaire || it.titre || ''));
+    if (summaryGenRef.current) return;
+    const cache = loadVSummaryCache();
+    const missing = visites.filter(v => {
+      if (!v.id || cache[v.id]) return false;
+      const items = (v.localisations || []).flatMap(l => l.items || []);
+      return items.some(it => it.titre || it.commentaire);
+    });
     if (missing.length === 0) return;
-    snippetGenRef.current = true;
+    summaryGenRef.current = true;
     (async () => {
       try {
-        const lines = missing.slice(0, 30).map(it => {
-          const txt = stripHtml(it.commentaire || '').slice(0, 200);
-          return `id=${it.id} | "${(it.titre || txt || '').slice(0, 80)}"${txt ? ' — ' + txt.slice(0, 120) : ''}`;
-        }).join('\n');
+        const blocks = missing.slice(0, 8).map(v => {
+          const items = (v.localisations || []).flatMap(l => l.items || []);
+          const lines = items.slice(0, 25).map(it => {
+            const txt = stripHtml(it.commentaire || '').slice(0, 80);
+            return (it.titre || txt || '').slice(0, 60);
+          }).filter(Boolean).join(' / ');
+          return `id=${v.id} | ${lines}`;
+        }).join('\n---\n');
         const r = await callAIProxy({
-          feature: 'visite_snippets',
-          messages: [{ role: 'user', content: `Pour chaque observation, génère un résumé de 4 à 7 mots en français (constat ou action principale). Réponds UNIQUEMENT avec un JSON valide: {"id": "résumé court"}\n\n${lines}` }]
+          feature: 'visite_summaries',
+          messages: [{ role: 'user', content: `Pour chaque visite de chantier, génère un résumé thématique très court (5 à 9 mots, style télégraphique, majuscule initiale, sans point final). Capture les grands thèmes, corps de métier ou sujets principaux. Exemple: "Étanchéité, gros œuvre, suivi démolition SOGED"\nRéponds UNIQUEMENT avec un JSON valide: {"id": "résumé thématique"}\n\n${blocks}` }]
         });
         const raw = r.content?.[0]?.text || '';
         const match = raw.match(/\{[\s\S]*\}/);
         if (match) {
           const parsed = JSON.parse(match[0]);
-          const newCache = { ...loadSnippetCache(), ...parsed };
-          saveSnippetCache(newCache);
-          setSnippets(s => ({ ...s, ...parsed }));
+          const newCache = { ...loadVSummaryCache(), ...parsed };
+          saveVSummaryCache(newCache);
+          setVisitSummaries(s => ({ ...s, ...parsed }));
         }
       } catch {}
     })();
@@ -289,18 +296,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             const obsCount   = rawItems.length;
             const urgCount   = rawItems.filter(it => it.urgence === 'haute').length;
             const zonesCount = (v.localisations || []).length;
-            // Bullets : items pertinents triés par priorité (urgents, en cours, à faire, prochain)
-            // Ignore les "fait" et les items sans info utile
-            const SUIVI_RANK = { en_cours:0, a_faire:1, prochaine:2, rien:3, fait:99 };
-            const bulletItems = rawItems
-              .filter(it => it.suivi !== 'fait' && (it.urgence === 'haute' || it.urgence === 'moyenne' || ['en_cours','a_faire','prochaine'].includes(it.suivi)))
-              .sort((a, b) => {
-                const ua = a.urgence === 'haute' ? -1 : a.urgence === 'moyenne' ? 0 : 1;
-                const ub = b.urgence === 'haute' ? -1 : b.urgence === 'moyenne' ? 0 : 1;
-                if (ua !== ub) return ua - ub;
-                return (SUIVI_RANK[a.suivi] ?? 3) - (SUIVI_RANK[b.suivi] ?? 3);
-              })
-              .slice(0, 4);
+            const visitSummary = visitSummaries[v.id] || null;
+            const urgentItems = rawItems
+              .filter(it => it.urgence === 'haute' && it.suivi !== 'fait' && it.titre)
+              .slice(0, 2);
             const isDragging = dragIdx === i;
             const isOver     = overIdx === i && dragIdx !== i;
             const isEditing  = editingId === v.id;
@@ -390,32 +389,24 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       </div>
                     )}
 
-                    {/* Aperçu bullet points : items prioritaires de la visite */}
-                    {bulletItems.length > 0 && (
+                    {/* Résumé thématique IA ou urgences */}
+                    {(visitSummary || urgentItems.length > 0) && (
                       <div style={{ paddingTop:10, borderTop:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', gap:5 }}>
-                        {bulletItems.map((it, k) => {
-                          const snippet = snippets[it.id] || it.titre || '';
-                          if (!snippet) return null;
-                          const isUrgent   = it.urgence === 'haute';
-                          const isMoyen    = it.urgence === 'moyenne';
-                          const isEnCours  = it.suivi === 'en_cours';
-                          const isProchain = it.suivi === 'prochaine';
-                          const badge = isUrgent   ? URGENCE.haute
-                                      : isMoyen    ? URGENCE.moyenne
-                                      : isEnCours  ? SUIVI.en_cours
-                                      : isProchain ? { ...SUIVI.prochaine, label: 'Prochain' }
-                                      :              SUIVI.a_faire;
-                          return (
-                            <div key={k} style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
-                              <span style={{ fontSize:10, fontWeight:800, color:badge.text, background:badge.bg, borderRadius:4, padding:'2px 6px', flexShrink:0, whiteSpace:'nowrap', marginTop:1 }}>
-                                {badge.label}
-                              </span>
-                              <span style={{ fontSize:12, color:'#333', flex:1, lineHeight:1.4 }}>
-                                {snippet}
-                              </span>
-                            </div>
-                          );
-                        })}
+                        {visitSummary && (
+                          <p style={{ margin:0, fontSize:12, color:DA.gray, fontStyle:'italic', lineHeight:1.4 }}>
+                            {visitSummary}
+                          </p>
+                        )}
+                        {urgentItems.map((it, k) => (
+                          <div key={k} style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
+                            <span style={{ fontSize:10, fontWeight:800, color:URGENCE.haute.text, background:URGENCE.haute.bg, borderRadius:4, padding:'2px 6px', flexShrink:0, whiteSpace:'nowrap', marginTop:1 }}>
+                              {URGENCE.haute.label}
+                            </span>
+                            <span style={{ fontSize:12, color:'#333', flex:1, lineHeight:1.4 }}>
+                              {it.titre}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
