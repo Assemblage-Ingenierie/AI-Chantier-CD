@@ -109,13 +109,13 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // Sentinel initial : remplace l'entrée 0 + pousse 3 entrées buffer
-  // (3 au lieu de 2 pour absorber les appuis rapides sur Android Chrome)
+  // Sentinel initial : remplace l'entrée 0 + pousse un buffer profond d'entrées sentinelles.
+  // Sur Android Chrome, l'app se ferme dès qu'un appui « retour » atteindrait l'entrée 0,
+  // AVANT même que popstate ne se déclenche → le seul rempart est d'avoir toujours assez
+  // d'entrées devant. Buffer profond (6) pour absorber les appuis rapides en rafale.
   useEffect(() => {
     history.replaceState({ pwaSentinel: true }, '');
-    history.pushState({ pwaSentinel: true }, '');
-    history.pushState({ pwaSentinel: true }, '');
-    history.pushState({ pwaSentinel: true }, '');
+    for (let i = 0; i < 6; i++) history.pushState({ pwaSentinel: true }, '');
   }, []);
 
   // Sentinel supplémentaire à chaque ouverture de projet → garantit qu'en revenant
@@ -125,19 +125,23 @@ export default function ChantierAI({ profile, onLogout }) {
   }, [ouvert?.id]);
 
   useEffect(() => {
-    let _lastPop = 0;
+    let _lastNav = 0;
     const handler = () => {
-      // Debounce : ignore les doubles-déclenchements en < 300ms (appuis rapides)
-      const now = Date.now();
-      if (now - _lastPop < 300) { history.pushState({ pwaSentinel: true }, ''); return; }
-      _lastPop = now;
-      // Re-push DEUX entrées EN PREMIER — sur Android Chrome, l'app est fermée dès
-      // qu'on atteint l'entrée 0, avant que la fin du handler puisse re-pousser
+      // Réarme le buffer EN PREMIER et INCONDITIONNELLEMENT : chaque popstate consomme 1 entrée,
+      // on en repousse 2 → solde toujours +1, le buffer ne peut JAMAIS s'épuiser. C'était le bug
+      // des « deux retours d'affilée » : l'ancienne branche debounce ne repoussait qu'1 entrée
+      // (solde 0), donc une rafale d'appuis pouvait atteindre l'entrée 0 et fermer l'app.
       history.pushState({ pwaSentinel: true }, '');
       history.pushState({ pwaSentinel: true }, '');
 
+      // Debounce de l'ACTION de navigation uniquement : un double-déclenchement (Android) ou deux
+      // appuis très rapprochés (< 350ms) ne font reculer que d'un seul niveau dans l'app.
+      const now = Date.now();
+      if (now - _lastNav < 350) return;
+      _lastNav = now;
+
       if (childBackHandler.current?.()) {
-        // modal géré
+        // modal/overlay géré par l'écran enfant
       } else if (selectedVisiteIdRef.current) {
         setSelectedVisiteId(null);
       } else if (ouvertRef.current) {
