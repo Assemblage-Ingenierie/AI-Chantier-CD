@@ -460,11 +460,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
                     const allPlanThumbs = [];
-                    if (loc.planId || loc.planBg) {
+                    // Ignore les références orphelines (plan supprimé) → pas de tuile « Plan » vide fantôme.
+                    if (loc.planBg || (loc.planId && assignedPlan)) {
                       allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden, planId: loc.planId });
                     }
                     for (const ep of (loc.extraPlans || [])) {
                       const epLib = (projet.planLibrary||[]).find(p => p.id === ep.planId);
+                      if (!ep.planBg && !epLib) continue; // orphelin
                       allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden, planId: ep.planId });
                     }
                     const hasAnyPlan = allPlanThumbs.length > 0;

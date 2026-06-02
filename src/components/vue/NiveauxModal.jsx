@@ -209,11 +209,14 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           <div style={{ display:'flex',flexDirection:'column',gap:12 }}>
             {localisations.map(loc => {
               const allPlanThumbs = [];
-              if (loc.planId || loc.planBg) {
+              // Ignore les références orphelines (plan supprimé de la bibliothèque) qui
+              // produiraient des tuiles « Plan » vides réapparaissant à chaque rechargement.
+              if (loc.planBg || (loc.planId && planLibrary.some(p => p.id === loc.planId))) {
                 const pl = planLibrary.find(p => p.id === loc.planId);
                 allPlanThumbs.push({ bg: loc.planBg || pl?.bg || null, nom: pl?.nom || 'Plan de zone' });
               }
               for (const ep of (loc.extraPlans || [])) {
+                if (!ep.planBg && !planLibrary.some(p => p.id === ep.planId)) continue; // orphelin
                 const epl = planLibrary.find(p => p.id === ep.planId);
                 allPlanThumbs.push({ bg: ep.planBg || epl?.bg || null, nom: epl?.nom || 'Plan' });
               }

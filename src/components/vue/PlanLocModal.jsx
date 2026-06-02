@@ -10,10 +10,15 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
-    if (loc.planId || loc.planBg) {
+    const libHas = (id) => !!id && (planLibrary || []).some(p => p.id === id);
+    // Ignore les références orphelines (plan supprimé de la bibliothèque) — elles
+    // produisent des onglets « Plan » vides ; les écarter ici les retire aussi à l'enregistrement.
+    if (loc.planBg || libHas(loc.planId)) {
       result.push({ id: loc.planId || 'main', planId: loc.planId || null, planBg: loc.planBg || null, planData: loc.planData || null, planAnnotations: loc.planAnnotations || null });
     }
-    for (const ep of (loc.extraPlans || [])) result.push(ep);
+    for (const ep of (loc.extraPlans || [])) {
+      if (ep.planBg || libHas(ep.planId)) result.push(ep);
+    }
     return result;
   });
   const directAnnot = annotIdx != null; // opened from thumbnail click — jump straight to annotator

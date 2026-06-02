@@ -355,10 +355,18 @@ export function useProjets(onSyncStatus) {
     pushHistory();
     dirtyIds.current.add(projectId);
     userModified.current = true;
+    // Purge la référence dans toutes les zones (plan principal + extraPlans) pour éviter
+    // des onglets « Plan » fantômes qui réapparaissent à chaque rechargement.
+    const scrubLoc = (l) => {
+      const next = { ...l, extraPlans: (l.extraPlans || []).filter(ep => ep.planId !== planId) };
+      if (l.planId === planId) { next.planId = null; next.planBg = null; next.planData = null; next.planAnnotations = null; }
+      return next;
+    };
     setProjets(ps => ps.map(p => p.id !== projectId ? p : {
       ...p,
       updatedAt: new Date().toISOString(),
       planLibrary: (p.planLibrary || []).filter(pl => pl.id !== planId),
+      visites: (p.visites || []).map(v => ({ ...v, localisations: (v.localisations || []).map(scrubLoc) })),
     }));
     deleteRemotePlan(projectId, planId);
   };
