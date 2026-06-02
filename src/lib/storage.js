@@ -388,13 +388,18 @@ export async function hydratePlanLibrary(projectId) {
 }
 
 // Charge bg + data d'un seul plan — fallback quand la miniature n'est pas encore hydratée
+const _planDataCache = new Map(); // planId → { bg, data }
+
 export async function fetchPlanData(planId) {
+  if (_planDataCache.has(planId)) return _planDataCache.get(planId);
   try {
     const sb = await getSupabase();
     const { data, error } = await sb.from('aichantier_chantier_plans')
       .select('id,bg,data').eq('id', planId).single();
     if (error || !data) return null;
-    return { bg: data.bg ?? null, data: data.data ?? null };
+    const result = { bg: data.bg ?? null, data: data.data ?? null };
+    _planDataCache.set(planId, result);
+    return result;
   } catch (e) { console.warn('fetchPlanData error:', e); return null; }
 }
 
@@ -504,29 +509,38 @@ async function uploadPlanHd(sb, chantierId, planId, base64) {
   } catch (e) { console.warn('uploadPlanHd error:', e); return null; }
 }
 
+// Cache mémoire session pour les images HD — évite de re-télécharger à chaque ouverture
+// du rapport (les HD font 2-5 MB chacune, source principale d'egress Storage non caché).
+const _hdCache = new Map(); // planId → dataUrl | Promise<dataUrl|null>
+
 // Récupère l'image HD d'un plan sous forme de data URL (évite le canvas "tainted" à l'export).
 // Lit le chemin Storage dans la colonne `data`, génère une signed URL, puis la convertit.
 export async function fetchPlanHdDataUrl(planId) {
-  try {
-    const sb = await getSupabase();
-    const { data: row, error } = await sb.from('aichantier_chantier_plans')
-      .select('data').eq('id', planId).single();
-    if (error || !row?.data) return null;
-    const path = row.data;
-    // Rejeter les PDF stockés dans data (ancienne pratique) — ils ne sont pas des images
-    if (path.startsWith('data:application/pdf') || path.startsWith('data:application/octet')) return null;
-    if (path.startsWith('data:image/')) return path; // image déjà encodée (rare)
-    const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
-    if (!signed?.signedUrl) return null;
-    const resp = await fetch(signed.signedUrl);
-    const blob = await resp.blob();
-    return await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.onerror = rej;
-      r.readAsDataURL(blob);
-    });
-  } catch (e) { console.warn('fetchPlanHdDataUrl error:', e); return null; }
+  if (_hdCache.has(planId)) return _hdCache.get(planId);
+  const promise = (async () => {
+    try {
+      const sb = await getSupabase();
+      const { data: row, error } = await sb.from('aichantier_chantier_plans')
+        .select('data').eq('id', planId).single();
+      if (error || !row?.data) return null;
+      const path = row.data;
+      // Rejeter les PDF stockés dans data (ancienne pratique) — ils ne sont pas des images
+      if (path.startsWith('data:application/pdf') || path.startsWith('data:application/octet')) return null;
+      if (path.startsWith('data:image/')) return path; // image déjà encodée (rare)
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
+      if (!signed?.signedUrl) return null;
+      const resp = await fetch(signed.signedUrl);
+      const blob = await resp.blob();
+      return await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+    } catch (e) { console.warn('fetchPlanHdDataUrl error:', e); return null; }
+  })();
+  _hdCache.set(planId, promise);
+  return promise;
 }
 
 async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, projectSlug) {
