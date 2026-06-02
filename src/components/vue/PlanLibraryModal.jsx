@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { renderPdfPage } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPages } from '../../lib/pdfUtils.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose }) {
@@ -67,17 +67,16 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     setRenderErr(null);
     const newResults = [];
     try {
-      for (let idx = 0; idx < selectedNums.length; idx++) {
-        const pageNum = selectedNums[idx];
-        setRenderProgress(pdfQueue.length > 1
-          ? `PDF ${pdfQueueIdx + 1}/${pdfQueue.length} — page ${idx + 1}/${selectedNums.length}…`
-          : `Rendu page ${idx + 1} / ${selectedNums.length}…`);
-        const img = await renderPdfPage(pdfData, pageNum);
-        if (img) {
-          const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
-          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
-        }
-        await new Promise(r => setTimeout(r, 30));
+      // Parse le PDF UNE fois + rendu parallèle (au lieu d'un parse séquentiel par page).
+      const rendered = await renderPdfPages(pdfData, selectedNums, {
+        onProgress: (d, t) => setRenderProgress(pdfQueue.length > 1
+          ? `PDF ${pdfQueueIdx + 1}/${pdfQueue.length} — ${d}/${t} pages…`
+          : `Rendu ${d} / ${t} pages…`),
+      });
+      for (const { num, img } of rendered) {
+        if (!img) continue;
+        const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${num}`;
+        newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
       }
     } catch (e) {
       setRenderErr('Erreur rendu PDF : ' + e.message);
@@ -218,8 +217,8 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             {planLibrary.map(pl => (
               <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
                 {pl.bg
-                  ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:96,height:64,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
-                  : <div style={{ width:96,height:64,borderRadius:6,border:`1px dashed #FCA5A5`,flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={18}/></div>
+                  ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
+                  : <div style={{ width:64,height:44,borderRadius:6,border:`1px dashed #FCA5A5`,flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={18}/></div>
                 }
                 <div style={{ flex:1,minWidth:0 }}>
                   {editingId === pl.id ? (

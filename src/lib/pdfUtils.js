@@ -110,6 +110,51 @@ export function renderPdfPage(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 4.0, 3000, 0.93);
 }
 
+// Rendu de PLUSIEURS pages en une passe : parse le PDF UNE seule fois (au lieu d'un
+// getDocument par page) et rend les pages en parallèle par lots. Énorme gain à l'import
+// (10 pages = 1 parse + rendus concurrents, au lieu de 10 parses séquentiels).
+export async function renderPdfPages(pdfData, pageNums, {
+  maxScale = 4.0, maxWidth = 3000, quality = 0.93, concurrency = 4, onProgress,
+} = {}) {
+  await ensurePdfJs();
+  if (!window.pdfjsLib || !pdfData || !pageNums?.length) return [];
+  const buf = pdfDataToBuffer(pdfData);
+  const pdf = await window.pdfjsLib.getDocument({
+    data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
+  }).promise;
+  const out = [];
+  let done = 0;
+  const renderOne = async (pageNum) => {
+    try {
+      const pg = await pdf.getPage(pageNum);
+      const rawVp = pg.getViewport({ scale: 1 });
+      let scale = Math.min(maxScale, maxWidth / rawVp.width);
+      let vp = pg.getViewport({ scale });
+      if (vp.width * vp.height > MAX_CANVAS_AREA) {
+        scale *= Math.sqrt(MAX_CANVAS_AREA / (vp.width * vp.height));
+        vp = pg.getViewport({ scale });
+      }
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      const img = cv.toDataURL('image/webp', quality);
+      cv.width = 0; cv.height = 0;
+      return { num: pageNum, img };
+    } catch (e) {
+      console.error('renderPdfPages page', pageNum, e);
+      return { num: pageNum, img: null };
+    } finally {
+      onProgress?.(++done, pageNums.length);
+    }
+  };
+  for (let i = 0; i < pageNums.length; i += concurrency) {
+    const res = await Promise.all(pageNums.slice(i, i + concurrency).map(renderOne));
+    out.push(...res);
+  }
+  try { pdf.destroy(); } catch {}
+  return out;
+}
+
 // Rendu haute qualité — image HD stockée dans Supabase Storage, affichée dans l'annotateur
 export function renderPdfPageHQ(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 8.0, 4500, 0.85);

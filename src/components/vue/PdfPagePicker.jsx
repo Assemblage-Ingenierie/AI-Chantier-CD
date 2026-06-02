@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
@@ -7,6 +7,7 @@ import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
 // Chaque lot met à jour l'affichage dès qu'il est terminé → les miniatures
 // apparaissent par vagues plutôt qu'une par une.
 const CONCURRENCY = 6;
+const LONG_PRESS_MS = 280;
 
 export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose }) {
   const [pages, setPages]       = useState([]);
@@ -14,6 +15,9 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [zoom, setZoom] = useState(null); // { num, thumb } affiché en grand pendant l'appui
+  const lpTimer = useRef(null);           // timer d'appui long
+  const lpFired = useRef(false);          // l'appui long s'est déclenché → ne pas (dé)sélectionner au relâchement
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +67,8 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
     return () => { cancelled = true; pdfRef?.destroy(); };
   }, [pdfData]);
 
+  useEffect(() => () => clearTimeout(lpTimer.current), []);
+
   const toggle = (num) => setSelected(s => {
     const n = new Set(s);
     n.has(num) ? n.delete(num) : n.add(num);
@@ -108,12 +114,29 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
             <span style={{ fontSize:13 }}>Chargement des pages…</span>
           </div>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:12 }}>
-          {pages.map(({ num, thumb }) => {
+        <p style={{ color:'rgba(255,255,255,0.4)', fontSize:11, margin:'0 0 10px', textAlign:'center' }}>
+          Touchez pour (dé)sélectionner • appui long pour voir en grand
+        </p>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:10 }}>
+          {pages.map((pg) => {
+            const { num, thumb } = pg;
             const sel = selected.has(num);
+            const startPress = () => {
+              lpFired.current = false;
+              clearTimeout(lpTimer.current);
+              lpTimer.current = setTimeout(() => { lpFired.current = true; setZoom(pg); }, LONG_PRESS_MS);
+            };
+            const endPress = () => { clearTimeout(lpTimer.current); setZoom(null); };
             return (
-              <div key={num} onClick={() => toggle(num)} style={{ cursor:'pointer', borderRadius:8, overflow:'hidden', border:`3px solid ${sel ? DA.red : 'rgba(255,255,255,0.1)'}`, position:'relative', background:'#2a2a2a', transition:'border-color 0.1s' }}>
-                <img src={thumb} alt={`Page ${num}`} style={{ width:'100%', display:'block' }}/>
+              <div key={num}
+                onClick={() => { if (lpFired.current) { lpFired.current = false; return; } toggle(num); }}
+                onPointerDown={startPress}
+                onPointerUp={endPress}
+                onPointerLeave={endPress}
+                onPointerCancel={endPress}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ cursor:'pointer', borderRadius:8, overflow:'hidden', border:`3px solid ${sel ? DA.red : 'rgba(255,255,255,0.1)'}`, position:'relative', background:'#2a2a2a', transition:'border-color 0.1s', touchAction:'none', userSelect:'none' }}>
+                <img src={thumb} alt={`Page ${num}`} draggable={false} style={{ width:'100%', display:'block', pointerEvents:'none' }}/>
                 <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.6)', padding:'4px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <span style={{ color:'white', fontSize:11, fontWeight:600 }}>p. {num}</span>
                   {sel && <span style={{ color:DA.red, fontSize:13, fontWeight:700 }}>✓</span>}
@@ -123,6 +146,14 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
           })}
         </div>
       </div>
+
+      {/* Aperçu plein écran pendant l'appui long — se ferme au relâchement */}
+      {zoom && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:90, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+          <img src={zoom.thumb} alt={`Page ${zoom.num}`} style={{ maxWidth:'96vw', maxHeight:'92vh', objectFit:'contain', boxShadow:'0 8px 50px rgba(0,0,0,0.7)', borderRadius:6 }}/>
+          <div style={{ position:'absolute', top:18, left:0, right:0, textAlign:'center', color:'white', fontSize:14, fontWeight:700 }}>Page {zoom.num}</div>
+        </div>
+      )}
     </div>
   );
 }
