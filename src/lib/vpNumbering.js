@@ -21,6 +21,7 @@ export function computeVpNumbering(localisations) {
   // Inclut le planId pour que deux plans distincts ne collisionnent jamais.
   const fingerprint = (vp, planId) =>
     `${planId || '_'}|${Math.round(vp.x ?? -1)}|${Math.round(vp.y ?? -1)}|${vp.photoIdx ?? '_'}`;
+  const _dbg = [];
   for (const loc of (localisations || [])) {
     // On garde le planId associé à chaque marqueur : plan principal = loc.planId, extra = ep.planId.
     const planPaths = [
@@ -30,6 +31,7 @@ export function computeVpNumbering(localisations) {
     for (const { vp, planId } of planPaths) {
       if (vp.type !== 'viewpoint') continue;
       let num;
+      let dedupPath = '?';
       const fp = fingerprint(vp, planId);
       // Un même marqueur peut apparaître dans PLUSIEURS zones partageant le plan (propagation).
       // Sans dédoublonnage il était recompté à chaque zone → V1 devenait V3, V4…
@@ -37,21 +39,26 @@ export function computeVpNumbering(localisations) {
       // 2) empreinte contenu : filet de sécurité pour les marqueurs anciens SANS _vpId,
       //    qui sinon tombaient dans la branche photoIdx (clé par zone) et étaient comptés N fois.
       if (vp._vpId && numByVpId.has(vp._vpId)) {
-        num = numByVpId.get(vp._vpId);
+        num = numByVpId.get(vp._vpId); dedupPath = 'vpId-dedup';
       } else if (numByFp.has(fp)) {
-        num = numByFp.get(fp);
+        num = numByFp.get(fp); dedupPath = 'fp-dedup';
       } else if (vp.photoIdx != null) {
         const key = `${loc.id}_${vp.photoIdx}`;
-        if (vxxPhotoMap.has(key)) num = vxxPhotoMap.get(key);
-        else { num = ++g; vxxPhotoMap.set(key, num); }
+        if (vxxPhotoMap.has(key)) { num = vxxPhotoMap.get(key); dedupPath = 'photoKey-dedup'; }
+        else { num = ++g; vxxPhotoMap.set(key, num); dedupPath = 'new-photoKey'; }
       } else {
-        num = ++g;
+        num = ++g; dedupPath = 'new-noPhoto';
       }
       if (vp._vpId && !numByVpId.has(vp._vpId)) numByVpId.set(vp._vpId, num);
       if (!numByFp.has(fp)) numByFp.set(fp, num);
       vpNumByPath.set(vp, num);             // rétrocompat : objet ref
       if (vp._vpId) vpNumByPath.set(vp._vpId, num); // stable UUID → survit JSON round-trip
+      _dbg.push({ locNom: loc.nom, locId: loc.id?.slice(0,8), planId: planId?.slice(0,8) ?? null, vpId: vp._vpId?.slice(0,8) ?? null, fp, num, dedupPath, x: Math.round(vp.x), y: Math.round(vp.y), photoIdx: vp.photoIdx });
     }
+  }
+  // Debug helper: window.__vpDebug() logs the full breakdown
+  if (typeof window !== 'undefined') {
+    window.__vpDebug = () => { console.table(_dbg); return `${g} numéros uniques attribués`; };
   }
   return { vxxPhotoMap, vpNumByPath, max: g };
 }
