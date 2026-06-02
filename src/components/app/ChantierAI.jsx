@@ -83,9 +83,12 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // Sentinel initial : remplace l'entrée 0 + ajoute l'entrée 1
+  // Sentinel initial : remplace l'entrée 0 + pousse 3 entrées buffer
+  // (3 au lieu de 2 pour absorber les appuis rapides sur Android Chrome)
   useEffect(() => {
     history.replaceState({ pwaSentinel: true }, '');
+    history.pushState({ pwaSentinel: true }, '');
+    history.pushState({ pwaSentinel: true }, '');
     history.pushState({ pwaSentinel: true }, '');
   }, []);
 
@@ -96,9 +99,15 @@ export default function ChantierAI({ profile, onLogout }) {
   }, [ouvert?.id]);
 
   useEffect(() => {
+    let _lastPop = 0;
     const handler = () => {
-      // Re-push EN PREMIER — sur Android Chrome, l'app est fermée dès qu'on
-      // atteint l'entrée 0, avant que la fin du handler puisse re-pousser
+      // Debounce : ignore les doubles-déclenchements en < 300ms (appuis rapides)
+      const now = Date.now();
+      if (now - _lastPop < 300) { history.pushState({ pwaSentinel: true }, ''); return; }
+      _lastPop = now;
+      // Re-push DEUX entrées EN PREMIER — sur Android Chrome, l'app est fermée dès
+      // qu'on atteint l'entrée 0, avant que la fin du handler puisse re-pousser
+      history.pushState({ pwaSentinel: true }, '');
       history.pushState({ pwaSentinel: true }, '');
 
       if (childBackHandler.current?.()) {

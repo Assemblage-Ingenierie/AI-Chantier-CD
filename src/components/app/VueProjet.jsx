@@ -125,6 +125,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [tab, setTab] = useState('visite');
   const [modal, setModal] = useState(null);
   const modalRef = useRef(null);
+  const itemModalBackRef = useRef(null); // handler interne de ItemModal (photo/plan annotateur, zoom)
   useEffect(() => { modalRef.current = modal; }, [modal]);
 
   useEffect(() => {
@@ -134,6 +135,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       if (!m) return false;
       if (m.t === 'annotate') {
         setModal({ t:'item', locId:m.locId, item:m.form, savedForm:m.form });
+      } else if (m.t === 'item') {
+        // Vérifie si ItemModal a un overlay interne à fermer d'abord
+        if (itemModalBackRef.current?.()) return true;
+        setModal(null);
       } else {
         setModal(null);
       }
@@ -751,9 +756,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             extraPlans={loc?.extraPlans ?? []}
             planAnnotations={initItem?.planAnnotations ?? null}
             planLibrary={projet.planLibrary || []}
-            onClose={() => setModal(null)}
-            onSave={form => { saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
+            onClose={() => { itemModalBackRef.current = null; setModal(null); }}
+            onSave={form => { itemModalBackRef.current = null; saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
+            onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
             visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
             visiteDate={visitProjet.dateVisite || null}

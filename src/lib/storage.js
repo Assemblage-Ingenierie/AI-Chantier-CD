@@ -499,7 +499,9 @@ export async function fetchPlanHdDataUrl(planId) {
       .select('data').eq('id', planId).single();
     if (error || !row?.data) return null;
     const path = row.data;
-    if (path.startsWith('data:')) return path; // legacy éventuel : déjà un data URL
+    // Rejeter les PDF stockés dans data (ancienne pratique) — ils ne sont pas des images
+    if (path.startsWith('data:application/pdf') || path.startsWith('data:application/octet')) return null;
+    if (path.startsWith('data:image/')) return path; // image déjà encodée (rare)
     const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
     if (!signed?.signedUrl) return null;
     const resp = await fetch(signed.signedUrl);

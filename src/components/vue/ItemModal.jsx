@@ -51,7 +51,7 @@ function patchHtmlText(html, del, add) {
   }).join('');
 }
 
-export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [] }) {
+export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [], onBackRequest }) {
   const [form, setForm] = useState(() => {
     const base = item
       ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
@@ -78,6 +78,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [annotatingPlanIdx, setAnnotatingPlanIdx] = useState(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [confirmDelPhotoIdx, setConfirmDelPhotoIdx] = useState(null);
+  const [zoomPhotoIdx, setZoomPhotoIdx] = useState(null); // long-press photo zoom
+  const longPressTimer = useRef(null);
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
   const bumpSync = () => setEditorSyncKey(k => k + 1);
@@ -100,6 +102,21 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const lastCommitted  = useRef('');
   const sessionText    = useRef('');
   const restartTimer   = useRef(null);
+
+  // Enregistre un handler de retour pour le bouton back Android — ferme d'abord les overlays internes
+  useEffect(() => {
+    if (!onBackRequest) return;
+    onBackRequest(() => {
+      if (zoomPhotoIdx !== null) { setZoomPhotoIdx(null); return true; }
+      if (annotatingPhotoIdx !== null) { setAnnotatingPhotoIdx(null); return true; }
+      if (annotatingPlanIdx !== null) { setAnnotatingPlanIdx(null); return true; }
+      if (showPlan) { setShowPlan(false); return true; }
+      if (showPlanPicker) { setShowPlanPicker(false); return true; }
+      if (confirmDelPhotoIdx !== null) { setConfirmDelPhotoIdx(null); return true; }
+      return false;
+    });
+    return () => onBackRequest?.(null);
+  }, [onBackRequest, zoomPhotoIdx, annotatingPhotoIdx, annotatingPlanIdx, showPlan, showPlanPicker, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stop dictaphone si la modale se ferme
   useEffect(() => () => {
@@ -809,7 +826,15 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
-                    <img src={ph.annotated || ph.data} alt="" style={{ width:'100%',height:'100%',objectFit:'cover' }}/>
+                    <img
+                      src={ph.annotated || ph.data} alt=""
+                      style={{ width:'100%',height:'100%',objectFit:'cover',WebkitTouchCallout:'none',userSelect:'none' }}
+                      onContextMenu={e => e.preventDefault()}
+                      onPointerDown={() => { longPressTimer.current = setTimeout(() => setZoomPhotoIdx(i), 500); }}
+                      onPointerUp={() => clearTimeout(longPressTimer.current)}
+                      onPointerLeave={() => clearTimeout(longPressTimer.current)}
+                      draggable={false}
+                    />
                     {(
                       <button onClick={() => setConfirmDelPhotoIdx(i)}
                         style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
@@ -975,6 +1000,38 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Zoom photo plein écran — appui long */}
+      {zoomPhotoIdx !== null && form.photos[zoomPhotoIdx] && (
+        <div
+          style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.92)', display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={() => setZoomPhotoIdx(null)}
+          onContextMenu={e => e.preventDefault()}>
+          <img
+            src={form.photos[zoomPhotoIdx].annotated || form.photos[zoomPhotoIdx].data}
+            alt=""
+            style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', WebkitTouchCallout:'none', userSelect:'none' }}
+            draggable={false}
+            onContextMenu={e => e.preventDefault()}
+          />
+          {/* Navigation gauche/droite */}
+          {form.photos.length > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i - 1 + form.photos.length) % form.photos.length); }}
+                style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                ‹
+              </button>
+              <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i + 1) % form.photos.length); }}
+                style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                ›
+              </button>
+              <span style={{ position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', color:'rgba(255,255,255,0.6)', fontSize:12 }}>
+                {zoomPhotoIdx + 1} / {form.photos.length}
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>
