@@ -397,8 +397,18 @@ export async function deleteRemoteProjet(id) {
   addPersistedDeletedId(id); // persisté immédiatement — survit à un rechargement avant confirmation
   try {
     const sb = await getSupabase();
-    const { error } = await sb.from('aichantier_chantiers').delete().eq('id', id);
+    // .select('id') retourne les lignes supprimées — permet de détecter un silence RLS
+    // (0 rows retournées sans erreur = RLS a bloqué la suppression silencieusement).
+    const { data, error } = await sb.from('aichantier_chantiers').delete().eq('id', id).select('id');
     if (error) { console.warn('deleteRemoteProjet error:', error); return false; }
+    // Vérifier que la ligne a bien été supprimée (pas de silence RLS)
+    const deleted = Array.isArray(data) && data.length > 0;
+    if (!deleted) {
+      // Ligne introuvable (déjà supprimée) ou RLS — tombstone conservé pour sécurité
+      console.warn('deleteRemoteProjet: row not found or RLS prevented deletion for', id);
+      if (_lastRemoteIds) _lastRemoteIds.delete(id);
+      return false;
+    }
     if (_lastRemoteIds) _lastRemoteIds.delete(id);
     removePersistedDeletedId(id); // suppression confirmée — plus besoin de bloquer les polls
     return true;
@@ -928,6 +938,20 @@ function writePersistedRemoteIds(ids) {
   try {
     localStorage.setItem(PERSISTED_REMOTE_IDS_KEY, JSON.stringify([...ids]));
   } catch {}
+}
+
+// Efface le cache local des projets — appelé à la déconnexion pour éviter qu'un autre
+// utilisateur sur le même appareil ne voie (ou ne re-uploade) les données du précédent.
+export function clearLocalData() {
+  try {
+    if (_hasLS) {
+      localStorage.removeItem(SK);
+      localStorage.removeItem(PERSISTED_REMOTE_IDS_KEY);
+      localStorage.removeItem(PERSISTED_DELETED_IDS_KEY);
+    }
+    delete _mem[SK];
+  } catch {}
+  _lastRemoteIds = null;
 }
 
 // Charge uniquement depuis le cache local (sans réseau ni blobs)

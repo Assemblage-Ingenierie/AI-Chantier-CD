@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getSupabase } from '../supabase.js';
+import { clearLocalData } from '../lib/storage.js';
 
 const PROF_KEY = '_sb_prof';
 const _hasLS = (() => { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true; } catch { return false; } })();
@@ -79,6 +80,7 @@ export function useAuth() {
           if (event === 'SIGNED_OUT') {
             setSession(null); setProfile(null); setAuthState('loggedout');
             clearCachedProfile();
+            clearLocalData(); // évite la contamination cross-user sur appareil partagé
             return;
           }
           if (s) handleSession(s);
@@ -96,6 +98,7 @@ export function useAuth() {
     try { const sb = await getSupabase(); await sb.auth.signOut(); } catch {}
     setSession(null); setProfile(null); setAuthState('loggedout');
     clearCachedProfile();
+    clearLocalData(); // évite la contamination cross-user sur appareil partagé
   };
 
   return { authState, session, profile, logout, handleSession };
