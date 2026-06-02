@@ -117,7 +117,7 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         <p style={{ color:'rgba(255,255,255,0.4)', fontSize:11, margin:'0 0 10px', textAlign:'center' }}>
           Touchez pour (dé)sélectionner • appui long pour voir en grand
         </p>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:10 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))', gap:12 }}>
           {pages.map((pg) => {
             const { num, thumb } = pg;
             const sel = selected.has(num);

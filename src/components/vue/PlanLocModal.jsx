@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { renderPdfPageHQ, renderPdfPages } from '../../lib/pdfUtils.js';
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
@@ -176,16 +176,17 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     setRenderErr(null);
     const newResults = [];
     try {
-      for (let idx = 0; idx < selectedNums.length; idx++) {
-        const pageNum = selectedNums[idx];
-        const img = await renderPdfPage(pdfData, pageNum);
-        if (img) {
-          const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
-          // Image HD (haute résolution) rendue ici où le n° de page est connu → uploadée par savePlanBgNow
-          const hd = await renderPdfPageHQ(pdfData, pageNum);
-          newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData, hd: hd || null });
-        }
-        await new Promise(r => setTimeout(r, 30));
+      // Parse le PDF UNE seule fois par qualité (au lieu d'un getDocument par page et par
+      // qualité → 2×N parses). Rendu concurrent interne. Gros gain à l'import multi-pages.
+      const bgPages = await renderPdfPages(pdfData, selectedNums, { maxWidth: 2500, quality: 0.9 });
+      const hdPages = await renderPdfPages(pdfData, selectedNums, { maxScale: 8, maxWidth: 4500, quality: 0.85 });
+      const bgByNum = new Map(bgPages.map(p => [p.num, p.img]));
+      const hdByNum = new Map(hdPages.map(p => [p.num, p.img]));
+      for (const pageNum of selectedNums) {
+        const img = bgByNum.get(pageNum);
+        if (!img) continue;
+        const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${pageNum}`;
+        newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData, hd: hdByNum.get(pageNum) || null });
       }
     } catch (e) {
       setRenderErr('Erreur rendu PDF : ' + e.message);

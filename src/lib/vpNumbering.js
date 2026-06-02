@@ -13,6 +13,7 @@
 export function computeVpNumbering(localisations) {
   const vxxPhotoMap = new Map();
   const vpNumByPath = new Map(); // double-keyed: object ref ET _vpId (si présent)
+  const numByVpId   = new Map(); // _vpId → numéro : DÉDOUBLONNAGE cross-zone/plan (cf. ci-dessous)
   let g = 0;
   for (const loc of (localisations || [])) {
     const planPaths = [
@@ -22,13 +23,19 @@ export function computeVpNumbering(localisations) {
     for (const vp of planPaths) {
       if (vp.type !== 'viewpoint') continue;
       let num;
-      if (vp.photoIdx != null) {
+      // Un même marqueur (même _vpId) peut apparaître dans PLUSIEURS zones partageant le plan
+      // (propagation des annotations). Sans dédoublonnage il était recompté à chaque zone →
+      // V1 devenait V3, V4… Ici on lui réattribue TOUJOURS son premier numéro.
+      if (vp._vpId && numByVpId.has(vp._vpId)) {
+        num = numByVpId.get(vp._vpId);
+      } else if (vp.photoIdx != null) {
         const key = `${loc.id}_${vp.photoIdx}`;
         if (vxxPhotoMap.has(key)) num = vxxPhotoMap.get(key);
         else { num = ++g; vxxPhotoMap.set(key, num); }
       } else {
         num = ++g;
       }
+      if (vp._vpId && !numByVpId.has(vp._vpId)) numByVpId.set(vp._vpId, num);
       vpNumByPath.set(vp, num);             // rétrocompat : objet ref
       if (vp._vpId) vpNumByPath.set(vp._vpId, num); // stable UUID → survit JSON round-trip
     }

@@ -7,6 +7,7 @@ import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, getVpNum } from '../../lib/vpNumbering.js';
+import { fetchPlanData } from '../../lib/storage.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -466,15 +467,27 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
   );
 }
 
-function SinglePlanImage({ bg, annotations, annotScale, alt, vpNumByPath = null }) {
+function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
   const [renderedImg, setRenderedImg] = useState(null);
+  const [fetchedBg, setFetchedBg] = useState(null);
+
+  // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
+  // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
+  // Supabase → le rapport ne reste plus bloqué sur « Plan en cours de chargement ».
+  useEffect(() => {
+    if (bg || !planId) return;
+    let cancelled = false;
+    fetchPlanData(planId).then(r => { if (!cancelled && r?.bg) setFetchedBg(r.bg); });
+    return () => { cancelled = true; };
+  }, [bg, planId]);
 
   useEffect(() => {
-    if (!bg) { setRenderedImg(exported || null); return; }
-    if (!paths?.length) { setRenderedImg(bg); return; }
+    const bgSrc = bg || fetchedBg;
+    if (!bgSrc) { setRenderedImg(exported || null); return; }
+    if (!paths?.length) { setRenderedImg(bgSrc); return; }
     // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
     const drawPaths = vpNumByPath
       ? paths.map(p => {
@@ -494,11 +507,11 @@ function SinglePlanImage({ bg, annotations, annotScale, alt, vpNumByPath = null 
       drawAnnotationPaths(ctx, drawPaths, sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
-    el.onerror = () => setRenderedImg(exported || bg);
-    el.src = bg;
-  }, [exported, paths, bg, deferredAnnotScale, vpNumByPath]);
+    el.onerror = () => setRenderedImg(exported || bgSrc);
+    el.src = bgSrc;
+  }, [exported, paths, bg, fetchedBg, deferredAnnotScale, vpNumByPath]);
 
-  if (!renderedImg && !bg) return (
+  if (!renderedImg && !bg && !fetchedBg) return (
     <div style={{ minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <span style={{ fontSize:10, color:'#aaa' }}>Plan en cours de chargement…</span>
     </div>
@@ -518,11 +531,11 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   const lib = planLibrary || [];
   const primaryBg = loc.planBg || (loc.planId && lib.find(p => p.id === loc.planId)?.bg) || null;
   const allPlans = [];
-  if ((loc.planId || loc.planBg) && !loc.planReportHidden) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+  if ((loc.planId || loc.planBg) && !loc.planReportHidden) allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
   (loc.extraPlans || []).forEach((ep, i) => {
     if (ep.reportHidden) return;
     const epBg = ep.planBg || (ep.planId && lib.find(p => p.id === ep.planId)?.bg) || null;
-    allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
+    allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
   });
   if (!allPlans.length) return [];
   const groups = [];
@@ -540,12 +553,12 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
   const allPlans = plansSubset ?? (() => {
     const plans = [];
     const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
-    if ((loc.planId || loc.planBg) && !loc.planReportHidden) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null });
+    if ((loc.planId || loc.planBg) && !loc.planReportHidden) plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
       if (ep.reportHidden) continue;
       const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
-      plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}` });
+      plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
     }
     return plans;
   })();
@@ -590,7 +603,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
             {i > 0 && !cutMode && forced && (
               <div style={{ height:2, background:DA.red, opacity:0.3 }}/>
             )}
-            <SinglePlanImage bg={p.bg} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath}/>
+            <SinglePlanImage bg={p.bg} planId={p.planId} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath}/>
           </React.Fragment>
         );
       })}
