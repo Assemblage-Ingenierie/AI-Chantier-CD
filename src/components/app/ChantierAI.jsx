@@ -133,6 +133,24 @@ export default function ChantierAI({ profile, onLogout }) {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  // Activation alternative : 5 taps rapides sur le coin haut-gauche (marche dans la PWA
+  // installée, sans manipuler l'URL). Bascule le diagnostic et persiste le flag.
+  const tapCntRef = useRef(0);
+  const tapTimerRef = useRef(null);
+  const onDebugTap = useCallback(() => {
+    tapCntRef.current += 1;
+    clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => { tapCntRef.current = 0; }, 1500);
+    if (tapCntRef.current >= 5) {
+      tapCntRef.current = 0;
+      setNavDebugOn(on => {
+        const next = !on;
+        try { next ? localStorage.setItem('_navdebug', '1') : localStorage.removeItem('_navdebug'); } catch {}
+        return next;
+      });
+    }
+  }, []);
+
   const [navDebug, setNavDebug] = useState([]);
   const logNav = useCallback((msg) => {
     if (!navDebugOn) return;
@@ -233,6 +251,9 @@ export default function ChantierAI({ profile, onLogout }) {
 
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100dvh',width:'100%',fontFamily:"'Inter',system-ui,sans-serif",background:DA.grayXL }}>
+
+      {/* Zone invisible (coin haut-gauche) : 5 taps activent le diagnostic retour (#navdebug) */}
+      <div onClick={onDebugTap} style={{ position:'fixed', top:0, left:0, width:44, height:44, zIndex:100000, background:'transparent' }} />
 
       {/* Header — caché sur mobile quand dans un projet */}
       {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
