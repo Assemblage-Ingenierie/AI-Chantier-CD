@@ -499,14 +499,21 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, b
 // Upload de l'image HD d'un plan (WebP haute résolution) dans le bucket `photos`.
 // Retourne le chemin relatif (stocké dans la colonne `data` du plan) ou null.
 async function uploadPlanHd(sb, chantierId, planId, base64) {
-  try {
-    const resp = await fetch(base64);
-    const blob = await resp.blob();
-    const path = `plans/${chantierId}/${planId}.webp`;
-    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
-    if (error) { console.warn('uploadPlanHd error:', error); return null; }
-    return path;
-  } catch (e) { console.warn('uploadPlanHd error:', e); return null; }
+  const path = `plans/${chantierId}/${planId}.webp`;
+  // Une tentative + un retry : l'upload HD est la source de qualité du rapport ; un échec
+  // silencieux (réseau lent, blob volumineux) condamnait le plan à rester en 2500px pixelisé.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch(base64);
+      const blob = await resp.blob();
+      const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
+      if (!error) return path;
+      console.warn(`uploadPlanHd error (try ${attempt + 1}):`, error);
+    } catch (e) {
+      console.warn(`uploadPlanHd error (try ${attempt + 1}):`, e);
+    }
+  }
+  return null;
 }
 
 // Cache mémoire session pour les images HD — évite de re-télécharger à chaque ouverture
@@ -779,12 +786,14 @@ async function saveRemote(ps, dirtyIds = null) {
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
       // Two parallel tiny queries (id only — never select bg here, it's a large blob)
-      const [dbPlansRes, dbPlansNoBgRes] = await Promise.all([
+      const [dbPlansRes, dbPlansNoBgRes, dbPlansNoDataRes] = await Promise.all([
         sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id),
         sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null),
+        sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('data', null),
       ]);
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
       const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
+      const dbPlansNoData = new Set((dbPlansNoDataRes.data || []).map(pl => pl.id));
       const currPlanIds = new Set((p.planLibrary || []).map(pl => pl.id).filter(Boolean));
       const removedPlanIds = [...dbPlanIds].filter(id => !currPlanIds.has(id));
       // CRITIQUE — deux upserts séparés et HOMOGÈNES (mêmes clés sur toutes les lignes).
@@ -811,6 +820,23 @@ async function saveRemote(ps, dirtyIds = null) {
       // bg en second (les lignes méta existent désormais) — batch homogène, n'écrase aucun bg existant.
       if (bgRows.length) {
         await sb.from('aichantier_chantier_plans').upsert(bgRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); });
+      }
+      // Image HD (colonne `data` = chemin Storage) : SECONDE CHANCE de persistance.
+      // savePlanBgNow l'upload à l'import en fire-and-forget — s'il échoue (réseau, onglet fermé),
+      // le plan restait bloqué en bg 2500px (pixelisé). Tant que `pl.hd` est en mémoire (session
+      // d'import), on (ré)uploade pour les plans dont la colonne data est absente en base.
+      // Batch homogène {id, data} → n'écrase ni bg ni nom (cf. gotcha PostgREST ci-dessus).
+      const hdCandidates = (p.planLibrary || [])
+        .filter(pl => typeof pl.hd === 'string' && pl.hd.startsWith('data:')
+                   && (!dbPlanIds.has(pl.id) || dbPlansNoData.has(pl.id)));
+      if (hdCandidates.length) {
+        const dataRows = (await Promise.all(hdCandidates.map(async pl => {
+          const path = await uploadPlanHd(sb, p.id, pl.id, pl.hd);
+          return path ? { id: pl.id, data: path } : null;
+        }))).filter(Boolean);
+        if (dataRows.length) {
+          await sb.from('aichantier_chantier_plans').upsert(dataRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); });
+        }
       }
     })();
 
