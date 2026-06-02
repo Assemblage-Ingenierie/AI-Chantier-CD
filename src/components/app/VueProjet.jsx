@@ -11,7 +11,8 @@ import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
-import Annotator from '../vue/Annotator.jsx';
+import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
+import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
 
 // Compare two plan background URLs ignoring signed-URL query params (token expiry).
 // Two locs are on the same physical plan only if their planBg points to the same file.
@@ -43,11 +44,72 @@ async function rotateBg90CW(dataUrl) {
   });
 }
 
-function PlanAnnotThumb({ bg, annotations, style }) {
-  // annotations?.exported = image pré-composée (plan + annotations) générée par l'Annotateur
-  // C'est une base64 data URL → affichage instantané, coordonnées correctes, pas de canvas
-  const src = annotations?.exported || bg;
-  return <img src={src} alt="" style={{ ...style, objectFit:'contain', display:'block' }} />;
+// Aperçu d'un plan dans l'onglet visite.
+//  • Sans annotation → simple <img> (décodage asynchrone, non bloquant).
+//  • Avec annotations → redessin sur canvas depuis les paths + numérotation Vxx GLOBALE.
+//    Indispensable car (a) l'image `exported` est retirée à la sauvegarde Supabase
+//    (les marqueurs disparaîtraient après rechargement) et (b) ses labels Vxx seraient
+//    locaux au plan → doublons. Le redessin garantit marqueurs visibles + numéros uniques.
+function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0 }) {
+  const canvasRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const paths = annotations?.paths;
+  const hasVp = !!(paths && paths.length);
+
+  useEffect(() => {
+    if (!bg || !hasVp) { setReady(false); return; }
+    let cancelled = false;
+    setReady(false);
+    const draw = (srcW, srcH, srcImg) => {
+      if (cancelled) return;
+      const cv = canvasRef.current;
+      if (!cv) return;
+      const CW = Math.min(srcW || 1400, 1600);
+      const k = CW / (srcW || CW);
+      cv.width = CW;
+      cv.height = Math.round((srcH || CW) * k);
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(srcImg, 0, 0, cv.width, cv.height);
+      ctx.save();
+      ctx.scale(k, k);
+      const labeled = relabelViewpoints(paths, vpNumByPath, vpBase);
+      drawAnnotationPaths(ctx, labeled, Math.max(0.5, (srcW || 1400) / 1400));
+      ctx.restore();
+      setReady(true);
+    };
+    (async () => {
+      // Décodage non bloquant via createImageBitmap (off-main-thread) ; repli sur <img>.
+      try {
+        if (typeof createImageBitmap === 'function') {
+          const blob = await (await fetch(bg)).blob();
+          if (cancelled) return;
+          const bmp = await createImageBitmap(blob);
+          if (cancelled) { bmp.close?.(); return; }
+          draw(bmp.width, bmp.height, bmp);
+          bmp.close?.();
+          return;
+        }
+      } catch { /* repli ci-dessous */ }
+      const img = new Image();
+      img.onload = () => draw(img.naturalWidth, img.naturalHeight, img);
+      img.src = bg;
+    })();
+    return () => { cancelled = true; };
+  }, [bg, paths, vpNumByPath, vpBase, hasVp]);
+
+  if (!hasVp) {
+    return <img src={bg} alt="" decoding="async" style={{ ...style, objectFit:'contain', display:'block' }} />;
+  }
+  return (
+    <>
+      {/* Placeholder instantané : uniquement l'image pré-composée légère (1400px) si présente.
+          Sans elle, on évite de décoder le bg 4500px deux fois → simple fond neutre. */}
+      {!ready && (annotations?.exported
+        ? <img src={annotations.exported} alt="" decoding="async" style={{ ...style, objectFit:'contain', display:'block' }} />
+        : <div style={{ ...style, background:DA.grayXL }} />)}
+      <canvas ref={canvasRef} style={{ ...style, objectFit:'contain', display: ready ? 'block' : 'none' }} />
+    </>
+  );
 }
 
 // Champs qui appartiennent à une visite (pas au projet)
@@ -109,6 +171,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     visiteNom:           selectedVisite?.label                 ?? '',
     ingenieur:           selectedVisite?.ingenieur             ?? '',
   }), [projet, selectedVisite]);
+
+  // Numérotation Vxx globale sur toute la visite — partagée par les miniatures de plan et
+  // l'annotateur. Garantit un seul V1, un seul V2, etc. quel que soit le plan ou l'onglet.
+  const { vpNumByPath: vpNumGlobal, max: vpMaxGlobal } = useMemo(
+    () => computeVpNumbering(visitProjet.localisations),
+    [visitProjet.localisations]
+  );
 
   const onUpdateVisit = useCallback((upd) => {
     const visitUpd   = {};
@@ -569,7 +638,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                             onClick={() => setModal({ t:'plan', locId:loc.id, annotIdx: rowIdx * 2 + colIdx })}
                                             style={{ flex:1, position:'relative', height: thumbH, border:'none', borderLeft: colIdx > 0 ? `1px solid ${DA.border}` : 'none', cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: pt.bg ? '#f4f4f4' : DA.grayXL }}>
                                             {pt.bg ? (
-                                              <PlanAnnotThumb bg={pt.bg} annotations={pt.planAnnotations} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                              <PlanAnnotThumb bg={pt.bg} annotations={pt.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                             ) : (
                                               <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, color:DA.grayL }}>
                                                 <Ic n="map" s={24}/>
@@ -727,6 +796,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
             annotIdx={modal.annotIdx ?? null}
+            vpNumByPath={vpNumGlobal}
+            vpBase={vpMaxGlobal}
             onClose={() => modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null)}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);

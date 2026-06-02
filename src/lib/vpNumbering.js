@@ -33,7 +33,7 @@ export function computeVpNumbering(localisations) {
       if (vp._vpId) vpNumByPath.set(vp._vpId, num); // stable UUID → survit JSON round-trip
     }
   }
-  return { vxxPhotoMap, vpNumByPath };
+  return { vxxPhotoMap, vpNumByPath, max: g };
 }
 
 // Lookup helper : préfère _vpId (stable), bascule sur ref objet (compat ancien code).
@@ -41,4 +41,20 @@ export function getVpNum(vpNumByPath, vp) {
   if (!vpNumByPath) return null;
   const n = vp._vpId ? vpNumByPath.get(vp._vpId) : undefined;
   return n != null ? n : vpNumByPath.get(vp) ?? null;
+}
+
+// Réécrit le label de chaque marqueur viewpoint selon la numérotation GLOBALE (zéro doublon).
+// Les viewpoints connus de la map reçoivent leur numéro global ; ceux créés dans la session
+// courante (absents de la map) sont numérotés à la suite, à partir de `base` (max global).
+// Surface partagée : aperçu plan (miniature), annotateur, rapport.
+export function relabelViewpoints(paths, vpNumByPath, base = 0) {
+  if (!paths || !vpNumByPath) return paths;
+  let extra = 0;
+  return paths.map(p => {
+    if (p.type !== 'viewpoint') return p;
+    const n = getVpNum(vpNumByPath, p);
+    if (n != null) return { ...p, label: `V${n}` };
+    extra += 1;
+    return { ...p, label: `V${base + extra}` };
+  });
 }

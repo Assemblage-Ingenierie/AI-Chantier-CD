@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { getVpNum } from '../../lib/vpNumbering.js';
+import { getVpNum, relabelViewpoints } from '../../lib/vpNumbering.js';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
@@ -347,7 +347,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0 }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -360,6 +360,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
+  const gvByVpIdRef    = useRef(new Map()); // _vpId → numéro Vxx global résolu au chargement (survit la migration)
 
   const [tool,       setTool]       = useState('pen');
   const [color,      setColor]      = useState(DA.red);
@@ -417,10 +418,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   useEffect(() => {
     setVt({ z: 1, px: 0, py: 0 });
     vtRef.current = { z: 1, px: 0, py: 0 };
-    // Migre les viewpoints sans _vpId pour que la numérotation globale survive le JSON round-trip
+    // Migre les viewpoints sans _vpId pour que la numérotation globale survive le JSON round-trip.
+    // Au passage, on résout le numéro global de chaque marqueur existant via la map parente
+    // (résolution par référence objet AVANT que la migration ne crée de nouveaux objets) et on
+    // le mémorise par _vpId dans gvByVpIdRef → relabel reste exact même après migration.
     const raw = savedPaths || [];
-    const needsMigration = raw.some(p => p.type === 'viewpoint' && !p._vpId);
-    setPaths(needsMigration ? raw.map(p => p.type === 'viewpoint' && !p._vpId ? { ...p, _vpId: crypto.randomUUID() } : p) : raw);
+    const gvMap = new Map();
+    const migrated = raw.map(p => {
+      if (p.type !== 'viewpoint') return p;
+      const np = p._vpId ? p : { ...p, _vpId: crypto.randomUUID() };
+      if (vpNumByPath) {
+        const n = getVpNum(vpNumByPath, p);
+        if (n != null) gvMap.set(np._vpId, n);
+      }
+      return np;
+    });
+    gvByVpIdRef.current = gvMap;
+    setPaths(migrated);
     setSelTextIdx(null);
     hqScaleRef.current = 1;
   }, [bgImage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -439,14 +453,37 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ectx.save();
       ectx.scale(EW / cv.width, EH / cv.height);
       const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-      drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
+      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, ratio * 0.5 * annotScale, ratio);
       ectx.restore();
       const sc = hqScaleRef.current;
       return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
     },
-  }), [paths, annotScale, exportSizeMultiplier]);
+  }), [paths, annotScale, exportSizeMultiplier, vpNumByPath, vpBase]);
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
+  // Numérotation Vxx GLOBALE : les marqueurs déjà connus (numéro résolu au chargement, stocké
+  // par _vpId) gardent leur numéro ; les nouveaux (cette session) continuent après le max global
+  // → zéro doublon dans tout le rapport, quel que soit le plan.
+  const resolveGv = (p) => {
+    const g = gvByVpIdRef.current.get(p._vpId);
+    if (g != null) return g;
+    return vpNumByPath ? getVpNum(vpNumByPath, p) : null;
+  };
+  const newVpCount = vpNumByPath
+    ? paths.filter(p => p.type === 'viewpoint' && resolveGv(p) == null).length
+    : 0;
+  const nextVpLabel = vpNumByPath ? `V${vpBase + newVpCount + 1}` : `V${vpCount + 1}`;
+  const relabel = (arr) => {
+    if (!vpNumByPath) return arr;
+    let extra = 0;
+    return arr.map(p => {
+      if (p.type !== 'viewpoint') return p;
+      const g = resolveGv(p);
+      if (g != null) return { ...p, label: `V${g}` };
+      extra += 1;
+      return { ...p, label: `V${vpBase + extra}` };
+    });
+  };
 
   const redraw = useCallback(() => {
     const cv = cvRef.current;
@@ -460,7 +497,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     const strokeScale = ratio;                     // tracés : normalisés en pixels écran, sans annotScale
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
-    drawAnnotationPaths(ctx, all, symbolScale, strokeScale);
+    drawAnnotationPaths(ctx, relabel(all), symbolScale, strokeScale);
 
     if (pendingVP) {
       ctx.save();
@@ -469,7 +506,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         ctx.scale(symbolScale, symbolScale);
         ctx.translate(-pendingVP.x, -pendingVP.y);
       }
-      drawVP(ctx, { ...pendingVP, label: `V${vpCount + 1}`, color, size });
+      drawVP(ctx, { ...pendingVP, label: nextVpLabel, color, size });
       ctx.restore();
     }
 
@@ -598,7 +635,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -1236,7 +1273,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
-      const label = `V${vpCount + 1}`;
+      const label = nextVpLabel;
       setPaths(prev => [...prev, {
         type: 'viewpoint',
         _vpId: crypto.randomUUID(),
@@ -1427,7 +1464,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
               const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-              drawAnnotationPaths(ectx, paths, ratio * 0.5 * annotScale, ratio);
+              drawAnnotationPaths(ectx, relabel(paths), ratio * 0.5 * annotScale, ratio);
               ectx.restore();
               // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
               const sc = hqScaleRef.current;

@@ -6,7 +6,7 @@ import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0 }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -114,6 +114,8 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
         exportSizeMultiplier={2}
+        vpNumByPath={vpNumByPath}
+        vpBase={vpBase}
         title={libNom ? `${loc.nom} — ${libNom}` : loc.nom}
         onSave={(paths, exported) => {
           const newPlans = plans.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported } } : x);
