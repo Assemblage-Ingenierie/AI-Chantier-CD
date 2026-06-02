@@ -12,7 +12,7 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
-export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
+export default function ProjectCard({ p, arc, stale = false, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const obs = obsCount(p);
@@ -57,7 +57,14 @@ export default function ProjectCard({ p, arc, onSelect, onUpd, onArchive, onUnar
       {/* Infos */}
       <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
-          <p style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0 }}>{p.nom}</p>
+          <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+            <p style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
+            {stale && (
+              <span style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:3, fontSize:10, fontWeight:800, color:'#1D4ED8', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:20, padding:'2px 8px', whiteSpace:'nowrap' }}>
+                <Ic n="rld" s={9}/> Mis à jour
+              </span>
+            )}
+          </div>
           {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
           <p style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.adresse || '—'}</p>
           {(obs > 0 || urg > 0) && (

@@ -38,7 +38,7 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         // on les exécute CONCURRENCY à la fois pour ne pas saturer le thread UI.
         const renderPage = async (i) => {
           const pg = await pdf.getPage(i);
-          const vp = pg.getViewport({ scale: 0.5 });
+          const vp = pg.getViewport({ scale: 0.7 });
           const cv = document.createElement('canvas');
           cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
           await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
@@ -117,7 +117,7 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         <p style={{ color:'rgba(255,255,255,0.4)', fontSize:11, margin:'0 0 10px', textAlign:'center' }}>
           Touchez pour (dé)sélectionner • appui long pour voir en grand
         </p>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(240px, 1fr))', gap:12 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14 }}>
           {pages.map((pg) => {
             const { num, thumb } = pg;
             const sel = selected.has(num);

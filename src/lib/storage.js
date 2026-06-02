@@ -956,6 +956,15 @@ export function clearLocalData() {
   _lastRemoteIds = null;
 }
 
+// Récupère uniquement id + updated_at depuis Supabase — poll léger pour détecter les MàJ distantes
+export async function fetchRemoteTimestamps() {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { data, error } = await sb.from('aichantier_chantiers').select('id,updated_at');
+  if (error || !data) return [];
+  return data; // [{ id, updated_at }]
+}
+
 // Charge uniquement depuis le cache local (sans réseau ni blobs)
 // Utilisé pour l'affichage instantané des cartes projet au démarrage
 export function loadLocalData() {

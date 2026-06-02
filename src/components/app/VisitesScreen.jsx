@@ -1,14 +1,51 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { DA } from '../../lib/constants.js';
+import { DA, SUIVI, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { callAIProxy } from '../../lib/aiProxy.js';
 
 function stripHtml(html) {
   return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const SNIPPET_KEY = '_aisnippets_v1';
+const loadSnippetCache = () => { try { return JSON.parse(localStorage.getItem(SNIPPET_KEY) || '{}'); } catch { return {}; } };
+const saveSnippetCache = (o) => { try { localStorage.setItem(SNIPPET_KEY, JSON.stringify(o)); } catch {}; };
+
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
+  const [snippets, setSnippets] = useState(() => loadSnippetCache());
+  const snippetGenRef = useRef(false);
+
+  // Auto-génère des résumés courts pour les items sans snippet en cache
+  useEffect(() => {
+    if (snippetGenRef.current) return;
+    const cache = loadSnippetCache();
+    const allItems = visites.flatMap(v => (v.localisations || []).flatMap(l => l.items || []));
+    const missing = allItems.filter(it => it.id && !cache[it.id] && stripHtml(it.commentaire || it.titre || ''));
+    if (missing.length === 0) return;
+    snippetGenRef.current = true;
+    (async () => {
+      try {
+        const lines = missing.slice(0, 30).map(it => {
+          const txt = stripHtml(it.commentaire || '').slice(0, 200);
+          return `id=${it.id} | "${(it.titre || txt || '').slice(0, 80)}"${txt ? ' — ' + txt.slice(0, 120) : ''}`;
+        }).join('\n');
+        const r = await callAIProxy({
+          feature: 'visite_snippets',
+          messages: [{ role: 'user', content: `Pour chaque observation, génère un résumé de 4 à 7 mots en français (constat ou action principale). Réponds UNIQUEMENT avec un JSON valide: {"id": "résumé court"}\n\n${lines}` }]
+        });
+        const raw = r.content?.[0]?.text || '';
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          const newCache = { ...loadSnippetCache(), ...parsed };
+          saveSnippetCache(newCache);
+          setSnippets(s => ({ ...s, ...parsed }));
+        }
+      } catch {}
+    })();
+  }, [projet.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatDate = (d) => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' })
@@ -357,23 +394,23 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     {bulletItems.length > 0 && (
                       <div style={{ paddingTop:10, borderTop:`1px solid ${DA.border}`, display:'flex', flexDirection:'column', gap:5 }}>
                         {bulletItems.map((it, k) => {
-                          const snippet = stripHtml(it.commentaire || it.titre || '').slice(0, 100);
+                          const snippet = snippets[it.id] || it.titre || '';
                           if (!snippet) return null;
                           const isUrgent   = it.urgence === 'haute';
                           const isMoyen    = it.urgence === 'moyenne';
                           const isEnCours  = it.suivi === 'en_cours';
                           const isProchain = it.suivi === 'prochaine';
-                          const badge = isUrgent  ? { txt:'Urgent',    color:'#B91C1C', bg:'#FFF0F0' }
-                                      : isMoyen   ? { txt:'À planifier',color:'#92400E', bg:'#FFFBEB' }
-                                      : isEnCours ? { txt:'En cours',  color:'#1D4ED8', bg:'#EFF6FF' }
-                                      : isProchain? { txt:'Prochain',  color:'#4B5563', bg:'#F3F4F6' }
-                                      :             { txt:'À faire',   color:'#1D4ED8', bg:'#EFF6FF' };
+                          const badge = isUrgent   ? URGENCE.haute
+                                      : isMoyen    ? URGENCE.moyenne
+                                      : isEnCours  ? SUIVI.en_cours
+                                      : isProchain ? { ...SUIVI.prochaine, label: 'Prochain' }
+                                      :              SUIVI.a_faire;
                           return (
-                            <div key={k} style={{ display:'flex', alignItems:'baseline', gap:6, minWidth:0 }}>
-                              <span style={{ fontSize:10, fontWeight:800, color:badge.color, background:badge.bg, borderRadius:4, padding:'1px 6px', flexShrink:0, whiteSpace:'nowrap' }}>
-                                {badge.txt}
+                            <div key={k} style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
+                              <span style={{ fontSize:10, fontWeight:800, color:badge.text, background:badge.bg, borderRadius:4, padding:'2px 6px', flexShrink:0, whiteSpace:'nowrap', marginTop:1 }}>
+                                {badge.label}
                               </span>
-                              <span style={{ fontSize:12, color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+                              <span style={{ fontSize:12, color:'#333', flex:1, lineHeight:1.4 }}>
                                 {snippet}
                               </span>
                             </div>

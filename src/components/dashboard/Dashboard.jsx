@@ -11,7 +11,7 @@ const STEPS = [
   { n:4, icon:'fil',  t:'Générez le rapport PDF', d:'Onglet Rapport → Exporter' },
 ];
 
-export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
+export default function Dashboard({ projets, remoteLoaded, staleIds = new Set(), onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
@@ -95,7 +95,7 @@ export default function Dashboard({ projets, remoteLoaded, onSelect, onNew, onUp
           </div>
         ) : (
           <div className="proj-grid">
-            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
+            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} stale={staleIds.has(p.id)} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         )}
       </div>

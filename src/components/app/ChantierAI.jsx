@@ -3,6 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
 import { useBrandingLogo } from '../../lib/branding.js';
+import { fetchRemoteTimestamps } from '../../lib/storage.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
@@ -57,6 +58,29 @@ export default function ChantierAI({ profile, onLogout }) {
   }, [profile?.role]);
   const [undoToast, setUndoToast] = useState(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [staleIds, setStaleIds] = useState(new Set());
+  const projetsRef = useRef(projets);
+  useEffect(() => { projetsRef.current = projets; }, [projets]);
+
+  // Poll léger toutes les 60s (+ au focus fenêtre) pour détecter les MàJ distantes
+  useEffect(() => {
+    if (!remoteLoaded) return;
+    const check = async () => {
+      try {
+        const ts = await fetchRemoteTimestamps();
+        const s = new Set();
+        for (const r of ts) {
+          const local = projetsRef.current.find(p => p.id === r.id);
+          if (local && r.updated_at && local.updatedAt && r.updated_at > local.updatedAt) s.add(r.id);
+        }
+        setStaleIds(s);
+      } catch {}
+    };
+    check();
+    const iv = setInterval(check, 60_000);
+    window.addEventListener('focus', check);
+    return () => { clearInterval(iv); window.removeEventListener('focus', check); };
+  }, [remoteLoaded]);
 
   useEffect(() => {
     const goOnline  = () => setIsOnline(true);
@@ -293,6 +317,7 @@ export default function ChantierAI({ profile, onLogout }) {
             <Dashboard
               projets={projets}
               remoteLoaded={remoteLoaded}
+              staleIds={staleIds}
               onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
