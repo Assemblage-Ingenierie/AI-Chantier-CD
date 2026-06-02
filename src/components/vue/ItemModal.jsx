@@ -655,21 +655,33 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               </p>
             )}
 
-            {/* Boutons IA — une seule ligne sous l'éditeur */}
-            {form.commentaire?.trim() && (
-              <div style={{ display:'flex',gap:8,marginTop:8 }}>
+            {/* Boutons IA — Reformuler · Corriger · Générer, tous sur une seule ligne.
+                flexWrap permet au volet IA (flexBasis 100%) de passer sous la rangée. */}
+            <div style={{ display:'flex',gap:8,marginTop:8,flexWrap:'wrap' }}>
+              {form.commentaire?.trim() && (
                 <button onClick={reformulate} disabled={reformulating}
-                  style={{ flex:1,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap' }}>
+                  style={{ flex:1,minWidth:120,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap' }}>
                   {reformulating ? <Ic n="spn" s={13}/> : <Ic n="spk" s={13}/>}
                   {reformulating ? 'Analyse…' : 'Reformuler avec l\'IA'}
                 </button>
+              )}
+              {form.commentaire?.trim() && (
                 <button onClick={fixSpelling} disabled={correcting}
-                  style={{ flex:1,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap' }}>
+                  style={{ flex:1,minWidth:120,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap' }}>
                   {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
                   {isDesktop ? "Corriger l'orthographe" : 'Corriger'}
                 </button>
-              </div>
-            )}
+              )}
+              <IASug
+                inline
+                content={form.titre}
+                commentaire={form.commentaire}
+                photos={form.photos}
+                onApply={text => { setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n' + text : text })); bumpSync(); }}
+                onApplyTitle={title => setForm(f => ({ ...f, titre: title }))}
+                onApplyUrgence={urgence => setForm(f => ({ ...f, urgence }))}
+              />
+            </div>
 
             {/* Volet REFORMULATION — affiché en premier (au-dessus de l'orthographe) */}
             {reformError && (
@@ -778,14 +790,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               );
             })()}
 
-            <IASug
-              content={form.titre}
-              commentaire={form.commentaire}
-              photos={form.photos}
-              onApply={text => { setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n' + text : text })); bumpSync(); }}
-              onApplyTitle={title => setForm(f => ({ ...f, titre: title }))}
-              onApplyUrgence={urgence => setForm(f => ({ ...f, urgence }))}
-            />
           </div>
 
           {/* Photos — pleine largeur */}

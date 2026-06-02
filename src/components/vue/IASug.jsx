@@ -71,7 +71,7 @@ const toDataUrlSafe = async (url) => {
   });
 };
 
-export default function IASug({ content, commentaire, photos = [], onApply, onApplyTitle, onApplyUrgence }) {
+export default function IASug({ content, commentaire, photos = [], onApply, onApplyTitle, onApplyUrgence, inline = false }) {
   const [open, setOpen]             = useState(false);
   const [step, setStep]             = useState('idle'); // idle | photos | suggest | done | error
   const [photoResult, setPhotoResult] = useState(null);
@@ -183,24 +183,20 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
 
   const loading = step === 'photos' || step === 'suggest';
 
+  // Mode inline : la racine disparaît de la mise en page (display:contents) pour que le bouton
+  // « Générer avec IA » devienne un enfant flex direct de la rangée parente (3 boutons sur 1 ligne),
+  // et que le volet passe en pleine largeur sous la rangée (flexBasis 100% + flexWrap parent).
+  const rootStyle  = inline ? { display: 'contents' } : { marginTop: 10 };
+  const btnStyle   = inline
+    ? { flex: 1, justifyContent: 'center', fontSize: 13, fontWeight: 600, border: `1.5px solid ${open ? DA.black : DA.border}`, borderRadius: 10, padding: '11px 14px', background: open ? DA.black : 'white', color: open ? 'white' : DA.gray, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', transition: 'background 0.15s, color 0.15s, border-color 0.15s' }
+    : { fontSize: 12, fontWeight: 700, border: `1.5px solid ${open ? DA.black : DA.border}`, borderRadius: 8, padding: '7px 13px', background: open ? DA.black : 'white', color: open ? 'white' : DA.black, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'background 0.15s, color 0.15s, border-color 0.15s' };
+  const panelStyle = { marginTop: 8, background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: 12, ...(inline ? { flexBasis: '100%', width: '100%' } : {}) };
+
   return (
-    <div style={{ marginTop: 10 }}>
+    <div style={rootStyle}>
       <button
         onClick={loading ? handleClose : (open ? handleClose : ask)}
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          border: `1.5px solid ${open ? DA.black : DA.border}`,
-          borderRadius: 8,
-          padding: '7px 13px',
-          background: open ? DA.black : 'white',
-          color: open ? 'white' : DA.black,
-          cursor: 'pointer',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-        }}>
+        style={btnStyle}>
         <span style={{ color: open ? 'white' : DA.red, lineHeight: 0, display: 'inline-flex' }}>
           <Ic n={loading ? 'spn' : 'spk'} s={13}/>
         </span>
@@ -208,7 +204,7 @@ export default function IASug({ content, commentaire, photos = [], onApply, onAp
       </button>
 
       {open && (
-        <div style={{ marginTop: 8, background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: 12 }}>
+        <div style={panelStyle}>
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#059669' }}>
