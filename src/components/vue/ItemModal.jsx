@@ -623,17 +623,31 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               ))}
             </div>
 
-            <RichTextArea
-              ref={textareaRef}
-              value={form.commentaire || ''}
-              syncKey={editorSyncKey}
-              onChange={val => setForm(f => ({ ...f, commentaire: val }))}
-              placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
-              textAlign={form.commentaireAlign || 'left'}
-              style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', fontSize:15, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
-              onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
-              onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
-            />
+            {/* Éditeur + bouton dictaphone flottant (cercle, push-to-talk) — posé en bas à droite
+                de la zone de texte pour rester accessible sans gêner la lecture du commentaire. */}
+            <div style={{ position:'relative' }}>
+              <RichTextArea
+                ref={textareaRef}
+                value={form.commentaire || ''}
+                syncKey={editorSyncKey}
+                onChange={val => setForm(f => ({ ...f, commentaire: val }))}
+                placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
+                textAlign={form.commentaireAlign || 'left'}
+                style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:64, fontSize:15, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
+                onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
+                onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
+              />
+
+              {/* Gros bouton rond push-to-talk */}
+              <button
+                title={recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
+                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recordingRef.current) startDictaphone(); }}
+                onPointerUp={() => { if (recordingRef.current) stopDictaphone(); }}
+                onPointerCancel={() => { if (recordingRef.current) stopDictaphone(); }}
+                style={{ position:'absolute', bottom:12, right:12, width:56, height:56, borderRadius:'50%', border:'none', background:recording ? '#991b1b' : DA.red, color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', userSelect:'none', WebkitUserSelect:'none', touchAction:'none', transition:'background 0.15s, transform 0.1s', transform:recording?'scale(1.08)':'scale(1)', boxShadow:recording?'0 0 0 6px rgba(185,28,28,0.25), inset 0 2px 6px rgba(0,0,0,0.25)':'0 3px 10px rgba(185,28,28,0.4)' }}>
+                <Ic n={recording ? 'spn' : 'mic'} s={24}/>
+              </button>
+            </div>
 
             {recording && (
               <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
@@ -641,30 +655,21 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               </p>
             )}
 
-            <div style={{ display:'flex',gap:8,marginTop:8 }}>
-              <button
-                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recordingRef.current) startDictaphone(); }}
-                onPointerUp={() => { if (recordingRef.current) stopDictaphone(); }}
-                onPointerCancel={() => { if (recordingRef.current) stopDictaphone(); }}
-                style={{ flex:1,padding:'12px 14px',borderRadius:10,border:'none',background:recording ? '#991b1b' : DA.red,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,cursor:'pointer',userSelect:'none',touchAction:'none',WebkitUserSelect:'none',transition:'background 0.15s',boxShadow:recording?'inset 0 2px 6px rgba(0,0,0,0.25)':'0 2px 8px rgba(185,28,28,0.35)' }}>
-                <Ic n={recording ? 'spn' : 'mic'} s={16}/>
-                {recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
-              </button>
-              {form.commentaire?.trim() && (
+            {/* Boutons IA — une seule ligne sous l'éditeur */}
+            {form.commentaire?.trim() && (
+              <div style={{ display:'flex',gap:8,marginTop:8 }}>
                 <button onClick={reformulate} disabled={reformulating}
-                  style={{ padding:'12px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap',flexShrink:0 }}>
+                  style={{ flex:1,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap' }}>
                   {reformulating ? <Ic n="spn" s={13}/> : <Ic n="spk" s={13}/>}
-                  {reformulating ? 'Analyse…' : isDesktop ? 'Reformuler avec l\'IA' : 'Reformuler'}
+                  {reformulating ? 'Analyse…' : 'Reformuler avec l\'IA'}
                 </button>
-              )}
-              {form.commentaire?.trim() && (
                 <button onClick={fixSpelling} disabled={correcting}
-                  style={{ padding:'12px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap',flexShrink:0 }}>
+                  style={{ flex:1,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap' }}>
                   {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
-                  {correcting ? 'Correction…' : isDesktop ? "Corriger avec l'IA" : 'Corriger IA'}
+                  {isDesktop ? "Corriger l'orthographe" : 'Corriger'}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Volet REFORMULATION — affiché en premier (au-dessus de l'orthographe) */}
             {reformError && (
