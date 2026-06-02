@@ -7,7 +7,7 @@ import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, getVpNum } from '../../lib/vpNumbering.js';
-import { fetchPlanData } from '../../lib/storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -473,6 +473,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
   const deferredAnnotScale = React.useDeferredValue(annotScale);
   const [renderedImg, setRenderedImg] = useState(null);
   const [fetchedBg, setFetchedBg] = useState(null);
+  const [hdBg, setHdBg] = useState(null); // image HD (Storage) — qualité rapport, indépendante du bg d'affichage 2500px
 
   // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
   // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
@@ -484,8 +485,18 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     return () => { cancelled = true; };
   }, [bg, planId]);
 
+  // Image HD pour le RAPPORT : le bg d'affichage est volontairement réduit (2500px) pour un
+  // chargement instantané dans l'app, mais le rapport doit rester net → on récupère l'image HD
+  // stockée dans Storage (colonne `data`, ~4500px) et on dessine les annotations dessus.
   useEffect(() => {
-    const bgSrc = bg || fetchedBg;
+    if (!planId) return;
+    let cancelled = false;
+    fetchPlanHdDataUrl(planId).then(url => { if (!cancelled && url) setHdBg(url); });
+    return () => { cancelled = true; };
+  }, [planId]);
+
+  useEffect(() => {
+    const bgSrc = hdBg || bg || fetchedBg;
     if (!bgSrc) { setRenderedImg(exported || null); return; }
     if (!paths?.length) { setRenderedImg(bgSrc); return; }
     // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
@@ -509,7 +520,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     };
     el.onerror = () => setRenderedImg(exported || bgSrc);
     el.src = bgSrc;
-  }, [exported, paths, bg, fetchedBg, deferredAnnotScale, vpNumByPath]);
+  }, [exported, paths, bg, fetchedBg, hdBg, deferredAnnotScale, vpNumByPath]);
 
   if (!renderedImg && !bg && !fetchedBg) return (
     <div style={{ minHeight:60, background:'#f9f9f9', display:'flex', alignItems:'center', justifyContent:'center' }}>

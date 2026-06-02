@@ -14,20 +14,32 @@ export function computeVpNumbering(localisations) {
   const vxxPhotoMap = new Map();
   const vpNumByPath = new Map(); // double-keyed: object ref ET _vpId (si présent)
   const numByVpId   = new Map(); // _vpId → numéro : DÉDOUBLONNAGE cross-zone/plan (cf. ci-dessous)
+  const numByFp     = new Map(); // empreinte contenu → numéro : DÉDOUBLONNAGE des marqueurs SANS _vpId
   let g = 0;
+  // Empreinte stable, INDÉPENDANTE de la zone : un même marqueur propagé sur plusieurs zones
+  // partageant le plan a des coordonnées identiques → même empreinte → un seul numéro.
+  // Inclut le planId pour que deux plans distincts ne collisionnent jamais.
+  const fingerprint = (vp, planId) =>
+    `${planId || '_'}|${Math.round(vp.x ?? -1)}|${Math.round(vp.y ?? -1)}|${vp.photoIdx ?? '_'}`;
   for (const loc of (localisations || [])) {
+    // On garde le planId associé à chaque marqueur : plan principal = loc.planId, extra = ep.planId.
     const planPaths = [
-      ...(loc.planAnnotations?.paths || []),
-      ...((loc.extraPlans || []).flatMap(ep => ep.planAnnotations?.paths || [])),
+      ...((loc.planAnnotations?.paths || []).map(vp => ({ vp, planId: loc.planId }))),
+      ...((loc.extraPlans || []).flatMap(ep => (ep.planAnnotations?.paths || []).map(vp => ({ vp, planId: ep.planId })))),
     ];
-    for (const vp of planPaths) {
+    for (const { vp, planId } of planPaths) {
       if (vp.type !== 'viewpoint') continue;
       let num;
-      // Un même marqueur (même _vpId) peut apparaître dans PLUSIEURS zones partageant le plan
-      // (propagation des annotations). Sans dédoublonnage il était recompté à chaque zone →
-      // V1 devenait V3, V4… Ici on lui réattribue TOUJOURS son premier numéro.
+      const fp = fingerprint(vp, planId);
+      // Un même marqueur peut apparaître dans PLUSIEURS zones partageant le plan (propagation).
+      // Sans dédoublonnage il était recompté à chaque zone → V1 devenait V3, V4…
+      // 1) _vpId (UUID stable) : dédoublonnage prioritaire quand présent.
+      // 2) empreinte contenu : filet de sécurité pour les marqueurs anciens SANS _vpId,
+      //    qui sinon tombaient dans la branche photoIdx (clé par zone) et étaient comptés N fois.
       if (vp._vpId && numByVpId.has(vp._vpId)) {
         num = numByVpId.get(vp._vpId);
+      } else if (numByFp.has(fp)) {
+        num = numByFp.get(fp);
       } else if (vp.photoIdx != null) {
         const key = `${loc.id}_${vp.photoIdx}`;
         if (vxxPhotoMap.has(key)) num = vxxPhotoMap.get(key);
@@ -36,6 +48,7 @@ export function computeVpNumbering(localisations) {
         num = ++g;
       }
       if (vp._vpId && !numByVpId.has(vp._vpId)) numByVpId.set(vp._vpId, num);
+      if (!numByFp.has(fp)) numByFp.set(fp, num);
       vpNumByPath.set(vp, num);             // rétrocompat : objet ref
       if (vp._vpId) vpNumByPath.set(vp._vpId, num); // stable UUID → survit JSON round-trip
     }
