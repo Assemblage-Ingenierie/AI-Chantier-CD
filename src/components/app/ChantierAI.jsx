@@ -109,59 +109,37 @@ export default function ChantierAI({ profile, onLogout }) {
 
   const setBackHandler = useCallback((fn) => { childBackHandler.current = fn; }, []);
 
-  // ── Gestion du retour arrière ─────────────────────────────────────────────
-  // Deux chemins selon le support navigateur :
-  //
-  // A) Navigation API (Chrome 102+, Android PWA) — voie FIABLE.
-  //    preventDefault() est SYNCHRONE et bloque la navigation AVANT qu'elle soit
-  //    commitée par le navigateur → impossible de bypasser par deux swipes rapides
-  //    ni par un swipe edge qui contourne popstate. Aucun buffer nécessaire.
-  //
-  // B) popstate + buffer sentinel (Safari, Firefox, vieux Android Chrome) — voie
-  //    de REPLI. On maintient un buffer de sentinelles pour qu'un retour système ne
-  //    ferme jamais l'app ; deux pushState inconditionnels en tête de handler.
-
+  // ── Gestion du retour arrière (buffer de sentinelles popstate) ─────────────
+  // Sur Android Chrome, l'app se ferme dès qu'un appui « retour » atteindrait l'entrée 0,
+  // AVANT même que popstate ne se déclenche → le seul rempart est d'avoir toujours assez
+  // d'entrées devant. Buffer initial profond + re-push inconditionnel à chaque popstate.
   useEffect(() => {
-    if ('navigation' in window) return; // chemin A : pas de buffer nécessaire
-    // Chemin B : buffer initial profond
     history.replaceState({ pwaSentinel: true }, '');
     for (let i = 0; i < 8; i++) history.pushState({ pwaSentinel: true }, '');
   }, []);
 
+  // Sentinel supplémentaire à chaque ouverture de projet → garantit qu'en revenant
+  // de VueProjet vers VisitesScreen, il reste encore une entrée devant l'entrée 0
   useEffect(() => {
-    if ('navigation' in window) return;
     if (ouvert) history.pushState({ pwaSentinel: true }, '');
   }, [ouvert?.id]);
 
   useEffect(() => {
-    // ── Chemin A : Navigation API ────────────────────────────────────────────
-    if ('navigation' in window) {
-      const onNavigate = (e) => {
-        if (e.navigationType !== 'traverse') return;
-        const currIdx = window.navigation.currentEntry?.index ?? 0;
-        if ((e.destination?.index ?? currIdx) >= currIdx) return; // navigation avant → laisser passer
-        e.preventDefault(); // bloque le retour — synchrone, sans race condition
-        if (childBackHandler.current?.()) {
-          // modal/overlay géré par l'écran enfant
-        } else if (selectedVisiteIdRef.current) {
-          setSelectedVisiteId(null);
-        } else if (ouvertRef.current) {
-          setOuvert(null);
-        }
-      };
-      window.navigation.addEventListener('navigate', onNavigate);
-      return () => window.navigation.removeEventListener('navigate', onNavigate);
-    }
-
-    // ── Chemin B : popstate + buffer (Safari, Firefox) ────────────────────────
     let _lastNav = 0;
     const handler = () => {
+      // Réarme le buffer EN PREMIER et INCONDITIONNELLEMENT : chaque popstate consomme 1 entrée,
+      // on en repousse 2 → solde toujours +1, le buffer ne peut JAMAIS s'épuiser.
       history.pushState({ pwaSentinel: true }, '');
       history.pushState({ pwaSentinel: true }, '');
+
+      // Debounce de l'ACTION de navigation uniquement : deux appuis très rapprochés (< 350ms)
+      // ne font reculer que d'un seul niveau dans l'app.
       const now = Date.now();
       if (now - _lastNav < 350) return;
       _lastNav = now;
+
       if (childBackHandler.current?.()) {
+        // modal/overlay géré par l'écran enfant
       } else if (selectedVisiteIdRef.current) {
         setSelectedVisiteId(null);
       } else if (ouvertRef.current) {
@@ -170,7 +148,7 @@ export default function ChantierAI({ profile, onLogout }) {
     };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — setters useState stables
+  }, []); // refs, pas de dépendances
 
   useEffect(() => {
     const onKeyDown = (e) => {
