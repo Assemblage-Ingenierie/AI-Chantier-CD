@@ -5,10 +5,30 @@ import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
-export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto }) {
+export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
+  const [photoZoom, setPhotoZoom]       = useState(null); // src de l'aperçu plein écran (appui long)
+  const photoDragRef = useRef(null);                      // { itemId, from } réordonnancement photos
+  const photoLP      = useRef({ timer: null, fired: false }); // appui long sur une photo
+
+  // Réordonne les photos d'un item (déplace from → to) puis remonte au parent.
+  const reorderPhotos = (item, from, to) => {
+    const photos = [...(item.photos || [])];
+    if (from < 0 || to < 0 || from >= photos.length || to >= photos.length || from === to) return;
+    const [m] = photos.splice(from, 1);
+    photos.splice(to, 0, m);
+    onReorderPhoto?.(item, photos);
+  };
+
+  const startPhotoLP = (src) => {
+    clearTimeout(photoLP.current.timer);
+    photoLP.current.fired = false;
+    photoLP.current.timer = setTimeout(() => { photoLP.current.fired = true; setPhotoZoom(src); }, 280);
+  };
+  const endPhotoLP = () => { clearTimeout(photoLP.current.timer); setPhotoZoom(null); };
+  useEffect(() => () => clearTimeout(photoLP.current.timer), []);
 
   // ── Drag state ─────────────────────────────────────────────────────────────
   const [dragIdx, setDragIdx]   = useState(null);
@@ -119,6 +139,12 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
 
   return (
     <>
+    {/* Aperçu plein écran pendant l'appui long sur une photo — se ferme au relâchement */}
+    {photoZoom && (
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+        <img src={photoZoom} alt="" style={{ maxWidth:'96vw', maxHeight:'94vh', objectFit:'contain', borderRadius:6, boxShadow:'0 8px 50px rgba(0,0,0,0.7)' }}/>
+      </div>
+    )}
     {lightbox && (
       <div onClick={() => setLightbox(null)}
         style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.96)',zIndex:9999,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12 }}>
@@ -231,14 +257,28 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                         {shown.map((ph, pi) => {
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);
+                          const openPhoto = () => { if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } };
+                          const src = ph.annotated || ph.data;
+                          const canReorder = !!onReorderPhoto && validPhotos.length > 1;
                           return (
-                          <div key={pi} style={{ position:'relative', flexShrink:0 }}>
-                            <img src={ph.annotated || ph.data} alt=""
-                              onClick={e => { e.stopPropagation(); if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } }}
-                              style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block' }}/>
+                          <div key={pi}
+                            draggable={canReorder}
+                            onDragStart={canReorder ? (e => { e.stopPropagation(); clearTimeout(photoLP.current.timer); photoDragRef.current = { itemId: item.id, from: realIdx }; }) : undefined}
+                            onDragOver={canReorder ? (e => { e.preventDefault(); e.stopPropagation(); }) : undefined}
+                            onDrop={canReorder ? (e => { e.preventDefault(); e.stopPropagation(); const d = photoDragRef.current; if (d && d.itemId === item.id) reorderPhotos(item, d.from, realIdx); photoDragRef.current = null; }) : undefined}
+                            onDragEnd={canReorder ? (() => { photoDragRef.current = null; }) : undefined}
+                            style={{ position:'relative', flexShrink:0 }}>
+                            <img src={src} alt=""
+                              draggable={false}
+                              onPointerDown={e => { e.stopPropagation(); startPhotoLP(src); }}
+                              onPointerUp={endPhotoLP}
+                              onPointerLeave={endPhotoLP}
+                              onPointerCancel={endPhotoLP}
+                              onClick={e => { e.stopPropagation(); if (photoLP.current.fired) { photoLP.current.fired = false; return; } openPhoto(); }}
+                              style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
                             {!isDesktop && pi === shown.length - 1 && extra > 0 && (
                               <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
-                                onClick={e => { e.stopPropagation(); if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } }}>
+                                onClick={e => { e.stopPropagation(); openPhoto(); }}>
                                 <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
                               </div>
                             )}
@@ -255,13 +295,11 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                                 </button>
                               )
                             )}
-                            {onAnnotatePhoto && (
-                              <button
-                                onClick={e => { e.stopPropagation(); onAnnotatePhoto(item, realIdx); }}
-                                title="Annoter"
-                                style={{ position:'absolute', bottom:4, right:4, background: ph.annotations?.length ? DA.red : 'rgba(0,0,0,0.55)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 24, height: isDesktop ? 28 : 24, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-                                <Ic n="pen" s={isDesktop ? 13 : 11}/>
-                              </button>
+                            {canReorder && (
+                              <div title="Glisser pour réordonner"
+                                style={{ position:'absolute', bottom:4, right:4, background:'rgba(0,0,0,0.55)', color:'white', borderRadius:6, width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'grab', flexShrink:0, pointerEvents:'none' }}>
+                                <Ic n="srt" s={isDesktop ? 13 : 11}/>
+                              </div>
                             )}
                           </div>
                           );

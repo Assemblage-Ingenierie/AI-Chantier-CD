@@ -532,6 +532,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 const updated = { ...item, photos: item.photos.filter((_,i) => i !== photoIdx), _photosHydrated: true };
                                 patchItem(loc.id, updated);
                               }}
+                              onReorderPhoto={(item, photos) => {
+                                patchItem(loc.id, { ...item, photos, _photosHydrated: true });
+                              }}
                             />
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
