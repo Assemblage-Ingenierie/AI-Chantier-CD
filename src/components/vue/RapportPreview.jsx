@@ -117,8 +117,9 @@ function estimateBlockH(block, ppl) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map()) {
+function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false) {
   const blocks = [];
+  const planTail = []; // plans groupés en fin quand plansNoBreak=true
   const cols   = Math.min(ppl, 3);
 
   for (const loc of locs) {
@@ -179,13 +180,18 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
 
       photoOffset += photos.length;
     }
-    if (!plansEnFin) {
-      const primaryVisible = !loc.planReportHidden && !!(loc.planAnnotations?.exported || loc.planBg || loc.planId);
-      const extraVisible = (loc.extraPlans || []).some(ep => !ep.reportHidden && !!(ep.planBg || ep.planId || ep.planAnnotations?.exported));
-      if (primaryVisible || extraVisible) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
+    const primaryVisible = !loc.planReportHidden && !!(loc.planAnnotations?.exported || loc.planBg || loc.planId);
+    const extraVisible = (loc.extraPlans || []).some(ep => !ep.reportHidden && !!(ep.planBg || ep.planId || ep.planAnnotations?.exported));
+    if (primaryVisible || extraVisible) {
+      if (!plansEnFin) {
+        blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
+      } else if (plansNoBreak) {
+        // plans groupés à la fin mais sans A4Card forcée — paginés normalement
+        planTail.push({ type:'plan', id:`plan-${loc.id}`, loc });
+      }
     }
   }
-  return blocks;
+  return plansNoBreak ? [...blocks, ...planTail] : blocks;
 }
 
 // ── Pagination ───────────────────────────────────────────────────────────────────────
@@ -490,6 +496,13 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           {/* Crop frame border */}
           <div style={{ position:'absolute', left:frameLeft, top:frameTop, width:frameW, height:frameH,
             border:'2px solid white', borderRadius:2, boxSizing:'border-box', pointerEvents:'none' }}/>
+          {/* Annotations overlay — positioned inside the crop frame */}
+          {photo.annotations?.length > 0 && (
+            <div style={{ position:'absolute', left:frameLeft, top:frameTop, width:frameW, height:frameH,
+              overflow:'hidden', pointerEvents:'none' }}>
+              <PhotoAnnotCanvas photo={photo} annotScale={1} cropX={px} cropY={py} cropZoom={1}/>
+            </div>
+          )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
           <button onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
@@ -988,11 +1001,32 @@ function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }
   );
 }
 
+// ── Calcul des chunks de participants pour la page de garde ──────────────────────────────────
+const COVER_ROW_H = 30; // hauteur estimée par ligne (padding 10px + 2 lignes text ≈ 19px + bordure 1px)
+function computeParticipantChunks(participants, infoRowCount) {
+  if (!participants.length) return [[]];
+  const DARK_H = Math.round(PH * 0.30);
+  // Page 1 : zone blanche disponible
+  const P1_INNER = PH - DARK_H - FTR - 26; // 26 = padding top 18 + bottom 8
+  const INFO_H   = infoRowCount > 0 ? (24 + infoRowCount * 12 + Math.max(0, infoRowCount - 1) * 5 + 16) : 0;
+  const HDR_H    = 42; // en-tête section intervenants (titre + ligne tableau)
+  const P1_AVAIL = Math.max(0, P1_INNER - INFO_H - HDR_H);
+  const p1Count  = Math.floor(P1_AVAIL / COVER_ROW_H);
+  // Pages suivantes : pleine hauteur
+  const CONT_AVAIL = PH - FTR - 26 - HDR_H;
+  const contCount  = Math.max(1, Math.floor(CONT_AVAIL / COVER_ROW_H));
+  const chunks = [participants.slice(0, p1Count)];
+  let i = p1Count;
+  while (i < participants.length) { chunks.push(participants.slice(i, i + contCount)); i += contCount; }
+  return chunks;
+}
+
 // ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────────────────
-function CoverPage({ projet, pageNum, totalPages }) {
+function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
   const logoUrl = useBrandingLogo();
   const sigleUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
-  const participants = projet.participants || [];
+  const allParticipants = projet.participants || [];
+  const participants = participantChunk ?? allParticipants;
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : null;
@@ -1107,6 +1141,64 @@ function CoverPage({ projet, pageNum, totalPages }) {
         )}
       </div>
 
+      <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+    </div>
+  );
+}
+
+// ── Page de garde (suite) — intervenants supplémentaires ──────────────────────────────────
+function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
+  const sigleUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
+  const participants = participantChunk || [];
+  return (
+    <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:"'Open Sans', sans-serif" }}>
+      <div style={{ flex:1, padding:`18px ${MX}px 8px`, display:'flex', flexDirection:'column', gap:0, minHeight:0, overflow:'hidden' }}>
+        <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>
+            Intervenants (suite)
+          </span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 0' }}>
+          <div style={{ width:20, flexShrink:0 }}/>
+          <div style={{ flex:1, display:'flex', minWidth:0 }}>
+            <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE</div>
+            <div style={{ flex:'0 0 22%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>TÉLÉPHONE</div>
+            <div style={{ flex:'0 0 28%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>EMAIL</div>
+            <div style={{ flex:'0 0 14%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textAlign:'right', paddingRight:6, letterSpacing:'0.06em' }}>PRÉSENCE</div>
+          </div>
+        </div>
+        {participants.map((pt) => {
+          const isPresent = !pt.presence || pt.presence === 'present';
+          return (
+            <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', borderBottom:`1px solid #DFE4E8` }}>
+              <div style={{ width:20, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {pt.isAssemblage
+                  ? (sigleUrl
+                      ? <img src={sigleUrl} alt="AI" style={{ height:10, width:10, objectFit:'contain' }}/>
+                      : <span style={{ fontSize:6, fontWeight:700, color:DA.red }}>AI</span>)
+                  : <div style={{ width:4, height:4, borderRadius:'50%', background:'#bbb' }}/>
+                }
+              </div>
+              <div style={{ flex:1, display:'flex', alignItems:'center', minWidth:0 }}>
+                <div style={{ flex:'0 0 36%', minWidth:0, paddingRight:8 }}>
+                  <div style={{ fontSize:8.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.nom}</div>
+                  {pt.poste && <div style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.poste}</div>}
+                </div>
+                <div style={{ flex:'0 0 22%', fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
+                <div style={{ flex:'0 0 28%', fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
+                <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
+                  <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600,
+                    color: isPresent ? '#16A34A' : DA.red,
+                    background: isPresent ? '#DCFCE7' : '#FEE2E2',
+                    borderRadius:3, padding:'1px 5px' }}>
+                    {isPresent ? 'Présent' : 'Absent'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <PageFtr pageNum={pageNum} totalPages={totalPages}/>
     </div>
   );
@@ -1387,7 +1479,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
@@ -1423,15 +1515,16 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [localisations, plansEnFin, projet.planLibrary]);
 
   // Segments de pages pour plansEnFin : une entrée par page (une zone peut générer N pages via breaks)
+  // Désactivé si plansNoBreak : les plans sont alors intégrés dans allBlocks à la fin
   const planPageSegments = useMemo(() => {
-    if (!plansEnFin) return [];
+    if (!plansEnFin || plansNoBreak) return [];
     const result = [];
     for (const loc of planLocs) {
       const groups = splitPlanGroups(loc, projet.planLibrary, breaks);
       groups.forEach((g, gi) => result.push({ loc, ...g, segIdx: gi }));
     }
     return result;
-  }, [planLocs, projet.planLibrary, breaks, plansEnFin]);
+  }, [planLocs, projet.planLibrary, breaks, plansEnFin, plansNoBreak]);
 
   // Légende combinée pour le mode plansEnFin — affichée une seule fois sur la dernière page plan
   const combinedPlanLegend = useMemo(() => {
@@ -1445,7 +1538,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [planPageSegments, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -1484,7 +1577,19 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
   const hasTableau    = includeTableauRecap && recapItems.length > 0;
   const hasConclusion = includeConclusion;
-  const totalPages    = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
+
+  // Calcul des chunks de participants pour la page de garde (overflow → pages supplémentaires)
+  const coverInfoRows = [
+    projet.adresse, projet.dateVisite, projet.maitreOuvrage,
+  ].filter(Boolean);
+  const participantChunks = useMemo(
+    () => computeParticipantChunks(projet.participants || [], coverInfoRows.length),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projet.participants, coverInfoRows.length]
+  );
+  const coverPageCount = participantChunks.length; // toujours ≥ 1
+
+  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
 
   // Suivi de la page courante via scroll
   useEffect(() => {
@@ -1707,17 +1812,27 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         {/* Centré sur la largeur totale du viewport (pas seulement la zone preview) */}
         <div style={{ width: PW, marginLeft:`calc(max(10px, 50vw - ${panelW}px - ${Math.round(PW * scale / 2)}px))`, marginRight:0, zoom: scale, display:'flex', flexDirection:'column', alignItems:'center' }}>
 
-        {/* ── PAGE DE GARDE ── */}
+        {/* ── PAGE DE GARDE (page 1) ── */}
         <div ref={el => { pageRefs.current[0] = el; }} style={{ marginTop:20 }}>
-          <CoverPage projet={projet} pageNum={1} totalPages={totalPages}/>
+          <CoverPage projet={projet} pageNum={1} totalPages={totalPages} participantChunk={participantChunks[0]}/>
         </div>
+
+        {/* ── PAGES DE GARDE SUITE (overflow participants) ── */}
+        {participantChunks.slice(1).map((chunk, i) => (
+          <React.Fragment key={`cover-overflow-${i}`}>
+            <PageSepBanner pageNum={i + 2} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+            <div ref={el => { pageRefs.current[i + 1] = el; }}>
+              <CoverOverflowPage projet={projet} pageNum={i + 2} totalPages={totalPages} participantChunk={chunk}/>
+            </div>
+          </React.Fragment>
+        ))}
 
         {/* ── PAGES OBSERVATIONS ── */}
         {pages.map((pageBlocks, pi) => {
           const firstId     = pageBlocks[0]?.id;
           const firstBlock  = pageBlocks[0];
           const firstForced = breaks.has(firstId);
-          const pageNum     = pi + 2;
+          const pageNum     = coverPageCount + 1 + pi;
           return (
             <React.Fragment key={pi}>
               <PageSepBanner
@@ -1727,7 +1842,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 isForced={firstForced}
                 onToggle={onTogglePageBreak}
               />
-              <div ref={el => { pageRefs.current[pi + 1] = el; }}>
+              <div ref={el => { pageRefs.current[coverPageCount + pi] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
                   {/* Bouton de suppression d'un saut forcé — uniquement en mode édition cutMode */}
                   {cutMode && firstForced && firstBlock && (
@@ -1780,8 +1895,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {/* ── PAGE TABLEAU RÉCAP ── */}
         {hasTableau && (() => {
-          const pageNum = 1 + pages.length + 1;
-          const pageIdx = 1 + pages.length;
+          const pageNum = coverPageCount + pages.length + 1;
+          const pageIdx = coverPageCount + pages.length;
           return (
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
@@ -1804,8 +1919,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {/* ── PAGE CONCLUSION ── */}
         {hasConclusion && (() => {
-          const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + 1;
-          const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0);
+          const pageNum = coverPageCount + pages.length + (hasTableau ? 1 : 0) + 1;
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0);
           return (
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
@@ -1826,10 +1941,22 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         })()}
 
         {/* ── PLANS EN FIN DE RAPPORT ── */}
+        {plansEnFin && onTogglePlansNoBreak && (
+          <div data-print="hide" style={{ width:PW, background:'#1a1a1a', padding:'6px 14px', display:'flex', alignItems:'center', gap:10 }}>
+            <span style={{ fontSize:8, color:'rgba(255,255,255,0.4)', fontStyle:'italic' }}>Plans à la fin —</span>
+            <button onClick={onTogglePlansNoBreak}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:5, border:'none', cursor:'pointer',
+                background: plansNoBreak ? 'rgba(255,255,255,0.12)' : 'rgba(227,5,19,0.2)',
+                color: plansNoBreak ? 'rgba(255,255,255,0.6)' : DA.red, fontSize:9, fontWeight:700 }}>
+              {plansNoBreak ? '↕ Suite directe (actif)' : '↕ Suite directe'}
+            </button>
+            {!plansNoBreak && <span style={{ fontSize:8, color:'rgba(255,255,255,0.25)' }}>Plans sur page(s) séparée(s)</span>}
+          </div>
+        )}
         {planPageSegments.map((seg, pi) => {
           const isLastPlanPage = pi === planPageSegments.length - 1;
-          const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
-          const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
+          const pageNum = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
             <React.Fragment key={`plan-end-${seg.loc.id}-${seg.segIdx}`}>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>

@@ -476,6 +476,8 @@ export default function RapportTab({ projet, onUpdate }) {
         pageBreaks={pageBreaks}
         onTogglePageBreak={togglePageBreak}
         plansEnFin={projet.plansEnFin ?? false}
+        plansNoBreak={projet.plansNoBreak ?? false}
+        onTogglePlansNoBreak={() => onUpdate({ plansNoBreak: !(projet.plansNoBreak ?? false) })}
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
         annotScale={annotScale}
