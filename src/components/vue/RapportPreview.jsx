@@ -323,11 +323,12 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
+function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50 }) {
   const cvRef = useRef();
   const deferredScale = React.useDeferredValue(annotScale);
   const [inferredW, setInferredW] = React.useState(null);
   const [inferredH, setInferredH] = React.useState(null);
+  const [cssW, setCssW] = React.useState(null);
 
   useEffect(() => {
     if (photo.annotW || !photo.data || !photo.annotations?.length) return;
@@ -340,32 +341,51 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
   const effectiveW = photo.annotW || inferredW;
   const effectiveH = photo.annotH || inferredH || (effectiveW ? Math.round(effectiveW * 0.75) : null);
 
+  // Mesure la largeur CSS réelle pour un sizeScale exact (même formule que l'annotateur).
   useEffect(() => {
     const cv = cvRef.current;
-    const h = effectiveH || (effectiveW ? Math.round(effectiveW * 0.75) : null);
-    if (!cv || !photo.annotations?.length || !effectiveW || !h) return;
+    if (!cv) return;
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width;
+      if (w > 0) setCssW(w);
+    });
+    ro.observe(cv);
+    return () => ro.disconnect();
+  }, []);
 
-    // Le canvas est mis en 4:3 (même ratio que le container) sans décalage.
-    // Cela garantit un scaling X/Y identique (pas d'étirement) et garde toutes
-    // les annotations dans l'espace du canvas, même celles au bord du cadre.
-    // Les coordonnées d'annotation sont en espace photo naturel [0..W, 0..H] :
-    // on les dessine telles quelles — la position approximative est acceptable
-    // car le container coupe la photo (objectFit:cover) de toute façon.
-    const drawW = effectiveW;
-    const drawH = Math.round(effectiveW / (4 / 3));
+  useEffect(() => {
+    const cv = cvRef.current;
+    if (!cv || !photo.annotations?.length || !effectiveW || !cssW) return;
+
+    // Canvas = zone visible exacte (objectFit:cover + objectPosition).
+    const containerAR = 4 / 3;
+    const photoH = effectiveH || Math.round(effectiveW * 0.75);
+    const photoAR = effectiveW / photoH;
+    let drawW, drawH, cropXpx = 0, cropYpx = 0;
+    if (photoAR >= containerAR) {
+      drawH = photoH;
+      drawW = Math.round(photoH * containerAR);
+      cropXpx = Math.round((effectiveW - drawW) * cropX / 100);
+    } else {
+      drawW = effectiveW;
+      drawH = Math.round(effectiveW / containerAR);
+      cropYpx = Math.round(Math.max(0, photoH - drawH) * cropY / 100);
+    }
     cv.width  = drawW;
     cv.height = drawH;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
-    const sizeScale = (drawW * ppl / 700) * deferredScale;
+    if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
+    // sizeScale = ratio * 0.5, miroir exact de l'annotateur (cv.width / cv.clientWidth * 0.5)
+    const sizeScale = (drawW / cssW) * 0.5 * deferredScale;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, effectiveW, effectiveH, deferredScale, ppl]);
+  }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
   return <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>;
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1 }) {
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
   const photos = (photoStart != null)
@@ -427,21 +447,59 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
+            const cx = ph.cropX ?? 50, cy = ph.cropY ?? 50;
+            const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
+            const onDragStart = onPhotoCropChange ? (e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              const container = e.currentTarget;
+              const imgEl = container.querySelector('img');
+              const rect = container.getBoundingClientRect();
+              const W_c = rect.width, H_c = rect.height;
+              const W_p = ph.annotW || 1400, H_p = ph.annotH || Math.round(W_p * 0.75);
+              const scale = Math.max(W_c / W_p, H_c / H_p);
+              const exW = Math.max(0, W_p * scale - W_c);
+              const exH = Math.max(0, H_p * scale - H_c);
+              const sx = e.clientX, sy = e.clientY, scx = cx, scy = cy;
+              const onMove = (ev) => {
+                const dx = ev.clientX - sx, dy = ev.clientY - sy;
+                const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
+                const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
+                if (imgEl) imgEl.style.objectPosition = `${nx}% ${ny}%`;
+              };
+              const onUp = (ev) => {
+                window.removeEventListener('pointermove', onMove);
+                const dx = ev.clientX - sx, dy = ev.clientY - sy;
+                const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
+                const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
+                onPhotoCropChange(pi, Math.round(nx), Math.round(ny));
+              };
+              window.addEventListener('pointermove', onMove);
+              window.addEventListener('pointerup', onUp, { once: true });
+            } : null;
             return (
-              <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
+              <div key={pi}
+                style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2,
+                  cursor: onDragStart ? 'grab' : undefined, touchAction: onDragStart ? 'none' : undefined }}
+                onPointerDown={onDragStart}>
                 <img src={ph.data || ph.annotated} alt=""
-                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
-                {/* Canvas overlay : toujours utilisé pour annotations photos — sizeScale calibré pour les vignettes.
-                    Le PDF export capture ce canvas via toDataURL() avant clonage DOM. */}
-                {hasAnnotations && !!ph.data && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
-                {(() => {
-                  const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
-                  return vxxNum != null ? (
-                    <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
-                      V{vxxNum}
-                    </div>
-                  ) : null;
-                })()}
+                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
+                    objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none' }}/>
+                {hasAnnotations && !!ph.data &&
+                  <PhotoAnnotCanvas photo={ph} annotScale={annotScale} cropX={cx} cropY={cy}/>}
+                {vxxNum != null && (
+                  <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
+                    V{vxxNum}
+                  </div>
+                )}
+                {onDragStart && (
+                  <div data-print="hide" title="Glisser pour recadrer"
+                    style={{ position:'absolute', bottom:3, right:3, background:'rgba(0,0,0,0.5)', color:'white',
+                      borderRadius:3, padding:'2px 4px', fontSize:7, fontWeight:700, pointerEvents:'none',
+                      letterSpacing:0.3, lineHeight:1 }}>
+                    ✥
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1575,6 +1633,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
+                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy) => onUpdateItem(block.locId, block.item.id, {
+                                photos: (block.item.photos || []).map((ph, i) => i === pi ? { ...ph, cropX: cx, cropY: cy } : ph),
+                              }) : null}
                             />
                         }
                       </div>
