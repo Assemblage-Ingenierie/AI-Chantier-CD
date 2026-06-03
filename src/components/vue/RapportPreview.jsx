@@ -179,8 +179,9 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
       photoOffset += photos.length;
     }
     if (!plansEnFin) {
-      const hasPlan = !!(loc.planAnnotations?.exported || loc.planBg || loc.planId || (loc.extraPlans || []).length > 0);
-      if (hasPlan) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
+      const primaryVisible = !loc.planReportHidden && !!(loc.planAnnotations?.exported || loc.planBg || loc.planId);
+      const extraVisible = (loc.extraPlans || []).some(ep => !ep.reportHidden && !!(ep.planBg || ep.planId || ep.planAnnotations?.exported));
+      if (primaryVisible || extraVisible) blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
     }
   }
   return blocks;
@@ -397,9 +398,12 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   React.useLayoutEffect(() => {
     if (containerRef.current) setContainerW(containerRef.current.offsetWidth);
   }, []);
-
-  const W_p = photo.annotW || 1400;
-  const H_p = photo.annotH || Math.round(W_p * 0.75);
+  // Dimensions réelles lues depuis l'image (évite l'hypothèse paysage par défaut)
+  const [naturalSize, setNaturalSize] = React.useState(
+    photo.annotW && photo.annotH ? { w: photo.annotW, h: photo.annotH } : null
+  );
+  const W_p = naturalSize?.w || photo.annotW || 1400;
+  const H_p = naturalSize?.h || photo.annotH || Math.round(W_p * 0.75);
   const photoRatio = W_p / H_p;
   const FRAME_RATIO = 4 / 3;
   const containerH = containerW / photoRatio;
@@ -462,7 +466,8 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           onPointerDown={handlePointerDown}>
           <img src={photo.data || photo.annotated} alt=""
             style={{ position:'absolute', inset:0, width:'100%', height:'100%',
-              objectFit:'fill', display:'block', pointerEvents:'none' }}/>
+              objectFit:'fill', display:'block', pointerEvents:'none' }}
+            onLoad={e => { if (!naturalSize) setNaturalSize({ w: e.target.naturalWidth, h: e.target.naturalHeight }); }}/>
           {/* Dark overlay: 4 rectangles around the crop window */}
           {frameTop > 0 && (
             <div style={{ position:'absolute', left:0, top:0, right:0, height:frameTop,
@@ -1407,10 +1412,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     const lib = projet.planLibrary || [];
     const bgResolvable = (planId, planBg, ann) =>
       !!(ann?.exported || planBg || (planId && lib.find(p => p.id === planId)?.bg));
-    return localisations.filter(l =>
-      bgResolvable(l.planId, l.planBg, l.planAnnotations) ||
-      (l.extraPlans || []).some(ep => bgResolvable(ep.planId, ep.planBg, ep.planAnnotations))
-    );
+    return localisations.filter(l => {
+      const primaryOk = !l.planReportHidden && bgResolvable(l.planId, l.planBg, l.planAnnotations);
+      const extraOk = (l.extraPlans || []).some(ep => !ep.reportHidden && bgResolvable(ep.planId, ep.planBg, ep.planAnnotations));
+      return primaryOk || extraOk;
+    });
   }, [localisations, plansEnFin, projet.planLibrary]);
 
   // Segments de pages pour plansEnFin : une entrée par page (une zone peut générer N pages via breaks)
