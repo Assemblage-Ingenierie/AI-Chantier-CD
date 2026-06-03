@@ -764,6 +764,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             projetNom={projet.nom ?? ''}
             visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
             visiteDate={visitProjet.dateVisite || null}
+            ingenieur={visitProjet.ingenieur || ''}
           />
         );
       })()}
