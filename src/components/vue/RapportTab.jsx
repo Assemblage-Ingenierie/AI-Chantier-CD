@@ -400,17 +400,6 @@ export default function RapportTab({ projet, onUpdate }) {
               />
               <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Plans en fin de rapport</span>
             </label>
-            {(projet.plansEnFin ?? false) && (
-              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginTop:6, marginLeft:22 }}>
-                <input
-                  type="checkbox"
-                  checked={projet.plansNoBreak ?? false}
-                  onChange={e => onUpdate({ plansNoBreak: e.target.checked })}
-                  style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
-                />
-                <span style={{ fontSize:12, color:DA.black }}>Sans saut de page avant les plans</span>
-              </label>
-            )}
           </div>
 
           {/* Sauts de page */}
