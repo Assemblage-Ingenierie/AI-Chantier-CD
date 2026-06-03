@@ -392,24 +392,51 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   const [px, setPx] = React.useState(initialX);
   const [py, setPy] = React.useState(initialY);
   const [pz, setPz] = React.useState(initialZ);
-  const previewRef = useRef();
+  const containerRef = useRef();
+  const [containerW, setContainerW] = React.useState(268);
+  React.useLayoutEffect(() => {
+    if (containerRef.current) setContainerW(containerRef.current.offsetWidth);
+  }, []);
+
+  const W_p = photo.annotW || 1400;
+  const H_p = photo.annotH || Math.round(W_p * 0.75);
+  const photoRatio = W_p / H_p;
+  const FRAME_RATIO = 4 / 3;
+  const containerH = containerW / photoRatio;
+
+  // Base frame dimensions at zoom=1
+  const isPortrait = photoRatio <= FRAME_RATIO;
+  const baseFrameW = isPortrait ? containerW : containerH * FRAME_RATIO;
+  const baseFrameH = isPortrait ? containerW / FRAME_RATIO : containerH;
+  // Frame at current zoom
+  const frameW = baseFrameW / pz;
+  const frameH = baseFrameH / pz;
+  const exW = Math.max(0, containerW - frameW);
+  const exH = Math.max(0, containerH - frameH);
+  const frameLeft = exW * px / 100;
+  const frameTop = exH * py / 100;
+
+  const pzRef = React.useRef(pz); pzRef.current = pz;
+  const pxRef = React.useRef(px); pxRef.current = px;
+  const pyRef = React.useRef(py); pyRef.current = py;
 
   const handlePointerDown = (e) => {
     e.preventDefault();
-    const el = previewRef.current;
+    const el = containerRef.current;
+    if (!el) return;
     el.setPointerCapture(e.pointerId);
     const rect = el.getBoundingClientRect();
-    const W_c = rect.width, H_c = rect.height;
-    const W_p = photo.annotW || 1400, H_p = photo.annotH || Math.round(W_p * 0.75);
-    const baseScale = Math.max(W_c / W_p, H_c / H_p);
-    const scz = pz, scx = px, scy = py;
-    const exW = Math.max(1, (W_p * baseScale - W_c) / scz);
-    const exH = Math.max(1, (H_p * baseScale - H_c) / scz);
+    const cW = rect.width, cH = rect.height;
+    const bFW = photoRatio <= FRAME_RATIO ? cW : cH * FRAME_RATIO;
+    const bFH = photoRatio <= FRAME_RATIO ? cW / FRAME_RATIO : cH;
+    const fW = bFW / pzRef.current, fH = bFH / pzRef.current;
+    const eW = Math.max(0, cW - fW), eH = Math.max(0, cH - fH);
+    const scx = pxRef.current, scy = pyRef.current;
     const sx = e.clientX, sy = e.clientY;
     const onMove = (ev) => {
       const dx = ev.clientX - sx, dy = ev.clientY - sy;
-      const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
-      const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
+      const nx = eW > 0 ? Math.max(0, Math.min(100, scx + (dx / eW) * 100)) : 50;
+      const ny = eH > 0 ? Math.max(0, Math.min(100, scy + (dy / eH) * 100)) : 50;
       setPx(nx); setPy(ny);
     };
     const onUp = () => el.removeEventListener('pointermove', onMove);
@@ -423,19 +450,39 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
       onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div style={{ background:'#1c1c1e', borderRadius:14, padding:16, display:'flex',
         flexDirection:'column', gap:12, width:300, maxWidth:'calc(100vw - 40px)',
+        maxHeight:'calc(100vh - 40px)', overflowY:'auto',
         boxShadow:'0 20px 60px rgba(0,0,0,0.6)' }}>
         <div style={{ fontSize:13, fontWeight:700, color:'white', textAlign:'center', letterSpacing:0.2 }}>
           Recadrer la photo
         </div>
-        <div ref={previewRef}
-          style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:8,
-            cursor:'grab', touchAction:'none', background:'#111' }}
+        {/* Full original photo with draggable 4:3 crop frame */}
+        <div ref={containerRef}
+          style={{ position:'relative', width:'100%', height:containerH, flexShrink:0,
+            borderRadius:8, cursor:'grab', touchAction:'none', background:'#000', overflow:'hidden' }}
           onPointerDown={handlePointerDown}>
-          <img src={photo.data || photo.annotated} alt="" style={{
-            position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
-            objectPosition:`${px}% ${py}%`, display:'block', pointerEvents:'none',
-            transform: pz !== 1 ? `scale(${pz})` : undefined, transformOrigin:`${px}% ${py}%`,
-          }}/>
+          <img src={photo.data || photo.annotated} alt=""
+            style={{ position:'absolute', inset:0, width:'100%', height:'100%',
+              objectFit:'fill', display:'block', pointerEvents:'none' }}/>
+          {/* Dark overlay: 4 rectangles around the crop window */}
+          {frameTop > 0 && (
+            <div style={{ position:'absolute', left:0, top:0, right:0, height:frameTop,
+              background:'rgba(0,0,0,0.55)', pointerEvents:'none' }}/>
+          )}
+          {frameTop + frameH < containerH - 0.5 && (
+            <div style={{ position:'absolute', left:0, top:frameTop + frameH, right:0, bottom:0,
+              background:'rgba(0,0,0,0.55)', pointerEvents:'none' }}/>
+          )}
+          {frameLeft > 0 && (
+            <div style={{ position:'absolute', left:0, top:frameTop, width:frameLeft, height:frameH,
+              background:'rgba(0,0,0,0.55)', pointerEvents:'none' }}/>
+          )}
+          {frameLeft + frameW < containerW - 0.5 && (
+            <div style={{ position:'absolute', left:frameLeft + frameW, top:frameTop, right:0, height:frameH,
+              background:'rgba(0,0,0,0.55)', pointerEvents:'none' }}/>
+          )}
+          {/* Crop frame border */}
+          <div style={{ position:'absolute', left:frameLeft, top:frameTop, width:frameW, height:frameH,
+            border:'2px solid white', borderRadius:2, boxSizing:'border-box', pointerEvents:'none' }}/>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
           <button onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
