@@ -1019,36 +1019,58 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       )}
 
       {/* Zoom photo plein écran — appui long */}
-      {zoomPhotoIdx !== null && form.photos[zoomPhotoIdx] && (
-        <div
-          style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.92)', display:'flex', alignItems:'center', justifyContent:'center' }}
-          onClick={() => setZoomPhotoIdx(null)}
-          onContextMenu={e => e.preventDefault()}>
-          <img
-            src={form.photos[zoomPhotoIdx].annotated || form.photos[zoomPhotoIdx].data}
-            alt=""
-            style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', WebkitTouchCallout:'none', userSelect:'none' }}
-            draggable={false}
-            onContextMenu={e => e.preventDefault()}
-          />
-          {/* Navigation gauche/droite */}
-          {form.photos.length > 1 && (
-            <>
-              <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i - 1 + form.photos.length) % form.photos.length); }}
-                style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                ‹
+      {zoomPhotoIdx !== null && form.photos[zoomPhotoIdx] && (() => {
+        const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        const canShareFiles = isIOS && typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
+        const ph = form.photos[zoomPhotoIdx];
+        return (
+          <div
+            style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.92)', display:'flex', alignItems:'center', justifyContent:'center' }}
+            onClick={() => setZoomPhotoIdx(null)}
+            onContextMenu={e => e.preventDefault()}>
+            <img
+              src={ph.annotated || ph.data}
+              alt=""
+              style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', WebkitTouchCallout:'none', userSelect:'none' }}
+              draggable={false}
+              onContextMenu={e => e.preventDefault()}
+            />
+            {/* Bouton iOS : enregistrer dans Photos via Web Share API */}
+            {canShareFiles && (
+              <button
+                onClick={async e => {
+                  e.stopPropagation();
+                  try {
+                    const src = ph.annotated || ph.data;
+                    if (!src) return;
+                    const blob = await fetch(src).then(r => r.blob());
+                    const file = new File([blob], ph.name || 'photo.jpg', { type: blob.type || 'image/jpeg' });
+                    if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+                  } catch { /* annulé ou non supporté */ }
+                }}
+                style={{ position:'absolute', top:16, right:16, background:'rgba(255,255,255,0.18)', border:'none', borderRadius:10, padding:'10px 14px', color:'white', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6, backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)' }}>
+                <Ic n="dl" s={15}/> Enregistrer
               </button>
-              <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i + 1) % form.photos.length); }}
-                style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                ›
-              </button>
-              <span style={{ position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', color:'rgba(255,255,255,0.6)', fontSize:12 }}>
-                {zoomPhotoIdx + 1} / {form.photos.length}
-              </span>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {/* Navigation gauche/droite */}
+            {form.photos.length > 1 && (
+              <>
+                <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i - 1 + form.photos.length) % form.photos.length); }}
+                  style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  ‹
+                </button>
+                <button onClick={e => { e.stopPropagation(); setZoomPhotoIdx(i => (i + 1) % form.photos.length); }}
+                  style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:44, height:44, color:'white', fontSize:22, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  ›
+                </button>
+                <span style={{ position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', color:'rgba(255,255,255,0.6)', fontSize:12 }}>
+                  {zoomPhotoIdx + 1} / {form.photos.length}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
