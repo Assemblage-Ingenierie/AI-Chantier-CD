@@ -369,22 +369,6 @@ export default function RapportTab({ projet, onUpdate }) {
             </div>
           </div>
 
-          {/* Plans en fin de rapport */}
-          <div>
-            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-              <input
-                type="checkbox"
-                checked={projet.plansEnFin ?? false}
-                onChange={e => onUpdate({ plansEnFin: e.target.checked })}
-                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
-              />
-              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Plans en fin de rapport</span>
-            </label>
-            <p style={{ fontSize:10, color:DA.gray, margin:'3px 0 0 22px' }}>
-              Décoché = plans affichés après chaque zone
-            </p>
-          </div>
-
           {/* Taille des annotations sur plans */}
           <div>
             <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
@@ -475,9 +459,7 @@ export default function RapportTab({ projet, onUpdate }) {
         photosParLigne={projet.photosParLigne ?? 2}
         pageBreaks={pageBreaks}
         onTogglePageBreak={togglePageBreak}
-        plansEnFin={projet.plansEnFin ?? false}
-        plansNoBreak={projet.plansNoBreak ?? false}
-        onTogglePlansNoBreak={() => onUpdate({ plansNoBreak: !(projet.plansNoBreak ?? false) })}
+        plansEnFin={false}
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
         annotScale={annotScale}
