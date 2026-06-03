@@ -1,13 +1,13 @@
 const DRIVE_QUEUE_KEY = '_chantierai_drive_queue';
 const MAX_QUEUE = 15;
 
-async function driveUploadAttempt({ data, name, projetNom, visiteLabel, visiteDate }) {
+async function driveUploadAttempt({ data, name, projetNom, visiteLabel, visiteDate, ingenieur }) {
   const [header, base64] = data.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
   const res = await fetch('/api/drive-upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, visiteLabel, visiteDate }),
+    body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, visiteLabel, visiteDate, ingenieur }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }

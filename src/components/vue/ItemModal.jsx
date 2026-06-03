@@ -39,7 +39,7 @@ function patchHtmlText(html, del, add) {
   }).join('');
 }
 
-export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, planLibrary = [], onBackRequest }) {
+export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest }) {
   const [form, setForm] = useState(() => {
     const base = item
       ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
@@ -436,7 +436,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         if (fromCamera) {
           const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
           if (!isIOS) valid.forEach(autoSaveToDevice); // download link ouvre un onglet sur iOS, skip
-          valid.forEach(ph => uploadToDrive({ ...ph, projetNom, visiteLabel, visiteDate }));
+          valid.forEach(ph => uploadToDrive({ ...ph, projetNom, visiteLabel, visiteDate, ingenieur }));
         }
       })
       .finally(() => setCompressing(false));
