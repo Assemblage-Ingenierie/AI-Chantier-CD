@@ -446,7 +446,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         }
         setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
         if (fromCamera) {
-          valid.forEach(autoSaveToDevice);
+          const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+          if (!isIOS) valid.forEach(autoSaveToDevice); // download link ouvre un onglet sur iOS, skip
           valid.forEach(ph => uploadToDrive({ ...ph, projetNom, visiteLabel, visiteDate }));
         }
       })
