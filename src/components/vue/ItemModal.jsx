@@ -661,7 +661,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               {/* Gros bouton rond push-to-talk */}
               <button
                 title={recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
-                onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); if (!recordingRef.current) startDictaphone(); }}
+                onPointerDown={e => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} if (!recordingRef.current) startDictaphone(); }}
                 onPointerUp={() => { if (recordingRef.current) stopDictaphone(); }}
                 onPointerCancel={() => { if (recordingRef.current) stopDictaphone(); }}
                 style={{ position:'absolute', bottom:12, right:12, width:56, height:56, borderRadius:'50%', border:'none', background:recording ? '#991b1b' : DA.red, color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', userSelect:'none', WebkitUserSelect:'none', touchAction:'none', transition:'background 0.15s, transform 0.1s', transform:recording?'scale(1.08)':'scale(1)', boxShadow:recording?'0 0 0 6px rgba(185,28,28,0.25), inset 0 2px 6px rgba(0,0,0,0.25)':'0 3px 10px rgba(185,28,28,0.4)' }}>

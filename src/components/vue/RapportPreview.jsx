@@ -185,13 +185,12 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
     if (primaryVisible || extraVisible) {
       if (!plansEnFin) {
         blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
-      } else if (plansNoBreak) {
-        // plans groupés à la fin mais sans A4Card forcée — paginés normalement
+      } else {
         planTail.push({ type:'plan', id:`plan-${loc.id}`, loc });
       }
     }
   }
-  return plansNoBreak ? [...blocks, ...planTail] : blocks;
+  return [...blocks, ...planTail];
 }
 
 // ── Pagination ───────────────────────────────────────────────────────────────────────
@@ -331,9 +330,8 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom = 1 }) {
+function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1 }) {
   const cvRef = useRef();
-  const deferredScale = React.useDeferredValue(annotScale);
   const [inferredW, setInferredW] = React.useState(null);
   const [inferredH, setInferredH] = React.useState(null);
   const [cssW, setCssW] = React.useState(null);
@@ -386,9 +384,9 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
     // cssW fallback: use drawW so annotations render even before ResizeObserver fires
-    const sizeScale = (drawW / Math.max(cssW || drawW, 350)) * 0.5 * deferredScale / cropZoom;
+    const sizeScale = (drawW / Math.max(cssW || drawW, 350)) * 0.5 / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY, cropZoom]);
+  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
   return <canvas ref={cvRef} style={{
@@ -679,7 +677,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                     objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
                     transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
                 {hasAnnotations && !!ph.data &&
-                  <PhotoAnnotCanvas photo={ph} annotScale={annotScale} cropX={cx} cropY={cy} cropZoom={cz}/>}
+                  <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz}/>}
                 {vxxNum != null && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                     V{vxxNum}
@@ -741,6 +739,22 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
   );
 }
 
+function scalePlanPaths(paths, s) {
+  if (s === 1 || !paths?.length) return paths;
+  return paths.map(p => {
+    const sc = v => v != null ? v * s : v;
+    const out = { ...p, x: sc(p.x), y: sc(p.y) };
+    if (p.x1 != null) out.x1 = sc(p.x1);
+    if (p.y1 != null) out.y1 = sc(p.y1);
+    if (p.x2 != null) out.x2 = sc(p.x2);
+    if (p.y2 != null) out.y2 = sc(p.y2);
+    if (p.arrowX != null) out.arrowX = sc(p.arrowX);
+    if (p.arrowY != null) out.arrowY = sc(p.arrowY);
+    if (p.points) out.points = p.points.map(pt => [pt[0] * s, pt[1] * s]);
+    return out;
+  });
+}
+
 function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
@@ -749,6 +763,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
   const [fetchedBg, setFetchedBg] = useState(null);
   const [bgFetchDone, setBgFetchDone] = useState(false);
   const [hdBg, setHdBg] = useState(null); // image HD (Storage) — qualité rapport, indépendante du bg d'affichage 2500px
+  const [bgNaturalW, setBgNaturalW] = useState(null); // largeur naturelle du bg thumbnail (espace coordonnées annotations)
 
   // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
   // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
@@ -772,6 +787,16 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     return () => { cancelled = true; };
   }, [planId]);
 
+  // Mesure la largeur naturelle du thumbnail (espace de coordonnées des annotations).
+  // Nécessaire pour recaler les chemins sur l'image HD si elle est plus grande.
+  useEffect(() => {
+    const src = bg || fetchedBg;
+    if (!src) return;
+    const img = new window.Image();
+    img.onload = () => setBgNaturalW(img.naturalWidth);
+    img.src = src;
+  }, [bg, fetchedBg]);
+
   useEffect(() => {
     const bgSrc = hdBg || bg || fetchedBg;
     if (!bgSrc) { setRenderedImg(exported || null); return; }
@@ -792,12 +817,15 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
       const sizeScale = (cv.width / 1400) * deferredAnnotScale;
-      drawAnnotationPaths(ctx, drawPaths, sizeScale);
+      // Si l'image HD est plus grande que le thumbnail utilisé lors de l'annotation,
+      // on recale les coordonnées des chemins pour qu'ils restent bien positionnés.
+      const coordScale = (hdBg && bgNaturalW && cv.width !== bgNaturalW) ? cv.width / bgNaturalW : 1;
+      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, coordScale), sizeScale);
       setRenderedImg(cv.toDataURL('image/png'));
     };
     el.onerror = () => setRenderedImg(exported || bgSrc);
     el.src = bgSrc;
-  }, [exported, paths, bg, fetchedBg, hdBg, deferredAnnotScale, vpNumByPath]);
+  }, [exported, paths, bg, fetchedBg, hdBg, deferredAnnotScale, vpNumByPath, bgNaturalW]);
 
   // Chargement en attente uniquement si le fetch n'est pas encore terminé
   if (!renderedImg && !bg && !fetchedBg && !bgFetchDone) return (
@@ -872,6 +900,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
       const ep = loc.extraPlans[i];
       if (ep.reportHidden) { collectHidden(ep.planId, ep.planAnnotations); continue; }
       const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
+      if (!epBg && !ep.planId && !ep.planAnnotations?.exported) continue;
       plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
     }
     // Fusion des paths masqués dans le plan visible correspondant
@@ -1594,15 +1623,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   // Segments de pages pour plansEnFin : une entrée par page (une zone peut générer N pages via breaks)
   // Désactivé si plansNoBreak : les plans sont alors intégrés dans allBlocks à la fin
-  const planPageSegments = useMemo(() => {
-    if (!plansEnFin || plansNoBreak) return [];
-    const result = [];
-    for (const loc of planLocs) {
-      const groups = splitPlanGroups(loc, projet.planLibrary, breaks);
-      groups.forEach((g, gi) => result.push({ loc, ...g, segIdx: gi }));
-    }
-    return result;
-  }, [planLocs, projet.planLibrary, breaks, plansEnFin, plansNoBreak]);
+  const planPageSegments = useMemo(() => [], []);
 
   // Légende combinée pour le mode plansEnFin — affichée une seule fois sur la dernière page plan
   const combinedPlanLegend = useMemo(() => {
