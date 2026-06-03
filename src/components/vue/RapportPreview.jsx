@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from './Annotator.jsx';
@@ -448,7 +449,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
     el.addEventListener('pointerup', onUp, { once: true });
   };
 
-  return (
+  return createPortal(
     <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.82)',
       display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
       onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
@@ -509,7 +510,8 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
               border:'none', cursor:'pointer', fontSize:13, fontWeight:700 }}>Valider</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
