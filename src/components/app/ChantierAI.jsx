@@ -4,6 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { fetchRemoteTimestamps } from '../../lib/storage.js';
+import { processDriveQueue } from '../../lib/driveUpload.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
@@ -58,6 +59,14 @@ export default function ChantierAI({ profile, onLogout }) {
   }, [profile?.role]);
   const [undoToast, setUndoToast] = useState(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  // Process queued Drive uploads when app loads or connection is restored
+  useEffect(() => {
+    processDriveQueue();
+    window.addEventListener('online', processDriveQueue);
+    return () => window.removeEventListener('online', processDriveQueue);
+  }, []);
+
   const [staleIds, setStaleIds] = useState(new Set());
   const projetsRef = useRef(projets);
   useEffect(() => { projetsRef.current = projets; }, [projets]);
