@@ -8,8 +8,7 @@
 //    Fallback : référence objet (rétrocompat session courante sans rechargement).
 //
 // Le compteur est partagé : un marqueur et la photo qu'il vise portent le même numéro.
-// Deux marqueurs visant la même photo (même photoIdx dans la même zone) partagent le numéro.
-// Un marqueur non lié à une photo (photoIdx null, ancien) reçoit quand même un numéro unique.
+// Un marqueur non lié à une photo (photoIdx null) reçoit quand même un numéro unique.
 export function computeVpNumbering(localisations) {
   const vxxPhotoMap = new Map();
   const vpNumByPath = new Map(); // double-keyed: object ref ET _vpId (si présent)
@@ -36,18 +35,31 @@ export function computeVpNumbering(localisations) {
       // Un même marqueur peut apparaître dans PLUSIEURS zones partageant le plan (propagation).
       // Sans dédoublonnage il était recompté à chaque zone → V1 devenait V3, V4…
       // 1) _vpId (UUID stable) : dédoublonnage prioritaire quand présent.
-      // 2) empreinte contenu : filet de sécurité pour les marqueurs anciens SANS _vpId,
-      //    qui sinon tombaient dans la branche photoIdx (clé par zone) et étaient comptés N fois.
+      // 2) empreinte contenu : filet de sécurité pour les marqueurs anciens SANS _vpId.
+      // IMPORTANT : photoKey-dedup (branche 3) est réservé aux anciens marqueurs sans _vpId.
+      // Les marqueurs avec _vpId ont chacun leur propre numéro — grouper par photoIdx des
+      // marqueurs avec _vpId provoque des doublons V1 quand des annotations propagées entre
+      // zones ont le même photoIdx local (ex. zone A et zone B ayant chacune leur photo 0).
       if (vp._vpId && numByVpId.has(vp._vpId)) {
         num = numByVpId.get(vp._vpId); dedupPath = 'vpId-dedup';
       } else if (numByFp.has(fp)) {
         num = numByFp.get(fp); dedupPath = 'fp-dedup';
-      } else if (vp.photoIdx != null) {
+      } else if (vp.photoIdx != null && !vp._vpId) {
+        // Ancien marqueur sans _vpId : partage le numéro si un autre marqueur vise déjà cette photo.
         const key = `${loc.id}_${vp.photoIdx}`;
         if (vxxPhotoMap.has(key)) { num = vxxPhotoMap.get(key); dedupPath = 'photoKey-dedup'; }
         else { num = ++g; vxxPhotoMap.set(key, num); dedupPath = 'new-photoKey'; }
       } else {
-        num = ++g; dedupPath = 'new-noPhoto';
+        num = ++g; dedupPath = vp.photoIdx != null ? 'new-photoKey' : 'new-noPhoto';
+      }
+      // Enregistre le badge photo pour CETTE zone quel que soit le chemin de dédup.
+      // Nécessaire quand le plan est partagé entre plusieurs zones (propagation) : la première
+      // zone enregistre l'entrée vxxPhotoMap ; les zones suivantes ont besoin de leur propre
+      // entrée. Aussi utilisé pour les plans masqués (reportHidden) dont les photos apparaissent
+      // quand même dans le rapport.
+      if (vp.photoIdx != null) {
+        const k = `${loc.id}_${vp.photoIdx}`;
+        if (!vxxPhotoMap.has(k)) vxxPhotoMap.set(k, num);
       }
       if (vp._vpId && !numByVpId.has(vp._vpId)) numByVpId.set(vp._vpId, num);
       if (!numByFp.has(fp)) numByFp.set(fp, num);
