@@ -490,6 +490,13 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           {/* Crop frame border */}
           <div style={{ position:'absolute', left:frameLeft, top:frameTop, width:frameW, height:frameH,
             border:'2px solid white', borderRadius:2, boxSizing:'border-box', pointerEvents:'none' }}/>
+          {/* Annotations overlay — positioned inside the crop frame */}
+          {photo.annotations?.length > 0 && (
+            <div style={{ position:'absolute', left:frameLeft, top:frameTop, width:frameW, height:frameH,
+              overflow:'hidden', pointerEvents:'none' }}>
+              <PhotoAnnotCanvas photo={photo} annotScale={1} cropX={px} cropY={py} cropZoom={1}/>
+            </div>
+          )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
           <button onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
