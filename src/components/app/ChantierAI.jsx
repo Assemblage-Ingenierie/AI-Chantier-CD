@@ -181,6 +181,24 @@ export default function ChantierAI({ profile, onLogout }) {
     try { history.replaceState({ pwaSentinel: true }, ''); } catch { /* noop */ }
     const p = armBuffer(20);
     logNav(`mount armed=${p}`);
+
+    // Android peut vider l'historique lors d'une mise en arrière-plan (BFCache / freeze).
+    // On réarme dès que la page redevient visible ou est restaurée depuis BFCache.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        const r = armBuffer(10);
+        logNav(`rearm-visible=${r}`);
+      }
+    };
+    const onPageShow = (e) => {
+      if (e.persisted) { const r = armBuffer(10); logNav(`rearm-pageshow=${r}`); }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
+    };
   }, [armBuffer, logNav]);
 
   useEffect(() => {

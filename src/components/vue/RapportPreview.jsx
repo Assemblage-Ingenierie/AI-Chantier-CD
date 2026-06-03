@@ -342,13 +342,32 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
 
   useEffect(() => {
     const cv = cvRef.current;
-    if (!cv || !photo.annotations?.length || !effectiveW) return;
-    cv.width  = effectiveW;
-    cv.height = effectiveH || Math.round(effectiveW * 0.75);
+    const h = effectiveH || (effectiveW ? Math.round(effectiveW * 0.75) : null);
+    if (!cv || !photo.annotations?.length || !effectiveW || !h) return;
+
+    // Reproduit exactement le comportement objectFit:cover du container 4:3 :
+    // on calcule quelle région de la photo est visible (crop centré), puis on
+    // translate le contexte pour que les coordonnées d'annotation correspondent.
+    const containerAR = 4 / 3;
+    const photoAR = effectiveW / h;
+    let drawW, drawH, cropX = 0, cropY = 0;
+    if (photoAR >= containerAR) {
+      // Photo plus large que 4:3 → crop horizontal (bords gauche/droit coupés)
+      drawH = h;
+      drawW = Math.round(h * containerAR);
+      cropX = Math.round((effectiveW - drawW) / 2);
+    } else {
+      // Photo plus haute que 4:3 (portrait) → crop vertical (haut/bas coupés)
+      drawW = effectiveW;
+      drawH = Math.round(effectiveW / containerAR);
+      cropY = Math.round((h - drawH) / 2);
+    }
+    cv.width  = drawW;
+    cv.height = drawH;
     const ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    // Diviseur 700 (au lieu de 1400) pour que le texte soit lisible dans les vignettes du rapport
-    const sizeScale = (effectiveW * ppl / 700) * deferredScale;
+    ctx.clearRect(0, 0, drawW, drawH);
+    if (cropX !== 0 || cropY !== 0) ctx.translate(-cropX, -cropY);
+    const sizeScale = (drawW * ppl / 700) * deferredScale;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, deferredScale, ppl]);
 
