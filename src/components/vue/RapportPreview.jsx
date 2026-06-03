@@ -442,7 +442,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
     cv.height = effectiveAnnotH;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, effectiveAnnotW, effectiveAnnotH);
-    drawAnnotationPaths(ctx, photo.annotations, (effectiveAnnotW / Math.max(containerW, 350)) * 0.5);
+    drawAnnotationPaths(ctx, photo.annotations, (effectiveAnnotW / Math.max(containerW, 350)) * 0.32);
   }, [photo.annotations, effectiveAnnotW, effectiveAnnotH, containerW]);
 
   const handlePointerDown = (e) => {
@@ -509,7 +509,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           {/* Annotations overlay on full photo — visible everywhere, even outside crop frame */}
           {photo.annotations?.length > 0 && effectiveAnnotW && (
             <canvas ref={fullAnnotCvRef} style={{
-              position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none',
+              position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', opacity:0.75,
             }}/>
           )}
           {/* Crop frame border */}
@@ -1952,19 +1952,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           );
         })()}
 
-        {/* ── PLANS EN FIN DE RAPPORT ── */}
-        {plansEnFin && onTogglePlansNoBreak && (
-          <div data-print="hide" style={{ width:PW, background:'#1a1a1a', padding:'6px 14px', display:'flex', alignItems:'center', gap:10 }}>
-            <span style={{ fontSize:8, color:'rgba(255,255,255,0.4)', fontStyle:'italic' }}>Plans à la fin —</span>
-            <button onClick={onTogglePlansNoBreak}
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 10px', borderRadius:5, border:'none', cursor:'pointer',
-                background: plansNoBreak ? 'rgba(255,255,255,0.12)' : 'rgba(227,5,19,0.2)',
-                color: plansNoBreak ? 'rgba(255,255,255,0.6)' : DA.red, fontSize:9, fontWeight:700 }}>
-              {plansNoBreak ? '↕ Suite directe (actif)' : '↕ Suite directe'}
-            </button>
-            {!plansNoBreak && <span style={{ fontSize:8, color:'rgba(255,255,255,0.25)' }}>Plans sur page(s) séparée(s)</span>}
-          </div>
-        )}
         {planPageSegments.map((seg, pi) => {
           const isLastPlanPage = pi === planPageSegments.length - 1;
           const pageNum = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
