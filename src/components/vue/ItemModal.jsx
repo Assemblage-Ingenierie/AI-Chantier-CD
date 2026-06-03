@@ -420,20 +420,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     r.readAsDataURL(file);
   });
 
-  const autoSaveToDevice = async ({ data, name }) => {
+  const autoSaveToDevice = ({ data, name }) => {
     try {
-      // iOS Safari doesn't support the <a download> trick — use Web Share API if available
-      if (navigator.share && navigator.canShare) {
-        try {
-          const blob = await fetch(data).then(r => r.blob());
-          const file = new File([blob], name || `chantier_${Date.now()}.jpg`, { type: blob.type });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file] });
-            return;
-          }
-        } catch { /* share unavailable or cancelled — fall through to download link */ }
-      }
-      // Fallback: download link (works on Android / desktop)
       const a = document.createElement('a');
       a.href = data;
       a.download = name || `chantier_${Date.now()}.jpg`;
