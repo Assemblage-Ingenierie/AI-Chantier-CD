@@ -333,6 +333,7 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
     if (photo.annotW || !photo.data || !photo.annotations?.length) return;
     const img = new window.Image();
     img.onload = () => { setInferredW(img.naturalWidth); setInferredH(img.naturalHeight); };
+    img.onerror = () => { setInferredW(1400); setInferredH(1050); };
     img.src = photo.data;
   }, [photo.data, photo.annotW, photo.annotations]);
 
@@ -346,7 +347,8 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
     cv.height = effectiveH || Math.round(effectiveW * 0.75);
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, cv.width, cv.height);
-    const sizeScale = (effectiveW * ppl / 1400) * deferredScale;
+    // Diviseur 700 (au lieu de 1400) pour que le texte soit lisible dans les vignettes du rapport
+    const sizeScale = (effectiveW * ppl / 700) * deferredScale;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, deferredScale, ppl]);
 
@@ -416,14 +418,13 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
-            // ph.annotated = image composée (photo + annotations fusionnées) — utilisée si disponible
-            // car les canvas ne s'impriment pas. Fallback canvas uniquement si pas encore exporté.
-            const useComposed = hasAnnotations && !!ph.annotated;
             return (
               <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
-                <img src={useComposed ? ph.annotated : (ph.annotated || ph.data)} alt=""
+                <img src={ph.data || ph.annotated} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
-                {hasAnnotations && !useComposed && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
+                {/* Canvas overlay : toujours utilisé pour annotations photos — sizeScale calibré pour les vignettes.
+                    Le PDF export capture ce canvas via toDataURL() avant clonage DOM. */}
+                {hasAnnotations && !!ph.data && <PhotoAnnotCanvas photo={ph} annotScale={annotScale} ppl={ppl}/>}
                 {(() => {
                   const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
                   return vxxNum != null ? (
@@ -1340,18 +1341,35 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
       const pagesHtml = pages.map(el => {
+        // Capturer le contenu des canvas sur l'ORIGINAL avant clonage —
+        // cloneNode(true) copie la structure DOM mais pas les pixels des canvas.
+        const origCanvases = Array.from(el.querySelectorAll('canvas'));
+        const canvasData = origCanvases.map(c => {
+          try { return { src: c.toDataURL(), cssText: c.style.cssText }; } catch { return null; }
+        });
+        origCanvases.forEach((c, i) => { c.dataset._pi = String(i); });
+
         const clone = el.cloneNode(true);
+
+        // Nettoyer les marqueurs temporaires sur l'original
+        origCanvases.forEach(c => { delete c.dataset._pi; });
+
         // Supprimer les éléments UI non imprimables
         clone.querySelectorAll('[data-print="hide"]').forEach(e => e.remove());
-        // Convertir les canvas (icônes de légende) en images
+
+        // Remplacer les canvas clonés (vides) par les images capturées depuis l'original
         clone.querySelectorAll('canvas').forEach(canvas => {
+          const i = parseInt(canvas.dataset._pi ?? '-1');
+          const data = i >= 0 ? canvasData[i] : null;
+          if (!data?.src) { canvas.parentNode?.removeChild(canvas); return; }
           try {
             const img = document.createElement('img');
-            img.src = canvas.toDataURL();
-            img.style.cssText = canvas.style.cssText;
+            img.src = data.src;
+            img.style.cssText = data.cssText;
             canvas.parentNode?.replaceChild(img, canvas);
           } catch {}
         });
+
         clone.style.marginTop = '0';
         return `<div class="pdf-page">${clone.innerHTML}</div>`;
       }).join('\n');

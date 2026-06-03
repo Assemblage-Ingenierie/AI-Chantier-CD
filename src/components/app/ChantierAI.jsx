@@ -179,7 +179,7 @@ export default function ChantierAI({ profile, onLogout }) {
 
   useEffect(() => {
     try { history.replaceState({ pwaSentinel: true }, ''); } catch { /* noop */ }
-    const p = armBuffer(8);
+    const p = armBuffer(20);
     logNav(`mount armed=${p}`);
   }, [armBuffer, logNav]);
 
@@ -187,8 +187,8 @@ export default function ChantierAI({ profile, onLogout }) {
     let _lastNav = 0;
     const handler = () => {
       logNav(`popstate ouv=${!!ouvertRef.current} vis=${!!selectedVisiteIdRef.current} child=${!!childBackHandler.current}`);
-      // Réarme le buffer (consomme 1, repousse 2 → solde +1 si pushState fonctionne).
-      armBuffer(2);
+      // Réarme le buffer (consomme 1, repousse 4 → solde +3 si pushState fonctionne).
+      armBuffer(4);
       // Debounce : deux appuis très rapprochés (< 350ms) ne reculent que d'un niveau.
       const now = Date.now();
       if (now - _lastNav < 350) { logNav('debounced'); return; }
