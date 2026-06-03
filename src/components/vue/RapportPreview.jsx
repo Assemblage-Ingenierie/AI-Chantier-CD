@@ -323,7 +323,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50 }) {
+function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom = 1 }) {
   const cvRef = useRef();
   const deferredScale = React.useDeferredValue(annotScale);
   const [inferredW, setInferredW] = React.useState(null);
@@ -341,7 +341,6 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50 }) {
   const effectiveW = photo.annotW || inferredW;
   const effectiveH = photo.annotH || inferredH || (effectiveW ? Math.round(effectiveW * 0.75) : null);
 
-  // Mesure la largeur CSS réelle pour un sizeScale exact (même formule que l'annotateur).
   useEffect(() => {
     const cv = cvRef.current;
     if (!cv) return;
@@ -357,7 +356,6 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50 }) {
     const cv = cvRef.current;
     if (!cv || !photo.annotations?.length || !effectiveW || !cssW) return;
 
-    // Canvas = zone visible exacte (objectFit:cover + objectPosition).
     const containerAR = 4 / 3;
     const photoH = effectiveH || Math.round(effectiveW * 0.75);
     const photoAR = effectiveW / photoH;
@@ -376,13 +374,91 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50 }) {
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // sizeScale = ratio * 0.5, miroir exact de l'annotateur (cv.width / cv.clientWidth * 0.5)
-    const sizeScale = (drawW / cssW) * 0.5 * deferredScale;
+    // Divisé par cropZoom : le CSS scale(zoom) agrandit les pixels du canvas,
+    // donc on compense pour garder la même taille visuelle de texte.
+    const sizeScale = (drawW / cssW) * 0.5 * deferredScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY]);
+  }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY, cropZoom]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
-  return <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}/>;
+  return <canvas ref={cvRef} style={{
+    position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none',
+    transform: cropZoom !== 1 ? `scale(${cropZoom})` : undefined,
+    transformOrigin: `${cropX}% ${cropY}%`,
+  }}/>;
+}
+
+function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, onSave, onCancel }) {
+  const [px, setPx] = React.useState(initialX);
+  const [py, setPy] = React.useState(initialY);
+  const [pz, setPz] = React.useState(initialZ);
+  const previewRef = useRef();
+
+  const handlePointerDown = (e) => {
+    e.preventDefault();
+    const el = previewRef.current;
+    el.setPointerCapture(e.pointerId);
+    const rect = el.getBoundingClientRect();
+    const W_c = rect.width, H_c = rect.height;
+    const W_p = photo.annotW || 1400, H_p = photo.annotH || Math.round(W_p * 0.75);
+    const baseScale = Math.max(W_c / W_p, H_c / H_p);
+    const scz = pz, scx = px, scy = py;
+    const exW = Math.max(1, (W_p * baseScale - W_c) / scz);
+    const exH = Math.max(1, (H_p * baseScale - H_c) / scz);
+    const sx = e.clientX, sy = e.clientY;
+    const onMove = (ev) => {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy;
+      const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
+      const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
+      setPx(nx); setPy(ny);
+    };
+    const onUp = () => el.removeEventListener('pointermove', onMove);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp, { once: true });
+  };
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.82)',
+      display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div style={{ background:'#1c1c1e', borderRadius:14, padding:16, display:'flex',
+        flexDirection:'column', gap:12, width:300, maxWidth:'calc(100vw - 40px)',
+        boxShadow:'0 20px 60px rgba(0,0,0,0.6)' }}>
+        <div style={{ fontSize:13, fontWeight:700, color:'white', textAlign:'center', letterSpacing:0.2 }}>
+          Recadrer la photo
+        </div>
+        <div ref={previewRef}
+          style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:8,
+            cursor:'grab', touchAction:'none', background:'#111' }}
+          onPointerDown={handlePointerDown}>
+          <img src={photo.data || photo.annotated} alt="" style={{
+            position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
+            objectPosition:`${px}% ${py}%`, display:'block', pointerEvents:'none',
+            transform: pz !== 1 ? `scale(${pz})` : undefined, transformOrigin:`${px}% ${py}%`,
+          }}/>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
+          <button onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
+            style={{ width:38, height:38, borderRadius:8, background:'#333', color:'white',
+              border:'none', fontSize:22, lineHeight:1, cursor:'pointer', fontWeight:300 }}>−</button>
+          <span style={{ color:'#ccc', fontSize:12, fontWeight:600, minWidth:52, textAlign:'center' }}>
+            zoom ×{pz.toFixed(1)}
+          </span>
+          <button onClick={() => setPz(z => Math.min(4, Math.round((z + 0.1) * 10) / 10))}
+            style={{ width:38, height:38, borderRadius:8, background:'#333', color:'white',
+              border:'none', fontSize:22, lineHeight:1, cursor:'pointer', fontWeight:300 }}>+</button>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={onCancel}
+            style={{ flex:1, padding:10, borderRadius:8, background:'#2c2c2e', color:'#aaa',
+              border:'none', cursor:'pointer', fontSize:12, fontWeight:600 }}>Annuler</button>
+          <button onClick={() => onSave(Math.round(px), Math.round(py), pz)}
+            style={{ flex:2, padding:10, borderRadius:8, background:DA.red, color:'white',
+              border:'none', cursor:'pointer', fontSize:13, fontWeight:700 }}>Valider</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
@@ -399,6 +475,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
 
   const showComment  = mode !== 'photos' && commentToShow;
   const showPhotos   = mode !== 'text' && mode !== 'cont' && photos.length > 0;
+  const [cropEditingPi, setCropEditingPi] = React.useState(null);
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       {/* En-tête normal (titre + badges) */}
@@ -447,50 +524,41 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
-            const cx = ph.cropX ?? 50, cy = ph.cropY ?? 50;
+            const cx = ph.cropX ?? 50, cy = ph.cropY ?? 50, cz = ph.cropZoom ?? 1;
             const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
-            const onDragStart = onPhotoCropChange ? (e) => {
-              if (e.button !== 0) return;
-              e.preventDefault();
-              const container = e.currentTarget;
-              const imgEl = container.querySelector('img');
-              const rect = container.getBoundingClientRect();
-              const W_c = rect.width, H_c = rect.height;
-              const W_p = ph.annotW || 1400, H_p = ph.annotH || Math.round(W_p * 0.75);
-              const scale = Math.max(W_c / W_p, H_c / H_p);
-              const exW = Math.max(0, W_p * scale - W_c);
-              const exH = Math.max(0, H_p * scale - H_c);
-              const sx = e.clientX, sy = e.clientY, scx = cx, scy = cy;
-              const onMove = (ev) => {
-                const dx = ev.clientX - sx, dy = ev.clientY - sy;
-                const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
-                const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
-                if (imgEl) imgEl.style.objectPosition = `${nx}% ${ny}%`;
-              };
-              const onUp = (ev) => {
-                window.removeEventListener('pointermove', onMove);
-                const dx = ev.clientX - sx, dy = ev.clientY - sy;
-                const nx = exW > 1 ? Math.max(0, Math.min(100, scx - (dx / exW) * 100)) : 50;
-                const ny = exH > 1 ? Math.max(0, Math.min(100, scy - (dy / exH) * 100)) : 50;
-                onPhotoCropChange(pi, Math.round(nx), Math.round(ny));
-              };
-              window.addEventListener('pointermove', onMove);
-              window.addEventListener('pointerup', onUp, { once: true });
-            } : null;
             return (
-              <div key={pi}
-                style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2,
-                  cursor: onDragStart ? 'grab' : undefined, touchAction: onDragStart ? 'none' : undefined }}
-                onPointerDown={onDragStart}>
+              <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
                 <img src={ph.data || ph.annotated} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
-                    objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none' }}/>
+                    objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
+                    transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
                 {hasAnnotations && !!ph.data &&
-                  <PhotoAnnotCanvas photo={ph} annotScale={annotScale} cropX={cx} cropY={cy}/>}
+                  <PhotoAnnotCanvas photo={ph} annotScale={annotScale} cropX={cx} cropY={cy} cropZoom={cz}/>}
                 {vxxNum != null && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                     V{vxxNum}
                   </div>
+                )}
+                {onPhotoCropChange && (
+                  <button data-print="hide"
+                    onClick={(e) => { e.stopPropagation(); setCropEditingPi(pi); }}
+                    style={{ position:'absolute', bottom:4, right:4, background:'rgba(0,0,0,0.62)',
+                      color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
+                      fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
+                      display:'flex', alignItems:'center', gap:4 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                    </svg>
+                    Cadrer
+                  </button>
+                )}
+                {cropEditingPi === pi && onPhotoCropChange && (
+                  <PhotoCropEditor
+                    photo={ph}
+                    initialX={cx} initialY={cy} initialZ={cz}
+                    onSave={(nx, ny, nz) => { onPhotoCropChange(pi, nx, ny, nz); setCropEditingPi(null); }}
+                    onCancel={() => setCropEditingPi(null)}
+                  />
                 )}
               </div>
             );
@@ -1625,8 +1693,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
-                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy) => onUpdateItem(block.locId, block.item.id, {
-                                photos: (block.item.photos || []).map((ph, i) => i === pi ? { ...ph, cropX: cx, cropY: cy } : ph),
+                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy, cz) => onUpdateItem(block.locId, block.item.id, {
+                                photos: (block.item.photos || []).map((ph, i) => i === pi ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
                               }) : null}
                             />
                         }
