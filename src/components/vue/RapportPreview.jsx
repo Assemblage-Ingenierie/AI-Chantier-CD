@@ -352,17 +352,20 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
   useEffect(() => {
     const cv = cvRef.current;
     if (!cv) return;
+    // Take an immediate measurement in case ResizeObserver fires after first paint
+    const immediate = cv.getBoundingClientRect().width;
+    if (immediate > 0) setCssW(immediate);
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width;
       if (w > 0) setCssW(w);
     });
     ro.observe(cv);
     return () => ro.disconnect();
-  }, []);
+  }, [!!effectiveW]); // re-run when canvas first appears (effectiveW: null → value)
 
   useEffect(() => {
     const cv = cvRef.current;
-    if (!cv || !photo.annotations?.length || !effectiveW || !cssW) return;
+    if (!cv || !photo.annotations?.length || !effectiveW) return;
 
     const containerAR = 4 / 3;
     const photoH = effectiveH || Math.round(effectiveW * 0.75);
@@ -382,10 +385,8 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // Divisé par cropZoom : le CSS scale(zoom) agrandit les pixels du canvas.
-    // Math.max(cssW, 350) empêche les annotations d'être trop grosses sur les petites vignettes :
-    // en dessous de 350px le texte scale proportionnellement à cssW plutôt que d'être fixe.
-    const sizeScale = (drawW / Math.max(cssW, 350)) * 0.5 * deferredScale / cropZoom;
+    // cssW fallback: use drawW so annotations render even before ResizeObserver fires
+    const sizeScale = (drawW / Math.max(cssW || drawW, 350)) * 0.5 * deferredScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY, cropZoom]);
 

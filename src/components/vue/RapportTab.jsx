@@ -389,6 +389,19 @@ export default function RapportTab({ projet, onUpdate }) {
             </p>
           </div>
 
+          {/* Plans en fin de rapport */}
+          <div>
+            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+              <input
+                type="checkbox"
+                checked={projet.plansEnFin ?? false}
+                onChange={e => onUpdate({ plansEnFin: e.target.checked })}
+                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
+              />
+              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Plans en fin de rapport</span>
+            </label>
+          </div>
+
           {/* Sauts de page */}
           <button
             onClick={() => setCutMode(v => !v)}
@@ -459,7 +472,7 @@ export default function RapportTab({ projet, onUpdate }) {
         photosParLigne={projet.photosParLigne ?? 2}
         pageBreaks={pageBreaks}
         onTogglePageBreak={togglePageBreak}
-        plansEnFin={false}
+        plansEnFin={projet.plansEnFin ?? false}
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
         annotScale={annotScale}
