@@ -392,28 +392,51 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       const img = new Image();
       img.onerror = () => res(null);
       img.onload = () => {
-        const MAX = 1600;
-        let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
-          else { width = Math.round(width * MAX / height); height = MAX; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const name = file.name.replace(/\.[^.]+$/, '.webp');
-        res({ data: canvas.toDataURL('image/webp', 0.82), name });
+        try {
+          const MAX = 1600;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+            else { width = Math.round(width * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { res(null); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          // Try WebP first; iOS < 17 falls back to PNG which is much larger than JPEG
+          let dataUrl = canvas.toDataURL('image/webp', 0.82);
+          let ext = 'webp';
+          if (!dataUrl.startsWith('data:image/webp')) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            ext = 'jpg';
+          }
+          const name = file.name.replace(/\.[^.]+$/, '.' + ext);
+          res({ data: dataUrl, name });
+        } catch { res(null); }
       };
       img.src = ev.target.result;
     };
     r.readAsDataURL(file);
   });
 
-  const autoSaveToDevice = ({ data, name }) => {
+  const autoSaveToDevice = async ({ data, name }) => {
     try {
+      // iOS Safari doesn't support the <a download> trick — use Web Share API if available
+      if (navigator.share && navigator.canShare) {
+        try {
+          const blob = await fetch(data).then(r => r.blob());
+          const file = new File([blob], name || `chantier_${Date.now()}.jpg`, { type: blob.type });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file] });
+            return;
+          }
+        } catch { /* share unavailable or cancelled — fall through to download link */ }
+      }
+      // Fallback: download link (works on Android / desktop)
       const a = document.createElement('a');
       a.href = data;
-      a.download = name || `chantier_${Date.now()}.webp`;
+      a.download = name || `chantier_${Date.now()}.jpg`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -430,6 +453,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     Promise.all(filtered.map(compressPhoto))
       .then(done => {
         const valid = done.filter(Boolean);
+        if (valid.length < done.length) {
+          alert(`${done.length - valid.length} photo(s) n'ont pas pu être traitées. Réessayez ou choisissez un autre fichier.`);
+        }
         setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
         if (fromCamera) {
           valid.forEach(autoSaveToDevice);
