@@ -75,30 +75,21 @@ export function useAuth() {
       try {
         const sb = await getSupabase();
 
-        // Register the listener BEFORE checking session state.
-        // INITIAL_SESSION fires after the client finishes initialising
-        // (incl. any access-token refresh), so it is more reliable than
-        // calling getSession() directly which can race with that refresh
-        // and return null while the refresh is still in flight.
-        const { data: listener } = sb.auth.onAuthStateChange(async (event, s) => {
+        // Listener d'abord pour capter TOKEN_REFRESHED pendant getSession()
+        const { data: listener } = sb.auth.onAuthStateChange((event, s) => {
           if (event === 'SIGNED_OUT') {
             setSession(null); setProfile(null); setAuthState('loggedout');
             clearCachedProfile();
             clearLocalData();
             return;
           }
-          if (event === 'INITIAL_SESSION') {
-            if (s) {
-              await handleSession(s);
-            } else {
-              setSession(null); setProfile(null); setAuthState('loggedout');
-              clearCachedProfile();
-            }
-            return;
-          }
           if (s) handleSession(s);
         });
         sub = listener?.subscription;
+
+        // getSession() attend initializePromise + le lock → état définitif
+        const { data } = await sb.auth.getSession();
+        await handleSession(data?.session ?? null);
       } catch {
         setAuthState(cachedProf ? 'approved' : 'loggedout');
       }
