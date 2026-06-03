@@ -345,28 +345,18 @@ function PhotoAnnotCanvas({ photo, annotScale, ppl = 2 }) {
     const h = effectiveH || (effectiveW ? Math.round(effectiveW * 0.75) : null);
     if (!cv || !photo.annotations?.length || !effectiveW || !h) return;
 
-    // Reproduit exactement le comportement objectFit:cover du container 4:3 :
-    // on calcule quelle région de la photo est visible (crop centré), puis on
-    // translate le contexte pour que les coordonnées d'annotation correspondent.
-    const containerAR = 4 / 3;
-    const photoAR = effectiveW / h;
-    let drawW, drawH, cropX = 0, cropY = 0;
-    if (photoAR >= containerAR) {
-      // Photo plus large que 4:3 → crop horizontal (bords gauche/droit coupés)
-      drawH = h;
-      drawW = Math.round(h * containerAR);
-      cropX = Math.round((effectiveW - drawW) / 2);
-    } else {
-      // Photo plus haute que 4:3 (portrait) → crop vertical (haut/bas coupés)
-      drawW = effectiveW;
-      drawH = Math.round(effectiveW / containerAR);
-      cropY = Math.round((h - drawH) / 2);
-    }
+    // Le canvas est mis en 4:3 (même ratio que le container) sans décalage.
+    // Cela garantit un scaling X/Y identique (pas d'étirement) et garde toutes
+    // les annotations dans l'espace du canvas, même celles au bord du cadre.
+    // Les coordonnées d'annotation sont en espace photo naturel [0..W, 0..H] :
+    // on les dessine telles quelles — la position approximative est acceptable
+    // car le container coupe la photo (objectFit:cover) de toute façon.
+    const drawW = effectiveW;
+    const drawH = Math.round(effectiveW / (4 / 3));
     cv.width  = drawW;
     cv.height = drawH;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
-    if (cropX !== 0 || cropY !== 0) ctx.translate(-cropX, -cropY);
     const sizeScale = (drawW * ppl / 700) * deferredScale;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, deferredScale, ppl]);
