@@ -398,8 +398,37 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
 }
 
 function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, onSave, onCancel }) {
-  const [px, setPx] = React.useState(initialX);
-  const [py, setPy] = React.useState(initialY);
+  // Auto-adjust initial crop position so annotations are not clipped out of the frame
+  const adjustedInitialX = (() => {
+    const W = photo.annotW, H = photo.annotH;
+    if (!photo.annotations?.length || !W || !H || W / H < 4/3) return initialX;
+    const drawW = Math.round(H * 4/3);
+    const excess = W - drawW;
+    if (excess <= 0) return initialX;
+    const xs = photo.annotations.filter(a => a.x != null).map(a => a.x);
+    if (!xs.length) return initialX;
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const cropStart = Math.round(excess * initialX / 100);
+    if (minX >= cropStart && maxX <= cropStart + drawW) return initialX;
+    const mid = (minX + maxX) / 2;
+    return Math.max(0, Math.min(100, (mid - drawW / 2) / excess * 100));
+  })();
+  const adjustedInitialY = (() => {
+    const W = photo.annotW, H = photo.annotH;
+    if (!photo.annotations?.length || !W || !H || W / H >= 4/3) return initialY;
+    const drawH = Math.round(W / (4/3));
+    const excess = H - drawH;
+    if (excess <= 0) return initialY;
+    const ys = photo.annotations.filter(a => a.y != null).map(a => a.y);
+    if (!ys.length) return initialY;
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const cropStart = Math.round(excess * initialY / 100);
+    if (minY >= cropStart && maxY <= cropStart + drawH) return initialY;
+    const mid = (minY + maxY) / 2;
+    return Math.max(0, Math.min(100, (mid - drawH / 2) / excess * 100));
+  })();
+  const [px, setPx] = React.useState(adjustedInitialX);
+  const [py, setPy] = React.useState(adjustedInitialY);
   const [pz, setPz] = React.useState(initialZ);
   const containerRef = useRef();
   const [containerW, setContainerW] = React.useState(268);
@@ -442,7 +471,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
     cv.height = effectiveAnnotH;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, effectiveAnnotW, effectiveAnnotH);
-    drawAnnotationPaths(ctx, photo.annotations, (effectiveAnnotW / Math.max(containerW, 350)) * 0.32);
+    drawAnnotationPaths(ctx, photo.annotations, (effectiveAnnotW / Math.max(containerW, 350)) * 0.5);
   }, [photo.annotations, effectiveAnnotW, effectiveAnnotH, containerW]);
 
   const handlePointerDown = (e) => {
