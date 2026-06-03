@@ -492,14 +492,6 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                     V{vxxNum}
                   </div>
                 )}
-                {onDragStart && (
-                  <div data-print="hide" title="Glisser pour recadrer"
-                    style={{ position:'absolute', bottom:3, right:3, background:'rgba(0,0,0,0.5)', color:'white',
-                      borderRadius:3, padding:'2px 4px', fontSize:7, fontWeight:700, pointerEvents:'none',
-                      letterSpacing:0.3, lineHeight:1 }}>
-                    ✥
-                  </div>
-                )}
               </div>
             );
           })}
