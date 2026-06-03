@@ -759,7 +759,7 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override).
   // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
   // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
@@ -837,7 +837,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
           </React.Fragment>
         );
       })}
-      {showLegend && (
+      {!hideLegend && showLegend && (
         <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
           <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
           <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 14px' }}>
@@ -1432,6 +1432,17 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     return result;
   }, [planLocs, projet.planLibrary, breaks, plansEnFin]);
 
+  // Légende combinée pour le mode plansEnFin — affichée une seule fois sur la dernière page plan
+  const combinedPlanLegend = useMemo(() => {
+    if (!plansEnFin || !planPageSegments.length) return null;
+    const allPaths = planPageSegments.flatMap(seg => (seg.plans || []).flatMap(p => p.annotations?.paths || []));
+    const usedIds = new Set(allPaths.filter(p => p.type === 'symbol').map(p => p.symbolId));
+    const symbols = getAllSymbols().filter(s => usedIds.has(s.id));
+    const hasViewpoints = allPaths.some(p => p.type === 'viewpoint');
+    if (!symbols.length && !hasViewpoints) return null;
+    return { symbols, hasViewpoints };
+  }, [planPageSegments, plansEnFin]);
+
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
   const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap]);
   const [measuredH, setMeasuredH] = useState({});
@@ -1812,6 +1823,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {/* ── PLANS EN FIN DE RAPPORT ── */}
         {planPageSegments.map((seg, pi) => {
+          const isLastPlanPage = pi === planPageSegments.length - 1;
           const pageNum = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
           const pageIdx = 1 + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
@@ -1819,7 +1831,26 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId} vpNumByPath={vpNumByPath}/>
+                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId} vpNumByPath={vpNumByPath} hideLegend={true}/>
+                  {isLastPlanPage && combinedPlanLegend && (
+                    <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
+                      <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:'4px 14px' }}>
+                        {combinedPlanLegend.symbols.map(s => (
+                          <div key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
+                            <SymbolIcon sym={s} size={16}/>
+                            {s.label}
+                          </div>
+                        ))}
+                        {combinedPlanLegend.hasViewpoints && (
+                          <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D' }}>
+                            <ViewpointIcon size={16}/>
+                            Vue photo
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </A4Card>
               </div>
             </React.Fragment>
