@@ -169,6 +169,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     tableauRecap:        selectedVisite?.tableauRecap         ?? [],
     photosParLigne:      selectedVisite?.photosParLigne       ?? 2,
     plansEnFin:          selectedVisite?.plansEnFin           ?? false,
+    plansNoBreak:        selectedVisite?.plansNoBreak         ?? false,
     rapportPageBreaks:   selectedVisite?.rapportPageBreaks    ?? [],
     includeTableauRecap: selectedVisite?.includeTableauRecap  !== false,
     includeConclusion:   selectedVisite?.includeConclusion    ?? false,
