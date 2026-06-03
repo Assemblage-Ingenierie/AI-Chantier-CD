@@ -611,7 +611,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                   <PhotoCropEditor
                     photo={ph}
                     initialX={cx} initialY={cy} initialZ={cz}
-                    onSave={(nx, ny, nz) => { onPhotoCropChange(pi, nx, ny, nz); setCropEditingPi(null); }}
+                    onSave={(nx, ny, nz) => { onPhotoCropChange(ph, nx, ny, nz); setCropEditingPi(null); }}
                     onCancel={() => setCropEditingPi(null)}
                   />
                 )}
@@ -1760,12 +1760,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
-                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy, cz) => {
-                                const withData = (block.item.photos || []).filter(p => p.data);
-                                const target = withData[(block.photoStart ?? 0) + pi];
-                                if (!target) return;
+                              onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz) => {
+                                if (!photo) return;
                                 onUpdateItem(block.locId, block.item.id, {
-                                  photos: (block.item.photos || []).map(ph => ph === target ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
+                                  photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
                                 });
                               } : null}
                             />
