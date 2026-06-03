@@ -115,7 +115,7 @@ function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0
 // Champs qui appartiennent à une visite (pas au projet)
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
-  'photosParLigne','plansEnFin','rapportPageBreaks','includeTableauRecap',
+  'photosParLigne','plansEnFin','plansNoBreak','rapportPageBreaks','includeTableauRecap',
   'includeConclusion','conclusion','conclusionAlign','ingenieur',
 ]);
 
