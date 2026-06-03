@@ -7,21 +7,9 @@ import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
+import { uploadToDrive } from '../../lib/driveUpload.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
-
-async function uploadToDrive({ data, name, projetNom, visiteLabel, visiteDate }) {
-  try {
-    // data is a dataURL like "data:image/webp;base64,..."
-    const [header, base64] = data.split(',');
-    const mimeType = header.match(/:(.*?);/)?.[1] || 'image/webp';
-    await fetch('/api/drive-upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, visiteLabel, visiteDate }),
-    });
-  } catch { /* silently ignore — Drive upload is best-effort */ }
-}
 
 function encodeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
