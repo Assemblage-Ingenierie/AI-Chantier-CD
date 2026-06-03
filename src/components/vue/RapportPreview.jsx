@@ -376,9 +376,10 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // Divisé par cropZoom : le CSS scale(zoom) agrandit les pixels du canvas,
-    // donc on compense pour garder la même taille visuelle de texte.
-    const sizeScale = (drawW / cssW) * 0.5 * deferredScale / cropZoom;
+    // Divisé par cropZoom : le CSS scale(zoom) agrandit les pixels du canvas.
+    // Math.max(cssW, 350) empêche les annotations d'être trop grosses sur les petites vignettes :
+    // en dessous de 350px le texte scale proportionnellement à cssW plutôt que d'être fixe.
+    const sizeScale = (drawW / Math.max(cssW, 350)) * 0.5 * deferredScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, deferredScale, cssW, cropX, cropY, cropZoom]);
 
@@ -1759,9 +1760,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
-                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy, cz) => onUpdateItem(block.locId, block.item.id, {
-                                photos: (block.item.photos || []).map((ph, i) => i === pi ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
-                              }) : null}
+                              onPhotoCropChange={onUpdateItem ? (pi, cx, cy, cz) => {
+                                const withData = (block.item.photos || []).filter(p => p.data);
+                                const target = withData[(block.photoStart ?? 0) + pi];
+                                if (!target) return;
+                                onUpdateItem(block.locId, block.item.id, {
+                                  photos: (block.item.photos || []).map(ph => ph === target ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
+                                });
+                              } : null}
                             />
                         }
                       </div>
