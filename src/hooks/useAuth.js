@@ -5,7 +5,7 @@ import { clearLocalData } from '../lib/storage.js';
 const PROF_KEY = '_sb_prof';
 const _hasLS = (() => { try { localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true; } catch { return false; } })();
 
-const PROF_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const PROF_TTL_MS = 8 * 60 * 60 * 1000; // 8 heures
 
 function readCachedProfile() {
   if (!_hasLS) return null;
@@ -73,14 +73,27 @@ export function useAuth() {
     let sub = null;
     const init = async () => {
       try {
-        const sb = await getSupabase(); // instantané si config en cache
-        const { data } = await sb.auth.getSession(); // lit depuis localStorage Supabase
-        await handleSession(data?.session ?? null);
-        const { data: listener } = sb.auth.onAuthStateChange((event, s) => {
+        const sb = await getSupabase();
+
+        // Register the listener BEFORE checking session state.
+        // INITIAL_SESSION fires after the client finishes initialising
+        // (incl. any access-token refresh), so it is more reliable than
+        // calling getSession() directly which can race with that refresh
+        // and return null while the refresh is still in flight.
+        const { data: listener } = sb.auth.onAuthStateChange(async (event, s) => {
           if (event === 'SIGNED_OUT') {
             setSession(null); setProfile(null); setAuthState('loggedout');
             clearCachedProfile();
-            clearLocalData(); // évite la contamination cross-user sur appareil partagé
+            clearLocalData();
+            return;
+          }
+          if (event === 'INITIAL_SESSION') {
+            if (s) {
+              await handleSession(s);
+            } else {
+              setSession(null); setProfile(null); setAuthState('loggedout');
+              clearCachedProfile();
+            }
             return;
           }
           if (s) handleSession(s);
