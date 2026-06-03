@@ -397,6 +397,42 @@ function PhotoAnnotCanvas({ photo, annotScale, cropX = 50, cropY = 50, cropZoom 
   }}/>;
 }
 
+// Returns [cx, cy, cz] for rendering. When photo has annotations but no explicit crop set,
+// auto-adjusts the crop to include the annotation anchor points (avoids invisible annotations).
+function effectiveCrop(photo) {
+  const cz = photo.cropZoom ?? 1;
+  // If user has explicitly set a crop position, always respect it
+  if (photo.cropX !== undefined || photo.cropY !== undefined) {
+    return [photo.cropX ?? 50, photo.cropY ?? 50, cz];
+  }
+  // No explicit crop: try to auto-adjust to include annotations
+  if (!photo.annotations?.length || !photo.annotW || !photo.annotH) return [50, 50, cz];
+  const W = photo.annotW, H = photo.annotH;
+  let x = 50, y = 50;
+  if (W / H >= 4 / 3) {
+    const drawW = Math.round(H * 4 / 3);
+    const excess = W - drawW;
+    if (excess > 0) {
+      const xs = photo.annotations.filter(a => a.x != null).map(a => a.x);
+      if (xs.length) {
+        const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+        x = Math.max(0, Math.min(100, ((mid - drawW / 2) / excess) * 100));
+      }
+    }
+  } else {
+    const drawH = Math.round(W / (4 / 3));
+    const excess = H - drawH;
+    if (excess > 0) {
+      const ys = photo.annotations.filter(a => a.y != null).map(a => a.y);
+      if (ys.length) {
+        const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+        y = Math.max(0, Math.min(100, ((mid - drawH / 2) / excess) * 100));
+      }
+    }
+  }
+  return [x, y, cz];
+}
+
 function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, onSave, onCancel }) {
   // Auto-adjust initial crop position so annotations are not clipped out of the frame
   const adjustedInitialX = (() => {
@@ -633,7 +669,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
         <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
-            const cx = ph.cropX ?? 50, cy = ph.cropY ?? 50, cz = ph.cropZoom ?? 1;
+            const [cx, cy, cz] = effectiveCrop(ph);
             const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
             return (
               <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>

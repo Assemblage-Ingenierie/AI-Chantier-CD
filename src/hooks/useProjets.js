@@ -246,7 +246,7 @@ export function useProjets(onSyncStatus) {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       if (savingRef.current) return;
-      if (!dirtyIds.current.size) return; // prevents "save ALL" with stale state — mirrors flush() guard
+      if (!dirtyIds.current.size) { onSyncStatus?.('ok'); return; } // nothing to save — reset spinner
       savingRef.current = true;
       const ids = new Set(dirtyIds.current);
       dirtyIds.current.clear();
