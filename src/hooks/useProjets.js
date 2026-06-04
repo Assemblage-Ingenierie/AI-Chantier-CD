@@ -68,7 +68,7 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
                 if (!rl) return ll;
                 return {
                   ...ll,
-                  planBg: rl.planBg ?? ll.planBg,
+                  planBg: rl.planBg ?? ll.planBg ?? (ll.planId ? localPlanById_d.get(ll.planId)?.bg : null) ?? null,
                   planData: rl.planData ?? ll.planData,
                   planId: ll.planId ?? rl.planId,
                   planAnnotations: ll.planAnnotations ?? rl.planAnnotations,
@@ -141,7 +141,9 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
               return {
                 ...loc,
                 planId: mergedPlanId,
-                planBg: samePlanAssign ? (localLoc.planBg ?? loc.planBg) : loc.planBg,
+                planBg: samePlanAssign
+                  ? (localLoc.planBg ?? loc.planBg ?? localPlanById.get(mergedPlanId)?.bg ?? null)
+                  : (loc.planBg ?? localPlanById.get(mergedPlanId)?.bg ?? null),
                 planData: samePlanAssign ? (localLoc.planData ?? loc.planData) : loc.planData,
                 // non-dirty path: remote is authoritative for extraPlans membership;
                 // preserve locally-hydrated planBg blobs to avoid grey thumbnails.
