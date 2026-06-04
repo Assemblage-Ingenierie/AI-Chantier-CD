@@ -12,6 +12,14 @@ const _mem = {};
 // des projets ajoutés depuis un autre appareil non encore chargés localement).
 let _lastRemoteIds = null;
 
+// Maps remplies au chargement (loadRemote) et mises à jour après chaque save réussi.
+// Permettent de distinguer "supprimé par cet utilisateur" (connu au chargement, plus en local)
+// de "ajouté par un autre utilisateur après notre chargement" (jamais connu → ne pas supprimer).
+// Si null/absent pour un projet (ex : offline au chargement), fallback vers l'ancien comportement.
+let _knownVisitIdsByProject = new Map(); // projectId → Set<visitId>
+let _knownLocIdsByProject   = new Map(); // projectId → Set<locId>
+let _knownItemIdsByProject  = new Map(); // projectId → Set<itemId>
+
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
 }
@@ -238,6 +246,14 @@ async function loadRemote() {
         };
       }
     }
+
+    // Mémoriser les IDs connus à ce chargement — utilisés dans saveRemote pour ne pas supprimer
+    // les locs/items/visites ajoutés par un autre utilisateur après notre chargement.
+    _knownVisitIdsByProject.set(c.id, new Set(visites.map(v => v.id)));
+    _knownLocIdsByProject.set(c.id, new Set(allLocs.map(l => l.id)));
+    const _allKnownItemIds = new Set();
+    allLocs.forEach(l => { (itemsByLoc[l.id] ?? []).forEach(it => _allKnownItemIds.add(it.id)); });
+    _knownItemIdsByProject.set(c.id, _allKnownItemIds);
 
     return {
       id:            c.id,
@@ -697,12 +713,27 @@ async function saveRemote(ps, dirtyIds = null) {
     // ── Lecture des locs DB actuelles (pour détection des locs orphelines à supprimer) ──
     const dbLocsRes = await sb.from('aichantier_chantier_localisations').select('id,visite_id').eq('chantier_id', p.id);
 
-    // Visites : on fait confiance à la liste locale exactement.
-    // mergeWithLocal/pollRemote intègre déjà les visites créées ailleurs dans l'état React
-    // avant d'arriver ici. Lire le DB et merger ici (ancienne approche) ramenait les
-    // visites supprimées car elles n'étaient pas encore retirées de Supabase au moment
-    // de la lecture parallèle, juste avant l'upsert.
-    const mergedVisitesMetadata = visitesMetadata;
+    // Visites : base = état local (l'utilisateur fait autorité sur SES visites).
+    // On fusionne en plus les visites créées par un autre utilisateur après notre chargement :
+    //   - visite absente du local ET absente de _knownVisitIdsByProject → créée par quelqu'un d'autre → on la conserve
+    //   - visite absente du local ET dans _knownVisitIdsByProject → supprimée par cet utilisateur → on ne la ré-injecte pas
+    // (évite le bug précédent : "merger ici ramenait les visites supprimées")
+    let mergedVisitesMetadata = visitesMetadata;
+    try {
+      const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites').eq('id', p.id).single();
+      if (dbMeta?.visites?.length) {
+        const localVisitIdSet = new Set(visitesMetadata.map(v => v.id));
+        const knownVisitIds   = _knownVisitIdsByProject.get(p.id);
+        const dbOnlyVisits    = dbMeta.visites.filter(v =>
+          !localVisitIdSet.has(v.id) && knownVisitIds != null && !knownVisitIds.has(v.id)
+        );
+        if (dbOnlyVisits.length > 0) mergedVisitesMetadata = [...visitesMetadata, ...dbOnlyVisits];
+      }
+    } catch {}
+    // Mettre à jour les IDs de visites connus après l'écriture (pour pouvoir supprimer une visite créée en session)
+    const _knownVisitSet = _knownVisitIdsByProject.get(p.id) ?? new Set();
+    mergedVisitesMetadata.forEach(v => _knownVisitSet.add(v.id));
+    _knownVisitIdsByProject.set(p.id, _knownVisitSet);
 
     // ── Upsert chantier avec visites fusionnées ────────────────────────────────
     const chantierRes = await sb.from('aichantier_chantiers').upsert({
@@ -753,11 +784,15 @@ async function saveRemote(ps, dirtyIds = null) {
       };
     });
 
-    // Supprimer uniquement les locs des visites connues localement — jamais celles d'une visite
-    // créée sur un autre appareil pour éviter la perte de données cross-device.
+    // Supprimer uniquement les locs que cet utilisateur connaissait au chargement ET qui ont disparu
+    // de son état local (= il les a explicitement supprimées).
+    // Jamais supprimer une loc inconnue au chargement (ajoutée par un autre utilisateur entre-temps).
+    // Fallback : si les known IDs ne sont pas disponibles (offline au démarrage), on retombe sur
+    // l'ancien garde par visite (comportement pré-fix).
     const localVisitIds = new Set((p.visites || []).map(v => v.id));
+    const knownLocIds   = _knownLocIdsByProject.get(p.id);
     const removedLocIds = (dbLocsRes.data || [])
-      .filter(l => !currLocIds.has(l.id) && localVisitIds.has(l.visite_id))
+      .filter(l => !currLocIds.has(l.id) && (knownLocIds != null ? knownLocIds.has(l.id) : localVisitIds.has(l.visite_id)))
       .map(l => l.id);
     const locIdsToFetch  = locRows.map(l => l.id).filter(Boolean);
 
@@ -782,6 +817,8 @@ async function saveRemote(ps, dirtyIds = null) {
       if (locUpsertRes.error.code === '23503') { console.warn('saveRemote: FK loc skip', p.id); continue; }
       errors.push(locUpsertRes.error); continue;
     }
+    // Mettre à jour les IDs de locs connus (pour qu'une loc créée en session soit supprimable plus tard)
+    { const _s = _knownLocIdsByProject.get(p.id) ?? new Set(); locRows.forEach(l => { if (l.id) _s.add(l.id); }); _knownLocIdsByProject.set(p.id, _s); }
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
@@ -854,9 +891,12 @@ async function saveRemote(ps, dirtyIds = null) {
       const locId = locRows[li]?.id;
       if (!locId) continue;
 
-      const dbLocItemIds = new Set((dbItemsByLoc[locId] || []).map(i => i.id));
-      const currItemIds  = new Set((l.items || []).map(i => i.id).filter(Boolean));
-      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id));
+      const dbLocItemIds  = new Set((dbItemsByLoc[locId] || []).map(i => i.id));
+      const currItemIds   = new Set((l.items || []).map(i => i.id).filter(Boolean));
+      const knownItemIds  = _knownItemIdsByProject.get(p.id);
+      // Ne supprimer que les items connus au chargement (et plus en local = supprimés par l'utilisateur).
+      // Les items inconnus au chargement ont été ajoutés par un autre utilisateur → ne pas les supprimer.
+      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id) && (knownItemIds != null ? knownItemIds.has(id) : true));
       allRemovedItemIds.push(...removedItemIds);
 
       for (let ii = 0; ii < (l.items || []).length; ii++) {
@@ -909,6 +949,12 @@ async function saveRemote(ps, dirtyIds = null) {
         : Promise.resolve({ data: [] }),
     ]);
     if (upsertItemsRes?.error) errors.push(upsertItemsRes.error);
+    // Mettre à jour les IDs d'items connus (pour qu'un item créé en session soit supprimable plus tard)
+    if (!upsertItemsRes?.error) {
+      const _si = _knownItemIdsByProject.get(p.id) ?? new Set();
+      allItems.forEach(it => { if (it.id) _si.add(it.id); });
+      _knownItemIdsByProject.set(p.id, _si);
+    }
 
     const fetchedPhotosByItem = groupBy(photosRes?.data || [], 'item_id');
 
@@ -1022,6 +1068,9 @@ export function clearLocalData() {
     delete _mem[SK];
   } catch {}
   _lastRemoteIds = null;
+  _knownVisitIdsByProject = new Map();
+  _knownLocIdsByProject   = new Map();
+  _knownItemIdsByProject  = new Map();
 }
 
 // Récupère uniquement id + updated_at depuis Supabase — poll léger pour détecter les MàJ distantes
