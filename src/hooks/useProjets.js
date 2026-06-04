@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
+import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 
 const MAX_HISTORY = 20;
 
@@ -237,38 +238,49 @@ export function useProjets(onSyncStatus) {
           });
         }
 
-        // Préchauffage cache plans : si certains locs ont un planId sans planBg en localStorage,
-        // on récupère tous les bg en une seule requête et on les persiste. Dès la session suivante,
-        // les vignettes sont disponibles depuis loadLocalData sans aucun fetch réseau.
-        const needsBgWarm = allMerged.some(p =>
-          (p.planLibrary || []).some(pl => !pl.bg) &&
-          (p.visites || []).some(v => (v.localisations || []).some(l => l.planId && !l.planBg))
-        );
-        if (needsBgWarm) {
-          loadAllPlanBgs().then(bgsByProject => {
-            if (!Object.keys(bgsByProject).length) return;
-            const warmed = projetsRef.current.map(p => {
-              const planBgs = bgsByProject[p.id];
-              if (!planBgs) return p;
-              const updatedPlanLib = (p.planLibrary || []).map(pl => ({
-                ...pl, bg: pl.bg ?? planBgs[pl.id] ?? null,
-              }));
-              const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
-              return {
-                ...p,
-                planLibrary: updatedPlanLib,
-                visites: (p.visites || []).map(v => ({
-                  ...v,
-                  localisations: (v.localisations || []).map(loc => {
-                    if (!loc.planId || loc.planBg) return loc;
-                    const bg = planBgById.get(loc.planId);
-                    return bg ? { ...loc, planBg: bg } : loc;
-                  }),
-                })),
-              };
-            });
-            setProjets(warmed);
-            saveLocalCache(warmed);
+        // Préchauffage cache plans. Les vignettes (bg) sont volumineuses et débordent
+        // silencieusement de localStorage pour les gros projets (ex: OGEC) → on s'appuie
+        // sur IndexedDB (quota en Go) : lecture cache d'abord (instantané, zéro réseau),
+        // puis fetch réseau UNIQUEMENT pour les vignettes encore absentes, qu'on persiste
+        // ensuite dans IndexedDB pour les sessions suivantes.
+        const missingPlanIds = [...new Set(allMerged.flatMap(p =>
+          (p.planLibrary || []).filter(pl => !pl.bg).map(pl => pl.id)
+        ))];
+        // Applique un map plat { planId: bg } à l'état en mémoire (planLibrary + loc.planBg)
+        const applyPlanBgs = (bgById) => {
+          if (!bgById || !Object.keys(bgById).length) return;
+          const warmed = projetsRef.current.map(p => {
+            const updatedPlanLib = (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.bg ?? bgById[pl.id] ?? null }));
+            const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
+            return {
+              ...p,
+              planLibrary: updatedPlanLib,
+              visites: (p.visites || []).map(v => ({
+                ...v,
+                localisations: (v.localisations || []).map(loc => {
+                  if (!loc.planId || loc.planBg) return loc;
+                  const bg = planBgById.get(loc.planId);
+                  return bg ? { ...loc, planBg: bg } : loc;
+                }),
+              })),
+            };
+          });
+          setProjets(warmed);
+          saveLocalCache(warmed);
+        };
+        if (missingPlanIds.length) {
+          getPlanThumbs(missingPlanIds).then(cached => {
+            applyPlanBgs(cached);
+            const stillMissing = missingPlanIds.filter(id => !cached[id]);
+            if (!stillMissing.length) return;
+            loadAllPlanBgs().then(bgsByProject => {
+              const flat = {};
+              for (const byPlan of Object.values(bgsByProject || {})) Object.assign(flat, byPlan);
+              const fetched = {};
+              for (const id of stillMissing) if (flat[id]) fetched[id] = flat[id];
+              applyPlanBgs(fetched);
+              setPlanThumbs(fetched); // persistance durable pour les prochaines sessions
+            }).catch(() => {});
           }).catch(() => {});
         }
       })
@@ -634,6 +646,9 @@ export function useProjets(onSyncStatus) {
     });
     setProjets(withRendered);
     saveLocalCache(withRendered);
+    // Persiste les vignettes re-rendues dans IndexedDB (évite un re-rendu PDF coûteux
+    // à chaque session — le re-rendu pouvait prendre 10s+).
+    setPlanThumbs(Object.fromEntries([...renderedBgs].map(([id, v]) => [id, v.bg])));
   };
 
   const hydratePlanLibrary = async (projectId, { force = false } = {}) => {
@@ -675,6 +690,11 @@ export function useProjets(onSyncStatus) {
     });
     setProjets(updatedPs);
     saveLocalCache(updatedPs);
+    // Persiste les vignettes dans IndexedDB (durable, contrairement à localStorage qui
+    // déborde) → chargement instantané dès la session suivante.
+    setPlanThumbs(Object.fromEntries(
+      Object.entries(plansMap).filter(([, v]) => v?.bg).map(([id, v]) => [id, v.bg])
+    ));
     return plansMap; // { planId: { bg, data } }
   };
 

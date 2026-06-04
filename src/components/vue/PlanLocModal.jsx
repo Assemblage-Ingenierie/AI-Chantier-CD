@@ -181,7 +181,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     try {
       // Parse le PDF UNE seule fois par qualité (au lieu d'un getDocument par page et par
       // qualité → 2×N parses). Rendu concurrent interne. Gros gain à l'import multi-pages.
-      const bgPages = await renderPdfPages(pdfData, selectedNums, { maxWidth: 2500, quality: 0.9 });
+      const bgPages = await renderPdfPages(pdfData, selectedNums, { maxWidth: 1600, quality: 0.9 });
       const hdPages = await renderPdfPages(pdfData, selectedNums, { maxScale: 8, maxWidth: 4500, quality: 0.85 });
       const bgByNum = new Map(bgPages.map(p => [p.num, p.img]));
       const hdByNum = new Map(hdPages.map(p => [p.num, p.img]));
