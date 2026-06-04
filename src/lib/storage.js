@@ -794,9 +794,6 @@ async function saveRemote(ps, dirtyIds = null) {
         if (l.planId) annotObj._planId = l.planId;
         if (l.planReportHidden) annotObj._planReportHidden = true;
         if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
-        // Échelle de texte mémorisée à l'annotation (rendu fidèle dans le rapport, additif)
-        if (l.planAnnotations?.annotSizeScale != null) annotObj.annotSizeScale = l.planAnnotations.annotSizeScale;
-        if (l.planAnnotations?.annotW != null) annotObj.annotW = l.planAnnotations.annotW;
         if (extraPlansToStore.length) annotObj._extraPlans = extraPlansToStore;
       }
       return {

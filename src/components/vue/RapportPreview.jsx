@@ -833,15 +833,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      // Échelle du texte : on réutilise l'échelle exacte mémorisée à l'annotation
-      // (annotSizeScale appliqué sur un canvas de largeur annotW) → rendu fidèle quelle
-      // que soit la largeur de l'image du rapport (HD/LQ) et l'écran d'annotation.
-      // Fallback ancienne formule pour les annotations enregistrées avant ce correctif.
-      const annotSizeScale = annotations?.annotSizeScale;
-      const annotW = annotations?.annotW;
-      const sizeScale = (annotSizeScale != null && annotW)
-        ? annotSizeScale * (cv.width / annotW)
-        : (cv.width / 1400) * deferredAnnotScale;
+      const sizeScale = (cv.width / 1400) * deferredAnnotScale;
       // Si l'image HD est plus grande que le thumbnail utilisé lors de l'annotation,
       // on recale les coordonnées des chemins pour qu'ils restent bien positionnés.
       const coordScale = (hdBg && bgNaturalW && cv.width !== bgNaturalW) ? cv.width / bgNaturalW : 1;
