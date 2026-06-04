@@ -388,8 +388,12 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1 }) {
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // cssW fallback: use drawW so annotations render even before ResizeObserver fires
-    const sizeScale = (drawW / Math.max(cssW || drawW, 350)) * 0.5 / cropZoom;
+    // Use the exact sizeScale from when the annotation was baked (stored in annotSizeScale).
+    // Falls back to a size estimate if not available (legacy annotations).
+    const baseSizeScale = photo.annotSizeScale != null
+      ? photo.annotSizeScale
+      : (drawW / Math.max(cssW || drawW, 350)) * 0.5;
+    const sizeScale = baseSizeScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom]);
 
@@ -511,7 +515,10 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
     cv.height = effectiveAnnotH;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, effectiveAnnotW, effectiveAnnotH);
-    drawAnnotationPaths(ctx, photo.annotations, (effectiveAnnotW / Math.max(containerW, 350)) * 0.5);
+    const cropModalSizeScale = photo.annotSizeScale != null
+      ? photo.annotSizeScale
+      : (effectiveAnnotW / Math.max(containerW, 350)) * 0.5;
+    drawAnnotationPaths(ctx, photo.annotations, cropModalSizeScale);
   }, [photo.annotations, effectiveAnnotW, effectiveAnnotH, containerW]);
 
   const handlePointerDown = (e) => {

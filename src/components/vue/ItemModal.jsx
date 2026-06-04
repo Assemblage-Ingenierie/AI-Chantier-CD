@@ -441,7 +441,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         onSave={(paths, exported, dims) => {
           setForm(f => ({
             ...f,
-            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h } : p),
+            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),
           }));
           setAnnotatingPhotoIdx(null);
         }}

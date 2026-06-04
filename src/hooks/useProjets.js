@@ -474,19 +474,30 @@ export function useProjets(onSyncStatus) {
               ...loc,
               items: (loc.items || []).map(item => {
                 if (item._photosHydrated) return item; // Déjà hydraté
+                // Preserve annotated data URL and annotSizeScale from local cache — Supabase
+                // only stores annotated_storage_url (signed URL) which may be null if the
+                // upload failed or if the photo predates the annotation feature. Without this,
+                // a page reload before the upload completes permanently loses ph.annotated.
+                const existingByName = new Map(
+                  (item.photos || []).filter(p => p.name).map(p => [p.name, p])
+                );
                 return {
                   ...item,
                   _photosHydrated: true,
                   photos: photosMap[item.id]
-                    ? photosMap[item.id].map(ph => ({
-                        name:        ph.name ?? '',
-                        data:        ph.data ?? null,
-                        storage_url: ph.storage_url ?? null,
-                        annotated:   ph.annotated ?? null,
-                        annotations: ph.annotations ?? null,
-                        _id:         ph.id,
-                        _legacy:     ph._legacy ?? false,
-                      }))
+                    ? photosMap[item.id].map(ph => {
+                        const existing = existingByName.get(ph.name);
+                        return {
+                          name:           ph.name ?? '',
+                          data:           ph.data ?? null,
+                          storage_url:    ph.storage_url ?? null,
+                          annotated:      ph.annotated ?? existing?.annotated ?? null,
+                          annotations:    ph.annotations ?? null,
+                          annotSizeScale: existing?.annotSizeScale ?? null,
+                          _id:            ph.id,
+                          _legacy:        ph._legacy ?? false,
+                        };
+                      })
                     : [],
                 };
               }),

@@ -323,7 +323,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const switchToPhoto = (newRealIdx) => {
       const annotation = annotatorRef.current?.getAnnotation();
       const updatedItem = annotation
-        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH } : p) }
+        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale ?? null } : p) }
         : item;
       if (annotation) patchItem(locId, updatedItem);
       setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
@@ -339,7 +339,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             const updatedItem = {
               ...item,
               _photosHydrated: true,
-              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h } : p),
+              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),
             };
             patchItem(locId, updatedItem);
             setModal(null);
