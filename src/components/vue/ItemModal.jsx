@@ -15,6 +15,23 @@ function encodeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Strips leading words of txt that overlap with the tail of already-committed text.
+// Guards against iOS SpeechRecognition resending previously-heard audio on auto-restart.
+function stripLeadingOverlap(txt, committed) {
+  if (!committed || !txt) return txt;
+  const nw = txt.split(/\s+/).filter(Boolean);
+  const sw = committed.split(/\s+/).filter(Boolean);
+  const cap = Math.min(nw.length, sw.length, 12);
+  for (let len = cap; len >= 1; len--) {
+    let ok = true;
+    for (let i = 0; i < len; i++) {
+      if (nw[i].toLowerCase() !== sw[sw.length - len + i].toLowerCase()) { ok = false; break; }
+    }
+    if (ok) return nw.slice(len).join(' ').trim();
+  }
+  return txt;
+}
+
 function patchHtmlText(html, del, add) {
   if (!del) return html;
   const searchEnc = encodeHtml(del);
@@ -85,7 +102,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
   const recogRef       = useRef(null);
   const recordingRef   = useRef(false);
-  const lastFinalIdx   = useRef(0);
+  const recogSessionId = useRef(0);
   const sessionFirst   = useRef(true);
   const lastCommitted  = useRef('');
   const sessionText    = useRef('');
@@ -142,18 +159,22 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     r.interimResults = true;
     r.maxAlternatives = 3;
 
+    // Each SR instance gets a unique ID so stale events from old sessions are ignored.
+    const myId = ++recogSessionId.current;
+    let localFinalIdx = 0; // local to this instance — never shared across sessions
+
     r.onresult = (e) => {
+      if (recogSessionId.current !== myId) return; // stale event, discard
       let interim = '';
       const finals = [];
-      for (let i = lastFinalIdx.current; i < e.results.length; i++) {
+      for (let i = localFinalIdx; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          // Pick the alternative with highest confidence
           let best = e.results[i][0];
           for (let a = 1; a < e.results[i].length; a++) {
             if (e.results[i][a].confidence > best.confidence) best = e.results[i][a];
           }
           finals.push(best.transcript.trim());
-          lastFinalIdx.current = i + 1;
+          localFinalIdx = i + 1;
         } else {
           interim += e.results[i][0].transcript;
         }
@@ -162,82 +183,50 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       if (finals.length) {
         let txt = finals.filter(Boolean).join(' ');
         if (!txt) return;
-
-        // iOS after restart sometimes resends the full accumulated transcript
-        // (e.g. previous "bonjour" + new "comment" = "bonjour comment").
-        // Strip words already committed this session by comparing word-by-word.
-        if (sessionText.current) {
-          const rawWords = txt.toLowerCase().split(/\s+/).filter(Boolean);
-          const sesWords = sessionText.current.toLowerCase().split(/\s+/).filter(Boolean);
-          let matched = 0;
-          for (let i = 0; i < Math.min(rawWords.length, sesWords.length); i++) {
-            if (rawWords[i] === sesWords[i]) matched++;
-            else break;
-          }
-          if (matched === rawWords.length) return; // entirely duplicate
-          if (matched === sesWords.length && matched > 0) {
-            txt = txt.split(/\s+/).slice(matched).join(' ').trim();
-          }
-        }
-
+        // Strip any leading overlap with already-committed text (iOS overlap safety net)
+        txt = stripLeadingOverlap(txt, sessionText.current);
         if (!txt || txt === lastCommitted.current) return;
         lastCommitted.current = txt;
         sessionText.current = sessionText.current ? sessionText.current + ' ' + txt : txt;
-
         const first = sessionFirst.current;
         sessionFirst.current = false;
         setForm(f => ({
           ...f,
           commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
         }));
-        // No bumpSync here: isTyping is false during dictation so the value change
-        // alone syncs the editor. bumpSync would trigger el.blur() which interrupts
-        // iOS SpeechRecognition mid-session.
       }
     };
 
     r.onerror = (ev) => {
-      // not-allowed = fatal permission error, stop entirely
       if (ev.error === 'not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
         recogRef.current = null;
         setInterimText('');
         setRecording(false);
-        return;
       }
-      // All other errors (no-speech, aborted, network, audio-capture…) are non-fatal.
-      // onend always fires after onerror — let onend handle any restart to avoid
-      // starting two concurrent recognition sessions (the "8x repeat" bug).
+      // Other errors are non-fatal — onend fires next and handles any restart.
     };
 
     r.onend = () => {
+      if (recogSessionId.current !== myId) return; // stale session, ignore
       recogRef.current = null;
       setInterimText('');
-      // iOS/mobile : la reconnaissance s'arrête automatiquement après ~5-10s
-      // Si l'utilisateur tient encore le bouton, on relance immédiatement
       if (recordingRef.current) {
-        lastFinalIdx.current = 0;
         restartTimer.current = setTimeout(doRecognize, 150);
         return;
       }
       setRecording(false);
     };
 
-    try {
-      r.start();
-      recogRef.current = r;
-    } catch (e) {
-      recordingRef.current = false;
-      setRecording(false);
-    }
+    try { r.start(); recogRef.current = r; }
+    catch { recordingRef.current = false; setRecording(false); }
   }, []);
 
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
     recordingRef.current = true;
-    lastFinalIdx.current = 0;
     sessionFirst.current = true;
     lastCommitted.current = '';
     sessionText.current = '';
