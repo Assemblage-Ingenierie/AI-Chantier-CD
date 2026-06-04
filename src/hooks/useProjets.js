@@ -161,6 +161,9 @@ function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
                 items: (loc.items || []).map(item => {
                   const localItem = localLoc.items?.find(i => i.id === item.id);
                   if (localItem?._photosHydrated) return { ...item, photos: localItem.photos, _photosHydrated: true };
+                  // Preserve local photos even when _photosHydrated is false (e.g. base64 just taken,
+                  // upload still in progress). Without this guard, pollRemote blanks fresh photos.
+                  if (localItem?.photos?.length) return { ...item, photos: localItem.photos };
                   return item;
                 }),
               };
@@ -591,7 +594,10 @@ export function useProjets(onSyncStatus) {
 
     const plansMap = await hydratePlanLibraryRemote(projectId);
     if (!plansMap || !Object.keys(plansMap).length) return plansMap || {};
-    setProjets(ps => ps.map(p => {
+    // Build updated list inline so we can persist to localStorage in the same pass.
+    // Without saveLocalCache here, bg is never written to localStorage (only lives in React state),
+    // causing a fresh DB fetch on every new session even if the user already loaded the thumbnails.
+    const updatedPs = projetsRef.current.map(p => {
       if (p.id !== projectId) return p;
       return {
         ...p,
@@ -601,7 +607,9 @@ export function useProjets(onSyncStatus) {
           return { ...pl, bg: fetched.bg ?? pl.bg, data: fetched.data ?? pl.data };
         }),
       };
-    }));
+    });
+    setProjets(updatedPs);
+    saveLocalCache(updatedPs);
     return plansMap; // { planId: { bg, data } }
   };
 
