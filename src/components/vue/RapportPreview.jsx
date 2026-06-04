@@ -554,7 +554,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           style={{ position:'relative', width:'100%', height:containerH, flexShrink:0,
             borderRadius:8, cursor:'grab', touchAction:'none', background:'#000', overflow:'hidden' }}
           onPointerDown={handlePointerDown}>
-          <img src={photo.data || photo.annotated} alt=""
+          <img src={photo.annotated || photo.data} alt=""
             style={{ position:'absolute', inset:0, width:'100%', height:'100%',
               objectFit:'fill', display:'block', pointerEvents:'none' }}
             onLoad={e => { if (!naturalSize) setNaturalSize({ w: e.target.naturalWidth, h: e.target.naturalHeight }); }}/>
@@ -575,8 +575,9 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
             <div style={{ position:'absolute', left:frameLeft + frameW, top:frameTop, right:0, height:frameH,
               background:'rgba(0,0,0,0.55)', pointerEvents:'none' }}/>
           )}
-          {/* Annotations overlay on full photo — visible everywhere, even outside crop frame */}
-          {photo.annotations?.length > 0 && effectiveAnnotW && (
+          {/* Annotations overlay on full photo — uniquement en repli si pas d'image cuite
+              (photo.annotated). Sinon les annotations sont déjà dans l'image affichée. */}
+          {photo.annotations?.length > 0 && !photo.annotated && effectiveAnnotW && (
             <canvas ref={fullAnnotCvRef} style={{
               position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', opacity:0.75,
             }}/>
@@ -677,11 +678,15 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
             const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
             return (
               <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
-                <img src={ph.data || ph.annotated} alt=""
+                {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
+                    l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
+                    s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
+                    aucune image cuite n'existe. */}
+                <img src={ph.annotated || ph.data} alt=""
                   style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
                     objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
                     transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
-                {hasAnnotations && !!ph.data &&
+                {hasAnnotations && !ph.annotated && !!ph.data &&
                   <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz}/>}
                 {vxxNum != null && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
