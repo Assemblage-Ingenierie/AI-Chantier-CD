@@ -1472,7 +1472,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ectx.restore();
               // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
               const sc = hqScaleRef.current;
-              onSave(scalePaths(paths, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
+              onSave(scalePaths(paths, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height, annotSizeScale: ratio * 0.5 * annotScale });
               onClose();
             }}
               style={{ padding:isMob?'7px 10px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
