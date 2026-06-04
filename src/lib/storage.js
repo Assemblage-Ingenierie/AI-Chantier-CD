@@ -403,6 +403,25 @@ export async function hydratePlanLibrary(projectId) {
   } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }
 }
 
+// Récupère tous les bg de plans en une seule requête — utilisé pour préchauffer le cache
+// localStorage au démarrage. { projectId: { planId: bg } }
+export async function loadAllPlanBgs() {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_chantier_plans')
+      .select('id,chantier_id,bg')
+      .not('bg', 'is', null);
+    if (error || !data) return {};
+    const byProject = {};
+    for (const row of data) {
+      if (!row.bg) continue;
+      if (!byProject[row.chantier_id]) byProject[row.chantier_id] = {};
+      byProject[row.chantier_id][row.id] = row.bg;
+    }
+    return byProject;
+  } catch { return {}; }
+}
+
 // Charge bg + data d'un seul plan — fallback quand la miniature n'est pas encore hydratée
 const _planDataCache = new Map(); // planId → { bg, data }
 

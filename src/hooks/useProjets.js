@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 
 const MAX_HISTORY = 20;
@@ -235,6 +235,41 @@ export function useProjets(onSyncStatus) {
             if (!Object.keys(photoMap).length) return;
             setProjets(ps => ps.map(p => photoMap[p.id] ? { ...p, photo: photoMap[p.id] } : p));
           });
+        }
+
+        // Préchauffage cache plans : si certains locs ont un planId sans planBg en localStorage,
+        // on récupère tous les bg en une seule requête et on les persiste. Dès la session suivante,
+        // les vignettes sont disponibles depuis loadLocalData sans aucun fetch réseau.
+        const needsBgWarm = allMerged.some(p =>
+          (p.planLibrary || []).some(pl => !pl.bg) &&
+          (p.visites || []).some(v => (v.localisations || []).some(l => l.planId && !l.planBg))
+        );
+        if (needsBgWarm) {
+          loadAllPlanBgs().then(bgsByProject => {
+            if (!Object.keys(bgsByProject).length) return;
+            const warmed = projetsRef.current.map(p => {
+              const planBgs = bgsByProject[p.id];
+              if (!planBgs) return p;
+              const updatedPlanLib = (p.planLibrary || []).map(pl => ({
+                ...pl, bg: pl.bg ?? planBgs[pl.id] ?? null,
+              }));
+              const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
+              return {
+                ...p,
+                planLibrary: updatedPlanLib,
+                visites: (p.visites || []).map(v => ({
+                  ...v,
+                  localisations: (v.localisations || []).map(loc => {
+                    if (!loc.planId || loc.planBg) return loc;
+                    const bg = planBgById.get(loc.planId);
+                    return bg ? { ...loc, planBg: bg } : loc;
+                  }),
+                })),
+              };
+            });
+            setProjets(warmed);
+            saveLocalCache(warmed);
+          }).catch(() => {});
         }
       })
       .catch((e) => {
