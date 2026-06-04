@@ -596,18 +596,29 @@ export function useProjets(onSyncStatus) {
 
     const plansMap = await hydratePlanLibraryRemote(projectId);
     if (!plansMap || !Object.keys(plansMap).length) return plansMap || {};
-    // Build updated list inline so we can persist to localStorage in the same pass.
-    // Without saveLocalCache here, bg is never written to localStorage (only lives in React state),
-    // causing a fresh DB fetch on every new session even if the user already loaded the thumbnails.
+    // Build updated list inline and also fill loc.planBg in the same pass so both
+    // planLibrary[].bg and loc.planBg are persisted to localStorage together.
+    // Without this, loc.planBg is only set by hydratePlans (in-memory) and never reaches
+    // localStorage, causing a blank thumbnail on every session open until hydratePlans fires.
     const updatedPs = projetsRef.current.map(p => {
       if (p.id !== projectId) return p;
+      const updatedPlanLib = (p.planLibrary || []).map(pl => {
+        const fetched = plansMap[pl.id];
+        if (!fetched) return pl;
+        return { ...pl, bg: fetched.bg ?? pl.bg, data: fetched.data ?? pl.data };
+      });
+      const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
       return {
         ...p,
-        planLibrary: (p.planLibrary || []).map(pl => {
-          const fetched = plansMap[pl.id];
-          if (!fetched) return pl;
-          return { ...pl, bg: fetched.bg ?? pl.bg, data: fetched.data ?? pl.data };
-        }),
+        planLibrary: updatedPlanLib,
+        visites: (p.visites || []).map(v => ({
+          ...v,
+          localisations: (v.localisations || []).map(loc => {
+            if (!loc.planId || (!force && loc.planBg)) return loc;
+            const bg = planBgById.get(loc.planId);
+            return bg ? { ...loc, planBg: bg } : loc;
+          }),
+        })),
       };
     });
     setProjets(updatedPs);
