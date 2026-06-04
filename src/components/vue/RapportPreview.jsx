@@ -117,7 +117,7 @@ function estimateBlockH(block, ppl) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false) {
+function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = []) {
   const blocks = [];
   const planTail = []; // plans groupés en fin quand plansNoBreak=true
   const cols   = Math.min(ppl, 3);
@@ -180,8 +180,13 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
 
       photoOffset += photos.length;
     }
-    const primaryVisible = !loc.planReportHidden && !!(loc.planAnnotations?.exported || loc.planBg || loc.planId);
-    const extraVisible = (loc.extraPlans || []).some(ep => !ep.reportHidden && !!(ep.planBg || ep.planId || ep.planAnnotations?.exported));
+    // Un plan n'est "visible" (et ne crée donc un bloc titre) que si son fond est réellement
+    // résolvable : annotation exportée, planBg local, ou planId dont la bibliothèque a un bg.
+    // Sans ce contrôle, un plan masqué ou orphelin (planId sans bg) affichait un titre seul.
+    const bgResolvable = (planId, planBg, ann) =>
+      !!(ann?.exported || planBg || (planId && planLibrary.find(p => p.id === planId)?.bg));
+    const primaryVisible = !loc.planReportHidden && bgResolvable(loc.planId, loc.planBg, loc.planAnnotations);
+    const extraVisible = (loc.extraPlans || []).some(ep => !ep.reportHidden && bgResolvable(ep.planId, ep.planBg, ep.planAnnotations));
     if (primaryVisible || extraVisible) {
       if (!plansEnFin) {
         blocks.push({ type:'plan', id:`plan-${loc.id}`, loc });
@@ -1637,7 +1642,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [planPageSegments, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak]);
+  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || []), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
