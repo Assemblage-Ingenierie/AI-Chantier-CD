@@ -547,7 +547,7 @@ export function useProjets(onSyncStatus) {
       libraryMap?.[planId]?.bg || (p.planLibrary || []).find(pl => pl.id === planId)?.bg || null;
     const resolveData = (p, planId) =>
       libraryMap?.[planId]?.data || (p.planLibrary || []).find(pl => pl.id === planId)?.data || null;
-    setProjets(ps => ps.map(p => {
+    const firstPass = projetsRef.current.map(p => {
       if (p.id !== projectId) return p;
       return {
         ...p,
@@ -582,7 +582,9 @@ export function useProjets(onSyncStatus) {
           }),
         })),
       };
-    }));
+    });
+    setProjets(firstPass);
+    saveLocalCache(firstPass);
 
     // Second pass: for plans with no bg anywhere, try fetching PDF data and rendering
     if (locsNeedingPdfRender.size === 0) return;
@@ -597,11 +599,13 @@ export function useProjets(onSyncStatus) {
     }
     if (renderedBgs.size === 0) return;
 
-    setProjets(ps => ps.map(p => {
+    // Compute inline so we can call saveLocalCache in the same pass — critical to persist
+    // the rendered thumbnail to localStorage. Without this, the PDF re-renders from scratch
+    // on every session reload (10s+ delay each time).
+    const withRendered = projetsRef.current.map(p => {
       if (p.id !== projectId) return p;
       return {
         ...p,
-        // Also update planLibrary so assign dialogs show correct thumbnails
         planLibrary: (p.planLibrary || []).map(pl => {
           const r = renderedBgs.get(pl.id);
           return r ? { ...pl, bg: r.bg ?? pl.bg, data: r.data ?? pl.data } : pl;
@@ -616,7 +620,9 @@ export function useProjets(onSyncStatus) {
           }),
         })),
       };
-    }));
+    });
+    setProjets(withRendered);
+    saveLocalCache(withRendered);
   };
 
   const hydratePlanLibrary = async (projectId, { force = false } = {}) => {
