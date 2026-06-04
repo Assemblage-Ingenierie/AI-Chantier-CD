@@ -120,8 +120,8 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         vpNumByPath={vpNumByPath}
         vpBase={vpBase}
         title={libNom ? `${loc.nom} — ${libNom}` : loc.nom}
-        onSave={(paths, exported) => {
-          const newPlans = plans.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported } } : x);
+        onSave={(paths, exported, dims) => {
+          const newPlans = plans.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported, annotSizeScale: dims?.annotSizeScale ?? null, annotW: dims?.w ?? null } } : x);
           setPlans(newPlans);
           if (directAnnot) {
             handleSave(newPlans); // auto-save & close when opened directly from thumbnail

@@ -125,14 +125,16 @@ export default function RapportTab({ projet, onUpdate }) {
     });
   };
 
+  // Clé dédiée au rapport, distincte de l'éditeur d'annotation (`chantierai_annot_scale`) :
+  // le curseur du rapport ne doit PAS modifier l'échelle par défaut de l'outil d'annotation.
   const [annotScale, setAnnotScale] = useState(() => {
-    const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
+    const v = parseFloat(localStorage.getItem('chantierai_report_annot_scale') ?? '1');
     return isNaN(v) ? 1 : v;
   });
 
   const handleAnnotScale = (v) => {
     setAnnotScale(v);
-    localStorage.setItem('chantierai_annot_scale', String(v));
+    localStorage.setItem('chantierai_report_annot_scale', String(v));
   };
 
   const pageBreaks = projet.rapportPageBreaks || [];

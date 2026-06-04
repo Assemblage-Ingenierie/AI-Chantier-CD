@@ -566,7 +566,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé *</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé</label>
             <input value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
               placeholder="Ex: Fissures, Humidité…"
               style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box' }}
@@ -965,8 +965,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 <Ic n="map" s={15}/> Plan (vide)
               </button>
             )}
-            <button onClick={handleSave} disabled={!form.titre || compressing}
-              style={{ flex:1,background:form.titre&&!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:form.titre&&!compressing?'pointer':'not-allowed' }}>
+            <button onClick={handleSave} disabled={compressing}
+              style={{ flex:1,background:!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:!compressing?'pointer':'not-allowed' }}>
               Enregistrer l'observation
             </button>
           </div>
