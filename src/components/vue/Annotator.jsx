@@ -456,7 +456,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, ratio * 0.5 * annotScale, ratio);
       ectx.restore();
       const sc = hqScaleRef.current;
-      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height };
+      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: ratio * 0.5 * annotScale };
     },
   }), [paths, annotScale, exportSizeMultiplier, vpNumByPath, vpBase]);
 
