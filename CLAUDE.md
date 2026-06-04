@@ -50,7 +50,55 @@ Si la tentation est de "nettoyer" du code qui marche → **ne pas le faire**.
 
 ---
 
-## Workflow Git
+## 🟠 RÈGLE N°4 — COMPATIBILITÉ ANDROID / iOS OBLIGATOIRE
+
+**Chaque modification doit être évaluée pour ses effets sur Android ET iOS avant tout merge sur `main`.**
+
+### Checklist à valider pour chaque changement touchant le mobile
+
+Avant de merger, se poser systématiquement ces questions :
+
+| Zone | Question |
+|---|---|
+| **Événements tactiles** | `onPointerDown/Up/Cancel` fonctionne-t-il sur iOS Safari et Chrome Android ? |
+| **API navigateur** | L'API utilisée est-elle supportée sur Safari ≥ 16 et Chrome Android ≥ 110 ? |
+| **Permissions** | La demande de permission (micro, caméra, fichiers) suit-elle le flux iOS (user gesture obligatoire) ? |
+| **Fichiers / téléchargement** | La fonctionnalité de téléchargement utilise-t-elle une approche compatible iOS (pas de `download` attribut seul) ? |
+| **CSS / layout** | Le rendu est-il vérifié sur un viewport mobile (375px, safe-area-inset) ? |
+| **Dictée vocale** | `webkitSpeechRecognition` + `setPointerCapture` dans un try/catch ? |
+
+### ⚠️ Signalement obligatoire
+
+Si une modification crée un **comportement différent entre Android et iOS**, il faut :
+1. **Le signaler explicitement** à l'utilisateur avant de merger
+2. **Proposer une solution spécifique** (fallback, détection de plateforme, alternative UI)
+3. **Ne pas laisser un comportement dégradé silencieux** sur l'une des plateformes
+
+### Différences Android / iOS connues — à ne pas régresser
+
+| Fonctionnalité | Android (Chrome) | iOS (Safari) | Solution en place |
+|---|---|---|---|
+| **Sauvegarde photos Drive** | Upload automatique en arrière-plan | Idem via retry + queue localStorage | `src/lib/driveUpload.js` |
+| **Dictée vocale push-to-talk** | `SpeechRecognition` natif, fiable | `webkitSpeechRecognition`, s'arrête toutes les ~5-10s | Restart auto dans `onend` (`ItemModal.jsx`) |
+| **`setPointerCapture`** | Fonctionne toujours | Peut lever une exception sur certaines versions | `try/catch` dans `onPointerDown` (`ItemModal.jsx`) |
+| **Téléchargement de fichiers** | Attribut `download` fonctionnel | Ne déclenche pas de téléchargement → redirection ou partage natif (`navigator.share`) | À vérifier si on ajoute des exports |
+| **Input `type="file"` + caméra** | Propose Galerie OU Caméra | Propose les deux, mais comportement WebKit spécifique | Non traité — à surveiller |
+| **`localStorage`** | Disponible | Disponible sauf mode navigation privée | Guard `_hasLS` dans `supabase.js` et `useAuth.js` |
+| **PWA / Install prompt** | `beforeinstallprompt` supporté | Pas de prompt natif — instruction manuelle "Ajouter à l'écran d'accueil" | Non implémenté |
+
+### Détection de plateforme (si besoin dans le code)
+
+```js
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const isMobile = /Mobi|Android/i.test(navigator.userAgent) || isIOS;
+```
+
+> Ne pas surcharger le code de détections — préférer des API universelles ou des fallbacks CSS. La détection n'est à utiliser qu'en dernier recours.
+
+---
+
+
 
 **Branche de travail** : toujours développer sur une branche feature dédiée.
 **Push** : uniquement après accord explicite de l'utilisateur (voir Règle N°1).

@@ -225,6 +225,30 @@ Les annotations sont sauvegardées sous forme de chemins vectoriels (`paths[]`) 
 
 ---
 
+## Compatibilité mobile — Android & iOS
+
+L'application est utilisée sur le terrain, principalement sur **smartphones Android et iPhone**.  
+Toute nouvelle fonctionnalité doit être testée sur les deux plateformes.
+
+### Différences de comportement connues
+
+| Fonctionnalité | Android (Chrome) | iOS (Safari) | Notes |
+|---|---|---|---|
+| **Dictée vocale** | `SpeechRecognition` — continu et stable | `webkitSpeechRecognition` — s'arrête toutes les 5-10s | Restart automatique géré dans `ItemModal.jsx` |
+| **`setPointerCapture`** | Toujours disponible | Peut lever une exception | `try/catch` systématique dans les handlers tactiles |
+| **Téléchargement de fichiers** | Attribut `download` HTML fonctionne | Ne déclenche pas de téléchargement natif | Utiliser `navigator.share` ou une redirection |
+| **Sauvegarde Drive (photos)** | Upload direct fonctionnel | Upload identique | Retry 0s/2s/5s + queue offline (`driveUpload.js`) |
+| **`localStorage` en navigation privée** | Disponible | Lance une exception — accès refusé | Guard `_hasLS` dans `supabase.js` et `useAuth.js` |
+| **PWA / ajout écran d'accueil** | Prompt natif Chrome | Manuel — pas de prompt automatique | Pas de prompt implémenté pour l'instant |
+
+### Règle de développement
+
+> **Chaque PR touchant à des interactions tactiles, des téléchargements, des permissions (micro/caméra/stockage) ou des API web doit explicitement indiquer si un comportement différent est attendu entre Android et iOS.**
+>
+> Si une différence existe et n'est pas traitée, elle doit être documentée dans le tableau ci-dessus et un ticket de suivi créé.
+
+---
+
 ## Variables d'environnement (Vercel)
 
 À configurer dans le dashboard Vercel → Settings → Environment Variables :
