@@ -198,8 +198,16 @@ export function useProjets(onSyncStatus) {
   const historyRef = useRef([]);
   const deletedIdsRef = useRef(getPersistedDeletedIds()); // IDs supprimés — survivent aux rechargements
   const dirtyIds = useRef(new Set());
+  const cacheSaveRef = useRef(null); // debounce pour la sauvegarde localStorage rapide
 
-  useEffect(() => { projetsRef.current = projets; }, [projets]);
+  useEffect(() => {
+    projetsRef.current = projets;
+    // Sauvegarde localStorage accélérée (500 ms) dès que l'utilisateur a modifié quelque chose.
+    // Réduit la fenêtre de perte de données en cas de crash navigateur (vs. 2 s pour Supabase).
+    if (!userModified.current) return;
+    clearTimeout(cacheSaveRef.current);
+    cacheSaveRef.current = setTimeout(() => saveLocalCache(projetsRef.current), 500);
+  }, [projets]);
 
   useEffect(() => {
     // Snapshot des IDs remote connus AVANT que loadData() ne les mette à jour.
@@ -247,26 +255,31 @@ export function useProjets(onSyncStatus) {
           (p.planLibrary || []).filter(pl => !pl.bg).map(pl => pl.id)
         ))];
         // Applique un map plat { planId: bg } à l'état en mémoire (planLibrary + loc.planBg)
+        // Utilise la forme fonctionnelle de setProjets pour garantir qu'on opère toujours
+        // sur l'état le plus récent — évite d'écraser les modifications texte de l'utilisateur
+        // si applyPlanBgs se déclenche pendant qu'un rendu React est en cours.
         const applyPlanBgs = (bgById) => {
           if (!bgById || !Object.keys(bgById).length) return;
-          const warmed = projetsRef.current.map(p => {
-            const updatedPlanLib = (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.bg ?? bgById[pl.id] ?? null }));
-            const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
-            return {
-              ...p,
-              planLibrary: updatedPlanLib,
-              visites: (p.visites || []).map(v => ({
-                ...v,
-                localisations: (v.localisations || []).map(loc => {
-                  if (!loc.planId || loc.planBg) return loc;
-                  const bg = planBgById.get(loc.planId);
-                  return bg ? { ...loc, planBg: bg } : loc;
-                }),
-              })),
-            };
+          setProjets(curr => {
+            const warmed = curr.map(p => {
+              const updatedPlanLib = (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.bg ?? bgById[pl.id] ?? null }));
+              const planBgById = new Map(updatedPlanLib.filter(pl => pl.bg).map(pl => [pl.id, pl.bg]));
+              return {
+                ...p,
+                planLibrary: updatedPlanLib,
+                visites: (p.visites || []).map(v => ({
+                  ...v,
+                  localisations: (v.localisations || []).map(loc => {
+                    if (!loc.planId || loc.planBg) return loc;
+                    const bg = planBgById.get(loc.planId);
+                    return bg ? { ...loc, planBg: bg } : loc;
+                  }),
+                })),
+              };
+            });
+            saveLocalCache(warmed);
+            return warmed;
           });
-          setProjets(warmed);
-          saveLocalCache(warmed);
         };
         if (missingPlanIds.length) {
           getPlanThumbs(missingPlanIds).then(cached => {
