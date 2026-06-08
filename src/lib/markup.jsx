@@ -137,7 +137,8 @@ function renderHtml(html) {
     // Espacement d'une ligne vide ≈ une vraie ligne (aération visible, proche de l'éditeur).
     // Pas de marge en tête (result vide) → évite un décalage si le texte commence par un saut.
     const mt = (blanksBefore > 0 && result.length > 0) ? `${blanksBefore * 1.5}em` : undefined;
-    const mb = hasNext ? '0.3em' : 0;
+    // Les puces respirent un peu plus que les paragraphes (demande utilisateur).
+    const mb = hasNext ? (block.isBullet ? '0.5em' : '0.3em') : 0;
     blanksBefore = 0;
     result.push(
       <span key={`p-${i}`} style={{
