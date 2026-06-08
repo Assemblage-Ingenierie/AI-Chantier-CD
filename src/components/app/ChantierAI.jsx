@@ -25,7 +25,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const [ouvert, setOuvert] = useState(null);
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -377,6 +377,37 @@ export default function ChantierAI({ profile, onLogout }) {
           >
             Réessayer
           </button>
+        </div>
+      )}
+
+      {/* Bandeau restauration boîte noire — perte de données détectée au chargement */}
+      {backupRecovery && (
+        <div style={{ background:'#7c2d12', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexShrink:0, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+            <Ic n="arc" s={16} color="#FED7AA"/>
+            <div style={{ minWidth:0 }}>
+              <span style={{ fontSize:12, color:'#FFEDD5', fontWeight:700 }}>
+                Une sauvegarde locale plus complète a été trouvée
+              </span>
+              <span style={{ fontSize:10, color:'rgba(254,215,170,0.85)', marginLeft:8 }}>
+                {new Date(backupRecovery.snapshot.ts).toLocaleString('fr-FR')} — {backupRecovery.lost.map(l => l.nom || 'projet').join(', ')}
+              </span>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+            <button
+              onClick={restoreFromBackup}
+              style={{ background:'#EA580C', border:'1px solid #F97316', color:'#fff', fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:6, cursor:'pointer' }}
+            >
+              Restaurer
+            </button>
+            <button
+              onClick={dismissBackupRecovery}
+              style={{ background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.25)', color:'#fff', fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:6, cursor:'pointer' }}
+            >
+              Ignorer
+            </button>
+          </div>
         </div>
       )}
 

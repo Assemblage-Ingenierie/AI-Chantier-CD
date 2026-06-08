@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
+import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
 
 const MAX_HISTORY = 20;
 
@@ -190,6 +191,8 @@ export function useProjets(onSyncStatus) {
   const [hydrated, setHydrated] = useState(false);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  // Filet de sécurité : proposition de restauration si la boîte noire détecte une perte.
+  const [backupRecovery, setBackupRecovery] = useState(null); // null | { snapshot, lost }
   const debounceRef = useRef(null);
   const retryRef = useRef(null);
   const projetsRef = useRef(projets);
@@ -199,6 +202,7 @@ export function useProjets(onSyncStatus) {
   const deletedIdsRef = useRef(getPersistedDeletedIds()); // IDs supprimés — survivent aux rechargements
   const dirtyIds = useRef(new Set());
   const cacheSaveRef = useRef(null); // debounce pour la sauvegarde localStorage rapide
+  const snapshotRef = useRef(null);  // debounce pour la boîte noire IndexedDB
 
   useEffect(() => {
     projetsRef.current = projets;
@@ -207,12 +211,20 @@ export function useProjets(onSyncStatus) {
     if (!userModified.current) return;
     clearTimeout(cacheSaveRef.current);
     cacheSaveRef.current = setTimeout(() => saveLocalCache(projetsRef.current), 500);
+    // Boîte noire indépendante (IndexedDB) : instantané complet horodaté, jamais écrasé
+    // par le pipeline de sync. Debounce 3 s pour limiter les écritures.
+    clearTimeout(snapshotRef.current);
+    snapshotRef.current = setTimeout(() => saveSnapshot(projetsRef.current), 3000);
   }, [projets]);
 
   useEffect(() => {
     // Snapshot des IDs remote connus AVANT que loadData() ne les mette à jour.
     // Critique pour distinguer "supprimé ailleurs" de "vraiment unsynced".
     const previousRemoteIds = getPersistedRemoteIds();
+    // Lire la dernière sauvegarde « boîte noire » AVANT tout merge — sert à détecter
+    // si le chargement aboutit à MOINS de contenu que ce qui était sauvegardé localement
+    // (scénario : modif PC non synchronisée écrasée par le remote au rechargement).
+    const preloadSnapshotPromise = getLatestSnapshot().catch(() => null);
 
     loadLocalData()
       .then((d) => { if (d.length) setProjets(d); })
@@ -235,6 +247,17 @@ export function useProjets(onSyncStatus) {
         setProjets(allMerged);
 
         if (keptLocal || unsynced.length > 0) userModified.current = true;
+
+        // Filet boîte noire : si la dernière sauvegarde locale contenait nettement plus
+        // de contenu que ce qu'on vient de charger, c'est une perte probable → on propose
+        // une restauration (non destructive : l'utilisateur décide). Aucune restauration auto.
+        preloadSnapshotPromise.then(snap => {
+          if (!snap?.data) return;
+          // Ignorer les instantanés trop anciens (> 14 j) pour limiter les faux positifs.
+          if (Date.now() - snap.ts > 14 * 24 * 3600 * 1000) return;
+          const lost = detectLoss(snap.data, allMerged);
+          if (lost.length > 0) setBackupRecovery({ snapshot: snap, lost });
+        }).catch(() => {});
 
         // Tout photo non-base64 a besoin d'une signed URL (chemin relatif ou URL expirée)
         const needsSignedUrl = p => !p.photo || !p.photo.startsWith('data:');
@@ -370,8 +393,16 @@ export function useProjets(onSyncStatus) {
     const flush = () => {
       if (!userModified.current) return;
       if (!dirtyIds.current.size) return; // nothing unsaved — skip to avoid "save ALL" with stale state
+      // Boîte noire immédiate avant fermeture (filet ultime indépendant de la sync réseau).
+      clearTimeout(snapshotRef.current);
+      saveSnapshot(projetsRef.current);
       clearTimeout(debounceRef.current);
       if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
+    };
+    // Avertir avant de quitter S'IL RESTE des modifs non synchronisées (fenêtre debounce 2 s
+    // ou sync en échec) — empêche la fermeture qui faisait perdre le travail PC non sauvé.
+    const warnUnsaved = (e) => {
+      if (dirtyIds.current.size > 0) { e.preventDefault(); e.returnValue = ''; return ''; }
     };
     let hiddenAt = null;
     const onVisibility = () => {
@@ -385,10 +416,12 @@ export function useProjets(onSyncStatus) {
       }
     };
     window.addEventListener('beforeunload', flush);
+    window.addEventListener('beforeunload', warnUnsaved);
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('beforeunload', warnUnsaved);
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -733,5 +766,45 @@ export function useProjets(onSyncStatus) {
   // en cours ou si des modifs locales sont en attente (pollRemote s'auto-protège).
   const refreshNow = useCallback(() => pollRemote(), [pollRemote]);
 
-  return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow };
+  // Restauration depuis la boîte noire — déclenchée UNIQUEMENT par l'utilisateur (bandeau).
+  // Restaure le texte/structure des projets détectés comme perdus, remet les items en
+  // "photos non hydratées" (les photos se rechargent depuis Storage via storage_url), et
+  // marque les projets dirty pour qu'ils soient re-poussés vers Supabase.
+  const restoreFromBackup = useCallback(() => {
+    const rec = backupRecovery;
+    if (!rec?.snapshot?.data?.length) { setBackupRecovery(null); return; }
+    const lostIds  = new Set(rec.lost.map(l => l.id));
+    const snapById = new Map(rec.snapshot.data.filter(p => p?.id).map(p => [p.id, p]));
+    const resetPhotos = (p) => ({
+      ...p,
+      visites: (p.visites || []).map(v => ({
+        ...v,
+        localisations: (v.localisations || []).map(loc => ({
+          ...loc,
+          items: (loc.items || []).map(it => ({ ...it, _photosHydrated: false })),
+        })),
+      })),
+    });
+    pushHistory();
+    userModified.current = true;
+    setProjets(curr => {
+      const currIds = new Set(curr.map(p => p.id));
+      const replaced = curr.map(p => {
+        if (!lostIds.has(p.id) || !snapById.has(p.id)) return p;
+        return { ...resetPhotos(snapById.get(p.id)), updatedAt: new Date().toISOString() };
+      });
+      const missing = rec.lost
+        .filter(l => l.kind === 'missing' && !currIds.has(l.id) && snapById.has(l.id))
+        .map(l => ({ ...resetPhotos(snapById.get(l.id)), updatedAt: new Date().toISOString() }));
+      const next = [...replaced, ...missing];
+      saveLocalCache(next);
+      return next;
+    });
+    lostIds.forEach(id => dirtyIds.current.add(id));
+    setBackupRecovery(null);
+  }, [backupRecovery]);
+
+  const dismissBackupRecovery = useCallback(() => setBackupRecovery(null), []);
+
+  return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery };
 }
