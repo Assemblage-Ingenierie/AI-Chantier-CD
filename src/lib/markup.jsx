@@ -70,7 +70,14 @@ function renderHtml(html) {
     if (node.nodeType !== 1) return;
     const tag = node.tagName.toLowerCase();
 
-    if (tag === 'br') { flush(); return; }
+    // <br> : un saut simple ferme la ligne courante ; un <br> alors que rien n'a été
+    // écrit depuis le dernier saut = ligne vide voulue (aération) → on la matérialise.
+    // Sans ça, les <br><br> consécutifs (selon le navigateur) étaient avalés.
+    if (tag === 'br') {
+      if (current.length === 0) blocks.push({ items: [], isBullet: false });
+      else flush();
+      return;
+    }
 
     if (BLOCK_TAGS.has(tag)) {
       flush();
@@ -127,7 +134,9 @@ function renderHtml(html) {
   blocks.forEach((block, i) => {
     if (isBlank(block)) { blanksBefore++; return; }
     const hasNext = blocks.slice(i + 1).some(bl => !isBlank(bl));
-    const mt = blanksBefore > 0 ? `${blanksBefore * 0.75}em` : undefined;
+    // Espacement d'une ligne vide ≈ une vraie ligne (aération visible, proche de l'éditeur).
+    // Pas de marge en tête (result vide) → évite un décalage si le texte commence par un saut.
+    const mt = (blanksBefore > 0 && result.length > 0) ? `${blanksBefore * 1.5}em` : undefined;
     const mb = hasNext ? '0.3em' : 0;
     blanksBefore = 0;
     result.push(
