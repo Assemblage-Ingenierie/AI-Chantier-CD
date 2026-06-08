@@ -127,7 +127,7 @@ function renderHtml(html) {
   blocks.forEach((block, i) => {
     if (isBlank(block)) { blanksBefore++; return; }
     const hasNext = blocks.slice(i + 1).some(bl => !isBlank(bl));
-    const mt = blanksBefore > 0 ? `${blanksBefore * 0.75}em` : undefined;
+    const mt = blanksBefore > 0 ? `${blanksBefore * 1.1}em` : undefined;
     const mb = hasNext ? '0.3em' : 0;
     blanksBefore = 0;
     result.push(

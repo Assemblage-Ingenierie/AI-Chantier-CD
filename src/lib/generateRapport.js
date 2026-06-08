@@ -141,16 +141,6 @@ function looksLikeHtml(text) {
 // Le DOM décode automatiquement les entités (&amp;→&, &nbsp;→espace) et tolère
 // les attributs/balises inconnues — plus aucune balise brute ne se retrouve dans le PDF.
 function parseHtmlSegments(html) {
-  const segs = [];
-  const pushText = (t, b, it, u) => {
-    if (!t) return;
-    t.split('\n').forEach((line, i) => {
-      if (i > 0) segs.push({ text: '\n', bold: false, italic: false, underline: false });
-      if (line) segs.push({ text: line, bold: b, italic: it, underline: u });
-    });
-  };
-  const nl = () => segs.push({ text: '\n', bold: false, italic: false, underline: false });
-  const BLOCK = new Set(['div', 'p', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
   // Rétrocompat : anciens commentaires dont les balises ont été encodées en entités
   // (&lt;div&gt;) — on les restaure en vraies balises avant de parser via le DOM.
   let prepared = html;
@@ -159,36 +149,77 @@ function parseHtmlSegments(html) {
   }
   const container = document.createElement('div');
   container.innerHTML = prepared;
+
+  // Modèle « lignes » : le contenu inline s'accumule dans la ligne courante ; un <br>,
+  // une frontière de bloc ou un <li> termine la ligne. Une ligne VIDE = un saut d'aération
+  // voulu par l'utilisateur (touche Entrée) → on le PRÉSERVE, à l'identique du rendu écran
+  // (markup.jsx). Avant : chaque frontière de bloc émettait 2 sauts et tout était plafonné
+  // à 1 ligne vide → l'aération tapée dans l'éditeur disparaissait dans le PDF.
+  const lines = [];
+  let current = [];
+  const endLine = () => { lines.push(current); current = []; };
+  const BLOCK = new Set(['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
+
   const walk = (node, b, it, u) => {
     for (const child of node.childNodes) {
       if (child.nodeType === 3) { // TEXT_NODE
         const txt = child.textContent.replace(/[ \t\r\n]+/g, ' ');
-        if (txt) pushText(txt, b, it, u);
+        if (txt) current.push({ text: txt, bold: b, italic: it, underline: u });
         continue;
       }
       if (child.nodeType !== 1) continue; // pas un élément
       const tag = child.tagName.toLowerCase();
-      if (tag === 'br') { nl(); continue; }
+      if (tag === 'br') { endLine(); continue; }
       const nb = b || tag === 'strong' || tag === 'b';
       const ni = it || tag === 'em' || tag === 'i';
       const nu = u || tag === 'u';
-      const isBlock = BLOCK.has(tag);
-      if (isBlock) nl();
-      if (tag === 'li') pushText('• ', b, it, u);
+      if (tag === 'ul' || tag === 'ol') {
+        for (const li of child.childNodes) {
+          if (li.nodeType !== 1 || li.tagName.toLowerCase() !== 'li') continue;
+          if (current.length) endLine();
+          current.push({ text: '• ', bold: false, italic: false, underline: false });
+          walk(li, nb, ni, nu);
+          endLine();
+        }
+        continue;
+      }
+      if (tag === 'li') {
+        if (current.length) endLine();
+        current.push({ text: '• ', bold: false, italic: false, underline: false });
+        walk(child, nb, ni, nu);
+        endLine();
+        continue;
+      }
+      if (BLOCK.has(tag)) {
+        if (current.length) endLine();
+        const before = lines.length;
+        walk(child, nb, ni, nu);
+        if (current.length) endLine();
+        else if (lines.length === before) lines.push([]); // bloc vide → ligne d'aération
+        continue;
+      }
+      // inline (span, balises inconnues) : passage transparent
       walk(child, nb, ni, nu);
-      if (isBlock) nl();
     }
   };
   walk(container, false, false, false);
-  // Nettoyer : retirer les sauts de ligne en tête/queue et fusionner les runs (max 1 ligne vide)
-  while (segs.length && segs[0].text === '\n') segs.shift();
-  while (segs.length && segs[segs.length - 1].text === '\n') segs.pop();
+  if (current.length) endLine();
+
+  // Retirer les lignes vides en tête/queue
+  while (lines.length && lines[0].length === 0) lines.shift();
+  while (lines.length && lines[lines.length - 1].length === 0) lines.pop();
+
+  // Borne de sécurité : max 2 lignes vides consécutives (aération généreuse mais qui évite
+  // qu'un collage accidentel de dizaines de lignes vides ne fasse exploser la mise en page).
   const out = [];
-  let nlRun = 0;
-  for (const s of segs) {
-    if (s.text === '\n') { nlRun++; if (nlRun > 2) continue; }
-    else nlRun = 0;
-    out.push(s);
+  let blankRun = 0;
+  let emitted = false;
+  for (const ln of lines) {
+    if (ln.length === 0) { blankRun++; if (blankRun > 2) continue; }
+    else blankRun = 0;
+    if (emitted) out.push({ text: '\n', bold: false, italic: false, underline: false });
+    emitted = true;
+    for (const s of ln) out.push(s);
   }
   return out;
 }
