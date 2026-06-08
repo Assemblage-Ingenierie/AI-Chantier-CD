@@ -238,6 +238,10 @@ export default function ChantierAI({ profile, onLogout }) {
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        // Ne pas capturer Ctrl+Z quand l'utilisateur écrit dans un champ éditable
+        // (observation, titre, input…) : laisser l'annulation NATIVE du texte agir.
+        const el = document.activeElement;
+        if (el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
         e.preventDefault();
         if (canUndo()) {
           undo();
