@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
-import { renderMarkup } from '../../lib/markup.jsx';
+import { renderMarkup, stripMarkup } from '../../lib/markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
@@ -113,6 +113,17 @@ function estimateBlockH(block, ppl) {
   return Math.round(h * 1.1) + 5;
 }
 
+// Une observation a du contenu à montrer dans le rapport si elle a un intitulé, OU un
+// commentaire non vide, OU au moins une photo. Avant, seul l'intitulé comptait → une zone
+// dont l'observation n'avait qu'un commentaire (intitulé volontairement vide) était masquée.
+function itemHasReportContent(i) {
+  return !!(
+    (i.titre && i.titre.trim()) ||
+    (i.commentaire && stripMarkup(i.commentaire).trim()) ||
+    (i.photos || []).some(p => p.data)
+  );
+}
+
 // Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination).
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
@@ -123,7 +134,7 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
   const cols   = Math.min(ppl, 3);
 
   for (const loc of locs) {
-    const items = (loc.items || []).filter(i => i.titre);
+    const items = (loc.items || []).filter(itemHasReportContent);
     if (!items.length) continue;
     blocks.push({ type:'zone', id:loc.id, loc });
     let photoOffset = 0;
@@ -1605,7 +1616,7 @@ function usePreviewScale(scrollRef) {
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
 const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
-  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => i.titre)), [localisations]);
+  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(itemHasReportContent)), [localisations]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
