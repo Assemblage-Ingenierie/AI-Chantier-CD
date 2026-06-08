@@ -100,6 +100,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
+  const annotatorRef = useRef(); // ref vers Annotator (expose getAnnotation() pour la nav photo)
   const recogRef       = useRef(null);
   const recordingRef   = useRef(false);
   const recogSessionId = useRef(0);
@@ -434,8 +435,24 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
   if (annotatingPhotoIdx !== null) {
     const ph = form.photos[annotatingPhotoIdx];
+    const total = form.photos.length;
+    // Applique les annotations en cours à la photo courante SANS fermer (avant de naviguer).
+    const applyCurrentAnnotation = () => {
+      const a = annotatorRef.current?.getAnnotation?.();
+      if (!a) return;
+      setForm(f => ({
+        ...f,
+        photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: a.paths, annotated: a.annotated, annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale ?? null } : p),
+      }));
+    };
+    const goToPhoto = (newIdx) => {
+      if (newIdx < 0 || newIdx >= total || newIdx === annotatingPhotoIdx) return;
+      applyCurrentAnnotation(); // sauve l'annotation en cours → zéro perte
+      setAnnotatingPhotoIdx(newIdx);
+    };
     return (
       <Annotator
+        ref={annotatorRef}
         bgImage={ph?.data}
         savedPaths={ph?.annotations || []}
         onSave={(paths, exported, dims) => {
@@ -446,6 +463,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
           setAnnotatingPhotoIdx(null);
         }}
         onClose={() => setAnnotatingPhotoIdx(null)}
+        onPrev={annotatingPhotoIdx > 0 ? () => goToPhoto(annotatingPhotoIdx - 1) : null}
+        onNext={annotatingPhotoIdx < total - 1 ? () => goToPhoto(annotatingPhotoIdx + 1) : null}
+        photoPosition={total > 1 ? `${annotatingPhotoIdx + 1} / ${total}` : null}
       />
     );
   }
