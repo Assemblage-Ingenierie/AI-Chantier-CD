@@ -347,7 +347,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0 }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -459,6 +459,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: ratio * 0.5 * annotScale };
     },
   }), [paths, annotScale, exportSizeMultiplier, vpNumByPath, vpBase]);
+
+  // Navigation préc/suiv entre photos — via ref pour rester à jour dans le handler clavier.
+  const navRef = useRef({});
+  navRef.current = { onPrev, onNext };
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
   // Numérotation Vxx GLOBALE : les marqueurs déjà connus (numéro résolu au chargement, stocké
@@ -667,6 +671,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           setSelTextIdx(null);
         }
       }
+      // Flèches ←/→ : photo précédente / suivante (la sauvegarde des annotations en cours
+      // est gérée par le parent via getAnnotation()).
+      if (e.key === 'ArrowLeft' && navRef.current.onPrev) { e.preventDefault(); navRef.current.onPrev(); }
+      if (e.key === 'ArrowRight' && navRef.current.onNext) { e.preventDefault(); navRef.current.onNext(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1387,6 +1395,33 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
+
+      {/* ── Navigation photo précédente / suivante (flèches cliquables + touches ←/→) ── */}
+      {onPrev && (
+        <button onClick={onPrev} title="Photo précédente (←)" aria-label="Photo précédente"
+          style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', zIndex:60,
+            width:46, height:64, borderRadius:12, border:'none', cursor:'pointer',
+            background:'rgba(0,0,0,0.5)', color:'#fff', fontSize:32, lineHeight:1,
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+          ‹
+        </button>
+      )}
+      {onNext && (
+        <button onClick={onNext} title="Photo suivante (→)" aria-label="Photo suivante"
+          style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', zIndex:60,
+            width:46, height:64, borderRadius:12, border:'none', cursor:'pointer',
+            background:'rgba(0,0,0,0.5)', color:'#fff', fontSize:32, lineHeight:1,
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+          ›
+        </button>
+      )}
+      {photoPosition && (onPrev || onNext) && (
+        <div style={{ position:'absolute', bottom:14, left:'50%', transform:'translateX(-50%)', zIndex:60,
+          background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:12, fontWeight:700,
+          padding:'4px 12px', borderRadius:20, pointerEvents:'none' }}>
+          {photoPosition}
+        </div>
+      )}
 
       {/* ── Bandeau titre (ex: nom du plan) ── */}
       {title && (
