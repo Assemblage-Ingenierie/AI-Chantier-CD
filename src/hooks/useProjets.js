@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -200,7 +200,9 @@ export function useProjets(onSyncStatus) {
   const savingRef = useRef(false);
   const historyRef = useRef([]);
   const deletedIdsRef = useRef(getPersistedDeletedIds()); // IDs supprimés — survivent aux rechargements
-  const dirtyIds = useRef(new Set());
+  // dirtyIds persistés : survivent au rechargement/fermeture pour que mergeWithLocal sache
+  // que ces projets ont des modifs locales non sauvées → garde le local plutôt que le remote.
+  const dirtyIds = useRef(getPersistedDirtyIds());
   const cacheSaveRef = useRef(null); // debounce pour la sauvegarde localStorage rapide
   const snapshotRef = useRef(null);  // debounce pour la boîte noire IndexedDB
 
@@ -215,6 +217,8 @@ export function useProjets(onSyncStatus) {
     // par le pipeline de sync. Debounce 3 s pour limiter les écritures.
     clearTimeout(snapshotRef.current);
     snapshotRef.current = setTimeout(() => saveSnapshot(projetsRef.current), 3000);
+    // Persister la liste des modifs non synchronisées (survit au rechargement).
+    setPersistedDirtyIds(dirtyIds.current);
   }, [projets]);
 
   useEffect(() => {
@@ -350,9 +354,12 @@ export function useProjets(onSyncStatus) {
           dirtyIds.current.clear();
           const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds);
           if (!retryOk) dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
+          setPersistedDirtyIds(dirtyIds.current); // refléter l'état après (re)tentative
           savingRef.current = false;
         }, 15000);
       }
+      // Persister l'état réel des dirtyIds après la sauvegarde (vidé si succès, restauré sinon).
+      setPersistedDirtyIds(dirtyIds.current);
       savingRef.current = false;
     }, 2000);
     return () => clearTimeout(debounceRef.current);

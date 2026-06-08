@@ -171,6 +171,22 @@ export async function getSnapshot(ts) {
   });
 }
 
+// Purge tous les instantanés — appelé à la déconnexion pour éviter qu'un autre
+// utilisateur sur le même appareil ne se voie proposer les données du précédent.
+export async function clearSnapshots() {
+  const db = await openDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
 // Compare un instantané au state chargé. Retourne la liste des projets dont le contenu
 // a NETTEMENT diminué (ou disparu) — signal d'une possible perte de données.
 // Conservateur : ne signale que les régressions importantes pour éviter les faux positifs

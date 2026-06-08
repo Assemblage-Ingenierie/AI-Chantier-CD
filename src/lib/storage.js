@@ -1,5 +1,6 @@
 import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
+import { clearSnapshots } from './backupVault.js';
 
 const SIGNED_URL_TTL = 604800; // 7 jours — synchro avec urlCache.js
 
@@ -1056,6 +1057,27 @@ function removePersistedDeletedId(id) {
   } catch {}
 }
 
+// IDs des projets avec des modifications locales NON synchronisées vers Supabase.
+// Persistés pour survivre à un rechargement/fermeture : sans ça, dirtyIds repart vide
+// au démarrage et mergeWithLocal peut écraser le travail local non sauvé avec le remote
+// (cause de l'incident "travail PC disparu à la réouverture").
+const PERSISTED_DIRTY_IDS_KEY = '_chantierai_dirty_ids_v1';
+
+export function getPersistedDirtyIds() {
+  try {
+    const raw = localStorage.getItem(PERSISTED_DIRTY_IDS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+
+export function setPersistedDirtyIds(ids) {
+  try {
+    localStorage.setItem(PERSISTED_DIRTY_IDS_KEY, JSON.stringify([...(ids || [])]));
+  } catch {}
+}
+
 //   - localOnly + jamais dans persistedIds → vraiment unsynced → push back
 // Sans ça, un appareil offline ré-pousse les projets supprimés ailleurs.
 const PERSISTED_REMOTE_IDS_KEY = '_chantierai_remote_ids_v1';
@@ -1083,8 +1105,10 @@ export function clearLocalData() {
       localStorage.removeItem(SK);
       localStorage.removeItem(PERSISTED_REMOTE_IDS_KEY);
       localStorage.removeItem(PERSISTED_DELETED_IDS_KEY);
+      localStorage.removeItem(PERSISTED_DIRTY_IDS_KEY);
     }
     delete _mem[SK];
+    clearSnapshots(); // purge la boîte noire (évite de proposer les données d'un autre utilisateur)
   } catch {}
   _lastRemoteIds = null;
   _knownVisitIdsByProject = new Map();
