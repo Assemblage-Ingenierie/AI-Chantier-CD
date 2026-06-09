@@ -561,8 +561,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }], drawScales, strokeScale);
     }
 
-    // Poignées des textes (toujours visibles en mode texte)
-    if (tool === 'text') {
+    // Poignées des textes (visibles en mode Texte ET Sélect. → on peut bouger cadre + flèche)
+    if (tool === 'text' || tool === 'select') {
       paths.forEach((p, i) => {
         if (p.type !== 'text') return;
         const isSel = i === selTextIdx;
@@ -914,6 +914,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           }
         }
         if (p.type === 'text') {
+          // Poignée orange (pointe de flèche) — prioritaire, déplaçable aussi en mode Sélect.
+          if (p.textMode === 'arrow' && p.arrowX != null &&
+              Math.hypot(p.arrowX - pos.x, p.arrowY - pos.y) < hitR * 0.95) {
+            setSelTextIdx(i); setSelAnnot(null);
+            textDragRef.current = { mode: 'tip', origArrowX: p.arrowX, origArrowY: p.arrowY, tapX: pos.x, tapY: pos.y };
+            setDrawing(true); return;
+          }
           const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
           const fs = (20 + p.size * 4) * txtScale;
           const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
