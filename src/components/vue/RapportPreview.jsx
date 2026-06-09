@@ -917,7 +917,7 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override).
   // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
   // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
@@ -932,14 +932,14 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
     const primaryBg = loc.planBg || (loc.planId && planLibrary?.find(p => p.id === loc.planId)?.bg) || null;
     if (loc.planId || loc.planBg) {
       if (loc.planReportHidden) collectHidden(loc.planId, loc.planAnnotations);
-      else plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+      else plans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null, epIdx: null });
     }
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
       if (ep.reportHidden) { collectHidden(ep.planId, ep.planAnnotations); continue; }
       const epBg = ep.planBg || (ep.planId && planLibrary?.find(p => p.id === ep.planId)?.bg) || null;
       if (!epBg && !ep.planId && !ep.planAnnotations?.exported) continue;
-      plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
+      plans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null, epIdx: i });
     }
     // Fusion des paths masqués dans le plan visible correspondant
     if (hiddenPaths.size > 0) {
@@ -967,8 +967,19 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
           Plan — {loc.nom}
         </span>
         {allPaths.length > 0 && (
-          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', marginLeft:'auto' }}>
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", color:'#4D4D4D', marginLeft: onEditPlan ? 0 : 'auto' }}>
             {allPaths.length} annotation{allPaths.length > 1 ? 's' : ''}
+          </span>
+        )}
+        {onEditPlan && (
+          <span data-print="hide" style={{ marginLeft:'auto', display:'flex', gap:4 }}>
+            {allPlans.map((p, i) => p.bg && (
+              <button key={i} onClick={() => onEditPlan(loc.id, p.epIdx, p.bg, p.annotations?.paths || [])}
+                title="Ajuster les annotations sur ce plan"
+                style={{ padding:'2px 8px', borderRadius:4, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, fontSize:9, fontWeight:700, cursor:'pointer', letterSpacing:0.2 }}>
+                ✎ {allPlans.length > 1 ? `Plan ${i + 1}` : 'Ajuster'}
+              </button>
+            ))}
           </span>
         )}
       </div>
@@ -1505,26 +1516,27 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 
   // Génère, à partir du commentaire de l'observation, un résumé "Désordre" (problèmes constatés,
   // stocké dans le champ titre) ET un résumé "Solution" (réparation préconisée).
-  const genRow = async (row) => {
+  const genRow = async (row, opts = {}) => {
     if (!onUpdateRecap || !row.commentaire) return;
     setLoadingAI(row.itemId); setAiErr(null);
     try {
       const txt = row.commentaire.replace(/<[^>]+>/g, ' ').replace(/\*{1,3}/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
       const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"<résume en quelques mots les désordres / problèmes constatés>","solution":"<résume en quelques mots la solution / réparation préconisée, ou cha\\u00eene vide si aucune n'est évoquée>"}. Quelques mots chacun, en français, factuel, sans ponctuation finale, sans markdown.`;
-      const d = await callAIProxy({ feature: 'recap_row', model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
+      const d = await callAIProxy({ feature: 'recap_row', _waitOk: opts.waitOk, model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
       const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
       let obj = null; try { obj = JSON.parse(raw); } catch {}
       if (obj) {
-        if (obj.desordre) onUpdateRecap(row.itemId, 'titre', String(obj.desordre).trim());
+        if (String(obj.desordre ?? '').trim()) onUpdateRecap(row.itemId, 'titre', String(obj.desordre).trim());
         if (obj.solution != null) onUpdateRecap(row.itemId, 'solution', String(obj.solution).trim());
       }
-    } catch (e) { setAiErr(e.message); }
-    setLoadingAI(null);
+    } catch (e) { setAiErr(e.message); throw e; }
+    finally { setLoadingAI(null); }
   };
 
-  // Génération AUTOMATIQUE : pour chaque ligne ayant un commentaire mais pas encore de résumé
-  // (désordre/solution), on génère une fois. Le résultat est persisté (override) → pas de
-  // re-génération aux ouvertures suivantes ; l'utilisateur peut éditer ensuite.
+  // Génération AUTOMATIQUE : pour chaque ligne avec commentaire mais sans désordre/solution.
+  // _waitOk=true → callAIProxy attend le throttle au lieu de lever une erreur.
+  // Désordre : déclenché dès qu'aucun override titre n'est encore enregistré.
+  // Solution  : déclenché dès qu'aucun override solution n'est encore enregistré.
   useEffect(() => {
     if (!onUpdateRecap) return;
     let cancelled = false;
@@ -1533,11 +1545,12 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         if (cancelled) break;
         if (!row.commentaire || genDoneRef.current.has(row.itemId)) continue;
         const ov = ovMap.get(row.itemId) || {};
-        const needsDesordre = !(row.titre && row.titre.trim());
-        const needsSolution = !(ov.solution && String(ov.solution).trim());
+        const needsDesordre = !('titre' in ov && String(ov.titre).trim());
+        const needsSolution  = !(ov.solution && String(ov.solution).trim());
         if (!needsDesordre && !needsSolution) { genDoneRef.current.add(row.itemId); continue; }
         genDoneRef.current.add(row.itemId);
-        await genRow(row);
+        try { await genRow(row, { waitOk: true }); }
+        catch { genDoneRef.current.delete(row.itemId); } // retry permis si erreur
       }
     })();
     return () => { cancelled = true; };
@@ -1646,7 +1659,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -1797,14 +1810,32 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   // ── Impression navigateur (preview = PDF pixel-perfect) ──────────────────────────────────
   useImperativeHandle(ref, () => ({
-    print: () => {
+    print: async () => {
       const pages = pageRefs.current.filter(Boolean);
       if (!pages.length) return;
 
       const win = window.open('', '_blank');
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
-      const pagesHtml = pages.map(el => {
+      // Compresse les photos trop lourdes avant inclusion dans le PDF.
+      // Cible : images > 400 KB en data URL (photos non annotées, résolution native).
+      // Qualité JPEG 0.72 à max 1400px → qualité visuelle préservée, taille réduite.
+      const compressIfNeeded = (src) => new Promise(resolve => {
+        if (!src || !src.startsWith('data:image/') || src.length < 400000) { resolve(src); return; }
+        const img = new window.Image();
+        img.onload = () => {
+          const maxW = 1400;
+          const scale = Math.min(1, maxW / img.naturalWidth);
+          const W = Math.round(img.naturalWidth * scale), H = Math.round(img.naturalHeight * scale);
+          const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+          cv.getContext('2d').drawImage(img, 0, 0, W, H);
+          resolve(cv.toDataURL('image/jpeg', 0.72));
+        };
+        img.onerror = () => resolve(src);
+        img.src = src;
+      });
+
+      const pagesHtml = (await Promise.all(pages.map(async el => {
         // Capturer le contenu des canvas sur l'ORIGINAL avant clonage —
         // cloneNode(true) copie la structure DOM mais pas les pixels des canvas.
         const origCanvases = Array.from(el.querySelectorAll('canvas'));
@@ -1834,9 +1865,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           } catch {}
         });
 
+        // Compresser les photos non-annotées (data URL bruts, potentiellement très lourds)
+        await Promise.all(Array.from(clone.querySelectorAll('img[src]')).map(async img => {
+          img.src = await compressIfNeeded(img.src);
+        }));
+
         clone.style.marginTop = '0';
         return `<div class="pdf-page">${clone.innerHTML}</div>`;
-      }).join('\n');
+      }))).join('\n');
 
       // CSS : 1px CSS = 1/96 inch, 1mm = 3.7795px → PW=630px = 166.7mm.
       // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.
@@ -1970,7 +2006,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
                 }
               </div>
@@ -2031,7 +2067,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
@@ -2117,7 +2153,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
               <div ref={el => { pageRefs.current[pageIdx] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId} vpNumByPath={vpNumByPath} hideLegend={true}/>
+                  <PlanBlock loc={seg.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} plansSubset={seg.plans} topBreakId={seg.topBreakId} vpNumByPath={vpNumByPath} hideLegend={true} onEditPlan={onEditPlan}/>
                   {isLastPlanPage && combinedPlanLegend && (
                     <div style={{ padding:'8px 12px 10px', background:'#F2F2F2', borderTop:`1px solid #DFE4E8` }}>
                       <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>Légende</div>
