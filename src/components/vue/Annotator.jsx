@@ -131,11 +131,14 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       }
     } else if (p.type === 'text') {
       const fs = 20 + p.size * 4;
+      const lh = fs * 1.2;            // hauteur de ligne (texte multi-ligne)
       const pad = 10;
+      const lines = String(p.text ?? '').split('\n');
       ctx.save();
       ctx.font = `bold ${fs}px Arial`;
-      const tw = ctx.measureText(p.text).width;
+      const tw = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
       ctx.restore();
+      const textH = fs + (lines.length - 1) * lh; // hauteur totale du bloc de texte
 
       // ── Flèche EN PREMIER, en coordonnées ABSOLUES (dessinée SOUS le cadre).
       //    La pointe (arrowX/arrowY) reste strictement fixe : indépendante de la position
@@ -143,7 +146,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       //    du texte → elle bougeait au déplacement du cadre et à l'agrandissement). ──
       if (p.textMode === 'arrow' && p.x != null) {
         const absBx = p.x - sT * pad, absBy = p.y - sT * (fs + 4);
-        const absBw = sT * (tw + pad * 2), absBh = sT * (fs + pad + 6);
+        const absBw = sT * (tw + pad * 2), absBh = sT * (textH + pad + 6);
         const bcx = absBx + absBw / 2, bcy = absBy + absBh / 2;
         const tipX = p.arrowX ?? (p.x + tw / 2);
         const tipY = p.arrowY ?? (absBy + absBh + 16 * ss);
@@ -181,17 +184,16 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       }
       ctx.font = `bold ${fs}px Arial`;
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-        const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = fs + pad + 6;
+        const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = textH + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
         ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
         ctx.fillStyle = p.color;
-        ctx.fillText(p.text, p.x, p.y);
+        lines.forEach((ln, i) => ctx.fillText(ln, p.x, p.y + i * lh));
       } else {
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sT;
-        ctx.strokeText(p.text, p.x, p.y);
         ctx.fillStyle = p.color;
-        ctx.fillText(p.text, p.x, p.y);
+        lines.forEach((ln, i) => { ctx.strokeText(ln, p.x, p.y + i * lh); ctx.fillText(ln, p.x, p.y + i * lh); });
       }
       ctx.restore();
     } else if (p.type === 'shape') {
@@ -587,12 +589,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.beginPath(); ctx.arc(hcx, hcy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
         if (isSel) {
+          const _lines = String(p.text ?? '').split('\n');
           const fs = (20 + p.size * 4) * sText;
+          const _lh = fs * 1.2;
           ctx.font = `bold ${20 + p.size * 4}px Arial`;
-          const tw = ctx.measureText(p.text).width * sText;
+          const tw = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0) * sText;
           const pad = 10 * sText;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
-          ctx.strokeRect(p.x - pad, p.y - fs - 4 * sText, tw + pad * 2, fs + pad + 6 * sText);
+          ctx.strokeRect(p.x - pad, p.y - fs - 4 * sText, tw + pad * 2, fs + (_lines.length - 1) * _lh + pad + 6 * sText);
         }
         ctx.restore();
       });
@@ -923,13 +927,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           }
           const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
           const fs = (20 + p.size * 4) * txtScale;
-          const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
+          const _ls = String(p.text ?? '').split('\n');
+          const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
+          const approxW = Math.max(80, _maxLen * fs * 0.6) + 20;
+          const _extraH = (_ls.length - 1) * fs * 1.2; // lignes supplémentaires (multi-ligne)
           const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
-          // Boîte de clic sur TOUTE l'étendue du texte (et plus seulement boxed/arrow) :
-          // un clic n'importe où sur le texte le sélectionne.
+          // Boîte de clic sur TOUTE l'étendue du texte (toutes les lignes) :
           const inBox =
             pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
-            pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
+            pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale + _extraH;
           if (inCircle || inBox) {
             const wasSelected = selTextIdx === i;
             setSelTextIdx(i); setSelAnnot(null);
@@ -1035,12 +1041,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
         const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
         const fs = (20 + p.size * 4) * txtScale;
-        // Largeur estimée GÉNÉREUSE de l'encadré (marge confortable) → on peut attraper
-        // le texte n'importe où dans son cadre, y compris les coins.
-        const approxW = Math.max(90, p.text.length * fs * 0.62) + 30 * txtScale;
+        const _ls = String(p.text ?? '').split('\n');
+        const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
+        const _extraH = (_ls.length - 1) * fs * 1.2; // lignes supplémentaires (multi-ligne)
+        // Largeur/hauteur estimées GÉNÉREUSES de l'encadré → on attrape le texte partout.
+        const approxW = Math.max(90, _maxLen * fs * 0.62) + 30 * txtScale;
         const inBox =
           pos.x >= p.x - 16 * txtScale && pos.x <= p.x + approxW &&
-          pos.y >= p.y - fs - 12 * txtScale && pos.y <= p.y + 16 * txtScale;
+          pos.y >= p.y - fs - 12 * txtScale && pos.y <= p.y + 16 * txtScale + _extraH;
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
@@ -1874,9 +1882,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   onPointerDown={() => confirmInlineEdit()}/>
                 <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
                   transform:'translate(-4px, -36px)', pointerEvents:'auto' }}>
-                  <input autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
+                  <textarea autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
+                    rows={Math.max(1, inlineEditVal.split('\n').length)}
                     onKeyDown={e=>{
-                      if(e.key==='Enter'){ e.preventDefault(); confirmInlineEdit(); }
+                      // Entrée = saut de ligne (zone de texte libre). Validation = clic à côté.
                       if(e.key==='Escape'){ e.preventDefault(); cancelInlineEdit(); }
                       if((e.key==='Delete'||e.key==='Backspace') && !inlineEditVal){
                         e.preventDefault();
@@ -1884,11 +1893,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                         cancelInlineEdit();
                       }
                     }}
-                    placeholder="Texte…"
+                    placeholder="Texte… (Entrée = nouvelle ligne, cliquez à côté pour valider)"
                     style={{ fontSize:14, background:'rgba(20,20,20,0.95)', color:'white',
                       border:'2px solid '+DA.red, borderRadius:6, padding:'6px 10px',
-                      outline:'none', minWidth:160,
-                      width:(Math.max(160, inlineEditVal.length * 10 + 40))+'px',
+                      outline:'none', minWidth:160, resize:'none', overflow:'hidden',
+                      lineHeight:1.3, whiteSpace:'pre',
+                      width:(Math.max(160, Math.max(...inlineEditVal.split('\n').map(l=>l.length), 0) * 10 + 40))+'px',
                       maxWidth:'80vw', fontFamily:'inherit',
                       boxShadow:'0 3px 14px rgba(0,0,0,0.65)' }}/>
                 </div>
