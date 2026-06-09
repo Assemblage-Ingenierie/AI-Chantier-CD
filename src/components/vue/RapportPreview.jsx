@@ -1824,7 +1824,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       win.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${printTitle}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Open+Sans:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 portrait; margin: 0; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; font-family: 'Open Sans', 'Inter', system-ui, -apple-system, sans-serif; }
@@ -1838,20 +1839,22 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
       win.document.close();
       const doPrint = () => { try { win.focus(); win.print(); } catch {} };
-      // Attendre que les fonts ET toutes les images soient chargées (signed URLs Supabase)
+      // On n'attend que les images NON encore chargées (les data-URL et images en cache HTTP
+      // sont déjà prêtes → résolution quasi instantanée). Plafond court pour ne pas bloquer.
       const waitImages = () => new Promise(resolve => {
-        const imgs = Array.from(win.document.images);
-        if (!imgs.length) { resolve(); return; }
-        let pending = imgs.filter(i => !i.complete).length;
-        if (!pending) { resolve(); return; }
-        const done = () => { pending--; if (pending <= 0) resolve(); };
-        imgs.forEach(img => { if (!img.complete) { img.addEventListener('load', done); img.addEventListener('error', done); } });
-        setTimeout(resolve, 8000); // timeout absolu 8s
+        const pending = Array.from(win.document.images).filter(i => !i.complete);
+        if (!pending.length) { resolve(); return; }
+        let n = pending.length;
+        const done = () => { if (--n <= 0) resolve(); };
+        pending.forEach(img => { img.addEventListener('load', done); img.addEventListener('error', done); });
+        setTimeout(resolve, 3500);
       });
-      Promise.race([
-        Promise.all([win.document.fonts?.ready ?? Promise.resolve(), waitImages()]),
-        new Promise(r => setTimeout(r, 10000)),
-      ]).then(doPrint);
+      // Le navigateur attend lui-même les polices avant d'imprimer → on ne bloque pas longtemps ici.
+      const waitFonts = Promise.race([
+        win.document.fonts?.ready ?? Promise.resolve(),
+        new Promise(r => setTimeout(r, 1200)),
+      ]);
+      Promise.all([waitFonts, waitImages()]).then(doPrint);
     }
   }));
 
