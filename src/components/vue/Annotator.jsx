@@ -406,6 +406,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const annotDragRef   = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
   const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
   const resizeDragRef  = useRef(null); // { handle, origData, idx } — resize poignée forme
+  // Position RÉELLE du carré de redimensionnement du texte sélectionné (coords canvas),
+  // renseignée pendant le dessin → garantit que le hit-test coïncide pixel-près avec ce qui
+  // est affiché (la largeur mesurée diffère de l'approximation par nb de caractères).
+  const resizeHandleRef = useRef(null); // { idx, x, y, twU } | null
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
@@ -595,6 +599,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
     // Poignées des textes (visibles en mode Texte ET Sélect. → on peut bouger cadre + flèche)
     if (tool === 'text' || tool === 'select') {
+      resizeHandleRef.current = null; // recalculé ci-dessous si un texte encadré est sélectionné
       paths.forEach((p, i) => {
         if (p.type !== 'text') return;
         const isSel = i === selTextIdx;
@@ -652,6 +657,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           if (p.textMode === 'boxed' || p.textMode === 'arrow') {
             const rhs = 8 * ratio;
             const hrX = bx + bw, hrY = by;
+            // Mémorise la position EXACTE du carré pour le hit-test (twU = largeur non scalée).
+            resizeHandleRef.current = { idx: i, x: hrX, y: hrY, twU };
             ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
             ctx.beginPath(); ctx.rect(hrX - rhs, hrY - rhs, rhs * 2, rhs * 2); ctx.fill(); ctx.stroke();
           }
@@ -966,21 +973,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const hitR = 22 * (cv.width / cv.clientWidth);
       const ratio_s = cv.width / cv.clientWidth;
       // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
-      // (sans ça, une annotation posée au-dessus intercepte le clic avant qu'on atteigne le check)
-      if (selTextIdx !== null && paths[selTextIdx]) {
-        const pSel = paths[selTextIdx];
-        if (pSel.textMode === 'boxed' || pSel.textMode === 'arrow') {
-          const txtScaleSel = ratio_s * 0.5 * scaleText;
-          const fsSel = (20 + pSel.size * 4) * txtScaleSel;
-          const _lsSel = String(pSel.text ?? '').split('\n');
-          const approxTwUSel = pSel.textW ?? _lsSel.reduce((m, l) => Math.max(m, l.length * (20 + pSel.size * 4) * 0.6), 0);
-          const hrXSel = pSel.x + (approxTwUSel + 10) * txtScaleSel;
-          const hrYSel = pSel.y - fsSel - 4 * txtScaleSel;
-          if (Math.abs(pos.x - hrXSel) < 22 * ratio_s && Math.abs(pos.y - hrYSel) < 22 * ratio_s) {
-            textDragRef.current = { mode: 'resize', origTextW: pSel.textW ?? approxTwUSel, tapX: pos.x };
-            setDrawing(true); return;
-          }
-        }
+      // Position lue depuis resizeHandleRef (dessinée au pixel près) → plus d'approximation.
+      const rh_s = resizeHandleRef.current;
+      if (rh_s && rh_s.idx === selTextIdx &&
+          Math.abs(pos.x - rh_s.x) < 24 * ratio_s && Math.abs(pos.y - rh_s.y) < 24 * ratio_s) {
+        textDragRef.current = { mode: 'resize', origTextW: rh_s.twU, tapX: pos.x };
+        setDrawing(true); return;
       }
       // Resize handles first (if a shape is currently selected)
       if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
@@ -1030,16 +1028,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           const fs = (20 + p.size * 4) * txtScale;
           const _ls = String(p.text ?? '').split('\n');
           const _extraH = (_ls.length - 1) * fs * 1.2;
-          // Poignée de resize droite (textes encadrés/flèche sélectionnés)
-          if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
-            const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
-            const hrX = p.x + (approxTwU + 10) * txtScale;
-            const hrY = p.y - fs - 4 * txtScale;
-            if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
-              textDragRef.current = { mode: 'resize', origTextW: p.textW ?? approxTwU, tapX: pos.x };
-              setDrawing(true); return;
-            }
-          }
+          // (la poignée de resize est testée avant la boucle via resizeHandleRef)
           const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
           const approxW = p.textW != null ? p.textW * txtScale + 20 * txtScale : Math.max(80, _maxLen * fs * 0.6) + 20;
           const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
@@ -1133,20 +1122,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const hitR = 28 * (cv.width / cv.clientWidth);
       const ratio_t = cv.width / cv.clientWidth;
       // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
-      if (selTextIdx !== null && paths[selTextIdx]) {
-        const pSel = paths[selTextIdx];
-        if (pSel.textMode === 'boxed' || pSel.textMode === 'arrow') {
-          const txtScaleSel = ratio_t * 0.5 * scaleText;
-          const fsSel = (20 + pSel.size * 4) * txtScaleSel;
-          const _lsSel = String(pSel.text ?? '').split('\n');
-          const approxTwUSel = pSel.textW ?? _lsSel.reduce((m, l) => Math.max(m, l.length * (20 + pSel.size * 4) * 0.6), 0);
-          const hrXSel = pSel.x + (approxTwUSel + 10) * txtScaleSel;
-          const hrYSel = pSel.y - fsSel - 4 * txtScaleSel;
-          if (Math.abs(pos.x - hrXSel) < 22 * ratio_t && Math.abs(pos.y - hrYSel) < 22 * ratio_t) {
-            textDragRef.current = { mode: 'resize', origTextW: pSel.textW ?? approxTwUSel, tapX: pos.x };
-            setDrawing(true); return;
-          }
-        }
+      // Position lue depuis resizeHandleRef (dessinée au pixel près) → plus d'approximation.
+      const rh_t = resizeHandleRef.current;
+      if (rh_t && rh_t.idx === selTextIdx &&
+          Math.abs(pos.x - rh_t.x) < 24 * ratio_t && Math.abs(pos.y - rh_t.y) < 24 * ratio_t) {
+        textDragRef.current = { mode: 'resize', origTextW: rh_t.twU, tapX: pos.x };
+        setDrawing(true); return;
       }
       // Vérifier d'abord la poignée de flèche (tip)
       for (let i = paths.length - 1; i >= 0; i--) {
@@ -1162,7 +1143,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }
       // Puis la boîte de texte — détection élargie à toute la zone du texte
       let existIdx = -1;
-      let existIsResize = false;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'text') continue;
@@ -1170,15 +1150,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const fs = (20 + p.size * 4) * txtScale;
         const _ls = String(p.text ?? '').split('\n');
         const _extraH = (_ls.length - 1) * fs * 1.2;
-        // Resize handle (top-right corner of selected boxed/arrow text)
-        if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
-          const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
-          const hrX = p.x + (approxTwU + 10) * txtScale;
-          const hrY = p.y - fs - 4 * txtScale;
-          if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
-            existIdx = i; existIsResize = true; break;
-          }
-        }
+        // (la poignée de resize est testée avant la boucle via resizeHandleRef)
         const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
         const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
         const approxW = p.textW != null ? p.textW * txtScale + 20 * txtScale : Math.max(90, _maxLen * fs * 0.62) + 30 * txtScale;
@@ -1188,14 +1160,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
-        if (existIsResize) {
-          const p = paths[existIdx];
-          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
-          const _ls = String(p.text ?? '').split('\n');
-          const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
-          textDragRef.current = { mode: 'resize', origTextW: approxTwU, tapX: pos.x };
-          setSelTextIdx(existIdx); setDrawing(true); return;
-        }
         // 1er tap = sélection (drag possible). 2e tap sur un texte déjà sélectionné = édition (géré au relâchement).
         const wasSelected = selTextIdx === existIdx;
         setSelTextIdx(existIdx);
