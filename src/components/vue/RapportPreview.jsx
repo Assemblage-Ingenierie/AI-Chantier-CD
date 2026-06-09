@@ -856,7 +856,10 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       // on recale les coordonnées des chemins pour qu'ils restent bien positionnés.
       const coordScale = (hdBg && bgNaturalW && cv.width !== bgNaturalW) ? cv.width / bgNaturalW : 1;
       drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
-      setRenderedImg(cv.toDataURL('image/png'));
+      // JPEG (qualité 0.92) plutôt que PNG : le plan est opaque (fond blanc) donc aucune
+      // transparence perdue, mais le data-URL est ~10× plus léger → aperçu et surtout
+      // génération PDF (document.write de la fenêtre d'impression) nettement plus rapides.
+      setRenderedImg(cv.toDataURL('image/jpeg', 0.92));
     };
     el.onerror = () => setRenderedImg(exported || bgSrc);
     el.src = bgSrc;
