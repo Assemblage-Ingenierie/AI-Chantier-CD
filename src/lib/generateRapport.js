@@ -15,17 +15,9 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
     if (hd) planBg = hd;
   }
   const exported = planAnnotations?.exported;
-  const rawPaths = planAnnotations?.paths;
+  const paths    = planAnnotations?.paths;
   if (!planBg) return exported ?? null;
-  if (!rawPaths?.length) return planBg;
-  // Une photo = un seul marqueur par plan : on ne dessine qu'un viewpoint par photoIdx
-  // (filet de sécurité contre d'anciennes données polluées par la propagation cross-zone).
-  const vpSeen = new Set();
-  const paths = rawPaths.filter(p => {
-    if (p.type !== 'viewpoint' || p.photoIdx == null) return true;
-    if (vpSeen.has(p.photoIdx)) return false;
-    vpSeen.add(p.photoIdx); return true;
-  });
+  if (!paths?.length) return planBg;
   // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
   const drawPaths = vpNumByPath
     ? paths.map(p => {
