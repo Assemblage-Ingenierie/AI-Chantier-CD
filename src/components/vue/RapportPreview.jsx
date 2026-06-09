@@ -1501,20 +1501,47 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 
   const [loadingAI, setLoadingAI] = useState(null);
   const [aiErr, setAiErr] = useState(null);
-  const genSolution = async (row) => {
-    if (!onUpdateRecap) return;
+  const genDoneRef = useRef(new Set());
+
+  // Génère, à partir du commentaire de l'observation, un résumé "Désordre" (problèmes constatés,
+  // stocké dans le champ titre) ET un résumé "Solution" (réparation préconisée).
+  const genRow = async (row) => {
+    if (!onUpdateRecap || !row.commentaire) return;
     setLoadingAI(row.itemId); setAiErr(null);
     try {
-      const ctx = row.commentaire
-        ? `\nContexte de l'observation : ${row.commentaire.replace(/<[^>]+>/g,'').replace(/\*{1,3}/g,'').slice(0, 300)}`
-        : '';
-      const prompt = `Désordre en bâtiment — Zone : ${row.locNom}, Désordre : ${row.titre}.${ctx}\n\nDonne uniquement la solution technique en 6 mots maximum, en français, sans markdown, sans ponctuation finale.`;
-      const d = await callAIProxy({ feature: 'solution_recap', model: 'claude-haiku-4-5-20251001', max_tokens: 60, messages: [{ role:'user', content: prompt }] });
-      const sol = d.content?.[0]?.text?.trim().replace(/^["']|["']$/g,'').replace(/\.$/, '');
-      if (sol) onUpdateRecap(row.itemId, 'solution', sol);
-    } catch(e) { setAiErr(e.message); }
+      const txt = row.commentaire.replace(/<[^>]+>/g, ' ').replace(/\*{1,3}/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+      const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"<résume en quelques mots les désordres / problèmes constatés>","solution":"<résume en quelques mots la solution / réparation préconisée, ou cha\\u00eene vide si aucune n'est évoquée>"}. Quelques mots chacun, en français, factuel, sans ponctuation finale, sans markdown.`;
+      const d = await callAIProxy({ feature: 'recap_row', model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
+      const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
+      let obj = null; try { obj = JSON.parse(raw); } catch {}
+      if (obj) {
+        if (obj.desordre) onUpdateRecap(row.itemId, 'titre', String(obj.desordre).trim());
+        if (obj.solution != null) onUpdateRecap(row.itemId, 'solution', String(obj.solution).trim());
+      }
+    } catch (e) { setAiErr(e.message); }
     setLoadingAI(null);
   };
+
+  // Génération AUTOMATIQUE : pour chaque ligne ayant un commentaire mais pas encore de résumé
+  // (désordre/solution), on génère une fois. Le résultat est persisté (override) → pas de
+  // re-génération aux ouvertures suivantes ; l'utilisateur peut éditer ensuite.
+  useEffect(() => {
+    if (!onUpdateRecap) return;
+    let cancelled = false;
+    (async () => {
+      for (const row of rows) {
+        if (cancelled) break;
+        if (!row.commentaire || genDoneRef.current.has(row.itemId)) continue;
+        const ov = ovMap.get(row.itemId) || {};
+        const needsDesordre = !(row.titre && row.titre.trim());
+        const needsSolution = !(ov.solution && String(ov.solution).trim());
+        if (!needsDesordre && !needsSolution) { genDoneRef.current.add(row.itemId); continue; }
+        genDoneRef.current.add(row.itemId);
+        await genRow(row);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
   const isEditable = !!onUpdateRecap;
@@ -1543,8 +1570,9 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
             <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
               <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
               {isEditable ? (
-                <input value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
-                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0 }}/>
+                <textarea value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
+                  rows={Math.max(1, Math.ceil((row.locNom || '').length / 16))}
+                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden', whiteSpace:'pre-wrap', wordBreak:'break-word' }}/>
               ) : (
                 <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4 }}>{row.locNom || '—'}</div>
               )}
@@ -1556,16 +1584,10 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
                 <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
               )}
               {isEditable ? (
-                <div style={{ display:'flex', gap:3, alignItems:'flex-start' }}>
-                  <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
-                    rows={Math.max(2, Math.ceil((row.solution||'').length / 28))}
-                    placeholder="Solution…"
-                    style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
-                  <button data-print="hide" onClick={() => genSolution(row)} disabled={loadingAI === row.itemId} title="Générer avec l'IA"
-                    style={{ background:'none', border:`1px solid ${DA.border}`, borderRadius:3, padding:'1px 4px', cursor:'pointer', fontSize:9, color:DA.grayL, flexShrink:0, lineHeight:1.2 }}>
-                    {loadingAI === row.itemId ? '…' : '⚡'}
-                  </button>
-                </div>
+                <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
+                  rows={Math.max(2, Math.ceil((row.solution || '').length / 28))}
+                  placeholder={loadingAI === row.itemId ? 'Génération IA…' : 'Solution…'}
+                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
               ) : (
                 <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
               )}

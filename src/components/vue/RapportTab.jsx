@@ -185,7 +185,7 @@ export default function RapportTab({ projet, onUpdate }) {
           locNom:   'zone'     in ov ? ov.zone     : (loc.nom     || ''),
           titre:    'titre'    in ov ? ov.titre    : (i.titre      || ''),
           urgence:  'urgence'  in ov ? ov.urgence  : (i.urgence   || 'basse'),
-          solution: 'solution' in ov ? ov.solution : shortSolution(i.commentaire),
+          solution: 'solution' in ov ? ov.solution : '',
           commentaire: i.commentaire || '',
         };
       }).filter(Boolean)
