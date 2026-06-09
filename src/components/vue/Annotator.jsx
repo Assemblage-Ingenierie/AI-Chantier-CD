@@ -79,15 +79,25 @@ function drawPenteSolPath(ctx, x1, y1, x2, y2, s, c) {
   ctx.restore();
 }
 
-// sizeScale : échelle pour symboles/textes/viewpoints (contrôlé par annotScale)
-// strokeScale : échelle pour les tracés (normalisée en pixels écran, indépendante de annotScale)
+// sizeScale : soit un NOMBRE (échelle commune texte/symbole/viewpoint, comportement historique),
+//   soit un OBJET { text, shape, symbol } pour des échelles INDÉPENDANTES par type.
+//   - text   → taille du texte
+//   - symbol → taille des symboles ET des viewpoints
+//   - shape  → multiplicateur d'épaisseur des formes (1 = inchangé ; les formes ne sont pas
+//     mises à l'échelle géométriquement, elles gardent la taille à laquelle elles sont dessinées)
+// strokeScale : échelle pour les tracés (normalisée en pixels écran, indépendante).
+// Rétro-compat : si on passe un nombre, text=symbol=ce nombre et shape=1 → rendu identique à avant.
 export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null) {
-  const ss = strokeScale ?? sizeScale;
+  const _o   = sizeScale && typeof sizeScale === 'object';
+  const sT   = _o ? (sizeScale.text   ?? 1) : sizeScale; // texte
+  const sSym = _o ? (sizeScale.symbol ?? 1) : sizeScale; // symboles + viewpoints
+  const sShape = _o ? (sizeScale.shape ?? 1) : 1;        // épaisseur formes (neutre par défaut)
+  const ss = strokeScale ?? (_o ? 1 : sizeScale);
   (paths || []).forEach(p => {
     if (p.type === 'viewpoint') {
       ctx.save();
-      if (sizeScale !== 1 && p.x != null) {
-        ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+      if (sSym !== 1 && p.x != null) {
+        ctx.translate(p.x, p.y); ctx.scale(sSym, sSym); ctx.translate(-p.x, -p.y);
       }
       drawVP(ctx, p);
       ctx.restore();
@@ -95,25 +105,25 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       if (p.symbolId === 'portee') {
         ctx.save();
         if (p.x1 != null) {
-          drawPorteePath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sizeScale, p.color);
+          drawPorteePath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sSym, p.color);
         } else {
-          drawPorteePath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sizeScale, p.color);
+          drawPorteePath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sSym, p.color);
         }
         ctx.restore();
       } else if (p.symbolId === 'pente_sol') {
         ctx.save();
         if (p.x1 != null) {
-          drawPenteSolPath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sizeScale, p.color);
+          drawPenteSolPath(ctx, p.x1, p.y1, p.x2, p.y2, p.size * sSym, p.color);
         } else {
-          drawPenteSolPath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sizeScale, p.color);
+          drawPenteSolPath(ctx, p.x - 30, p.y, p.x + 30, p.y, p.size * sSym, p.color);
         }
         ctx.restore();
       } else {
         const sm = getAllSymbols().find(x => x.id === p.symbolId);
         if (sm) {
           ctx.save();
-          if (sizeScale !== 1 && p.x != null) {
-            ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+          if (sSym !== 1 && p.x != null) {
+            ctx.translate(p.x, p.y); ctx.scale(sSym, sSym); ctx.translate(-p.x, -p.y);
           }
           sm.draw(ctx, p.x, p.y, p.size, p.color);
           ctx.restore();
@@ -121,8 +131,8 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       }
     } else if (p.type === 'text') {
       ctx.save();
-      if (sizeScale !== 1 && p.x != null) {
-        ctx.translate(p.x, p.y); ctx.scale(sizeScale, sizeScale); ctx.translate(-p.x, -p.y);
+      if (sT !== 1 && p.x != null) {
+        ctx.translate(p.x, p.y); ctx.scale(sT, sT); ctx.translate(-p.x, -p.y);
       }
       const fs = 20 + p.size * 4;
       ctx.font = `bold ${fs}px Arial`;
@@ -132,7 +142,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         // Fond blanc + bordure couleur — lineWidth constant en pixels écran
         const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = fs + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
-        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sizeScale;
+        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
         if (p.textMode === 'arrow') {
           // Flèche vers le point arrowX/arrowY (ou défaut bas-centre)
@@ -151,7 +161,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
               ex = bcx + (ddx / ddy) * sy2 * hh; ey = bcy + sy2 * hh;
             }
           }
-          ctx.lineWidth = 4.5 * ss / sizeScale; // flèche plus épaisse → bien plus visible
+          ctx.lineWidth = 4.5 * ss / sT; // flèche plus épaisse → bien plus visible
           ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tipX, tipY); ctx.stroke();
           const ta = Math.atan2(tipY - ey, tipX - ex), aL = 18;
           ctx.beginPath();
@@ -164,7 +174,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
       } else {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sizeScale;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sT;
         ctx.strokeText(p.text, p.x, p.y);
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
@@ -173,7 +183,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
     } else if (p.type === 'shape') {
       ctx.save();
       ctx.strokeStyle = p.color;
-      ctx.lineWidth = (p.size || 2) * ss;
+      ctx.lineWidth = (p.size || 2) * ss * sShape;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.globalAlpha = 1;
@@ -196,7 +206,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.globalAlpha = p.strokeOpacity ?? 1;
         const angle = Math.atan2(p.y2 - p.y1, p.x2 - p.x1);
         const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
-        const aLen = Math.max(12, Math.min(len * 0.35, 28 * ss));
+        const aLen = Math.max(12 * sShape, Math.min(len * 0.35, 28 * ss * sShape));
         ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -384,12 +394,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const gestureRef = useRef(null);
   const canvasWrapRef = useRef(null);
 
-  const [annotScale,  setAnnotScale]  = useState(() => {
+  // Échelles INDÉPENDANTES par type (texte / forme / symbole). Migrées depuis l'ancienne
+  // échelle unique 'chantierai_annot_scale' pour que le rendu reste identique au repos.
+  const _oldAnnot = (() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
-    // Réinitialiser à 1 si la valeur sauvegardée était > 1.5 (ancien bug où annotScale affectait les tracés)
-    if (isNaN(v) || v > 1.5) { localStorage.setItem('chantierai_annot_scale', '1'); return 1; }
-    return Math.max(0.3, Math.min(5, v));
-  });
+    return (isNaN(v) || v > 1.5) ? 1 : Math.max(0.3, Math.min(5, v));
+  })();
+  const _readScale = (key, fb) => {
+    const v = parseFloat(localStorage.getItem(key) ?? String(fb));
+    return isNaN(v) ? fb : Math.max(0.3, Math.min(5, v));
+  };
+  const [scaleText,   setScaleText]   = useState(() => _readScale('chantierai_scale_text', _oldAnnot));
+  const [scaleSymbol, setScaleSymbol] = useState(() => _readScale('chantierai_scale_symbol', _oldAnnot));
+  const [scaleShape,  setScaleShape]  = useState(() => _readScale('chantierai_scale_shape', 1));
   const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(false);
@@ -454,12 +471,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ectx.save();
       ectx.scale(EW / cv.width, EH / cv.height);
       const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, ratio * 0.5 * annotScale, ratio);
+      const drawScales = { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape };
+      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, drawScales, ratio);
       ectx.restore();
       const sc = hqScaleRef.current;
-      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: ratio * 0.5 * annotScale };
+      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: ratio * 0.5 * scaleSymbol };
     },
-  }), [paths, annotScale, exportSizeMultiplier, vpNumByPath, vpBase]);
+  }), [paths, scaleText, scaleSymbol, scaleShape, exportSizeMultiplier, vpNumByPath, vpBase]);
 
   // Navigation préc/suiv entre photos — via ref pour rester à jour dans le handler clavier.
   const navRef = useRef({});
@@ -498,17 +516,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
 
     const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : 1;
-    const symbolScale = ratio * 0.5 * annotScale; // symboles/viewpoints/textes : contrôlés par annotScale
-    const strokeScale = ratio;                     // tracés : normalisés en pixels écran, sans annotScale
+    const sText = ratio * 0.5 * scaleText;   // échelle texte
+    const sSym  = ratio * 0.5 * scaleSymbol; // échelle symboles + viewpoints
+    const strokeScale = ratio;               // tracés : normalisés en pixels écran
+    const drawScales = { text: sText, symbol: sSym, shape: scaleShape };
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
-    drawAnnotationPaths(ctx, relabel(all), symbolScale, strokeScale);
+    drawAnnotationPaths(ctx, relabel(all), drawScales, strokeScale);
 
     if (pendingVP) {
       ctx.save();
-      if (symbolScale > 1) {
+      if (sSym > 1) {
         ctx.translate(pendingVP.x, pendingVP.y);
-        ctx.scale(symbolScale, symbolScale);
+        ctx.scale(sSym, sSym);
         ctx.translate(-pendingVP.x, -pendingVP.y);
       }
       drawVP(ctx, { ...pendingVP, label: nextVpLabel, color, size });
@@ -517,14 +537,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
     if (pendingPortee) {
       if (pendingPortee.symbolId === 'pente_sol') {
-        drawPenteSolPath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+        drawPenteSolPath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * sSym, color);
       } else {
-        drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * symbolScale, color);
+        drawPorteePath(ctx, pendingPortee.x1, pendingPortee.y1, pendingPortee.x2, pendingPortee.y2, size * sSym, color);
       }
     }
 
     if (pendingShape && tool === 'shape') {
-      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }], symbolScale, strokeScale);
+      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }], drawScales, strokeScale);
     }
 
     // Poignées des textes (toujours visibles en mode texte)
@@ -553,12 +573,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.beginPath(); ctx.arc(hcx, hcy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
         if (isSel) {
-          const fs = (20 + p.size * 4) * symbolScale;
+          const fs = (20 + p.size * 4) * sText;
           ctx.font = `bold ${20 + p.size * 4}px Arial`;
-          const tw = ctx.measureText(p.text).width * symbolScale;
-          const pad = 10 * symbolScale;
+          const tw = ctx.measureText(p.text).width * sText;
+          const pad = 10 * sText;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
-          ctx.strokeRect(p.x - pad, p.y - fs - 4 * symbolScale, tw + pad * 2, fs + pad + 6 * symbolScale);
+          ctx.strokeRect(p.x - pad, p.y - fs - 4 * sText, tw + pad * 2, fs + pad + 6 * sText);
         }
         ctx.restore();
       });
@@ -636,11 +656,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.beginPath(); ctx.rect(h.x - hr, h.y - hr, hr * 2, hr * 2); ctx.fill(); ctx.stroke();
         });
       } else if (ap.x != null) {
-        ctx.beginPath(); ctx.arc(ap.x, ap.y, 28 * Math.max(1, symbolScale), 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ap.x, ap.y, 28 * Math.max(1, sSym), 0, Math.PI * 2); ctx.stroke();
       }
       ctx.restore();
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, annotScale, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
 
   useEffect(() => { redraw(); }, [redraw]);
 
@@ -880,7 +900,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           }
         }
         if (p.type === 'text') {
-          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
+          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
           const fs = (20 + p.size * 4) * txtScale;
           const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
           const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
@@ -992,7 +1012,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const p = paths[i];
         if (p.type !== 'text') continue;
         const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
-        const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
+        const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
         const fs = (20 + p.size * 4) * txtScale;
         // Largeur estimée GÉNÉREUSE de l'encadré (marge confortable) → on peut attraper
         // le texte n'importe où dans son cadre, y compris les coins.
@@ -1395,6 +1415,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     ? (shapePanelFilled ? 'OPACITÉ REMPLI ✏' : 'OPACITÉ CONTOUR ✏')
     : 'OPACITÉ';
 
+  // Slider de taille CONTEXTUEL : ne pilote que le type lié à l'outil sélectionné.
+  const scaleCtl = tool === 'text'
+    ? { val: scaleText,   set: setScaleText,   label: 'TAILLE TEXTE',   key: 'chantierai_scale_text' }
+    : tool === 'shape'
+    ? { val: scaleShape,  set: setScaleShape,  label: 'TAILLE FORMES',  key: 'chantierai_scale_shape' }
+    : { val: scaleSymbol, set: setScaleSymbol, label: 'TAILLE SYMBOLES', key: 'chantierai_scale_symbol' };
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
 
@@ -1505,7 +1532,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
               const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-              drawAnnotationPaths(ectx, relabel(paths), ratio * 0.5 * annotScale, ratio);
+              drawAnnotationPaths(ectx, relabel(paths), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
               ectx.restore();
               // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
               const sc = hqScaleRef.current;
@@ -1574,17 +1601,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
-      {/* ── Taille globale des logos ── */}
+      {/* ── Taille CONTEXTUELLE : ne modifie que le type de l'outil sélectionné ── */}
       <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
-        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>SYMBOLES</span>
-        <input type="range" min="0.3" max="5" step="0.1" value={annotScale}
+        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>{scaleCtl.label}</span>
+        <input type="range" min="0.3" max="5" step="0.1" value={scaleCtl.val}
           onChange={e => {
             const v = parseFloat(e.target.value);
-            setAnnotScale(v);
-            localStorage.setItem('chantierai_annot_scale', String(v));
+            scaleCtl.set(v);
+            localStorage.setItem(scaleCtl.key, String(v));
           }}
           style={{ flex:1,accentColor:DA.red,cursor:'pointer' }}/>
-        <span style={{ color:'#ccc',fontSize:11,fontWeight:700,minWidth:30,textAlign:'right' }}>{annotScale.toFixed(1)}×</span>
+        <span style={{ color:'#ccc',fontSize:11,fontWeight:700,minWidth:30,textAlign:'right' }}>{scaleCtl.val.toFixed(1)}×</span>
       </div>
 
       {/* ── Symbol picker — catégories ── */}
