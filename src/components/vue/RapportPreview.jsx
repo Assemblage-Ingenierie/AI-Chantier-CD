@@ -844,11 +844,18 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       cv.height = el.naturalHeight;
       const ctx = cv.getContext('2d');
       ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      const sizeScale = (cv.width / 1400) * deferredAnnotScale;
+      // Échelles par type (texte/forme/symbole). deferredAnnotScale peut être un nombre
+      // (rétro-compat) ou un objet { text, shape, symbol }. strokeScale=base*symbole pour
+      // conserver l'épaisseur des tracés/formes comme avant (au repos = identique).
+      const base = cv.width / 1400;
+      const _o = deferredAnnotScale && typeof deferredAnnotScale === 'object';
+      const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
+      const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
+      const shapeF = _o ? (deferredAnnotScale.shape  ?? 1) : 1;
       // Si l'image HD est plus grande que le thumbnail utilisé lors de l'annotation,
       // on recale les coordonnées des chemins pour qu'ils restent bien positionnés.
       const coordScale = (hdBg && bgNaturalW && cv.width !== bgNaturalW) ? cv.width / bgNaturalW : 1;
-      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, coordScale), sizeScale);
+      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
       setRenderedImg(cv.toDataURL('image/png'));
     };
     el.onerror = () => setRenderedImg(exported || bgSrc);
@@ -1614,8 +1621,10 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScale = 1, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign }, ref) {
   const ppl  = photosParLigne ?? 2;
+  // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
+  const annotScale = annotScales;
   const locs = useMemo(() => localisations.filter(l => (l.items || []).some(itemHasReportContent)), [localisations]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.

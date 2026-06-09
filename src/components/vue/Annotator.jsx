@@ -130,47 +130,61 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         }
       }
     } else if (p.type === 'text') {
+      const fs = 20 + p.size * 4;
+      const pad = 10;
+      ctx.save();
+      ctx.font = `bold ${fs}px Arial`;
+      const tw = ctx.measureText(p.text).width;
+      ctx.restore();
+
+      // ── Flèche EN PREMIER, en coordonnées ABSOLUES (dessinée SOUS le cadre).
+      //    La pointe (arrowX/arrowY) reste strictement fixe : indépendante de la position
+      //    du cadre ET de la taille du texte (avant, elle était dans la transformée d'échelle
+      //    du texte → elle bougeait au déplacement du cadre et à l'agrandissement). ──
+      if (p.textMode === 'arrow' && p.x != null) {
+        const absBx = p.x - sT * pad, absBy = p.y - sT * (fs + 4);
+        const absBw = sT * (tw + pad * 2), absBh = sT * (fs + pad + 6);
+        const bcx = absBx + absBw / 2, bcy = absBy + absBh / 2;
+        const tipX = p.arrowX ?? (p.x + tw / 2);
+        const tipY = p.arrowY ?? (absBy + absBh + 16 * ss);
+        const ddx = tipX - bcx, ddy = tipY - bcy;
+        let ex = bcx, ey = bcy;
+        if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
+          const hw = absBw / 2, hh = absBh / 2;
+          if (hw * Math.abs(ddy) <= hh * Math.abs(ddx)) {
+            const s2 = ddx > 0 ? 1 : -1; ex = bcx + s2 * hw; ey = bcy + (ddy / ddx) * s2 * hw;
+          } else {
+            const s2 = ddy > 0 ? 1 : -1; ex = bcx + (ddx / ddy) * s2 * hh; ey = bcy + s2 * hh;
+          }
+        }
+        const ang = Math.atan2(tipY - ey, tipX - ex);
+        const aL = 16 * ss; // longueur de pointe en pixels écran
+        const baseX = tipX - Math.cos(ang) * aL, baseY = tipY - Math.sin(ang) * aL;
+        ctx.save();
+        ctx.strokeStyle = p.color; ctx.fillStyle = p.color;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.lineWidth = 3.5 * ss;
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(baseX, baseY); ctx.stroke();
+        // Pointe pleine (triangle net)
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(tipX - Math.cos(ang - Math.PI / 7) * aL, tipY - Math.sin(ang - Math.PI / 7) * aL);
+        ctx.lineTo(tipX - Math.cos(ang + Math.PI / 7) * aL, tipY - Math.sin(ang + Math.PI / 7) * aL);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+
+      // ── Cadre + texte (mis à l'échelle sT autour de p), PAR-DESSUS la flèche ──
       ctx.save();
       if (sT !== 1 && p.x != null) {
         ctx.translate(p.x, p.y); ctx.scale(sT, sT); ctx.translate(-p.x, -p.y);
       }
-      const fs = 20 + p.size * 4;
       ctx.font = `bold ${fs}px Arial`;
-      const tw = ctx.measureText(p.text).width;
-      const pad = 10;
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-        // Fond blanc + bordure couleur — lineWidth constant en pixels écran
         const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = fs + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
         ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
-        if (p.textMode === 'arrow') {
-          // Flèche vers le point arrowX/arrowY (ou défaut bas-centre)
-          const tipX = p.arrowX ?? (p.x + tw / 2);
-          const tipY = p.arrowY ?? (by + bh + 16);
-          const bcx = bx + bw / 2, bcy = by + bh / 2;
-          const ddx = tipX - bcx, ddy = tipY - bcy;
-          let ex = bcx, ey = bcy;
-          if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
-            const hw = bw / 2, hh = bh / 2;
-            if (hw * Math.abs(ddy) <= hh * Math.abs(ddx)) {
-              const sx2 = ddx > 0 ? 1 : -1;
-              ex = bcx + sx2 * hw; ey = bcy + (ddy / ddx) * sx2 * hw;
-            } else {
-              const sy2 = ddy > 0 ? 1 : -1;
-              ex = bcx + (ddx / ddy) * sy2 * hh; ey = bcy + sy2 * hh;
-            }
-          }
-          ctx.lineWidth = 4.5 * ss / sT; // flèche plus épaisse → bien plus visible
-          ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tipX, tipY); ctx.stroke();
-          const ta = Math.atan2(tipY - ey, tipX - ex), aL = 18;
-          ctx.beginPath();
-          ctx.moveTo(tipX, tipY);
-          ctx.lineTo(tipX + Math.cos(ta + Math.PI + Math.PI / 6) * aL, tipY + Math.sin(ta + Math.PI + Math.PI / 6) * aL);
-          ctx.moveTo(tipX, tipY);
-          ctx.lineTo(tipX + Math.cos(ta + Math.PI - Math.PI / 6) * aL, tipY + Math.sin(ta + Math.PI - Math.PI / 6) * aL);
-          ctx.stroke();
-        }
         ctx.fillStyle = p.color;
         ctx.fillText(p.text, p.x, p.y);
       } else {

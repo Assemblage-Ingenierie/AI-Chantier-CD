@@ -125,14 +125,22 @@ export default function RapportTab({ projet, onUpdate }) {
     });
   };
 
-  const [annotScale, setAnnotScale] = useState(() => {
+  // 3 échelles indépendantes (texte / forme / symbole), COORDONNÉES avec l'annotateur :
+  // mêmes clés localStorage → un réglage est partagé entre l'annotateur et le rapport.
+  // Migration depuis l'ancienne échelle unique 'chantierai_annot_scale'.
+  const _oldAnnot = (() => {
     const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
-    return isNaN(v) ? 1 : v;
-  });
-
-  const handleAnnotScale = (v) => {
-    setAnnotScale(v);
-    localStorage.setItem('chantierai_annot_scale', String(v));
+    return (isNaN(v) || v > 1.5) ? 1 : Math.max(0.3, Math.min(5, v));
+  })();
+  const _read = (k, fb) => { const v = parseFloat(localStorage.getItem(k) ?? String(fb)); return isNaN(v) ? fb : Math.max(0.3, Math.min(5, v)); };
+  const [scaleText,   setScaleText]   = useState(() => _read('chantierai_scale_text', _oldAnnot));
+  const [scaleSymbol, setScaleSymbol] = useState(() => _read('chantierai_scale_symbol', _oldAnnot));
+  const [scaleShape,  setScaleShape]  = useState(() => _read('chantierai_scale_shape', 1));
+  const annotScales = useMemo(() => ({ text: scaleText, shape: scaleShape, symbol: scaleSymbol }), [scaleText, scaleShape, scaleSymbol]);
+  const setScale = (kind, v) => {
+    if (kind === 'text')   { setScaleText(v);   localStorage.setItem('chantierai_scale_text', String(v)); }
+    if (kind === 'shape')  { setScaleShape(v);  localStorage.setItem('chantierai_scale_shape', String(v)); }
+    if (kind === 'symbol') { setScaleSymbol(v); localStorage.setItem('chantierai_scale_symbol', String(v)); }
   };
 
   const pageBreaks = projet.rapportPageBreaks || [];
@@ -377,23 +385,26 @@ export default function RapportTab({ projet, onUpdate }) {
             </div>
           </div>
 
-          {/* Taille des annotations sur plans */}
+          {/* Taille des annotations — 3 échelles indépendantes (coordonnées avec l'annotateur) */}
           <div>
             <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
               Taille des annotations
             </label>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <input type="range" min="0.3" max="2" step="0.1" value={annotScale}
-                onChange={e => handleAnnotScale(parseFloat(e.target.value))}
-                style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
-              <span style={{ fontSize:11, fontWeight:700, color:DA.black, minWidth:32, textAlign:'right' }}>{annotScale.toFixed(1)}×</span>
-              {annotScale !== 1 && (
-                <button onClick={() => handleAnnotScale(1)}
-                  style={{ fontSize:10, color:DA.gray, background:'none', border:`1px solid ${DA.border}`, borderRadius:5, padding:'2px 7px', cursor:'pointer' }}>↺</button>
-              )}
-            </div>
+            {[
+              { kind:'text',   lbl:'Texte',    val:scaleText },
+              { kind:'shape',  lbl:'Formes',   val:scaleShape },
+              { kind:'symbol', lbl:'Symboles', val:scaleSymbol },
+            ].map(s => (
+              <div key={s.kind} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
+                <span style={{ fontSize:10, fontWeight:600, color:DA.gray, minWidth:58 }}>{s.lbl}</span>
+                <input type="range" min="0.3" max="3" step="0.1" value={s.val}
+                  onChange={e => setScale(s.kind, parseFloat(e.target.value))}
+                  style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
+                <span style={{ fontSize:11, fontWeight:700, color:DA.black, minWidth:30, textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+              </div>
+            ))}
             <p style={{ fontSize:9.5, color:DA.grayL, margin:'3px 0 0', fontStyle:'italic' }}>
-              Affecte les marqueurs sur plans et photos (légende fixe)
+              Affecte les marqueurs des plans. Réglages partagés avec l'annotateur.
             </p>
           </div>
 
@@ -483,8 +494,7 @@ export default function RapportTab({ projet, onUpdate }) {
         plansEnFin={projet.plansEnFin ?? false}
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
-        annotScale={annotScale}
-        onAnnotScaleChange={handleAnnotScale}
+        annotScales={annotScales}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         conclusionAlign={projet.conclusionAlign ?? 'left'}
