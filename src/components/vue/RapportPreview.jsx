@@ -1556,7 +1556,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         </div>
         {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
         {/* En-tête */}
-        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
+        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
           <div/>
           <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Zone</span>
           <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Désordre</span>
@@ -1567,7 +1567,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 24px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
+            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
               <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
               {isEditable ? (
                 <textarea value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
@@ -1605,8 +1605,14 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
                 <span style={{ fontSize:7, fontWeight:700, color:u.text, background:u.bg, border:`1px solid ${u.border}`, borderRadius:4, padding:'1px 5px', whiteSpace:'nowrap', alignSelf:'start' }}>{u.label}</span>
               )}
               {isEditable && (
-                <button data-print="hide" onClick={() => onDeleteRecap(row.itemId, row.isCustom)}
-                  style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:13, lineHeight:1, padding:0, alignSelf:'start' }}>×</button>
+                <div data-print="hide" style={{ display:'flex', flexDirection:'column', gap:3, alignSelf:'start' }}>
+                  {row.commentaire && (
+                    <button title="Regénérer avec IA" onClick={() => { genDoneRef.current.delete(row.itemId); genRow(row); }}
+                      style={{ background:'none', border:'none', cursor:'pointer', fontSize:12, lineHeight:1, padding:0 }}>✨</button>
+                  )}
+                  <button onClick={() => onDeleteRecap(row.itemId, row.isCustom)}
+                    style={{ background:'none', border:'none', cursor:'pointer', color:'#EF4444', fontSize:13, lineHeight:1, padding:0 }}>×</button>
+                </div>
               )}
             </div>
           );

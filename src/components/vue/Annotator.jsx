@@ -521,6 +521,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const navRef = useRef({});
   navRef.current = { onPrev, onNext };
 
+  // Refs live pour le handler clavier (évite closure stale sur paths/selTextIdx/selAnnot)
+  const pathsRef = useRef(paths);
+  pathsRef.current = paths;
+  const selTextIdxRef = useRef(selTextIdx);
+  selTextIdxRef.current = selTextIdx;
+  const selAnnotRef = useRef(selAnnot);
+  selAnnotRef.current = selAnnot;
+
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
   // Numérotation Vxx GLOBALE : les marqueurs déjà connus (numéro résolu au chargement, stocké
   // par _vpId) gardent leur numéro ; les nouveaux (cette session) continuent après le max global
@@ -733,18 +741,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   useEffect(() => { redraw(); }, [redraw]);
 
   // Ctrl+Z — undo dernière annotation / Delete — supprimer sélection
+  // Deps [] : les refs pathsRef/selTextIdxRef/selAnnotRef sont toujours à jour, pas de closure stale.
   useEffect(() => {
     const onKey = e => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const _paths = pathsRef.current;
+      const _selTextIdx = selTextIdxRef.current;
+      const _selAnnot = selAnnotRef.current;
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         setPaths(p => p.slice(0, -1));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (selTextIdx !== null && paths[selTextIdx]) {
-          clipboardRef.current = { ...paths[selTextIdx] }; e.preventDefault();
-        } else if (selAnnot !== null && paths[selAnnot.idx]) {
-          const ap = paths[selAnnot.idx];
+        if (_selTextIdx !== null && _paths[_selTextIdx]) {
+          clipboardRef.current = { ..._paths[_selTextIdx] }; e.preventDefault();
+        } else if (_selAnnot !== null && _paths[_selAnnot.idx]) {
+          const ap = _paths[_selAnnot.idx];
           clipboardRef.current = { ...ap, pts: ap.pts?.map(pt => ({...pt})) }; e.preventDefault();
         }
       }
@@ -770,14 +782,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         setPendingShape(null); shapeStartRef.current = null;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selAnnot !== null) {
+        if (_selAnnot !== null) {
           e.preventDefault();
-          setPaths(p => p.filter((_, i) => i !== selAnnot.idx));
+          setPaths(p => p.filter((_, i) => i !== _selAnnot.idx));
           setSelAnnot(null);
           annotDragRef.current = null;
-        } else if (selTextIdx !== null) {
+        } else if (_selTextIdx !== null) {
           e.preventDefault();
-          setPaths(p => p.filter((_, i) => i !== selTextIdx));
+          setPaths(p => p.filter((_, i) => i !== _selTextIdx));
           setSelTextIdx(null);
         }
       }
@@ -788,7 +800,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selAnnot, selTextIdx]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Molette / pinch trackpad — zoom centré sur le curseur
   const onWheel = useCallback(e => {
@@ -952,6 +964,24 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
     if (tool === 'select') {
       const hitR = 22 * (cv.width / cv.clientWidth);
+      const ratio_s = cv.width / cv.clientWidth;
+      // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
+      // (sans ça, une annotation posée au-dessus intercepte le clic avant qu'on atteigne le check)
+      if (selTextIdx !== null && paths[selTextIdx]) {
+        const pSel = paths[selTextIdx];
+        if (pSel.textMode === 'boxed' || pSel.textMode === 'arrow') {
+          const txtScaleSel = ratio_s * 0.5 * scaleText;
+          const fsSel = (20 + pSel.size * 4) * txtScaleSel;
+          const _lsSel = String(pSel.text ?? '').split('\n');
+          const approxTwUSel = pSel.textW ?? _lsSel.reduce((m, l) => Math.max(m, l.length * (20 + pSel.size * 4) * 0.6), 0);
+          const hrXSel = pSel.x + (approxTwUSel + 10) * txtScaleSel;
+          const hrYSel = pSel.y - fsSel - 4 * txtScaleSel;
+          if (Math.abs(pos.x - hrXSel) < 22 * ratio_s && Math.abs(pos.y - hrYSel) < 22 * ratio_s) {
+            textDragRef.current = { mode: 'resize', origTextW: pSel.textW ?? approxTwUSel, tapX: pos.x };
+            setDrawing(true); return;
+          }
+        }
+      }
       // Resize handles first (if a shape is currently selected)
       if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
         const ap = paths[selAnnot.idx];
@@ -1101,6 +1131,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (tool === 'text') {
       const hitR = 28 * (cv.width / cv.clientWidth);
+      const ratio_t = cv.width / cv.clientWidth;
+      // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
+      if (selTextIdx !== null && paths[selTextIdx]) {
+        const pSel = paths[selTextIdx];
+        if (pSel.textMode === 'boxed' || pSel.textMode === 'arrow') {
+          const txtScaleSel = ratio_t * 0.5 * scaleText;
+          const fsSel = (20 + pSel.size * 4) * txtScaleSel;
+          const _lsSel = String(pSel.text ?? '').split('\n');
+          const approxTwUSel = pSel.textW ?? _lsSel.reduce((m, l) => Math.max(m, l.length * (20 + pSel.size * 4) * 0.6), 0);
+          const hrXSel = pSel.x + (approxTwUSel + 10) * txtScaleSel;
+          const hrYSel = pSel.y - fsSel - 4 * txtScaleSel;
+          if (Math.abs(pos.x - hrXSel) < 22 * ratio_t && Math.abs(pos.y - hrYSel) < 22 * ratio_t) {
+            textDragRef.current = { mode: 'resize', origTextW: pSel.textW ?? approxTwUSel, tapX: pos.x };
+            setDrawing(true); return;
+          }
+        }
+      }
       // Vérifier d'abord la poignée de flèche (tip)
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
@@ -1552,6 +1599,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const selText = selTextIdx !== null ? paths[selTextIdx] : null;
   const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
 
+  const duplicateAnnot = (src) => {
+    if (!src) return;
+    const OFF = 40;
+    const copy = { ...src };
+    if (copy._vpId) copy._vpId = crypto.randomUUID();
+    if (copy.x  != null) { copy.x  += OFF; copy.y  += OFF; }
+    if (copy.x1 != null) { copy.x1 += OFF; copy.y1 += OFF; copy.x2 += OFF; copy.y2 += OFF; }
+    if (copy.arrowX != null) { copy.arrowX += OFF; copy.arrowY += OFF; }
+    if (src.pts)    copy.pts    = src.pts.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
+    if (src.points) copy.points = src.points.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
+    setPaths(prev => [...prev, copy]);
+  };
+
   // Derived values for shape sub-panel (computed before return to avoid IIFE-in-JSX minification issues)
   const _selShapeIdx = selAnnot !== null ? selAnnot.idx : -1;
   const _selShape = _selShapeIdx >= 0 && paths[_selShapeIdx]?.type === 'shape' ? paths[_selShapeIdx] : null;
@@ -1926,6 +1986,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               {m.lbl}
             </button>
           ))}
+          <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }}
+            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
+            ⊕ Dupliquer
+          </button>
           <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }}
             style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:0,display:'flex',alignItems:'center' }}>
             <Ic n="del" s={13}/>
@@ -1949,6 +2013,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             } sélectionné
           </span>
           <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer</span>
+          <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
+            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
+            ⊕ Dupliquer
+          </button>
           <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selAnnot.idx)); setSelAnnot(null); annotDragRef.current = null; }}
             style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
             <Ic n="del" s={13}/>
