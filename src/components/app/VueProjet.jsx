@@ -329,12 +329,21 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
     };
 
+    // Navigation préc/suiv parmi les photos valides (flèches + touches ←/→).
+    const validIdxs = (item.photos || []).map((p, i) => (p.data ? i : -1)).filter(i => i >= 0);
+    const navPos = validIdxs.indexOf(photoIdx);
+    const prevRealIdx = navPos > 0 ? validIdxs[navPos - 1] : null;
+    const nextRealIdx = navPos >= 0 && navPos < validIdxs.length - 1 ? validIdxs[navPos + 1] : null;
+
     return (
       <>
         <Annotator
           ref={annotatorRef}
           bgImage={ph?.data}
           savedPaths={ph?.annotations || []}
+          onPrev={prevRealIdx !== null ? () => switchToPhoto(prevRealIdx) : null}
+          onNext={nextRealIdx !== null ? () => switchToPhoto(nextRealIdx) : null}
+          photoPosition={validIdxs.length > 1 ? `${navPos + 1} / ${validIdxs.length}` : null}
           onSave={(paths, exported, dims) => {
             const updatedItem = {
               ...item,
