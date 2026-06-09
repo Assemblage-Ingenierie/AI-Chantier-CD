@@ -391,7 +391,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             ext = 'jpg';
           }
           const name = file.name.replace(/\.[^.]+$/, '.' + ext);
-          res({ data: dataUrl, name });
+          // id stable dès la création : porte le numéro Vxx (identité photo) et sert d'ID de
+          // ligne Supabase à la sauvegarde → survit aux ajouts/suppressions/réordres.
+          res({ id: crypto.randomUUID(), data: dataUrl, name });
         } catch { res(null); }
       };
       img.src = ev.target.result;
