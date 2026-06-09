@@ -151,8 +151,9 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
               ex = bcx + (ddx / ddy) * sy2 * hh; ey = bcy + sy2 * hh;
             }
           }
+          ctx.lineWidth = 4.5 * ss / sizeScale; // flèche plus épaisse → bien plus visible
           ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tipX, tipY); ctx.stroke();
-          const ta = Math.atan2(tipY - ey, tipX - ex), aL = 9;
+          const ta = Math.atan2(tipY - ey, tipX - ex), aL = 18;
           ctx.beginPath();
           ctx.moveTo(tipX, tipY);
           ctx.lineTo(tipX + Math.cos(ta + Math.PI + Math.PI / 6) * aL, tipY + Math.sin(ta + Math.PI + Math.PI / 6) * aL);
@@ -977,7 +978,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type === 'text' && p.textMode === 'arrow' && p.arrowX != null) {
-          if (Math.hypot(p.arrowX - pos.x, p.arrowY - pos.y) < hitR * 0.55) {
+          if (Math.hypot(p.arrowX - pos.x, p.arrowY - pos.y) < hitR * 0.95) {
             setSelTextIdx(i);
             setDrawing(true);
             textDragRef.current = { mode: 'tip', origArrowX: p.arrowX, origArrowY: p.arrowY, tapX: pos.x, tapY: pos.y };
@@ -990,14 +991,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'text') continue;
-        const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
+        const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
         const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * annotScale : 1;
         const fs = (20 + p.size * 4) * txtScale;
-        const approxW = Math.max(80, p.text.length * fs * 0.6) + 20;
-        // Boîte de clic sur TOUTE l'étendue du texte (et plus seulement boxed/arrow).
+        // Largeur estimée GÉNÉREUSE de l'encadré (marge confortable) → on peut attraper
+        // le texte n'importe où dans son cadre, y compris les coins.
+        const approxW = Math.max(90, p.text.length * fs * 0.62) + 30 * txtScale;
         const inBox =
-          pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
-          pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale;
+          pos.x >= p.x - 16 * txtScale && pos.x <= p.x + approxW &&
+          pos.y >= p.y - fs - 12 * txtScale && pos.y <= p.y + 16 * txtScale;
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
