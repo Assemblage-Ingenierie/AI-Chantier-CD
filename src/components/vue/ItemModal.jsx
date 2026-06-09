@@ -85,6 +85,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [confirmDelPhotoIdx, setConfirmDelPhotoIdx] = useState(null);
   const [zoomPhotoIdx, setZoomPhotoIdx] = useState(null); // long-press photo zoom
   const longPressTimer = useRef(null);
+  const lpFiredRef = useRef(false); // true si l'appui long (zoom) s'est déclenché → tap simple = annoter
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
   const bumpSync = () => setEditorSyncKey(k => k + 1);
@@ -840,10 +841,11 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
                     <img
                       src={ph.annotated || ph.data} alt=""
-                      style={{ width:'100%',height:'100%',objectFit:'cover',WebkitTouchCallout:'none',userSelect:'none' }}
+                      title="Cliquer pour annoter — appui long pour agrandir"
+                      style={{ width:'100%',height:'100%',objectFit:'cover',WebkitTouchCallout:'none',userSelect:'none',cursor:'pointer' }}
                       onContextMenu={e => e.preventDefault()}
-                      onPointerDown={() => { longPressTimer.current = setTimeout(() => setZoomPhotoIdx(i), 500); }}
-                      onPointerUp={() => clearTimeout(longPressTimer.current)}
+                      onPointerDown={() => { lpFiredRef.current = false; longPressTimer.current = setTimeout(() => { lpFiredRef.current = true; setZoomPhotoIdx(i); }, 500); }}
+                      onPointerUp={() => { clearTimeout(longPressTimer.current); if (!lpFiredRef.current) setAnnotatingPhotoIdx(i); }}
                       onPointerLeave={() => clearTimeout(longPressTimer.current)}
                       draggable={false}
                     />
@@ -853,11 +855,12 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                         <Ic n="x" s={10}/>
                       </button>
                     )}
-                    <button onClick={() => setAnnotatingPhotoIdx(i)}
-                      title="Annoter"
-                      style={{ position:'absolute',bottom:4,right:4,background: ph.annotations?.length ? DA.red : 'rgba(0,0,0,0.55)',color:'white',border:'none',borderRadius:'50%',width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
-                      <Ic n="pen" s={11}/>
-                    </button>
+                    {ph.annotations?.length > 0 && (
+                      <div title="Annotée"
+                        style={{ position:'absolute',bottom:4,right:4,background:DA.red,color:'white',borderRadius:'50%',width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',pointerEvents:'none' }}>
+                        <Ic n="pen" s={9}/>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <button onClick={() => gallRef.current.click()} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.border}`,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>

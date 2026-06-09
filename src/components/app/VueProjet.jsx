@@ -310,6 +310,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
   const annotatorRef = useRef(null);
+  const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
   const formatDate = (d) => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
@@ -335,6 +336,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const prevRealIdx = navPos > 0 ? validIdxs[navPos - 1] : null;
     const nextRealIdx = navPos >= 0 && navPos < validIdxs.length - 1 ? validIdxs[navPos + 1] : null;
 
+    // Suppression de la photo affichée (après confirmation) directement depuis l'annotateur.
+    const deleteCurrentPhoto = () => {
+      const remaining = (item.photos || []).filter((_, i) => i !== photoIdx);
+      const updatedItem = { ...item, _photosHydrated: true, photos: remaining };
+      patchItem(locId, updatedItem);
+      setConfirmDelPhotoAnnot(false);
+      const firstValid = remaining.findIndex(p => p.data);
+      if (firstValid === -1) { setModal(null); return; }
+      let newIdx = Math.min(photoIdx, remaining.length - 1);
+      if (!remaining[newIdx]?.data) newIdx = firstValid;
+      setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newIdx });
+    };
+
     return (
       <>
         <Annotator
@@ -351,9 +365,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),
             };
             patchItem(locId, updatedItem);
+            setConfirmDelPhotoAnnot(false);
             setModal(null);
           }}
-          onClose={() => setModal(null)}
+          onClose={() => { setConfirmDelPhotoAnnot(false); setModal(null); }}
         />
         {validPhotos.length > 1 && (
           <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.85)', padding:'8px 12px', display:'flex', gap:6, justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}>
@@ -367,6 +382,37 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 />
               );
             })}
+          </div>
+        )}
+
+        {/* Supprimer la photo affichée — bas-gauche, à côté de la bande de photos */}
+        <button onClick={() => setConfirmDelPhotoAnnot(true)} title="Supprimer cette photo"
+          style={{ position:'fixed', bottom:10, left:12, zIndex:101, display:'flex', alignItems:'center', gap:6,
+            background:'rgba(227,5,19,0.92)', color:'#fff', border:'none', borderRadius:10, padding:'9px 14px',
+            fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 10px rgba(0,0,0,0.4)' }}>
+          <Ic n="del" s={16}/> Supprimer
+        </button>
+
+        {confirmDelPhotoAnnot && (
+          <div onClick={() => setConfirmDelPhotoAnnot(false)}
+            style={{ position:'fixed', inset:0, zIndex:120, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:'#fff', borderRadius:14, padding:22, maxWidth:340, width:'100%', boxShadow:'0 8px 30px rgba(0,0,0,0.5)' }}>
+              <p style={{ margin:'0 0 6px', fontWeight:800, fontSize:16, color:DA.black }}>Supprimer cette photo ?</p>
+              <p style={{ margin:'0 0 18px', fontSize:13, color:DA.gray, lineHeight:1.4 }}>
+                La photo et ses annotations seront définitivement retirées de cette observation.
+              </p>
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <button onClick={() => setConfirmDelPhotoAnnot(false)}
+                  style={{ padding:'9px 16px', borderRadius:9, border:`1px solid ${DA.border}`, background:'#fff', color:DA.black, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  Annuler
+                </button>
+                <button onClick={deleteCurrentPhoto}
+                  style={{ padding:'9px 16px', borderRadius:9, border:'none', background:DA.red, color:'#fff', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  Supprimer
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </>
