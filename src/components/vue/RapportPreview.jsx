@@ -1487,31 +1487,31 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
   const [loadingAI, setLoadingAI] = useState(null);
   const [aiErr, setAiErr] = useState(null);
   const genDoneRef = useRef(new Set());
+  // Ref toujours à jour : évite la closure stale quand onUpdateRecap change entre deux rows
+  const onUpdateRecapRef = useRef(onUpdateRecap);
+  onUpdateRecapRef.current = onUpdateRecap;
 
   // Génère, à partir du commentaire de l'observation, un résumé "Désordre" (problèmes constatés,
   // stocké dans le champ titre) ET un résumé "Solution" (réparation préconisée).
   const genRow = async (row, opts = {}) => {
-    if (!onUpdateRecap || !row.commentaire) return;
+    const updateFn = onUpdateRecapRef.current;
+    if (!updateFn || !row.commentaire) return;
     setLoadingAI(row.itemId); setAiErr(null);
     try {
       const txt = row.commentaire.replace(/<[^>]+>/g, ' ').replace(/\*{1,3}/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
-      const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"<résume en quelques mots les désordres / problèmes constatés>","solution":"<résume en quelques mots la solution / réparation préconisée, ou cha\\u00eene vide si aucune n'est évoquée>"}. Quelques mots chacun, en français, factuel, sans ponctuation finale, sans markdown.`;
-      const d = await callAIProxy({ feature: 'recap_row', _waitOk: opts.waitOk, model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
+      const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"• désordre 1\\n• désordre 2 (un bullet par problème constaté, 2-3 max)","solution":"• solution 1\\n• solution 2 (un bullet par réparation préconisée, 2-3 max, ou chaîne vide si aucune solution évoquée)"}. En français, factuel, sans ponctuation finale, sans markdown.`;
+      const d = await callAIProxy({ feature: 'recap_row', _waitOk: opts.waitOk, model: 'claude-haiku-4-5-20251001', max_tokens: 200, messages: [{ role: 'user', content: prompt }] });
       const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
-      // Extraction robuste : cherche un objet JSON même si le modèle ajoute du texte autour
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       let obj = null;
       if (jsonMatch) try { obj = JSON.parse(jsonMatch[0]); } catch {}
       if (obj) {
         const desordre = String(obj.desordre ?? '').trim();
-        // Fallback : si l'IA retourne désordre vide, utiliser les premiers mots du commentaire
-        const finalDesordre = desordre || txt.slice(0, 70).replace(/\s+/g, ' ').trim();
-        // Écrit titre ET solution en un SEUL appel : deux onUpdateRecap successifs lisent le
-        // même tableauRecap figé (closure) → le 2e écrasait le 1er, d'où le désordre vide.
+        const finalDesordre = desordre || `• ${txt.slice(0, 60).replace(/\s+/g, ' ').trim()}`;
         const patch = {};
         if (finalDesordre) patch.titre = finalDesordre;
         if (obj.solution != null) patch.solution = String(obj.solution).trim();
-        if (Object.keys(patch).length) onUpdateRecap(row.itemId, patch);
+        if (Object.keys(patch).length) updateFn(row.itemId, patch);
       }
     } catch (e) { setAiErr(e.message); throw e; }
     finally { setLoadingAI(null); }
@@ -1519,26 +1519,29 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
 
   // Génération AUTOMATIQUE : pour chaque ligne avec commentaire mais sans désordre/solution.
   // _waitOk=true → callAIProxy attend le throttle au lieu de lever une erreur.
-  // Désordre : déclenché dès qu'aucun override titre n'est encore enregistré.
-  // Solution  : déclenché dès qu'aucun override solution n'est encore enregistré.
+  // Dépend de rowIdsKey (liste des IDs) et non de rows entier → ne redémarre pas à chaque update
+  // de données (ce qui causerait une closure stale sur onUpdateRecap).
+  const rowIdsKey = rows.map(r => r.itemId).join(',');
   useEffect(() => {
     if (!onUpdateRecap) return;
     let cancelled = false;
+    const snapshot = rows; // capture la liste actuelle des rows pour cet effet
+    const snapOvMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
     (async () => {
-      for (const row of rows) {
+      for (const row of snapshot) {
         if (cancelled) break;
         if (!row.commentaire || genDoneRef.current.has(row.itemId)) continue;
-        const ov = ovMap.get(row.itemId) || {};
+        const ov = snapOvMap.get(row.itemId) || {};
         const needsDesordre = !('titre' in ov && String(ov.titre).trim());
         const needsSolution  = !(ov.solution && String(ov.solution).trim());
         if (!needsDesordre && !needsSolution) { genDoneRef.current.add(row.itemId); continue; }
         genDoneRef.current.add(row.itemId);
         try { await genRow(row, { waitOk: true }); }
-        catch { genDoneRef.current.delete(row.itemId); } // retry permis si erreur
+        catch { genDoneRef.current.delete(row.itemId); }
       }
     })();
     return () => { cancelled = true; };
-  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rowIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
   const isEditable = !!onUpdateRecap;
@@ -1575,18 +1578,18 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
               )}
               {isEditable ? (
                 <textarea value={row.titre} onChange={e => onUpdateRecap(row.itemId, 'titre', e.target.value)}
-                  rows={Math.max(1, Math.ceil((row.titre||'').length / 22))}
-                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
+                  rows={Math.max(1, (row.titre||'').split('\n').length)}
+                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden', whiteSpace:'pre-wrap' }}/>
               ) : (
-                <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3 }}>{row.titre || '—'}</div>
+                <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, whiteSpace:'pre-wrap' }}>{row.titre || '—'}</div>
               )}
               {isEditable ? (
                 <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
-                  rows={Math.max(2, Math.ceil((row.solution || '').length / 28))}
+                  rows={Math.max(2, (row.solution || '').split('\n').length)}
                   placeholder={loadingAI === row.itemId ? 'Génération IA…' : 'Solution…'}
-                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden' }}/>
+                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden', whiteSpace:'pre-wrap' }}/>
               ) : (
-                <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word' }}>{row.solution || '—'}</div>
+                <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word', whiteSpace:'pre-wrap' }}>{row.solution || '—'}</div>
               )}
               {isEditable ? (
                 <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
