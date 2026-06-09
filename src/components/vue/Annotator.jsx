@@ -395,7 +395,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen' }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -411,7 +411,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
   const gvByVpIdRef    = useRef(new Map()); // _vpId → numéro Vxx global résolu au chargement (survit la migration)
 
-  const [tool,       setTool]       = useState('pen');
+  const [tool,       setTool]       = useState(initialTool || 'pen');
   const [color,      setColor]      = useState(DA.red);
   const [size,       setSize]       = useState(3);
   const [sym,        setSym]        = useState(SYMBOLS[0]);

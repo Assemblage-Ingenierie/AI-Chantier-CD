@@ -8,7 +8,7 @@ import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, getVpNum } from '../../lib/vpNumbering.js';
-import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
+import { fetchPlanData } from '../../lib/storage.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -790,9 +790,6 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
   const [renderedImg, setRenderedImg] = useState(null);
   const [fetchedBg, setFetchedBg] = useState(null);
   const [bgFetchDone, setBgFetchDone] = useState(false);
-  const [hdBg, setHdBg] = useState(null); // image HD (Storage) — qualité rapport, indépendante du bg d'affichage 2500px
-  const [bgNaturalW, setBgNaturalW] = useState(null); // largeur naturelle du bg thumbnail (espace coordonnées annotations)
-
   // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
   // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
   // Supabase → le rapport ne reste plus bloqué sur « Plan en cours de chargement ».
@@ -805,28 +802,8 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     return () => { cancelled = true; };
   }, [bg, planId]);
 
-  // Image HD pour le RAPPORT : le bg d'affichage est volontairement réduit (2500px) pour un
-  // chargement instantané dans l'app, mais le rapport doit rester net → on récupère l'image HD
-  // stockée dans Storage (colonne `data`, ~4500px) et on dessine les annotations dessus.
   useEffect(() => {
-    if (!planId) return;
-    let cancelled = false;
-    fetchPlanHdDataUrl(planId).then(url => { if (!cancelled && url) setHdBg(url); });
-    return () => { cancelled = true; };
-  }, [planId]);
-
-  // Mesure la largeur naturelle du thumbnail (espace de coordonnées des annotations).
-  // Nécessaire pour recaler les chemins sur l'image HD si elle est plus grande.
-  useEffect(() => {
-    const src = bg || fetchedBg;
-    if (!src) return;
-    const img = new window.Image();
-    img.onload = () => setBgNaturalW(img.naturalWidth);
-    img.src = src;
-  }, [bg, fetchedBg]);
-
-  useEffect(() => {
-    const bgSrc = hdBg || bg || fetchedBg;
+    const bgSrc = bg || fetchedBg;
     if (!bgSrc) { setRenderedImg(exported || null); return; }
     if (!paths?.length) { setRenderedImg(bgSrc); return; }
     // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
@@ -852,10 +829,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
       const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
       const shapeF = _o ? (deferredAnnotScale.shape  ?? 1) : 1;
-      // Si l'image HD est plus grande que le thumbnail utilisé lors de l'annotation,
-      // on recale les coordonnées des chemins pour qu'ils restent bien positionnés.
-      const coordScale = (hdBg && bgNaturalW && cv.width !== bgNaturalW) ? cv.width / bgNaturalW : 1;
-      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
+      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, 1), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
       // JPEG (qualité 0.92) plutôt que PNG : le plan est opaque (fond blanc) donc aucune
       // transparence perdue, mais le data-URL est ~10× plus léger → aperçu et surtout
       // génération PDF (document.write de la fenêtre d'impression) nettement plus rapides.
@@ -863,7 +837,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     };
     el.onerror = () => setRenderedImg(exported || bgSrc);
     el.src = bgSrc;
-  }, [exported, paths, bg, fetchedBg, hdBg, deferredAnnotScale, vpNumByPath, bgNaturalW]);
+  }, [exported, paths, bg, fetchedBg, deferredAnnotScale, vpNumByPath]);
 
   // Chargement en attente uniquement si le fetch n'est pas encore terminé
   if (!renderedImg && !bg && !fetchedBg && !bgFetchDone) return (
@@ -1524,9 +1498,15 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
       const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"<résume en quelques mots les désordres / problèmes constatés>","solution":"<résume en quelques mots la solution / réparation préconisée, ou cha\\u00eene vide si aucune n'est évoquée>"}. Quelques mots chacun, en français, factuel, sans ponctuation finale, sans markdown.`;
       const d = await callAIProxy({ feature: 'recap_row', _waitOk: opts.waitOk, model: 'claude-haiku-4-5-20251001', max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
       const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
-      let obj = null; try { obj = JSON.parse(raw); } catch {}
+      // Extraction robuste : cherche un objet JSON même si le modèle ajoute du texte autour
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      let obj = null;
+      if (jsonMatch) try { obj = JSON.parse(jsonMatch[0]); } catch {}
       if (obj) {
-        if (String(obj.desordre ?? '').trim()) onUpdateRecap(row.itemId, 'titre', String(obj.desordre).trim());
+        const desordre = String(obj.desordre ?? '').trim();
+        // Fallback : si l'IA retourne désordre vide, utiliser les premiers mots du commentaire
+        const finalDesordre = desordre || txt.slice(0, 70).replace(/\s+/g, ' ').trim();
+        if (finalDesordre) onUpdateRecap(row.itemId, 'titre', finalDesordre);
         if (obj.solution != null) onUpdateRecap(row.itemId, 'solution', String(obj.solution).trim());
       }
     } catch (e) { setAiErr(e.message); throw e; }
