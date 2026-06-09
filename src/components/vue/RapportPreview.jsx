@@ -1506,8 +1506,12 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
         const desordre = String(obj.desordre ?? '').trim();
         // Fallback : si l'IA retourne désordre vide, utiliser les premiers mots du commentaire
         const finalDesordre = desordre || txt.slice(0, 70).replace(/\s+/g, ' ').trim();
-        if (finalDesordre) onUpdateRecap(row.itemId, 'titre', finalDesordre);
-        if (obj.solution != null) onUpdateRecap(row.itemId, 'solution', String(obj.solution).trim());
+        // Écrit titre ET solution en un SEUL appel : deux onUpdateRecap successifs lisent le
+        // même tableauRecap figé (closure) → le 2e écrasait le 1er, d'où le désordre vide.
+        const patch = {};
+        if (finalDesordre) patch.titre = finalDesordre;
+        if (obj.solution != null) patch.solution = String(obj.solution).trim();
+        if (Object.keys(patch).length) onUpdateRecap(row.itemId, patch);
       }
     } catch (e) { setAiErr(e.message); throw e; }
     finally { setLoadingAI(null); }
