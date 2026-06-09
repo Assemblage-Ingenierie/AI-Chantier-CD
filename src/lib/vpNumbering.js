@@ -42,13 +42,12 @@ export function computeVpNumbering(localisations) {
       // zones ont le même photoIdx local (ex. zone A et zone B ayant chacune leur photo 0).
       if (vp._vpId && numByVpId.has(vp._vpId)) {
         num = numByVpId.get(vp._vpId); dedupPath = 'vpId-dedup';
+      } else if (vp.photoIdx != null && vxxPhotoMap.has(`${loc.id}_${vp.photoIdx}`)) {
+        // MÊME PHOTO (même zone) → MÊME numéro, quel que soit le plan ou le marqueur.
+        // La clé inclut loc.id → aucun risque de collision entre zones (photoIdx local).
+        num = vxxPhotoMap.get(`${loc.id}_${vp.photoIdx}`); dedupPath = 'photo-dedup';
       } else if (numByFp.has(fp)) {
         num = numByFp.get(fp); dedupPath = 'fp-dedup';
-      } else if (vp.photoIdx != null && !vp._vpId) {
-        // Ancien marqueur sans _vpId : partage le numéro si un autre marqueur vise déjà cette photo.
-        const key = `${loc.id}_${vp.photoIdx}`;
-        if (vxxPhotoMap.has(key)) { num = vxxPhotoMap.get(key); dedupPath = 'photoKey-dedup'; }
-        else { num = ++g; vxxPhotoMap.set(key, num); dedupPath = 'new-photoKey'; }
       } else {
         num = ++g; dedupPath = vp.photoIdx != null ? 'new-photoKey' : 'new-noPhoto';
       }
