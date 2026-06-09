@@ -643,7 +643,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.setLineDash([]);
           if (p.textMode === 'boxed' || p.textMode === 'arrow') {
             const rhs = 8 * ratio;
-            const hrX = bx + bw, hrY = by + bh / 2;
+            const hrX = bx + bw, hrY = by;
             ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
             ctx.beginPath(); ctx.rect(hrX - rhs, hrY - rhs, rhs * 2, rhs * 2); ctx.fill(); ctx.stroke();
           }
@@ -1004,7 +1004,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
             const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
             const hrX = p.x + (approxTwU + 10) * txtScale;
-            const hrY = p.y - fs / 2;
+            const hrY = p.y - fs - 4 * txtScale;
             if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
               textDragRef.current = { mode: 'resize', origTextW: p.textW ?? approxTwU, tapX: pos.x };
               setDrawing(true); return;
@@ -1123,11 +1123,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const fs = (20 + p.size * 4) * txtScale;
         const _ls = String(p.text ?? '').split('\n');
         const _extraH = (_ls.length - 1) * fs * 1.2;
-        // Resize handle (right edge of selected boxed/arrow text)
+        // Resize handle (top-right corner of selected boxed/arrow text)
         if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
           const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
           const hrX = p.x + (approxTwU + 10) * txtScale;
-          const hrY = p.y - fs / 2;
+          const hrY = p.y - fs - 4 * txtScale;
           if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
             existIdx = i; existIsResize = true; break;
           }
