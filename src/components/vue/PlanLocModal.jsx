@@ -37,6 +37,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const [importPdfQueueResults, setImportPdfQueueResults] = useState([]);
   const [showImportPicker, setShowImportPicker] = useState(false);
   const importFileRef = useRef();
+  const planAnnotatorRef = useRef(null); // ref Annotator → getAnnotation() pour la nav entre plans
   const [hqImageData, setHqImageData] = useState(null); // rendu HQ du plan ouvert, swappé en arrière-plan
 
   // Image HD du plan ouvert — swappée en arrière-plan sur la miniature LQ (affichée instantanément)
@@ -110,8 +111,17 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     const p = plans[annotatingIdx];
     const libEntry = p?.planId ? planLibrary?.find(x => x.id === p.planId) : null;
     const libNom = libEntry?.nom;
+    // Navigation entre les plans de la zone (flèches + touches ←/→), avec sauvegarde
+    // automatique des annotations en cours via getAnnotation().
+    const goToPlan = (newIdx) => {
+      if (newIdx < 0 || newIdx >= plans.length || newIdx === annotatingIdx) return;
+      const a = planAnnotatorRef.current?.getAnnotation?.();
+      if (a) setPlans(prev => prev.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths: a.paths, exported: a.annotated } } : x));
+      setAnnotatingIdx(newIdx);
+    };
     return (
       <Annotator
+        ref={planAnnotatorRef}
         bgImage={p?.planBg || libEntry?.bg || null}
         hqImage={hqImageData}
         savedPaths={p?.planAnnotations?.paths || []}
@@ -120,6 +130,9 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         vpNumByPath={vpNumByPath}
         vpBase={vpBase}
         title={libNom ? `${loc.nom} — ${libNom}` : loc.nom}
+        onPrev={annotatingIdx > 0 ? () => goToPlan(annotatingIdx - 1) : null}
+        onNext={annotatingIdx < plans.length - 1 ? () => goToPlan(annotatingIdx + 1) : null}
+        photoPosition={plans.length > 1 ? `Plan ${annotatingIdx + 1} / ${plans.length}` : null}
         onSave={(paths, exported) => {
           const newPlans = plans.map((x, i) => i === annotatingIdx ? { ...x, planAnnotations: { paths, exported } } : x);
           setPlans(newPlans);
