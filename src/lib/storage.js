@@ -160,6 +160,7 @@ function buildLocFromRow(loc, itemsByLoc) {
         suivi:           item.suivi ?? 'rien',
         urgence:         item.urgence ?? 'basse',
         commentaire:     item.commentaire ?? '',
+        commentaireAlign: item.commentaire_align ?? 'left',
         planAnnotations,
         plans,
         photos:          [],
@@ -182,9 +183,20 @@ async function loadRemote() {
     sb.from('aichantier_chantier_localisations')
       .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
       .order('sort_order'),
-    sb.from('aichantier_localisation_items')
-      .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
-      .order('sort_order'),
+    // commentaire_align : colonne récente → tentative avec, repli sans si migration pas encore
+    // appliquée (sinon tout le chargement échouerait). Aucune perte : alignement non persisté.
+    (async () => {
+      const withAlign = await sb.from('aichantier_localisation_items')
+        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,plan_annotations,sort_order')
+        .order('sort_order');
+      const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|schema cache/i.test(e?.message || '');
+      if (withAlign.error && isColErr(withAlign.error)) {
+        return sb.from('aichantier_localisation_items')
+          .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
+          .order('sort_order');
+      }
+      return withAlign;
+    })(),
   ]);
 
   if (r1.error) throw r1.error;
@@ -926,6 +938,7 @@ async function saveRemote(ps, dirtyIds = null) {
           id: itemId, localisation_id: locId,
           titre: item.titre ?? '', suivi: item.suivi ?? 'rien',
           urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
+          commentaire_align: item.commentaireAlign ?? 'left',
           plan_annotations: (() => {
             const ann = item.planAnnotations ? { ...slimAnnot(item.planAnnotations) } : {};
             // Plans bibliothèque de l'item encodés dans _plans (même colonne, pas de colonne dédiée)
@@ -968,6 +981,14 @@ async function saveRemote(ps, dirtyIds = null) {
             .in('item_id', unloadedItemIds).order('sort_order')
         : Promise.resolve({ data: [] }),
     ]);
+    // commentaire_align : si la colonne n'existe pas encore (migration non appliquée), on rejoue
+    // l'upsert SANS ce champ → la sauvegarde n'échoue jamais (zéro perte de données).
+    const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|schema cache/i.test(e?.message || '');
+    if (upsertItemsRes?.error && isAlignColErr(upsertItemsRes.error) && allItems.length > 0) {
+      const stripped = allItems.map(({ commentaire_align, ...row }) => row); // eslint-disable-line no-unused-vars
+      const retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      upsertItemsRes.error = retry.error ?? null;
+    }
     if (upsertItemsRes?.error) errors.push(upsertItemsRes.error);
     // Mettre à jour les IDs d'items connus (pour qu'un item créé en session soit supprimable plus tard)
     if (!upsertItemsRes?.error) {
