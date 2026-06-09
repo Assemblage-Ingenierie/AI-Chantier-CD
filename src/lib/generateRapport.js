@@ -29,14 +29,23 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
+      // Plafonne la résolution : ~2400px de côté = ~350 dpi à la largeur A4, largement
+      // suffisant pour l'impression et bien plus léger/rapide qu'un rendu à 4500px.
+      const MAXD = 2400;
+      const dScale = Math.min(1, MAXD / Math.max(img.naturalWidth, img.naturalHeight));
       const cv  = document.createElement('canvas');
-      cv.width  = img.naturalWidth;
-      cv.height = img.naturalHeight;
+      cv.width  = Math.round(img.naturalWidth  * dScale);
+      cv.height = Math.round(img.naturalHeight * dScale);
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      // sizeScale ∝ largeur → les annotations gardent la même taille relative qu'à 4500px.
       const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
       drawAnnotationPaths(ctx, drawPaths, sizeScale);
-      resolve(cv.toDataURL('image/png'));
+      // JPEG (le plan est opaque) : embarqué tel quel par jsPDF (DCTDecode) → 5-10× plus
+      // léger qu'un PNG et SANS l'étape de compression zlib lente du PNG.
+      const out = cv.toDataURL('image/jpeg', 0.85);
+      cv.width = 0; cv.height = 0;
+      resolve(out);
     };
     img.onerror = () => resolve(exported ?? planBg);
     img.src = planBg;
@@ -346,7 +355,9 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     }
   } catch {}
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  // compress: true → déflate les flux de contenu (texte/vecteurs). Les images JPEG/WebP
+  // gardent leur propre compression (pas de ré-encodage) → gain de poids sans surcoût notable.
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const W = 210, H = 297, ML = 18, MR = 18, CW = W - ML - MR;
 
   // Palette
