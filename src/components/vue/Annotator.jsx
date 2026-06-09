@@ -133,10 +133,28 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       const fs = 20 + p.size * 4;
       const lh = fs * 1.2;            // hauteur de ligne (texte multi-ligne)
       const pad = 10;
-      const lines = String(p.text ?? '').split('\n');
       ctx.save();
       ctx.font = `bold ${fs}px Arial`;
-      const tw = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+      let lines = String(p.text ?? '').split('\n');
+      let tw;
+      if (p.textW) {
+        // Word-wrap chaque ligne explicite pour tenir dans p.textW pixels canvas
+        const wrapped = [];
+        for (const ln of lines) {
+          const words = ln.split(' ');
+          let cur = '';
+          for (const w of words) {
+            const test = cur ? cur + ' ' + w : w;
+            if (ctx.measureText(test).width <= p.textW) { cur = test; }
+            else { if (cur) wrapped.push(cur); cur = w; }
+          }
+          wrapped.push(cur);
+        }
+        lines = wrapped.length ? wrapped : [''];
+        tw = p.textW;
+      } else {
+        tw = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+      }
       ctx.restore();
       const textH = fs + (lines.length - 1) * lh; // hauteur totale du bloc de texte
 
@@ -161,12 +179,14 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
           }
         }
         const ang = Math.atan2(tipY - ey, tipX - ex);
-        const aL = 16 * ss; // longueur de pointe en pixels écran
+        // Flèche : épaisseur + pointe proportionnelles à l'échelle TEXTE (scaleText)
+        const arrowSc = _o ? Math.max(0.3, Math.min(5, 2 * sT / Math.max(0.01, ss))) : 1;
+        const aL = 16 * ss * arrowSc;
         const baseX = tipX - Math.cos(ang) * aL, baseY = tipY - Math.sin(ang) * aL;
         ctx.save();
         ctx.strokeStyle = p.color; ctx.fillStyle = p.color;
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.lineWidth = 3.5 * ss;
+        ctx.lineWidth = 3.5 * ss * arrowSc;
         ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(baseX, baseY); ctx.stroke();
         // Pointe pleine (triangle net)
         ctx.beginPath();
@@ -349,6 +369,7 @@ function scalePaths(paths, sx, sy) {
     if (s.x  != null) { s.x  = s.x  * sx; s.y  = s.y  * sy; }
     if (s.x1 != null) { s.x1 = s.x1 * sx; s.y1 = s.y1 * sy; s.x2 = s.x2 * sx; s.y2 = s.y2 * sy; }
     if (s.arrowX != null) { s.arrowX = s.arrowX * sx; s.arrowY = s.arrowY * sy; }
+    if (s.textW  != null) s.textW = s.textW * sx;
     if (s.pts)    s.pts    = s.pts.map(pt => ({ ...pt, x: pt.x * sx, y: pt.y * sy }));
     if (s.points) s.points = s.points.map(pt => ({ ...pt, x: pt.x * sx, y: pt.y * sy }));
     return s;
@@ -381,6 +402,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const textDragRef    = useRef(null); // { mode:'box'|'tip', origX/Y, origArrowX/Y, tapX, tapY }
   const porteeStartRef = useRef(null);
   const shapeStartRef  = useRef(null);
+  const clipboardRef   = useRef(null); // Ctrl+C/V — copie d'annotation
   const annotDragRef   = useRef(null); // { idx, origData, tapX, tapY } — drag symbole/viewpoint
   const arrowPlaceRef  = useRef(null); // { x, y } — tip du callout flèche pendant le drag de placement
   const resizeDragRef  = useRef(null); // { handle, origData, idx } — resize poignée forme
@@ -589,14 +611,42 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.beginPath(); ctx.arc(hcx, hcy, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
         if (isSel) {
-          const _lines = String(p.text ?? '').split('\n');
-          const fs = (20 + p.size * 4) * sText;
+          const fsU = 20 + p.size * 4;
+          const fs = fsU * sText;
           const _lh = fs * 1.2;
-          ctx.font = `bold ${20 + p.size * 4}px Arial`;
-          const tw = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0) * sText;
+          ctx.font = `bold ${fsU}px Arial`;
+          let _lines = String(p.text ?? '').split('\n');
+          let twU;
+          if (p.textW) {
+            const wrapped = [];
+            for (const ln of _lines) {
+              const words = ln.split(' ');
+              let cur = '';
+              for (const w of words) {
+                const test = cur ? cur + ' ' + w : w;
+                if (ctx.measureText(test).width <= p.textW) cur = test;
+                else { if (cur) wrapped.push(cur); cur = w; }
+              }
+              wrapped.push(cur);
+            }
+            _lines = wrapped.length ? wrapped : [''];
+            twU = p.textW;
+          } else {
+            twU = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+          }
+          const tw = twU * sText;
           const pad = 10 * sText;
+          const bx = p.x - pad, by = p.y - fs - 4 * sText;
+          const bw = tw + pad * 2, bh = fs + (_lines.length - 1) * _lh + pad + 6 * sText;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
-          ctx.strokeRect(p.x - pad, p.y - fs - 4 * sText, tw + pad * 2, fs + (_lines.length - 1) * _lh + pad + 6 * sText);
+          ctx.strokeRect(bx, by, bw, bh);
+          ctx.setLineDash([]);
+          if (p.textMode === 'boxed' || p.textMode === 'arrow') {
+            const rhs = 8 * ratio;
+            const hrX = bx + bw, hrY = by + bh / 2;
+            ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
+            ctx.beginPath(); ctx.rect(hrX - rhs, hrY - rhs, rhs * 2, rhs * 2); ctx.fill(); ctx.stroke();
+          }
         }
         ctx.restore();
       });
@@ -689,6 +739,27 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         setPaths(p => p.slice(0, -1));
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (selTextIdx !== null && paths[selTextIdx]) {
+          clipboardRef.current = { ...paths[selTextIdx] }; e.preventDefault();
+        } else if (selAnnot !== null && paths[selAnnot.idx]) {
+          const ap = paths[selAnnot.idx];
+          clipboardRef.current = { ...ap, pts: ap.pts?.map(pt => ({...pt})) }; e.preventDefault();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardRef.current) {
+        e.preventDefault();
+        const src = clipboardRef.current;
+        const OFF = 40;
+        const copy = { ...src };
+        if (copy._vpId) copy._vpId = crypto.randomUUID();
+        if (copy.x  != null) { copy.x  += OFF; copy.y  += OFF; }
+        if (copy.x1 != null) { copy.x1 += OFF; copy.y1 += OFF; copy.x2 += OFF; copy.y2 += OFF; }
+        if (copy.arrowX != null) { copy.arrowX += OFF; copy.arrowY += OFF; }
+        if (copy.pts)    copy.pts    = src.pts.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
+        if (copy.points) copy.points = src.points.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
+        setPaths(prev => [...prev, copy]);
       }
       if (e.key === 'Escape') {
         setPolyPts([]); setPolyMousePos(null);
@@ -928,11 +999,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
           const fs = (20 + p.size * 4) * txtScale;
           const _ls = String(p.text ?? '').split('\n');
+          const _extraH = (_ls.length - 1) * fs * 1.2;
+          // Poignée de resize droite (textes encadrés/flèche sélectionnés)
+          if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
+            const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
+            const hrX = p.x + (approxTwU + 10) * txtScale;
+            const hrY = p.y - fs / 2;
+            if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
+              textDragRef.current = { mode: 'resize', origTextW: p.textW ?? approxTwU, tapX: pos.x };
+              setDrawing(true); return;
+            }
+          }
           const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
-          const approxW = Math.max(80, _maxLen * fs * 0.6) + 20;
-          const _extraH = (_ls.length - 1) * fs * 1.2; // lignes supplémentaires (multi-ligne)
+          const approxW = p.textW != null ? p.textW * txtScale + 20 * txtScale : Math.max(80, _maxLen * fs * 0.6) + 20;
           const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR;
-          // Boîte de clic sur TOUTE l'étendue du texte (toutes les lignes) :
           const inBox =
             pos.x >= p.x - 10 * txtScale && pos.x <= p.x - 10 * txtScale + approxW &&
             pos.y >= p.y - fs - 4 * txtScale && pos.y <= p.y + 10 * txtScale + _extraH;
@@ -1035,23 +1115,40 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }
       // Puis la boîte de texte — détection élargie à toute la zone du texte
       let existIdx = -1;
+      let existIsResize = false;
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'text') continue;
-        const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
         const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
         const fs = (20 + p.size * 4) * txtScale;
         const _ls = String(p.text ?? '').split('\n');
+        const _extraH = (_ls.length - 1) * fs * 1.2;
+        // Resize handle (right edge of selected boxed/arrow text)
+        if (i === selTextIdx && (p.textMode === 'boxed' || p.textMode === 'arrow')) {
+          const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
+          const hrX = p.x + (approxTwU + 10) * txtScale;
+          const hrY = p.y - fs / 2;
+          if (Math.abs(pos.x - hrX) < 18 * (cv.width / cv.clientWidth) && Math.abs(pos.y - hrY) < 18 * (cv.width / cv.clientWidth)) {
+            existIdx = i; existIsResize = true; break;
+          }
+        }
+        const inCircle = Math.hypot(p.x - pos.x, p.y - pos.y) < hitR * 1.1;
         const _maxLen = _ls.reduce((m, l) => Math.max(m, l.length), 0);
-        const _extraH = (_ls.length - 1) * fs * 1.2; // lignes supplémentaires (multi-ligne)
-        // Largeur/hauteur estimées GÉNÉREUSES de l'encadré → on attrape le texte partout.
-        const approxW = Math.max(90, _maxLen * fs * 0.62) + 30 * txtScale;
+        const approxW = p.textW != null ? p.textW * txtScale + 20 * txtScale : Math.max(90, _maxLen * fs * 0.62) + 30 * txtScale;
         const inBox =
           pos.x >= p.x - 16 * txtScale && pos.x <= p.x + approxW &&
           pos.y >= p.y - fs - 12 * txtScale && pos.y <= p.y + 16 * txtScale + _extraH;
         if (inCircle || inBox) { existIdx = i; break; }
       }
       if (existIdx >= 0) {
+        if (existIsResize) {
+          const p = paths[existIdx];
+          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
+          const _ls = String(p.text ?? '').split('\n');
+          const approxTwU = p.textW ?? _ls.reduce((m, l) => Math.max(m, l.length * (20 + p.size * 4) * 0.6), 0);
+          textDragRef.current = { mode: 'resize', origTextW: approxTwU, tapX: pos.x };
+          setSelTextIdx(existIdx); setDrawing(true); return;
+        }
         // 1er tap = sélection (drag possible). 2e tap sur un texte déjà sélectionné = édition (géré au relâchement).
         const wasSelected = selTextIdx === existIdx;
         setSelTextIdx(existIdx);
@@ -1185,6 +1282,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Placement flèche : mise à jour de la ligne de prévisualisation
     if (tool === 'text' && drawing && arrowPlaceRef.current) {
       setPendingArrowLine({ tipX: arrowPlaceRef.current.x, tipY: arrowPlaceRef.current.y, boxX: pos.x, boxY: pos.y });
+      return;
+    }
+    // Resize largeur du cadre texte (drag poignée droite)
+    if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'resize') {
+      const cv = cvRef.current;
+      const ratio = cv.width / cv.clientWidth;
+      const sT = ratio * 0.5 * scaleText;
+      const { origTextW, tapX } = textDragRef.current;
+      const newW = Math.max(60, origTextW + (pos.x - tapX) / sT);
+      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, textW: newW } : p));
       return;
     }
     // Déplacement texte : tip de flèche

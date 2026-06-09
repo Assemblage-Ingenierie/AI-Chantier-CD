@@ -5,6 +5,7 @@ import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 import JSZip from 'jszip';
+import Annotator from './Annotator.jsx';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   const taRef = useRef();
@@ -83,6 +84,7 @@ export default function RapportTab({ projet, onUpdate }) {
   const [cutMode, setCutMode] = useState(false);
   const previewRef = useRef();
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
+  const [editingPlan, setEditingPlan] = useState(null); // { locId, epIdx, bg, paths }
   const [panelW, setPanelW] = useState(() => {
     const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
     return saved >= 220 && saved <= 600 ? saved : 300;
@@ -514,7 +516,36 @@ export default function RapportTab({ projet, onUpdate }) {
         onAddCustomRow={addCustomRow}
         onUpdateConclusion={v => onUpdate({ conclusion: v })}
         onUpdateConclusionAlign={a => onUpdate({ conclusionAlign: a })}
+        onAnnotScaleChange={(kind, v) => setScale(kind, v)}
+        onEditPlan={(locId, epIdx, bg, paths) => setEditingPlan({ locId, epIdx, bg, paths })}
       />
+
+      {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
+      {editingPlan && (
+        <Annotator
+          bgImage={editingPlan.bg}
+          savedPaths={editingPlan.paths}
+          exportSizeMultiplier={2}
+          title="Ajuster les annotations du plan"
+          onClose={() => setEditingPlan(null)}
+          onSave={(newPaths) => {
+            const updatedLocs = localisations.map(l => {
+              if (l.id !== editingPlan.locId) return l;
+              if (editingPlan.epIdx === null) {
+                return { ...l, planAnnotations: { ...(l.planAnnotations || {}), paths: newPaths, exported: null } };
+              }
+              return {
+                ...l,
+                extraPlans: (l.extraPlans || []).map((ep, i) =>
+                  i === editingPlan.epIdx ? { ...ep, planAnnotations: { ...(ep.planAnnotations || {}), paths: newPaths, exported: null } } : ep
+                ),
+              };
+            });
+            onUpdate({ localisations: updatedLocs });
+            setEditingPlan(null);
+          }}
+        />
+      )}
     </div>
   );
 }

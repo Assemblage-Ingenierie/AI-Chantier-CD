@@ -8,10 +8,14 @@ export async function callAIProxy(params) {
   const now = Date.now();
   const elapsed = now - (_lastCall[feature] || 0);
   if (elapsed < THROTTLE_MS) {
-    const wait = Math.ceil((THROTTLE_MS - elapsed) / 1000);
-    throw new Error(`Attends ${wait}s avant une nouvelle requête IA`);
+    if (params._waitOk) {
+      await new Promise(r => setTimeout(r, THROTTLE_MS - elapsed));
+    } else {
+      const wait = Math.ceil((THROTTLE_MS - elapsed) / 1000);
+      throw new Error(`Attends ${wait}s avant une nouvelle requête IA`);
+    }
   }
-  _lastCall[feature] = now;
+  _lastCall[feature] = Date.now();
 
   const sb = await getSupabase();
   const { data: { session } } = await sb.auth.getSession();
