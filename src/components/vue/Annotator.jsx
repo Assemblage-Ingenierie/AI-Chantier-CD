@@ -540,7 +540,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const resolveGv = (p) => {
     const g = gvByVpIdRef.current.get(p._vpId);
     if (g != null) return g;
-    return vpNumByPath ? getVpNum(vpNumByPath, p) : null;
+    const byPath = vpNumByPath ? getVpNum(vpNumByPath, p) : null;
+    if (byPath != null) return byPath;
+    // Repli par identité photo : un marqueur fraîchement posé pour une photo déjà numérotée
+    // (annotée sur un autre plan) reprend son Vxx immédiatement, avant même la sauvegarde.
+    if (vpNumByPath && p.photoId != null) {
+      const byPhoto = vpNumByPath.get(`photo:${p.photoId}`);
+      if (byPhoto != null) return byPhoto;
+    }
+    return null;
   };
   const newVpCount = vpNumByPath
     ? paths.filter(p => p.type === 'viewpoint' && resolveGv(p) == null).length
@@ -1456,17 +1464,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (tool === 'viewpoint' && vpStart.current) {
       const label = nextVpLabel;
       const pIdx  = activePh?.photoIdx ?? null;
+      const pId   = activePh?.photoId ?? null;
       const nx    = pendingVP?.x ?? vpStart.current.x;
       const ny    = pendingVP?.y ?? vpStart.current.y;
       const nAng  = pendingVP?.angle ?? 0;
       setPaths(prev => {
         // Une photo = un seul angle par plan : si un marqueur existe déjà pour cette photo
         // sur ce plan, on le repositionne au lieu d'en créer un second (jamais 2× le même Vxx).
-        if (pIdx != null) {
-          const exIdx = prev.findIndex(p => p.type === 'viewpoint' && p.photoIdx === pIdx);
-          if (exIdx >= 0) return prev.map((p, i) => i === exIdx ? { ...p, x: nx, y: ny, angle: nAng } : p);
-        }
-        return [...prev, { type: 'viewpoint', _vpId: crypto.randomUUID(), x: nx, y: ny, angle: nAng, label, color, size, photoIdx: pIdx }];
+        // Identification par photoId stable en priorité, repli sur l'index positionnel.
+        const sameVp = (p) => p.type === 'viewpoint' &&
+          ((pId != null && p.photoId === pId) || (pId == null && pIdx != null && p.photoIdx === pIdx));
+        const exIdx = (pId != null || pIdx != null) ? prev.findIndex(sameVp) : -1;
+        if (exIdx >= 0) return prev.map((p, i) => i === exIdx ? { ...p, x: nx, y: ny, angle: nAng } : p);
+        return [...prev, { type: 'viewpoint', _vpId: crypto.randomUUID(), x: nx, y: ny, angle: nAng, label, color, size, photoIdx: pIdx, photoId: pId }];
       });
       setPendingVP(null);
       vpStart.current = null;
@@ -1552,7 +1562,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const selectPhoto = (ph, i) => {
     const isActive = activePh?.photoIdx === i;
-    setActivePh(isActive ? null : { photoIdx: i, src: ph.data });
+    // photoId = identité STABLE de la photo (survit aux ajouts/suppressions/réordres) :
+    // c'est elle qui porte le numéro Vxx, plus l'index positionnel (fragile).
+    setActivePh(isActive ? null : { photoIdx: i, photoId: ph.id ?? null, src: ph.data });
     setTool('viewpoint');
     setShowSyms(false);
   };
