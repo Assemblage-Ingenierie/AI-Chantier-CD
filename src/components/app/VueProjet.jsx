@@ -829,18 +829,32 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {modal?.t === 'plan' && (() => {
         const loc = visitProjet.localisations.find(l => l.id === modal.locId);
         // Merge annotations from ALL locs sharing the same planId.
-        // Deduplication by JSON string prevents doubling when locs are already in sync after a propagation save.
+        // Déduplication par EMPREINTE STABLE (type + géométrie + contenu) plutôt que par
+        // JSON.stringify : sinon des champs volatils (label Vxx réécrit par la numérotation
+        // globale, _vpId unique, textW ajouté par le redimensionnement) font échouer le dédoublonnage
+        // → la même annotation propagée apparaît en double sur le plan partagé.
         const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
         let mergedAnnotations = loc?.planAnnotations ?? null;
+        const annotFp = (p) => {
+          const rx = (v) => Math.round(v ?? 0);
+          switch (p.type) {
+            case 'viewpoint': return `vp|${p.photoIdx ?? '_'}|${rx(p.x)}|${rx(p.y)}`;
+            case 'symbol':    return `sym|${p.symbolId}|${rx(p.x ?? p.x1)}|${rx(p.y ?? p.y1)}`;
+            case 'text':      return `txt|${(p.text || '').trim()}|${rx(p.x)}|${rx(p.y)}`;
+            case 'shape':     return `shp|${p.shape}|${rx(p.x1 ?? p.pts?.[0]?.x)}|${rx(p.y1 ?? p.pts?.[0]?.y)}`;
+            case 'stroke':    return `str|${p.points?.length ?? 0}|${rx(p.points?.[0]?.x)}|${rx(p.points?.[0]?.y)}`;
+            default:          return JSON.stringify(p);
+          }
+        };
         if (loc?.planId) {
           const otherLocs = allLocsFlat.filter(
             l => l.id !== modal.locId && l.planId === loc.planId && samePlan(l.planBg, loc.planBg) && l.planAnnotations?.paths?.length
           );
           if (otherLocs.length > 0) {
             const ownPaths = loc?.planAnnotations?.paths || [];
-            const seen = new Set(ownPaths.map(p => JSON.stringify(p)));
+            const seen = new Set(ownPaths.map(annotFp));
             const foreign = otherLocs.flatMap(l => l.planAnnotations.paths)
-              .filter(p => !seen.has(JSON.stringify(p)));
+              .filter(p => { const fp = annotFp(p); if (seen.has(fp)) return false; seen.add(fp); return true; });
             if (foreign.length > 0) {
               // Renumber VP labels sequentially to avoid collisions from independent annotations
               let vpIdx = 1;
