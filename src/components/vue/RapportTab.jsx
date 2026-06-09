@@ -526,6 +526,7 @@ export default function RapportTab({ projet, onUpdate }) {
           bgImage={editingPlan.bg}
           savedPaths={editingPlan.paths}
           exportSizeMultiplier={2}
+          initialTool="select"
           title="Ajuster les annotations du plan"
           onClose={() => setEditingPlan(null)}
           onSave={(newPaths) => {
