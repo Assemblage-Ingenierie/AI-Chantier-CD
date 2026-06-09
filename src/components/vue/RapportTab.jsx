@@ -199,12 +199,16 @@ export default function RapportTab({ projet, onUpdate }) {
     return [...itemRows, ...customRows];
   }, [localisations, projet.includeTableauRecap, projet.tableauRecap]);
 
+  // Accepte (itemId, field, value) OU (itemId, { field1: v1, field2: v2 }) pour mettre à jour
+  // plusieurs champs en un seul appel — évite le bug de closure obsolète quand genRow écrit
+  // titre ET solution coup sur coup (le 2e appel écrasait le 1er sur le même tableauRecap figé).
   const updateRecapField = useCallback((itemId, field, value) => {
+    const patch = (typeof field === 'object' && field !== null) ? field : { [field]: value };
     const curr = projet.tableauRecap || [];
     const has = curr.some(r => r.itemId === itemId);
     onUpdate({ tableauRecap: has
-      ? curr.map(r => r.itemId === itemId ? { ...r, [field]: value } : r)
-      : [...curr, { itemId, [field]: value }]
+      ? curr.map(r => r.itemId === itemId ? { ...r, ...patch } : r)
+      : [...curr, { itemId, ...patch }]
     });
   }, [projet.tableauRecap, onUpdate]);
 
