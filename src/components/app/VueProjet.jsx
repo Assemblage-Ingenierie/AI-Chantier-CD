@@ -385,9 +385,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           </div>
         )}
 
-        {/* Supprimer la photo affichée — bas-gauche, à côté de la bande de photos */}
+        {/* Supprimer la photo affichée — placé AU-DESSUS de la bande de miniatures quand
+            celle-ci est visible (sinon il chevauchait les premières miniatures avec bcp de photos).
+            Sans bande (1 seule photo) : en bas-gauche comme avant. */}
         <button onClick={() => setConfirmDelPhotoAnnot(true)} title="Supprimer cette photo"
-          style={{ position:'fixed', bottom:10, left:12, zIndex:101, display:'flex', alignItems:'center', gap:6,
+          style={{ position:'fixed', bottom: validPhotos.length > 1 ? 80 : 10, left:12, zIndex:101, display:'flex', alignItems:'center', gap:6,
             background:'rgba(227,5,19,0.92)', color:'#fff', border:'none', borderRadius:10, padding:'9px 14px',
             fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 2px 10px rgba(0,0,0,0.4)' }}>
           <Ic n="del" s={16}/> Supprimer

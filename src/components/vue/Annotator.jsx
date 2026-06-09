@@ -1494,6 +1494,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         entry.arrowX = pt.arrowX ?? (pt.x + 50);
         entry.arrowY = pt.arrowY ?? (pt.y - 50);
       }
+      // Largeur par défaut si le texte déborderait du bord droit du canvas (fréquent sur photos
+      // étroites) : sans ça, la poignée de redimensionnement (bord droit) tombe hors écran et
+      // devient inattrapable. On force alors un retour à la ligne dans la zone visible.
+      const cv = cvRef.current;
+      if (cv) {
+        const ctx = cv.getContext('2d');
+        const fsU = 20 + size * 4;
+        ctx.font = `bold ${fsU}px Arial`;
+        const natW = String(val).split('\n').reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
+        const pad = 10, margin = 14;
+        if (pt.x + natW + pad * 2 + margin > cv.width) {
+          entry.textW = Math.max(80, cv.width - pt.x - pad * 2 - margin);
+        }
+      }
       setPaths(prev => [...prev, entry]);
     }
     cancelInlineEdit();
