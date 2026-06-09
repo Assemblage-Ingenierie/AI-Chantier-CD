@@ -41,16 +41,19 @@ export function computeVpNumbering(localisations) {
       // marqueurs avec _vpId provoque des doublons V1 quand des annotations propagées entre
       // zones ont le même photoIdx local (ex. zone A et zone B ayant chacune leur photo 0).
       if (vp._vpId && numByVpId.has(vp._vpId)) {
+        // Priorité absolue : UUID stable → même marqueur propagé sur plusieurs zones.
         num = numByVpId.get(vp._vpId); dedupPath = 'vpId-dedup';
       } else if (numByFp.has(fp)) {
         num = numByFp.get(fp); dedupPath = 'fp-dedup';
-      } else if (vp.photoIdx != null && !vp._vpId) {
-        // Ancien marqueur sans _vpId : partage le numéro si un autre marqueur vise déjà cette photo.
+      } else if (vp.photoIdx != null) {
+        // Dédup par photo (même zone) : deux marqueurs sur DES PLANS DIFFÉRENTS de la même
+        // zone qui référencent la même photo partagent le même numéro.
+        // La clé inclut loc.id → pas de collision entre zones distinctes.
         const key = `${loc.id}_${vp.photoIdx}`;
         if (vxxPhotoMap.has(key)) { num = vxxPhotoMap.get(key); dedupPath = 'photoKey-dedup'; }
         else { num = ++g; vxxPhotoMap.set(key, num); dedupPath = 'new-photoKey'; }
       } else {
-        num = ++g; dedupPath = vp.photoIdx != null ? 'new-photoKey' : 'new-noPhoto';
+        num = ++g; dedupPath = 'new-noPhoto';
       }
       // Enregistre le badge photo pour CETTE zone quel que soit le chemin de dédup.
       // Nécessaire quand le plan est partagé entre plusieurs zones (propagation) : la première
