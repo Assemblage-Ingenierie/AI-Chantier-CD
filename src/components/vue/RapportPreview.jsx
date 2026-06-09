@@ -1702,7 +1702,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const scale = usePreviewScale(scrollRef);
 
   const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
-  const hasTableau    = includeTableauRecap && recapItems.length > 0;
+  // Le tableau s'affiche dès qu'il y a des lignes à montrer : lignes calculées (recapRows,
+  // qui incluent les lignes personnalisées/IA ET les observations sans intitulé) OU, en repli,
+  // des items avec intitulé. Avant : basé uniquement sur recapItems (intitulé obligatoire) →
+  // le tableau (ex. lignes générées par IA, ou observations sans titre) disparaissait à tort.
+  const hasTableau    = includeTableauRecap && (((recapRows?.length || 0) > 0) || recapItems.length > 0);
   const hasConclusion = includeConclusion;
 
   // Calcul des chunks de participants pour la page de garde (overflow → pages supplémentaires)

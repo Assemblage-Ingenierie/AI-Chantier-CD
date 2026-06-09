@@ -158,9 +158,17 @@ export default function RapportTab({ projet, onUpdate }) {
     if (projet.includeTableauRecap === false) return [];
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
     const ovMap = new Map((projet.tableauRecap || []).map(r => [r.itemId, r]));
+    // Une observation alimente le récap si elle a du contenu (intitulé OU commentaire OU photos)
+    // — pas seulement un intitulé. Sinon, en retirant les intitulés, les observations
+    // disparaissaient du tableau récapitulatif.
+    const hasContent = (i) => !!(
+      (i.titre && i.titre.trim()) ||
+      (i.commentaire && i.commentaire.replace(/<[^>]+>/g, '').trim()) ||
+      (i.photos || []).some(p => p.data)
+    );
     // Lignes issues des items (hors "fait" et hors "excluded")
     const itemRows = localisations.flatMap(loc =>
-      (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
+      (loc.items || []).filter(i => hasContent(i) && i.suivi !== 'fait').map(i => {
         const ov = ovMap.get(i.id) || {};
         if (ov.excluded) return null;
         return {
