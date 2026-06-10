@@ -23,9 +23,9 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
-      // Plafonne la résolution : ~2400px de côté = ~350 dpi à la largeur A4, largement
-      // suffisant pour l'impression et bien plus léger/rapide qu'un rendu à 4500px.
-      const MAXD = 2400;
+      // Plafonne la résolution : ~1800px de côté ≈ 260 dpi à la largeur A4 — net pour
+      // l'impression des plans/annotations et nettement plus léger qu'un rendu à 2400/4500px.
+      const MAXD = 1800;
       const dScale = Math.min(1, MAXD / Math.max(img.naturalWidth, img.naturalHeight));
       const cv  = document.createElement('canvas');
       cv.width  = Math.round(img.naturalWidth  * dScale);
@@ -37,7 +37,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       drawAnnotationPaths(ctx, drawPaths, sizeScale);
       // JPEG (le plan est opaque) : embarqué tel quel par jsPDF (DCTDecode) → 5-10× plus
       // léger qu'un PNG et SANS l'étape de compression zlib lente du PNG.
-      const out = cv.toDataURL('image/jpeg', 0.85);
+      const out = cv.toDataURL('image/jpeg', 0.8);
       cv.width = 0; cv.height = 0;
       resolve(out);
     };
@@ -46,31 +46,51 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   });
 }
 
-/** Réduit une image (dataURL) pour l'embarquer dans le PDF : on plafonne le plus grand côté
- *  à maxDim px et on ré-encode en JPEG. Une photo de téléphone (≈4000px) affichée dans une
- *  case de ~83mm n'a besoin que de ~1000px (≈300 dpi) → poids divisé par 50-100 sans perte
- *  visible. Une image déjà petite et déjà en JPEG est renvoyée telle quelle. */
-function downscaleDataUrl(dataUrl, maxDim, quality = 0.82) {
-  if (!dataUrl || !dataUrl.startsWith('data:')) return Promise.resolve(dataUrl);
-  return new Promise(resolve => {
-    const img = new window.Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-      // Déjà petite ET déjà JPEG → rien à gagner, on garde l'original
-      if (scale >= 1 && /^data:image\/jpe?g/i.test(dataUrl)) { resolve(dataUrl); return; }
-      const cv = document.createElement('canvas');
-      cv.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
-      cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      const ctx = cv.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); // JPEG sans alpha
-      ctx.drawImage(img, 0, 0, cv.width, cv.height);
-      const out = cv.toDataURL('image/jpeg', quality);
-      cv.width = 0; cv.height = 0;
-      resolve(out.length < dataUrl.length ? out : dataUrl);
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+/** Réduit une image pour l'embarquer dans le PDF : on plafonne le plus grand côté à maxDim px
+ *  et on ré-encode en JPEG. Accepte un dataURL OU une URL signée Supabase (https) — c'est le
+ *  cas normal des photos d'observation, chargées en URL et embarquées sinon en pleine résolution
+ *  capteur (≈4000px) dans une case de ~83mm → le PDF explosait (>100 Mo). On charge l'image
+ *  (crossOrigin pour ne pas « tainter » le canvas), on la redessine réduite puis on exporte un
+ *  JPEG compact. En cas d'échec (CORS, réseau) on renvoie la source d'origine. */
+async function downscaleDataUrl(src, maxDim, quality = 0.82) {
+  if (!src) return src;
+  const isData = src.startsWith('data:');
+  let objUrl = null;
+  try {
+    // URL signée Supabase → on récupère les octets en blob et on charge via un object URL
+    // (même origine) : le canvas n'est jamais « tainté », toDataURL fonctionne toujours.
+    let loadSrc = src;
+    if (!isData) {
+      const resp = await fetch(src);
+      if (!resp.ok) return src;
+      const blob = await resp.blob();
+      objUrl = URL.createObjectURL(blob);
+      loadSrc = objUrl;
+    }
+    return await new Promise(resolve => {
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+          // Déjà petite ET déjà un dataURL JPEG → rien à gagner, on garde l'original.
+          if (scale >= 1 && isData && /^data:image\/jpe?g/i.test(src)) { resolve(src); return; }
+          const cv = document.createElement('canvas');
+          cv.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
+          cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); // JPEG sans alpha
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          const out = cv.toDataURL('image/jpeg', quality);
+          cv.width = 0; cv.height = 0;
+          // dataURL : on garde le plus léger ; URL distante : on prend toujours le JPEG réduit.
+          resolve(out && out.length > 50 ? ((!isData || out.length < src.length) ? out : src) : src);
+        } catch { resolve(src); }
+      };
+      img.onerror = () => resolve(src);
+      img.src = loadSrc;
+    });
+  } catch { return src; }
+  finally { if (objUrl) URL.revokeObjectURL(objUrl); }
 }
 
 /** Pré-rend l'icône de viewpoint (œil + cône) pour la légende PDF. */
@@ -434,20 +454,21 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   {
     const cols  = Math.max(1, Math.min(photosParLigne, 3));
     const maxPh = cols <= 2 ? 4 : 6;
-    // Résolution cible = ~300 dpi de la taille d'affichage réelle de la case (largeur en mm).
-    // 300 dpi = qualité d'impression nette ; au-delà on stocke des pixels invisibles.
+    // Résolution cible = ~250 dpi de la taille d'affichage réelle de la case (largeur en mm).
+    // 250 dpi reste net à l'impression d'une photo ; au-delà on ne stocke que des pixels
+    // invisibles qui alourdissent le PDF. On parallélise le redimensionnement (Promise.all).
     const phWmm   = (CW - 6 - (cols - 1) * 2) / cols;
-    const photoMaxDim = Math.min(1600, Math.max(800, Math.round(phWmm / 25.4 * 300)));
-    for (const loc of localisations) {
-      for (const item of (loc.items || [])) {
-        const validPh = (item.photos || []).filter(p => p.data).slice(0, maxPh);
-        for (const p of validPh) {
-          if (!photoDataCache.has(p.data)) {
-            photoDataCache.set(p.data, await downscaleDataUrl(p.data, photoMaxDim, 0.8));
-          }
-        }
-      }
-    }
+    const photoMaxDim = Math.min(1400, Math.max(700, Math.round(phWmm / 25.4 * 250)));
+    const uniquePhotos = [...new Set(
+      localisations.flatMap(loc =>
+        (loc.items || []).flatMap(item =>
+          (item.photos || []).filter(p => p.data).slice(0, maxPh).map(p => p.data)
+        )
+      )
+    )];
+    await Promise.all(uniquePhotos.map(async src => {
+      photoDataCache.set(src, await downscaleDataUrl(src, photoMaxDim, 0.78));
+    }));
   }
 
   // Pré-rendu des icônes de symboles et viewpoint pour les légendes
