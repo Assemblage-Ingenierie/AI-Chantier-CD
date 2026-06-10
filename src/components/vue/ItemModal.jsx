@@ -56,11 +56,13 @@ function patchHtmlText(html, del, add) {
   }).join('');
 }
 
-export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest }) {
+export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
   const [form, setForm] = useState(() => {
+    // id stable dès le départ : sert d'ORIGINE aux marqueurs Vxx posés sur les plans de
+    // l'observation (numérotation par photo de l'observation, cf. vpNumbering).
     const base = item
-      ? { ...item, photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
-      : { titre:'', commentaire:'', urgence:'rien', photos:[], plans:[], suivi:'rien', commentaireAlign:'left' };
+      ? { ...item, id: item.id || crypto.randomUUID(), photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
+      : { id: crypto.randomUUID(), titre:'', commentaire:'', urgence:'rien', photos:[], plans:[], suivi:'rien', commentaireAlign:'left' };
     try {
       const saved = localStorage.getItem(DRAFT_KEY(item?.id));
       if (saved) {
@@ -474,10 +476,29 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   if (annotatingPlanIdx !== null) {
     const pl = form.plans[annotatingPlanIdx];
     const bg = planLibrary.find(p => p.id === pl?.planId)?.bg || null;
+    // R2 : numéros déjà attribués aux photos de l'observation sur les AUTRES plans de
+    // l'observation → la même photo posée ici reprend son numéro. Base de session = max global
+    // + numéros figés sur les plans de l'observation (un nouveau marqueur ne réutilise rien).
+    const planPhotoVpNums = new Map();
+    let planSessionBase = vpBase;
+    form.plans.forEach((p, i) => {
+      for (const a of (p.planAnnotations?.paths || [])) {
+        if (a.type !== 'viewpoint' || a.vpNum == null) continue;
+        planSessionBase = Math.max(planSessionBase, a.vpNum);
+        if (i !== annotatingPlanIdx && a.photoIdx != null && (a.originLocId == null || a.originLocId === form.id) && !planPhotoVpNums.has(a.photoIdx)) {
+          planPhotoVpNums.set(a.photoIdx, a.vpNum);
+        }
+      }
+    });
     return (
       <Annotator
         bgImage={bg}
         savedPaths={pl?.planAnnotations?.paths || []}
+        photos={form.photos}
+        locId={form.id ?? null}
+        photoVpNums={planPhotoVpNums}
+        vpNumByPath={vpNumByPath}
+        vpBase={planSessionBase}
         onSave={(paths, exported) => {
           setForm(f => ({
             ...f,

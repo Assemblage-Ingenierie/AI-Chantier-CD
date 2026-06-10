@@ -814,6 +814,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             extraPlans={loc?.extraPlans ?? []}
             planAnnotations={initItem?.planAnnotations ?? null}
             planLibrary={projet.planLibrary || []}
+            vpNumByPath={vpNumGlobal}
+            vpBase={vpMaxGlobal}
             onClose={() => { itemModalBackRef.current = null; setModal(null); }}
             onSave={form => { itemModalBackRef.current = null; saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
