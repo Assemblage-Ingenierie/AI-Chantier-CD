@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
@@ -9,86 +9,105 @@ import { ensurePdfJs, pdfDataToBuffer } from '../../lib/pdfUtils.js';
 const CONCURRENCY = 8;
 const LONG_PRESS_MS = 280;
 
-export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose }) {
-  const [pages, setPages]       = useState([]);
+// Sélecteur de pages PDF. Deux modes :
+//   • LEGACY (prop `pdfData`) : un seul PDF, `onSelectMany` reçoit un tableau de numéros de pages.
+//   • MULTI  (prop `pdfs` = [{ pdf, nom }]) : plusieurs PDF affichés dans le MÊME écran, validés
+//     d'un coup. `onSelectMany` reçoit [{ nom, pdf, nums:[...] }] (docs ayant ≥1 page cochée).
+// Les pages sont identifiées par une clé `${docIdx}:${num}` dans les deux modes.
+export default function PdfPagePicker({ pdfData, pdfs, label, onSelectMany, onClose }) {
+  const docs = useMemo(
+    () => (pdfs && pdfs.length ? pdfs : (pdfData ? [{ pdf: pdfData, nom: label || '' }] : [])),
+    [pdfs, pdfData, label]
+  );
+  const multi = !!(pdfs && pdfs.length);
+
+  const [pages, setPages]       = useState([]);   // [{ key, docIdx, num, thumb }]
   const [selected, setSelected] = useState(new Set());
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const [zoom, setZoom] = useState(null); // { num, thumb } affiché en grand pendant l'appui
-  const lpTimer = useRef(null);           // timer d'appui long
-  const lpFired = useRef(false);          // l'appui long s'est déclenché → ne pas (dé)sélectionner au relâchement
+  const [zoom, setZoom] = useState(null); // page affichée en grand pendant l'appui long
+  const lpTimer = useRef(null);
+  const lpFired = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    let pdfRef = null;
+    const pdfRefs = [];
     (async () => {
       try {
         await ensurePdfJs();
-        const buf = pdfDataToBuffer(pdfData);
-        const pdf = await window.pdfjsLib.getDocument({
-          data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
-        }).promise;
-        pdfRef = pdf;
-        const count = pdf.numPages;
-        const allSel = new Set(Array.from({ length: count }, (_, i) => i + 1));
-        if (!cancelled) setSelected(allSel);
-
-        // Rendu parallèle : on prépare les tâches pour toutes les pages, puis
-        // on les exécute CONCURRENCY à la fois pour ne pas saturer le thread UI.
-        const renderPage = async (i) => {
-          const pg = await pdf.getPage(i);
-          const vp = pg.getViewport({ scale: 0.7 });
-          const cv = document.createElement('canvas');
-          cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-          await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-          const thumb = cv.toDataURL('image/webp', 0.75);
-          cv.width = 0; cv.height = 0;
-          return { num: i, thumb };
+        const collected = [];
+        const allSel = new Set();
+        const pushPage = (p) => {
+          collected.push(p);
+          if (!cancelled) setPages([...collected].sort((a, b) => a.docIdx - b.docIdx || a.num - b.num));
         };
 
-        // Pool concurrent : CONCURRENCY workers, chaque page s'affiche dès qu'elle est prête.
-        // Maintient l'ordre d'affichage (résultats indexés par position) sans attendre que
-        // tout un lot soit terminé avant de mettre à jour l'UI.
-        const results = new Array(count).fill(null);
-        let completed = 0;
-        let nextIdx = 0;
-        const worker = async () => {
-          while (true) {
-            const k = nextIdx++;
-            if (k >= count || cancelled) return;
-            try {
-              results[k] = await renderPage(k + 1);
-              completed++;
-              if (!cancelled) {
-                setPages(results.filter(Boolean));
-                if (completed === count) setLoading(false);
-              }
-            } catch { /* page isolée en erreur → on continue */ }
-          }
-        };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, count) }, worker));
+        for (let di = 0; di < docs.length; di++) {
+          if (cancelled) break;
+          const buf = pdfDataToBuffer(docs[di].pdf);
+          const pdf = await window.pdfjsLib.getDocument({
+            data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
+          }).promise;
+          pdfRefs.push(pdf);
+          const count = pdf.numPages;
+          for (let i = 1; i <= count; i++) allSel.add(`${di}:${i}`);
+          if (!cancelled) setSelected(new Set(allSel));
+
+          const renderPage = async (i) => {
+            const pg = await pdf.getPage(i);
+            const vp = pg.getViewport({ scale: 0.7 });
+            const cv = document.createElement('canvas');
+            cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+            await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+            const thumb = cv.toDataURL('image/webp', 0.75);
+            cv.width = 0; cv.height = 0;
+            return { key: `${di}:${i}`, docIdx: di, num: i, thumb };
+          };
+
+          // Pool concurrent : chaque page s'affiche dès qu'elle est prête.
+          let nextIdx = 0;
+          const worker = async () => {
+            while (true) {
+              const k = nextIdx++;
+              if (k >= count || cancelled) return;
+              try { pushPage(await renderPage(k + 1)); } catch { /* page isolée → on continue */ }
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, count) }, worker));
+        }
         if (!cancelled) setLoading(false);
       } catch (e) {
         if (!cancelled) { setError(e.message); setLoading(false); }
       }
     })();
-    return () => { cancelled = true; pdfRef?.destroy(); };
-  }, [pdfData]);
+    return () => { cancelled = true; pdfRefs.forEach(p => p?.destroy()); };
+  }, [docs]);
 
   useEffect(() => () => clearTimeout(lpTimer.current), []);
 
-  const toggle = (num) => setSelected(s => {
+  const toggle = (key) => setSelected(s => {
     const n = new Set(s);
-    n.has(num) ? n.delete(num) : n.add(num);
+    n.has(key) ? n.delete(key) : n.add(key);
     return n;
   });
 
   const handleConfirm = async () => {
     if (selected.size === 0 || confirming) return;
     setConfirming(true);
-    await onSelectMany(Array.from(selected).sort((a, b) => a - b));
+    if (multi) {
+      const result = docs.map((d, di) => ({
+        nom: d.nom,
+        pdf: d.pdf,
+        nums: [...selected].filter(k => k.startsWith(`${di}:`)).map(k => +k.split(':')[1]).sort((a, b) => a - b),
+      })).filter(d => d.nums.length);
+      await onSelectMany(result);
+    } else {
+      await onSelectMany([...selected].map(k => +String(k).split(':').pop()).sort((a, b) => a - b));
+    }
   };
+
+  const totalDocs = docs.length;
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:70, display:'flex', flexDirection:'column' }}>
@@ -96,6 +115,9 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         <div style={{ minWidth:0 }}>
           <p style={{ color:'white', fontWeight:700, fontSize:14, margin:0 }}>Choisir les pages à importer</p>
           {label && <p style={{ color:'rgba(255,255,255,0.7)', fontSize:12, margin:'1px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</p>}
+          {multi && totalDocs > 1 && !label && (
+            <p style={{ color:'rgba(255,255,255,0.7)', fontSize:12, margin:'1px 0 0' }}>{totalDocs} documents</p>
+          )}
           <p style={{ color:'rgba(255,255,255,0.45)', fontSize:11, margin:'2px 0 0' }}>
             {selected.size} / {pages.length}{loading ? '…' : ''} page{pages.length !== 1 ? 's' : ''} sélectionnée{selected.size !== 1 ? 's' : ''}
           </p>
@@ -128,8 +150,9 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
         </p>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14 }}>
           {pages.map((pg) => {
-            const { num, thumb } = pg;
-            const sel = selected.has(num);
+            const { key, num, thumb, docIdx } = pg;
+            const sel = selected.has(key);
+            const docNom = multi && totalDocs > 1 ? docs[docIdx]?.nom : null;
             const startPress = () => {
               lpFired.current = false;
               clearTimeout(lpTimer.current);
@@ -137,8 +160,8 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
             };
             const endPress = () => { clearTimeout(lpTimer.current); setZoom(null); };
             return (
-              <div key={num}
-                onClick={() => { if (lpFired.current) { lpFired.current = false; return; } toggle(num); }}
+              <div key={key}
+                onClick={() => { if (lpFired.current) { lpFired.current = false; return; } toggle(key); }}
                 onPointerDown={startPress}
                 onPointerUp={endPress}
                 onPointerLeave={endPress}
@@ -146,6 +169,9 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
                 onContextMenu={(e) => e.preventDefault()}
                 style={{ cursor:'pointer', borderRadius:8, overflow:'hidden', border:`3px solid ${sel ? DA.red : 'rgba(255,255,255,0.1)'}`, position:'relative', background:'#2a2a2a', transition:'border-color 0.1s', touchAction:'none', userSelect:'none' }}>
                 <img src={thumb} alt={`Page ${num}`} draggable={false} style={{ width:'100%', display:'block', pointerEvents:'none' }}/>
+                {docNom && (
+                  <div style={{ position:'absolute', top:0, left:0, right:0, background:'rgba(0,0,0,0.6)', padding:'3px 8px', color:'rgba(255,255,255,0.9)', fontSize:10, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{docNom}</div>
+                )}
                 <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.6)', padding:'4px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <span style={{ color:'white', fontSize:11, fontWeight:600 }}>p. {num}</span>
                   {sel && <span style={{ color:DA.red, fontSize:13, fontWeight:700 }}>✓</span>}
@@ -166,4 +192,3 @@ export default function PdfPagePicker({ pdfData, label, onSelectMany, onClose })
     </div>
   );
 }
-

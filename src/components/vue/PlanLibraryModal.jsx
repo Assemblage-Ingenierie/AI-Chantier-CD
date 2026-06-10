@@ -9,12 +9,11 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [pdfQueue, setPdfQueue] = useState([]); // [{pdf, nom}]
-  const [pdfQueueIdx, setPdfQueueIdx] = useState(0);
-  const [pdfQueueResults, setPdfQueueResults] = useState([]);
+  const [pdfList, setPdfList] = useState([]); // [{pdf, nom}] — tous les PDF d'un même import
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState('');
   const [previewBg, setPreviewBg] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
   const [repairTargetId, setRepairTargetId] = useState(null);
   const [repairPdfData, setRepairPdfData] = useState(null);
   const [showRepairPicker, setShowRepairPicker] = useState(false);
@@ -22,8 +21,10 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const fileRef = useRef();
   const repairFileRef = useRef();
 
-  const handleFile = e => {
-    const files = Array.from(e.target.files);
+  // Traite une liste de fichiers (input OU glisser-déposer) : images ajoutées directement,
+  // PDF regroupés dans UN seul sélecteur de pages (tous les PDF d'un import à la fois).
+  const processFiles = (fileList) => {
+    const files = Array.from(fileList || []);
     if (!files.length) return;
     setRenderErr(null);
 
@@ -49,54 +50,51 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
         const r = new FileReader();
         r.onload = ev => res({ pdf: ev.target.result, nom });
         r.readAsDataURL(f);
-      }))).then(queue => {
-        setPdfQueue(queue);
-        setPdfQueueIdx(0);
-        setPdfQueueResults([]);
+      }))).then(list => {
+        setPdfList(list);
         setShowPicker(true);
       });
     }
-    e.target.value = '';
   };
 
-  // Appelé par le picker avec les numéros de pages sélectionnées
-  const handlePagesSelected = async selectedNums => {
-    const { pdf: pdfData, nom: baseName } = pdfQueue[pdfQueueIdx];
+  const handleFile = e => { processFiles(e.target.files); e.target.value = ''; };
+
+  const onDrop = e => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer?.files?.length) processFiles(e.dataTransfer.files);
+  };
+
+  // Appelé par le picker MULTI avec [{ nom, pdf, nums:[...] }] — on rend toutes les pages
+  // sélectionnées de tous les PDF, puis on ajoute tout d'un coup à la bibliothèque.
+  const handlePagesSelected = async (result) => {
     setShowPicker(false);
     setRendering(true);
     setRenderErr(null);
-    const newResults = [];
+    const totalCount = result.reduce((s, d) => s + d.nums.length, 0);
+    const onlyOne = totalCount === 1;
+    const allResults = [];
+    let done = 0;
     try {
-      // Parse le PDF UNE fois + rendu parallèle (au lieu d'un parse séquentiel par page).
-      const rendered = await renderPdfPages(pdfData, selectedNums, {
-        onProgress: (d, t) => setRenderProgress(pdfQueue.length > 1
-          ? `PDF ${pdfQueueIdx + 1}/${pdfQueue.length} — ${d}/${t} pages…`
-          : `Rendu ${d} / ${t} pages…`),
-      });
-      for (const { num, img } of rendered) {
-        if (!img) continue;
-        const nom = selectedNums.length === 1 ? baseName : `${baseName} — Page ${num}`;
-        newResults.push({ id: crypto.randomUUID(), nom, bg: img, data: pdfData });
+      for (const doc of result) {
+        const rendered = await renderPdfPages(doc.pdf, doc.nums, {
+          onProgress: (d, t) => setRenderProgress(`Rendu ${done + d} / ${totalCount} page${totalCount > 1 ? 's' : ''}…`),
+        });
+        for (const { num, img } of rendered) {
+          if (!img) continue;
+          const nom = (onlyOne || doc.nums.length === 1) ? doc.nom : `${doc.nom} — Page ${num}`;
+          allResults.push({ id: crypto.randomUUID(), nom, bg: img, data: doc.pdf });
+        }
+        done += doc.nums.length;
       }
     } catch (e) {
       setRenderErr('Erreur rendu PDF : ' + e.message);
     }
     setRenderProgress('');
     setRendering(false);
-
-    const allResults = [...pdfQueueResults, ...newResults];
-    const nextIdx = pdfQueueIdx + 1;
-    if (nextIdx < pdfQueue.length) {
-      setPdfQueueResults(allResults);
-      setPdfQueueIdx(nextIdx);
-      setShowPicker(true);
-    } else {
-      if (allResults.length > 0) onAdd(allResults);
-      else setRenderErr("Aucune page n'a pu être rendue.");
-      setPdfQueue([]);
-      setPdfQueueIdx(0);
-      setPdfQueueResults([]);
-    }
+    if (allResults.length > 0) onAdd(allResults);
+    else if (!renderErr) setRenderErr("Aucune page n'a pu être rendue.");
+    setPdfList([]);
   };
 
   const startRename = (pl) => {
@@ -155,18 +153,12 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     />
   );
 
-  if (showPicker && pdfQueue.length > 0) return (
+  if (showPicker && pdfList.length > 0) return (
     <PdfPagePicker
-      pdfData={pdfQueue[pdfQueueIdx].pdf}
-      label={pdfQueue.length > 1 ? `${pdfQueue[pdfQueueIdx].nom} (${pdfQueueIdx + 1}/${pdfQueue.length})` : pdfQueue[pdfQueueIdx].nom}
+      pdfs={pdfList}
+      label={pdfList.length === 1 ? pdfList[0].nom : null}
       onSelectMany={handlePagesSelected}
-      onClose={() => {
-        setShowPicker(false);
-        if (pdfQueueResults.length > 0) onAdd(pdfQueueResults);
-        setPdfQueue([]);
-        setPdfQueueIdx(0);
-        setPdfQueueResults([]);
-      }}
+      onClose={() => { setShowPicker(false); setPdfList([]); }}
     />
   );
 
@@ -196,6 +188,32 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
 
         {/* Corps */}
         <div style={{ flex:1,overflowY:'auto',padding:14 }}>
+          {/* Grande zone d'import : glisser-déposer OU clic pour parcourir les fichiers */}
+          <div
+            onClick={() => !rendering && fileRef.current.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
+            onDrop={onDrop}
+            style={{
+              display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6,
+              padding:'22px 16px', marginBottom:14, borderRadius:14, textAlign:'center',
+              border:`2px dashed ${dragOver ? DA.red : '#C9CDD2'}`,
+              background: dragOver ? DA.redL : '#FAFBFC',
+              cursor: rendering ? 'default' : 'pointer', transition:'all 0.12s', userSelect:'none',
+            }}>
+            <div style={{ width:42, height:42, borderRadius:'50%', background: dragOver ? DA.red : '#EEF0F2', display:'flex', alignItems:'center', justifyContent:'center', color: dragOver ? 'white' : DA.gray }}>
+              <Ic n="plus" s={22}/>
+            </div>
+            <p style={{ fontSize:14, fontWeight:800, color:DA.black, margin:'2px 0 0' }}>
+              Glissez vos plans ici
+            </p>
+            <p style={{ fontSize:12, color:DA.gray, margin:0 }}>
+              ou <span style={{ color:DA.red, fontWeight:700 }}>cliquez pour parcourir</span> — PDF, JPG, PNG · plusieurs fichiers à la fois
+            </p>
+          </div>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleFile}/>
+          <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
+
           {renderErr && (
             <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:'#B91C1C' }}>
               ⚠️ {renderErr}
@@ -265,15 +283,9 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
         </div>
 
         {/* Footer */}
-        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0,display:'flex',flexDirection:'column',gap:8 }}>
-          <button onClick={() => fileRef.current.click()} disabled={rendering}
-            style={{ width:'100%',background:rendering ? DA.grayL : DA.black,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:rendering?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8 }}>
-            <Ic n="plus" s={16}/> Ajouter un plan (PDF, JPG, PNG)
-          </button>
-          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleFile}/>
-          <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
+        <div style={{ padding:'12px 14px 20px',borderTop:`1px solid ${DA.border}`,flexShrink:0 }}>
           <button onClick={onClose}
-            style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:12,fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
+            style={{ width:'100%',background:DA.red,color:'white',border:'none',borderRadius:12,padding:14,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6 }}>
             <Ic n="chk" s={15}/> Terminer
           </button>
         </div>
