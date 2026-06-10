@@ -829,45 +829,25 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {modal?.t === 'plan' && (() => {
         const loc = visitProjet.localisations.find(l => l.id === modal.locId);
         // Merge annotations from ALL locs sharing the same planId.
-        // Déduplication par EMPREINTE STABLE (type + géométrie + contenu) plutôt que par
-        // JSON.stringify : sinon des champs volatils (label Vxx réécrit par la numérotation
-        // globale, _vpId unique, textW ajouté par le redimensionnement) font échouer le dédoublonnage
-        // → la même annotation propagée apparaît en double sur le plan partagé.
+        // Deduplication by JSON string prevents doubling when locs are already in sync after a propagation save.
         const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
         let mergedAnnotations = loc?.planAnnotations ?? null;
-        const annotFp = (p) => {
-          const rx = (v) => Math.round(v ?? 0);
-          switch (p.type) {
-            case 'viewpoint': return `vp|${p.photoIdx ?? '_'}|${rx(p.x)}|${rx(p.y)}`;
-            case 'symbol':    return `sym|${p.symbolId}|${rx(p.x ?? p.x1)}|${rx(p.y ?? p.y1)}`;
-            case 'text':      return `txt|${(p.text || '').trim()}|${rx(p.x)}|${rx(p.y)}`;
-            case 'shape':     return `shp|${p.shape}|${rx(p.x1 ?? p.pts?.[0]?.x)}|${rx(p.y1 ?? p.pts?.[0]?.y)}`;
-            case 'stroke':    return `str|${p.points?.length ?? 0}|${rx(p.points?.[0]?.x)}|${rx(p.points?.[0]?.y)}`;
-            default:          return JSON.stringify(p);
-          }
-        };
         if (loc?.planId) {
           const otherLocs = allLocsFlat.filter(
             l => l.id !== modal.locId && l.planId === loc.planId && samePlan(l.planBg, loc.planBg) && l.planAnnotations?.paths?.length
           );
           if (otherLocs.length > 0) {
             const ownPaths = loc?.planAnnotations?.paths || [];
-            // Une photo = un seul marqueur par plan : on ne conserve qu'un viewpoint par photoIdx.
-            const vpPhotoSeen = new Set();
-            const ownClean = ownPaths.filter(p => {
-              if (p.type !== 'viewpoint' || p.photoIdx == null) return true;
-              if (vpPhotoSeen.has(p.photoIdx)) return false;
-              vpPhotoSeen.add(p.photoIdx); return true;
-            });
-            // Décor PARTAGÉ des autres zones du même plan (texte/forme/symbole) UNIQUEMENT.
-            // Jamais les viewpoints : leur photoIdx est relatif aux photos de LEUR zone et
-            // n'a aucun sens transposé ici → c'est ce qui créait les doublons de Vxx.
-            const seen = new Set(ownClean.map(annotFp));
+            const seen = new Set(ownPaths.map(p => JSON.stringify(p)));
             const foreign = otherLocs.flatMap(l => l.planAnnotations.paths)
-              .filter(p => p.type !== 'viewpoint')
-              .filter(p => { const fp = annotFp(p); if (seen.has(fp)) return false; seen.add(fp); return true; });
-            if (foreign.length > 0 || ownClean.length !== ownPaths.length) {
-              mergedAnnotations = { ...(loc?.planAnnotations || {}), paths: [...ownClean, ...foreign] };
+              .filter(p => !seen.has(JSON.stringify(p)));
+            if (foreign.length > 0) {
+              // Renumber VP labels sequentially to avoid collisions from independent annotations
+              let vpIdx = 1;
+              const mergedPaths = [...ownPaths, ...foreign].map(p =>
+                p.type === 'viewpoint' ? { ...p, label: `V${vpIdx++}` } : p
+              );
+              mergedAnnotations = { ...(loc?.planAnnotations || {}), paths: mergedPaths };
             }
           }
         }
@@ -895,16 +875,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               for (const ep of (extraPlans || [])) {
                 if (ep.planId) annotByPlanId.set(ep.planId, { planAnnotations: ep.planAnnotations ?? null, planBg: ep.planBg ?? null });
               }
-              // Propage le DÉCOR partagé (texte/forme/symbole) d'un plan vers les autres zones
-              // qui l'utilisent, mais CONSERVE les viewpoints propres à chaque zone : une photo
-              // et son numéro Vxx appartiennent à la zone, pas au plan partagé. Sans ça, les
-              // viewpoints d'une zone polluaient les autres (photoIdx incohérent → doublons Vxx).
-              const mergeSharedDecor = (theirAnn, sharedAnn) => {
-                const theirVps   = (theirAnn?.paths  || []).filter(p => p.type === 'viewpoint');
-                const sharedDeco = (sharedAnn?.paths || []).filter(p => p.type !== 'viewpoint');
-                if (!theirVps.length && !sharedDeco.length) return sharedAnn ?? null;
-                return { ...(sharedAnn || theirAnn || {}), paths: [...sharedDeco, ...theirVps] };
-              };
               // Update all visites: full update for target loc + propagate annotations to all
               // other locs that share the same planId AND the same plan image.
               const updatedVisites = (projet.visites || []).map(v => ({
@@ -917,13 +887,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                   if (l.planId && annotByPlanId.has(l.planId)) {
                     const entry = annotByPlanId.get(l.planId);
                     if (samePlan(l.planBg, entry.planBg)) {
-                      updated = { ...updated, planAnnotations: mergeSharedDecor(l.planAnnotations, entry.planAnnotations) };
+                      updated = { ...updated, planAnnotations: entry.planAnnotations };
                     }
                   }
                   const newEPs = (l.extraPlans || []).map(ep => {
                     if (!ep.planId || !annotByPlanId.has(ep.planId)) return ep;
                     const entry = annotByPlanId.get(ep.planId);
-                    return samePlan(ep.planBg, entry.planBg) ? { ...ep, planAnnotations: mergeSharedDecor(ep.planAnnotations, entry.planAnnotations) } : ep;
+                    return samePlan(ep.planBg, entry.planBg) ? { ...ep, planAnnotations: entry.planAnnotations } : ep;
                   });
                   if (newEPs.some((ep, i) => ep !== (l.extraPlans || [])[i])) {
                     updated = { ...updated, extraPlans: newEPs };

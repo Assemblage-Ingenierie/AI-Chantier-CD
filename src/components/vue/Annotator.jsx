@@ -1455,19 +1455,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
       const label = nextVpLabel;
-      const pIdx  = activePh?.photoIdx ?? null;
-      const nx    = pendingVP?.x ?? vpStart.current.x;
-      const ny    = pendingVP?.y ?? vpStart.current.y;
-      const nAng  = pendingVP?.angle ?? 0;
-      setPaths(prev => {
-        // Une photo = un seul angle par plan : si un marqueur existe déjà pour cette photo
-        // sur ce plan, on le repositionne au lieu d'en créer un second (jamais 2× le même Vxx).
-        if (pIdx != null) {
-          const exIdx = prev.findIndex(p => p.type === 'viewpoint' && p.photoIdx === pIdx);
-          if (exIdx >= 0) return prev.map((p, i) => i === exIdx ? { ...p, x: nx, y: ny, angle: nAng } : p);
-        }
-        return [...prev, { type: 'viewpoint', _vpId: crypto.randomUUID(), x: nx, y: ny, angle: nAng, label, color, size, photoIdx: pIdx }];
-      });
+      setPaths(prev => [...prev, {
+        type: 'viewpoint',
+        _vpId: crypto.randomUUID(),
+        x: pendingVP?.x ?? vpStart.current.x,
+        y: pendingVP?.y ?? vpStart.current.y,
+        angle: pendingVP?.angle ?? 0,
+        label, color, size,
+        photoIdx: activePh?.photoIdx ?? null,
+      }]);
       setPendingVP(null);
       vpStart.current = null;
       setDrawing(false);
