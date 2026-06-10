@@ -1572,16 +1572,16 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
               )}
               {isEditable ? (
                 <textarea value={row.titre} onChange={e => onUpdateRecap(row.itemId, 'titre', e.target.value)}
-                  rows={Math.max(1, (row.titre||'').split('\n').length)}
-                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden', whiteSpace:'pre-wrap' }}/>
+                  rows={Math.min(6, Math.max(1, (row.titre||'').split('\n').length))}
+                  style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflowY:'auto', whiteSpace:'pre-wrap' }}/>
               ) : (
                 <div style={{ fontSize:8, fontWeight:700, color:DA.black, lineHeight:1.3, whiteSpace:'pre-wrap' }}>{row.titre || '—'}</div>
               )}
               {isEditable ? (
                 <textarea value={row.solution || ''} onChange={e => onUpdateRecap(row.itemId, 'solution', e.target.value)}
-                  rows={Math.max(2, (row.solution || '').split('\n').length)}
+                  rows={Math.min(6, Math.max(2, (row.solution || '').split('\n').length))}
                   placeholder={loadingAI === row.itemId ? 'Génération IA…' : 'Solution…'}
-                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflow:'hidden', whiteSpace:'pre-wrap' }}/>
+                  style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, resize:'none', overflowY:'auto', whiteSpace:'pre-wrap' }}/>
               ) : (
                 <div style={{ fontSize:7, color:DA.gray, lineHeight:1.4, wordBreak:'break-word', whiteSpace:'pre-wrap' }}>{row.solution || '—'}</div>
               )}
