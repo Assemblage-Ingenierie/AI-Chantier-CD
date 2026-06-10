@@ -4,7 +4,7 @@ import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
-import { computeVpNumbering, getVpNum } from './vpNumbering.js';
+import { computeVpNumbering, dedupPlanPaths } from './vpNumbering.js';
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
@@ -18,14 +18,8 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   const paths    = planAnnotations?.paths;
   if (!planBg) return exported ?? null;
   if (!paths?.length) return planBg;
-  // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
-  const drawPaths = vpNumByPath
-    ? paths.map(p => {
-        if (p.type !== 'viewpoint') return p;
-        const n = getVpNum(vpNumByPath, p);
-        return n != null ? { ...p, label: `V${n}` } : p;
-      })
-    : paths;
+  // Dédoublonne les annotations + numérote les viewpoints (1 seul Vxx par marqueur sur le plan).
+  const drawPaths = dedupPlanPaths(paths, vpNumByPath);
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {

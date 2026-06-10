@@ -7,7 +7,7 @@ import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { computeVpNumbering, getVpNum } from '../../lib/vpNumbering.js';
+import { computeVpNumbering, dedupPlanPaths } from '../../lib/vpNumbering.js';
 import { fetchPlanData } from '../../lib/storage.js';
 
 function makeIconDataUrl(drawFn) {
@@ -806,14 +806,8 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     const bgSrc = bg || fetchedBg;
     if (!bgSrc) { setRenderedImg(exported || null); return; }
     if (!paths?.length) { setRenderedImg(bgSrc); return; }
-    // Réécrit le label des marqueurs viewpoint selon la numérotation globale (zéro doublon).
-    const drawPaths = vpNumByPath
-      ? paths.map(p => {
-          if (p.type !== 'viewpoint') return p;
-          const n = getVpNum(vpNumByPath, p);
-          return n != null ? { ...p, label: `V${n}` } : p;
-        })
-      : paths;
+    // Dédoublonne les annotations + numérote les viewpoints (1 seul Vxx par marqueur sur le plan).
+    const drawPaths = dedupPlanPaths(paths, vpNumByPath);
     const el = new window.Image();
     el.onload = () => {
       const cv  = document.createElement('canvas');
