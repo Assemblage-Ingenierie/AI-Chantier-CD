@@ -33,15 +33,14 @@ export function computeVpNumbering(localisations) {
       let num;
       let dedupPath = '?';
       const fp = fingerprint(vp, planId);
-      // Un même marqueur peut apparaître dans PLUSIEURS zones partageant le plan (propagation).
-      // Sans dédoublonnage il était recompté à chaque zone → V1 devenait V3, V4…
-      // 1) _vpId (UUID stable) : dédoublonnage prioritaire quand présent.
+      // 0) vpNum FIGÉ : numéro attribué à la pose (ou migré) et stocké DANS le marqueur.
+      //    C'est la source de vérité — jamais recalculé, survit à la propagation entre zones.
+      // 1) _vpId (UUID stable) : dédoublonnage prioritaire des copies propagées.
       // 2) empreinte contenu : filet de sécurité pour les marqueurs anciens SANS _vpId.
-      // IMPORTANT : photoKey-dedup (branche 3) est réservé aux anciens marqueurs sans _vpId.
-      // Les marqueurs avec _vpId ont chacun leur propre numéro — grouper par photoIdx des
-      // marqueurs avec _vpId provoque des doublons V1 quand des annotations propagées entre
-      // zones ont le même photoIdx local (ex. zone A et zone B ayant chacune leur photo 0).
-      if (vp._vpId && numByVpId.has(vp._vpId)) {
+      // 3) photoKey par zone d'origine : anciens marqueurs sans vpNum.
+      if (vp.vpNum != null) {
+        num = vp.vpNum; g = Math.max(g, num); dedupPath = 'frozen';
+      } else if (vp._vpId && numByVpId.has(vp._vpId)) {
         // Priorité absolue : UUID stable → même marqueur propagé sur plusieurs zones.
         num = numByVpId.get(vp._vpId); dedupPath = 'vpId-dedup';
       } else if (numByFp.has(fp)) {
@@ -79,11 +78,59 @@ export function computeVpNumbering(localisations) {
   return { vxxPhotoMap, vpNumByPath, max: g };
 }
 
-// Lookup helper : préfère _vpId (stable), bascule sur ref objet (compat ancien code).
+// Lookup helper : 1) vpNum figé dans le marqueur (source de vérité),
+// 2) _vpId (stable), 3) ref objet (compat ancien code).
 export function getVpNum(vpNumByPath, vp) {
+  if (vp?.vpNum != null) return vp.vpNum;
   if (!vpNumByPath) return null;
   const n = vp._vpId ? vpNumByPath.get(vp._vpId) : undefined;
   return n != null ? n : vpNumByPath.get(vp) ?? null;
+}
+
+// MIGRATION + RÉPARATION à l'ouverture du modal plan d'une zone.
+// Fige un vpNum dans chaque marqueur viewpoint qui n'en a pas encore (numéro résolu par la
+// numérotation globale, sinon numéro neuf), puis répare les violations des règles :
+//   R1 : sur un MÊME plan, deux marqueurs distincts ne partagent jamais un numéro
+//        → le second est renuméroté (cas des copies propagées d'une autre zone qui
+//        collisionnaient avec la photo locale de même index — les « deux V1 »).
+//   R2 : la même photo de la zone sur deux plans différents → même numéro
+//        (clé photoIdx, marqueurs locaux uniquement).
+// Les numéros figés sont persistés à l'enregistrement du plan et propagés aux zones
+// partageant le plan → tout converge après un cycle ouvrir + enregistrer.
+export function freezeVpNumsForZone(plans, vpNumByPath, vpBase = 0, locId = null) {
+  if (!plans?.length) return plans;
+  let maxNum = vpBase;
+  for (const pl of plans) for (const a of (pl.planAnnotations?.paths || []))
+    if (a.type === 'viewpoint' && a.vpNum != null) maxNum = Math.max(maxNum, a.vpNum);
+  const byVpId  = new Map(); // _vpId → numéro : copies propagées = même marqueur = même numéro
+  const byPhoto = new Map(); // photoIdx → numéro : R2, marqueurs locaux de la zone uniquement
+  return plans.map(pl => {
+    const paths = pl.planAnnotations?.paths;
+    if (!paths?.length) return pl;
+    const usedOnPlan = new Map(); // numéro → _vpId détenteur : R1 par plan
+    let changed = false;
+    const newPaths = paths.map(a => {
+      if (a.type !== 'viewpoint') return a;
+      const isLocal = a.originLocId == null || a.originLocId === locId;
+      let num = a.vpNum
+        ?? byVpId.get(a._vpId)
+        ?? (isLocal && a.photoIdx != null ? byPhoto.get(a.photoIdx) : undefined)
+        ?? (vpNumByPath ? getVpNum(vpNumByPath, a) : null);
+      if (num == null) num = ++maxNum;
+      // R1 : numéro déjà pris sur CE plan par un autre marqueur → renuméroter celui-ci
+      const holder = usedOnPlan.get(num);
+      const selfKey = a._vpId ?? a;
+      if (holder != null && holder !== selfKey) { num = ++maxNum; }
+      usedOnPlan.set(num, selfKey);
+      if (a._vpId && !byVpId.has(a._vpId)) byVpId.set(a._vpId, num);
+      if (isLocal && a.photoIdx != null && !byPhoto.has(a.photoIdx)) byPhoto.set(a.photoIdx, num);
+      if (a.vpNum === num && a.label === `V${num}`) return a;
+      changed = true;
+      return { ...a, vpNum: num, label: `V${num}` };
+    });
+    if (!changed) return pl;
+    return { ...pl, planAnnotations: { ...pl.planAnnotations, paths: newPaths } };
+  });
 }
 
 // Réécrit le label de chaque marqueur viewpoint selon la numérotation GLOBALE (zéro doublon).

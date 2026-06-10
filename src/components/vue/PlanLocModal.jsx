@@ -5,6 +5,7 @@ import { renderPdfPageHQ, renderPdfPages } from '../../lib/pdfUtils.js';
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
+import { freezeVpNumsForZone } from '../../lib/vpNumbering.js';
 
 export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0 }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
@@ -19,7 +20,9 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     for (const ep of (loc.extraPlans || [])) {
       if (ep.planBg || libHas(ep.planId)) result.push(ep);
     }
-    return result;
+    // Fige les numéros Vxx dans les marqueurs (migration) + répare les doublons sur un même
+    // plan. Persisté à l'enregistrement → la numérotation devient stable définitivement.
+    return freezeVpNumsForZone(result, vpNumByPath, vpBase, loc.id ?? null);
   });
   const directAnnot = annotIdx != null; // opened from thumbnail click — jump straight to annotator
   const [annotatingIdx, setAnnotatingIdx] = useState(() => {
@@ -111,6 +114,20 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     const p = plans[annotatingIdx];
     const libEntry = p?.planId ? planLibrary?.find(x => x.id === p.planId) : null;
     const libNom = libEntry?.nom;
+    // R2 : numéros déjà attribués aux photos de la zone sur les AUTRES plans → la même photo
+    // posée sur ce plan reprend son numéro. sessionVpBase = max global + numéros figés de la
+    // session → un nouveau marqueur ne réutilise jamais un numéro existant.
+    const photoVpNums = new Map();
+    let sessionVpBase = vpBase;
+    plans.forEach((pl, i) => {
+      for (const a of (pl.planAnnotations?.paths || [])) {
+        if (a.type !== 'viewpoint' || a.vpNum == null) continue;
+        sessionVpBase = Math.max(sessionVpBase, a.vpNum);
+        if (i !== annotatingIdx && a.photoIdx != null && (a.originLocId == null || a.originLocId === loc.id) && !photoVpNums.has(a.photoIdx)) {
+          photoVpNums.set(a.photoIdx, a.vpNum);
+        }
+      }
+    });
     // Navigation entre les plans de la zone (flèches + touches ←/→), avec sauvegarde
     // automatique des annotations en cours via getAnnotation().
     const goToPlan = (newIdx) => {
@@ -127,9 +144,10 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
         locId={loc?.id ?? null}
+        photoVpNums={photoVpNums}
         exportSizeMultiplier={2}
         vpNumByPath={vpNumByPath}
-        vpBase={vpBase}
+        vpBase={sessionVpBase}
         title={libNom ? `${loc.nom} — ${libNom}` : loc.nom}
         onPrev={annotatingIdx > 0 ? () => goToPlan(annotatingIdx - 1) : null}
         onNext={annotatingIdx < plans.length - 1 ? () => goToPlan(annotatingIdx + 1) : null}
