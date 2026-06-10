@@ -26,35 +26,56 @@ export function computeVpNumbering(localisations) {
   const nextFree = () => { do { g++; } while (usedNums.has(g)); usedNums.add(g); return g; };
 
   const fp = (vp) => `${Math.round(vp.x ?? -1)}|${Math.round(vp.y ?? -1)}|${vp.photoIdx ?? '_'}`;
-  const groupKey = (vp) =>
+  const groupKey = (vp, ownerId) =>
     (vp.originLocId != null && vp.photoIdx != null) ? `O:${vp.originLocId}_${vp.photoIdx}`
+    : (ownerId != null && vp.photoIdx != null && vp.originLocId == null) ? `O:${ownerId}_${vp.photoIdx}`
     : vp._vpId ? `I:${vp._vpId}`
     : `F:${fp(vp)}`;
 
+  // Attribue (et mémorise) le numéro d'un marqueur selon son groupe d'identité.
+  const assignNum = (vp, ownerId) => {
+    const key = groupKey(vp, ownerId);
+    let num = groupNum.get(key);
+    if (num == null) {
+      if (vp.vpNum != null && !usedNums.has(vp.vpNum)) { num = vp.vpNum; usedNums.add(num); g = Math.max(g, num); }
+      else num = nextFree();
+      groupNum.set(key, num);
+    }
+    vpNumByPath.set(vp, num);
+    if (vp._vpId) vpNumByPath.set(vp._vpId, num);
+    return num;
+  };
+
   for (const loc of (localisations || [])) {
-    const planPaths = [
+    // 1) Plans de la ZONE (principal + extra) — photoIdx indexe les photos de la zone.
+    const zonePaths = [
       ...((loc.planAnnotations?.paths || [])),
       ...((loc.extraPlans || []).flatMap(ep => ep.planAnnotations?.paths || [])),
     ];
-    for (const vp of planPaths) {
+    for (const vp of zonePaths) {
       if (vp.type !== 'viewpoint') continue;
-      const key = groupKey(vp);
-      let num = groupNum.get(key);
-      if (num == null) {
-        // Conserve le numéro figé s'il est libre (stabilité) ; sinon prend le prochain libre.
-        if (vp.vpNum != null && !usedNums.has(vp.vpNum)) { num = vp.vpNum; usedNums.add(num); g = Math.max(g, num); }
-        else num = nextFree();
-        groupNum.set(key, num);
-      }
-      vpNumByPath.set(vp, num);
-      if (vp._vpId) vpNumByPath.set(vp._vpId, num);
-      // Badge photo de la zone HÔTE : seulement pour les marqueurs qui lui appartiennent
-      // (origine = hôte, ou ancien marqueur sans origine) → un marqueur propagé d'une autre
-      // zone n'écrase pas le badge de la photo locale de même index.
+      const num = assignNum(vp, loc.id);
       if (vp.photoIdx != null && (vp.originLocId == null || vp.originLocId === loc.id)) {
         const k = `${loc.id}_${vp.photoIdx}`;
         if (!vxxPhotoMap.has(k)) vxxPhotoMap.set(k, num);
       }
+    }
+    // 2) Plans des OBSERVATIONS (item.plans) — photoIdx indexe les photos de l'observation ;
+    //    le badge est posé à l'index APLATI dans la zone (offset cumulé par observation) pour
+    //    coïncider avec la grille photo du rapport.
+    let photoOffset = 0;
+    for (const item of (loc.items || [])) {
+      for (const pl of (item.plans || [])) {
+        for (const vp of (pl.planAnnotations?.paths || [])) {
+          if (vp.type !== 'viewpoint') continue;
+          const num = assignNum(vp, item.id);
+          if (vp.photoIdx != null && (vp.originLocId == null || vp.originLocId === item.id)) {
+            const k = `${loc.id}_${photoOffset + vp.photoIdx}`;
+            if (!vxxPhotoMap.has(k)) vxxPhotoMap.set(k, num);
+          }
+        }
+      }
+      photoOffset += (item.photos || []).filter(p => p.data).length;
     }
   }
   return { vxxPhotoMap, vpNumByPath, max: g };
