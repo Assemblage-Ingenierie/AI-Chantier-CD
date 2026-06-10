@@ -250,8 +250,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                 {(() => {
                   const validPhotos = (item.photos || []).filter(ph => ph.data);
                   if (validPhotos.length) {
-                    const shown = isDesktop ? validPhotos : validPhotos.slice(0, 4);
-                    const extra = validPhotos.length - shown.length;
+                    const shown = validPhotos;
+                    const extra = 0;
                     return (
                       <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}>
                         {shown.map((ph, pi) => {
@@ -276,12 +276,6 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                               onPointerCancel={endPhotoLP}
                               onClick={e => { e.stopPropagation(); if (photoLP.current.fired) { photoLP.current.fired = false; return; } openPhoto(); }}
                               style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
-                            {!isDesktop && pi === shown.length - 1 && extra > 0 && (
-                              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
-                                onClick={e => { e.stopPropagation(); openPhoto(); }}>
-                                <span style={{ color:'white', fontSize:13, fontWeight:800 }}>+{extra}</span>
-                              </div>
-                            )}
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
                                 <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.45)', borderRadius: isDesktop ? 10 : 6 }}
