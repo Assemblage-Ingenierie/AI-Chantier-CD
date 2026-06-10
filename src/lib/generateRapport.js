@@ -46,6 +46,33 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   });
 }
 
+/** Réduit une image (dataURL) pour l'embarquer dans le PDF : on plafonne le plus grand côté
+ *  à maxDim px et on ré-encode en JPEG. Une photo de téléphone (≈4000px) affichée dans une
+ *  case de ~83mm n'a besoin que de ~1000px (≈300 dpi) → poids divisé par 50-100 sans perte
+ *  visible. Une image déjà petite et déjà en JPEG est renvoyée telle quelle. */
+function downscaleDataUrl(dataUrl, maxDim, quality = 0.82) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return Promise.resolve(dataUrl);
+  return new Promise(resolve => {
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      // Déjà petite ET déjà JPEG → rien à gagner, on garde l'original
+      if (scale >= 1 && /^data:image\/jpe?g/i.test(dataUrl)) { resolve(dataUrl); return; }
+      const cv = document.createElement('canvas');
+      cv.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
+      cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); // JPEG sans alpha
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      const out = cv.toDataURL('image/jpeg', quality);
+      cv.width = 0; cv.height = 0;
+      resolve(out.length < dataUrl.length ? out : dataUrl);
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 /** Pré-rend l'icône de viewpoint (œil + cône) pour la légende PDF. */
 async function preRenderViewpointIcon() {
   try {
@@ -400,6 +427,29 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     }
   }
 
+  // Pré-réduction des photos affichées : on ré-encode chaque photo en JPEG à une résolution
+  // adaptée à sa taille d'affichage (~1400px max). C'est LE poste qui faisait exploser le PDF
+  // (photos plein capteur embarquées telles quelles dans des cases de 8cm). Map data→data réduit.
+  const photoDataCache = new Map();
+  {
+    const cols  = Math.max(1, Math.min(photosParLigne, 3));
+    const maxPh = cols <= 2 ? 4 : 6;
+    // Résolution cible = ~300 dpi de la taille d'affichage réelle de la case (largeur en mm).
+    // 300 dpi = qualité d'impression nette ; au-delà on stocke des pixels invisibles.
+    const phWmm   = (CW - 6 - (cols - 1) * 2) / cols;
+    const photoMaxDim = Math.min(1600, Math.max(800, Math.round(phWmm / 25.4 * 300)));
+    for (const loc of localisations) {
+      for (const item of (loc.items || [])) {
+        const validPh = (item.photos || []).filter(p => p.data).slice(0, maxPh);
+        for (const p of validPh) {
+          if (!photoDataCache.has(p.data)) {
+            photoDataCache.set(p.data, await downscaleDataUrl(p.data, photoMaxDim, 0.8));
+          }
+        }
+      }
+    }
+  }
+
   // Pré-rendu des icônes de symboles et viewpoint pour les légendes
   const allSymbolIds = new Set();
   localisations.forEach(loc =>
@@ -452,7 +502,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   doc.setFillColor(...BK); doc.rect(0, 0, W, DARK_H, 'F');
   doc.setFillColor(...RD); doc.rect(0, 0, 4, DARK_H, 'F');
 
-  const coverPhoto = projet.photoCouverture || projet.photo;
+  const coverPhotoRaw = projet.photoCouverture || projet.photo;
+  const coverPhoto = coverPhotoRaw ? await downscaleDataUrl(coverPhotoRaw, 1600, 0.82) : null;
   if (coverPhoto) {
     try {
       const ext = coverPhoto.startsWith('data:image/webp') ? 'WEBP' : coverPhoto.startsWith('data:image/png') ? 'PNG' : 'JPEG';
@@ -734,7 +785,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         showPh.forEach((p, pi) => {
           const px  = ML + 3 + (pi % cols) * (phW + 2);
           const py2 = y + 3 + Math.floor(pi / cols) * (phH_ + 2);
-          try { doc.addImage(p.data, p.data.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
+          const pdata = photoDataCache.get(p.data) || p.data;
+          try { doc.addImage(pdata, pdata.startsWith('data:image/png') ? 'PNG' : 'JPEG', px, py2, phW, phH_, undefined, 'FAST'); } catch {}
           doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.1); doc.rect(px, py2, phW, phH_);
           const vxxNum = vxxPhotoMap?.get(`${locId}_${photoOff + validInItem}`);
           if (vxxNum != null) {
