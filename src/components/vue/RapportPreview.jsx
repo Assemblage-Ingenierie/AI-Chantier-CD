@@ -1822,23 +1822,50 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       const win = window.open('', '_blank');
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
-      // Compresse les photos trop lourdes avant inclusion dans le PDF.
-      // Cible : images > 400 KB en data URL (photos non annotées, résolution native).
-      // Qualité JPEG 0.72 à max 1400px → qualité visuelle préservée, taille réduite.
-      const compressIfNeeded = (src) => new Promise(resolve => {
-        if (!src || !src.startsWith('data:image/') || src.length < 400000) { resolve(src); return; }
-        const img = new window.Image();
-        img.onload = () => {
-          const maxW = 1400;
-          const scale = Math.min(1, maxW / img.naturalWidth);
-          const W = Math.round(img.naturalWidth * scale), H = Math.round(img.naturalHeight * scale);
-          const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-          cv.getContext('2d').drawImage(img, 0, 0, W, H);
-          resolve(cv.toDataURL('image/jpeg', 0.72));
-        };
-        img.onerror = () => resolve(src);
-        img.src = src;
-      });
+      // Compresse les images avant inclusion dans le PDF imprimé. C'est ICI que se joue le
+      // poids du PDF : sans ça, le navigateur (« Enregistrer en PDF ») embarque chaque photo
+      // en pleine résolution capteur (~4000px) → PDF de 100+ Mo.
+      // ⚠️ Les photos d'observation sont des URL signées Supabase (https://…), PAS des data URL.
+      // On doit donc aussi traiter les URL distantes : fetch → blob → object URL (canvas non
+      // « tainté ») → redessin réduit → JPEG compact. Les data URL volumineux sont aussi réduits.
+      const compressIfNeeded = async (src) => {
+        if (!src) return src;
+        const isData = src.startsWith('data:image/');
+        if (isData && src.length < 400000) return src;        // petit data URL → on garde
+        if (!isData && !/^https?:/i.test(src)) return src;     // blob:/autre → on ne touche pas
+        let objUrl = null;
+        try {
+          let loadSrc = src;
+          if (!isData) {
+            const resp = await fetch(src);
+            if (!resp.ok) return src;
+            const blob = await resp.blob();
+            objUrl = URL.createObjectURL(blob);
+            loadSrc = objUrl;
+          }
+          return await new Promise(resolve => {
+            const img = new window.Image();
+            img.onload = () => {
+              try {
+                const maxW = 1400;
+                const scale = Math.min(1, maxW / img.naturalWidth);
+                const W = Math.max(1, Math.round(img.naturalWidth * scale));
+                const H = Math.max(1, Math.round(img.naturalHeight * scale));
+                const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+                const ctx = cv.getContext('2d');
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); // JPEG sans alpha
+                ctx.drawImage(img, 0, 0, W, H);
+                const out = cv.toDataURL('image/jpeg', 0.72);
+                cv.width = 0; cv.height = 0;
+                resolve(out && out.length > 50 ? out : src);
+              } catch { resolve(src); }
+            };
+            img.onerror = () => resolve(src);
+            img.src = loadSrc;
+          });
+        } catch { return src; }
+        finally { if (objUrl) URL.revokeObjectURL(objUrl); }
+      };
 
       const pagesHtml = (await Promise.all(pages.map(async el => {
         // Capturer le contenu des canvas sur l'ORIGINAL avant clonage —
