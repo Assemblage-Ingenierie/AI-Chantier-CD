@@ -1847,15 +1847,19 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             const img = new window.Image();
             img.onload = () => {
               try {
-                const maxW = 1400;
+                // Petites images (logos, sigles, icônes < 1000px) : on NE touche à rien — sinon
+                // l'aplatissement JPEG sur fond blanc détruit leur transparence (logo Assemblage
+                // sur la page de garde sombre → vilain rectangle blanc). Elles sont déjà légères.
+                if (img.naturalWidth < 1000 && img.naturalHeight < 1000) { resolve(src); return; }
+                const maxW = 1200;
                 const scale = Math.min(1, maxW / img.naturalWidth);
                 const W = Math.max(1, Math.round(img.naturalWidth * scale));
                 const H = Math.max(1, Math.round(img.naturalHeight * scale));
                 const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
                 const ctx = cv.getContext('2d');
-                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); // JPEG sans alpha
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); // JPEG sans alpha (photos opaques)
                 ctx.drawImage(img, 0, 0, W, H);
-                const out = cv.toDataURL('image/jpeg', 0.72);
+                const out = cv.toDataURL('image/jpeg', 0.7);
                 cv.width = 0; cv.height = 0;
                 resolve(out && out.length > 50 ? out : src);
               } catch { resolve(src); }
