@@ -395,7 +395,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen', locId = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen', locId = null, photoVpNums = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -534,18 +534,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   selAnnotRef.current = selAnnot;
 
   const vpCount = paths.filter(p => p.type === 'viewpoint').length;
-  // Numérotation Vxx GLOBALE : les marqueurs déjà connus (numéro résolu au chargement, stocké
-  // par _vpId) gardent leur numéro ; les nouveaux (cette session) continuent après le max global
-  // → zéro doublon dans tout le rapport, quel que soit le plan.
+  // Numérotation Vxx : p.vpNum (figé à la pose, source de vérité) > numéro résolu au
+  // chargement (gvByVpIdRef) > numérotation globale (vpNumByPath).
   const resolveGv = (p) => {
+    if (p.vpNum != null) return p.vpNum;
     const g = gvByVpIdRef.current.get(p._vpId);
     if (g != null) return g;
     return vpNumByPath ? getVpNum(vpNumByPath, p) : null;
   };
-  const newVpCount = vpNumByPath
-    ? paths.filter(p => p.type === 'viewpoint' && resolveGv(p) == null).length
-    : 0;
-  const nextVpLabel = vpNumByPath ? `V${vpBase + newVpCount + 1}` : `V${vpCount + 1}`;
+  // Prochain numéro libre : max(global, numéros du plan courant) + 1 — jamais de réutilisation.
+  const ownVpMax = paths.reduce((m, p) => p.type === 'viewpoint' ? Math.max(m, p.vpNum ?? resolveGv(p) ?? 0) : m, 0);
+  const nextVpNum = Math.max(vpBase, ownVpMax) + 1;
+  const nextVpLabel = vpNumByPath ? `V${nextVpNum}` : `V${vpCount + 1}`;
+  const nextVpNumRef = useRef(nextVpNum);
+  nextVpNumRef.current = nextVpNum;
   const relabel = (arr) => {
     if (!vpNumByPath) return arr;
     let extra = 0;
@@ -773,6 +775,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const OFF = 40;
         const copy = { ...src };
         if (copy._vpId) copy._vpId = crypto.randomUUID();
+        // Coller un viewpoint = nouvelle vue : numéro neuf, déliée de la photo d'origine.
+        if (copy.type === 'viewpoint') {
+          copy.vpNum = nextVpNumRef.current;
+          copy.label = `V${copy.vpNum}`;
+          copy.photoIdx = null;
+        }
         if (copy.x  != null) { copy.x  += OFF; copy.y  += OFF; }
         if (copy.x1 != null) { copy.x1 += OFF; copy.y1 += OFF; copy.x2 += OFF; copy.y2 += OFF; }
         if (copy.arrowX != null) { copy.arrowX += OFF; copy.arrowY += OFF; }
@@ -1454,17 +1462,32 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
-      const label = nextVpLabel;
+      const pIdx = activePh?.photoIdx ?? null;
+      const nx   = pendingVP?.x ?? vpStart.current.x;
+      const ny   = pendingVP?.y ?? vpStart.current.y;
+      const nAng = pendingVP?.angle ?? 0;
+      // R1 : une photo = un seul angle par plan. Si un marqueur local existe déjà pour cette
+      // photo sur CE plan, on le repositionne — jamais deux marqueurs/Vxx pour la même photo.
+      if (pIdx != null) {
+        const exIdx = paths.findIndex(p => p.type === 'viewpoint' && p.photoIdx === pIdx
+          && (p.originLocId == null || locId == null || p.originLocId === locId));
+        if (exIdx >= 0) {
+          setPaths(prev => prev.map((p, i) => i === exIdx ? { ...p, x: nx, y: ny, angle: nAng } : p));
+          setPendingVP(null); vpStart.current = null; setDrawing(false); setActivePh(null);
+          return;
+        }
+      }
+      // R2 : même photo déjà numérotée sur un AUTRE plan de la zone → même numéro.
+      // Sinon : prochain numéro libre, FIGÉ dans le marqueur (vpNum) — plus jamais recalculé.
+      const reuse = pIdx != null && photoVpNums ? (photoVpNums.get(pIdx) ?? null) : null;
+      const num   = reuse ?? nextVpNum;
       setPaths(prev => [...prev, {
         type: 'viewpoint',
         _vpId: crypto.randomUUID(),
-        x: pendingVP?.x ?? vpStart.current.x,
-        y: pendingVP?.y ?? vpStart.current.y,
-        angle: pendingVP?.angle ?? 0,
-        label, color, size,
-        photoIdx: activePh?.photoIdx ?? null,
-        // Zone d'origine du marqueur : voyage avec lui si le plan est partagé/propagé entre
-        // zones → la numérotation reste rattachée à SA zone (pas de collision de Vxx).
+        x: nx, y: ny, angle: nAng,
+        label: `V${num}`, color, size,
+        photoIdx: pIdx,
+        vpNum: num,
         originLocId: locId ?? null,
       }]);
       setPendingVP(null);
@@ -1571,6 +1594,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     const OFF = 40;
     const copy = { ...src };
     if (copy._vpId) copy._vpId = crypto.randomUUID();
+    // Dupliquer un viewpoint = NOUVELLE vue : numéro neuf, plus liée à la photo d'origine
+    // (sinon deux marqueurs porteraient le même Vxx sur le même plan — interdit).
+    if (copy.type === 'viewpoint') {
+      copy.vpNum = nextVpNumRef.current;
+      copy.label = `V${copy.vpNum}`;
+      copy.photoIdx = null;
+      copy.originLocId = locId ?? null;
+    }
     if (copy.x  != null) { copy.x  += OFF; copy.y  += OFF; }
     if (copy.x1 != null) { copy.x1 += OFF; copy.y1 += OFF; copy.x2 += OFF; copy.y2 += OFF; }
     if (copy.arrowX != null) { copy.arrowX += OFF; copy.arrowY += OFF; }
