@@ -14,6 +14,7 @@ export function computeVpNumbering(localisations) {
   const vpNumByPath = new Map(); // double-keyed: object ref ET _vpId (si présent)
   const numByVpId   = new Map(); // _vpId → numéro : DÉDOUBLONNAGE cross-zone/plan (cf. ci-dessous)
   const numByFp     = new Map(); // empreinte contenu → numéro : DÉDOUBLONNAGE des marqueurs SANS _vpId
+  const numByOriginPhoto = new Map(); // `${originLoc}_${photoIdx}` → numéro : rattache le Vxx à la photo de SA zone
   let g = 0;
   // Empreinte stable, INDÉPENDANTE de la zone : un même marqueur propagé sur plusieurs zones
   // partageant le plan a des coordonnées identiques → même empreinte → un seul numéro.
@@ -46,21 +47,21 @@ export function computeVpNumbering(localisations) {
       } else if (numByFp.has(fp)) {
         num = numByFp.get(fp); dedupPath = 'fp-dedup';
       } else if (vp.photoIdx != null) {
-        // Dédup par photo (même zone) : deux marqueurs sur DES PLANS DIFFÉRENTS de la même
-        // zone qui référencent la même photo partagent le même numéro.
-        // La clé inclut loc.id → pas de collision entre zones distinctes.
-        const key = `${loc.id}_${vp.photoIdx}`;
-        if (vxxPhotoMap.has(key)) { num = vxxPhotoMap.get(key); dedupPath = 'photoKey-dedup'; }
-        else { num = ++g; vxxPhotoMap.set(key, num); dedupPath = 'new-photoKey'; }
+        // Numéro rattaché à la photo de sa zone d'ORIGINE (originLocId voyage avec le marqueur
+        // propagé) → deux marqueurs de la même photo (plan + coupe) partagent le numéro, MAIS
+        // un marqueur propagé dans une autre zone ne collisionne plus avec la photo de même
+        // index de la zone hôte. Repli sur loc.id pour les anciens marqueurs sans originLocId.
+        const originLoc = vp.originLocId ?? loc.id;
+        const key = `${originLoc}_${vp.photoIdx}`;
+        if (numByOriginPhoto.has(key)) { num = numByOriginPhoto.get(key); dedupPath = 'photoKey-dedup'; }
+        else { num = ++g; numByOriginPhoto.set(key, num); dedupPath = 'new-photoKey'; }
       } else {
         num = ++g; dedupPath = 'new-noPhoto';
       }
-      // Enregistre le badge photo pour CETTE zone quel que soit le chemin de dédup.
-      // Nécessaire quand le plan est partagé entre plusieurs zones (propagation) : la première
-      // zone enregistre l'entrée vxxPhotoMap ; les zones suivantes ont besoin de leur propre
-      // entrée. Aussi utilisé pour les plans masqués (reportHidden) dont les photos apparaissent
-      // quand même dans le rapport.
-      if (vp.photoIdx != null) {
+      // Badge photo de la zone HÔTE : uniquement pour les marqueurs qui appartiennent à CETTE
+      // zone (origine = hôte, ou ancien marqueur sans origine) → un marqueur propagé d'une autre
+      // zone ne vient pas écraser le badge de la photo locale de même index.
+      if (vp.photoIdx != null && (vp.originLocId == null || vp.originLocId === loc.id)) {
         const k = `${loc.id}_${vp.photoIdx}`;
         if (!vxxPhotoMap.has(k)) vxxPhotoMap.set(k, num);
       }
