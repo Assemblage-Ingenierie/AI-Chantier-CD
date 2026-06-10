@@ -126,6 +126,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         hqImage={hqImageData}
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
+        locId={loc?.id ?? null}
         exportSizeMultiplier={2}
         vpNumByPath={vpNumByPath}
         vpBase={vpBase}

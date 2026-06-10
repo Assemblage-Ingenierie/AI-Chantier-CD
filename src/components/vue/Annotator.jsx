@@ -395,7 +395,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen' }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen', locId = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -1463,6 +1463,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         angle: pendingVP?.angle ?? 0,
         label, color, size,
         photoIdx: activePh?.photoIdx ?? null,
+        // Zone d'origine du marqueur : voyage avec lui si le plan est partagé/propagé entre
+        // zones → la numérotation reste rattachée à SA zone (pas de collision de Vxx).
+        originLocId: locId ?? null,
       }]);
       setPendingVP(null);
       vpStart.current = null;
