@@ -8,6 +8,7 @@ import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { uploadToDrive } from '../../lib/driveUpload.js';
+import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -56,7 +57,7 @@ function patchHtmlText(html, del, add) {
   }).join('');
 }
 
-export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
   const [form, setForm] = useState(() => {
     // id stable dès le départ : sert d'ORIGINE aux marqueurs Vxx posés sur les plans de
     // l'observation (numérotation par photo de l'observation, cf. vpNumbering).
@@ -421,9 +422,18 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     setCompressing(true);
     Promise.all(filtered.map(compressPhoto))
       .then(done => {
-        const valid = done.filter(Boolean);
+        // _uploadId : identifiant d'upload anticipé. La photo part vers Supabase Storage
+        // IMMÉDIATEMENT (file persistante, pool parallèle) au lieu d'attendre la sauvegarde
+        // différée — saveRemote réutilisera le chemin déjà uploadé. Champ neutre : ne pas
+        // utiliser `id`/`_id` ici (collision avec la logique d'hydratation des photos).
+        const valid = done.filter(Boolean).map(ph => ({ ...ph, _uploadId: crypto.randomUUID() }));
         if (valid.length < done.length) {
           alert(`${done.length - valid.length} photo(s) n'ont pas pu être traitées. Réessayez ou choisissez un autre fichier.`);
+        }
+        if (projetId) {
+          valid.forEach(ph => enqueuePhotoUpload({
+            uploadId: ph._uploadId, projetNom, projetId, itemId: form.id, name: ph.name, dataUrl: ph.data,
+          }));
         }
         setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
         if (fromCamera) {
