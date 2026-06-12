@@ -102,12 +102,20 @@ function estimateBlockH(block, ppl) {
   let h = mode === 'cont' ? 20 : 52;
   if (mode !== 'photos' && txt) h += Math.ceil(txt.length / 65) * 16;
   if (mode !== 'text' && mode !== 'cont') {
-    // Pour les blocs-rangée (photoCount défini) on calcule exactement 1 rangée
-    const nPh = block.photoCount ?? Math.min((item.photos || []).filter(p => p.data).length, 6);
-    if (nPh > 0) {
+    // Blocs-rangée (photoRow) : hauteur d'UNE rangée selon le layout (paysage 4:3,
+    // portraits/mosaïque ≈ hauteur d'un 3:4). Sinon estimation classique multi-rangées.
+    const row = block.photoRow;
+    if (row) {
       const cols  = Math.min(ppl, 3);
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-      h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
+      h += (row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
+    } else {
+      const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
+      if (nPh > 0) {
+        const cols  = Math.min(ppl, 3);
+        const cellW = (CW - 12 - (cols - 1) * 3) / cols;
+        h += Math.ceil(nPh / cols) * (cellW * 0.75) + 14;
+      }
     }
   }
   return Math.round(h * 1.1) + 5;
@@ -126,7 +134,7 @@ function itemHasReportContent(i) {
 
 // Aplatit toutes les localisations en liste ordonnée de blocs (sans pagination).
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
-// • Les photos sont découpées en rangées individuelles (mode:'photos', photoStart/photoCount)
+// • Les photos sont découpées en rangées individuelles (mode:'photos', photoRow)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
 function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = []) {
   const blocks = [];
@@ -175,30 +183,41 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
         });
       }
 
-      // Photos : une rangée = un bloc. On découpe d'abord en RUNS d'orientation homogène
-      // (les portraits ne se mélangent pas aux paysages dans une même rangée → hauteurs
-      // cohérentes), puis chaque run en rangées. Les portraits sont limités à 2 par rangée
-      // pour rester grands (façade entière lisible) ; les paysages gardent `cols`.
+      // Photos : une rangée = un bloc. PACKING anti-blancs (validé avec l'utilisateur) :
+      //   • 2 portraits → côte à côte (3:4, pleine largeur, zéro blanc) ;
+      //   • 1 portrait restant → MOSAÏQUE : portrait + jusqu'à 2 paysages empilés à côté
+      //     (un portrait ≈ la hauteur de 2 paysages) — les paysages sont « remontés » depuis
+      //     la liste (réorganisation d'affichage autorisée) ; s'il n'y en a qu'un, il se met
+      //     en haut et le bas reste vide ;
+      //   • paysages restants → rangées standards de `cols`, dernière éventuellement partielle
+      //     (taille standard conservée).
+      // Les rangées sont triées par le plus petit index de photo qu'elles contiennent pour
+      // rester proches de l'ordre du récit. Chaque cellule garde l'index ORIGINAL de sa photo
+      // (badges Vxx et recadrage intacts).
       if (photos.length > 0) {
-        const isPortrait = (ph) => ph?.orient === 'portrait';
-        let s = 0;
-        while (s < photos.length) {
-          const portrait = isPortrait(photos[s]);
-          let e = s;
-          while (e < photos.length && isPortrait(photos[e]) === portrait) e++;
-          const runCols = portrait ? Math.min(cols, 2) : cols;
-          for (let r = s; r < e; r += runCols) {
-            const count = Math.min(runCols, e - r);
-            blocks.push({
-              type:'item',
-              id: r === 0 ? `${item.id}_ph` : `${item.id}_ph${r}`,
-              item, locId:loc.id, mode:'photos',
-              photoStart: r, photoCount: count, photoOrient: portrait ? 'portrait' : 'landscape', photoCols: runCols,
-              vpPhotoOffset: photoOffset + r, vxxPhotoMap,
-            });
-          }
-          s = e;
+        const portraits = [], landscapes = [];
+        photos.forEach((ph, i) => ((ph?.orient === 'portrait') ? portraits : landscapes).push(i));
+        const rows = [];
+        let p = 0;
+        while (portraits.length - p >= 2) { rows.push({ kind:'portraits', idxs:[portraits[p], portraits[p+1]] }); p += 2; }
+        if (portraits.length - p === 1) {
+          const stack = landscapes.splice(0, 2);
+          if (stack.length) rows.push({ kind:'mosaic', portraitIdx: portraits[p], stackIdxs: stack });
+          else rows.push({ kind:'portraits', idxs:[portraits[p]] });
         }
+        for (let s = 0; s < landscapes.length; s += cols) rows.push({ kind:'landscape', idxs: landscapes.slice(s, s + cols) });
+        const minIdx = r => r.kind === 'mosaic' ? Math.min(r.portraitIdx, ...r.stackIdxs) : Math.min(...r.idxs);
+        rows.sort((a, b) => minIdx(a) - minIdx(b));
+        rows.forEach((row, k) => {
+          blocks.push({
+            type:'item',
+            id: k === 0 ? `${item.id}_ph` : `${item.id}_ph${k}`,
+            item, locId:loc.id, mode:'photos',
+            photoRow: row, photoCols: cols,
+            isLastPhotoRow: k === rows.length - 1,
+            vpPhotoOffset: photoOffset, vxxPhotoMap,
+          });
+        });
       }
 
       photoOffset += photos.length;
@@ -653,25 +672,68 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, photoOrient = 'landscape', photoCols = null, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
-  const isPortraitRow = photoOrient === 'portrait';
-  // Format de cellule : 4:3 paysage (défaut, inchangé) ou 3:4 portrait (façade entière).
-  const cellAR  = isPortraitRow ? '3 / 4' : '4 / 3';
-  const cellARn = isPortraitRow ? 3 / 4 : 4 / 3;
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
-  // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
-  const photos = (photoStart != null)
-    ? allPhotos.slice(photoStart, photoStart + (photoCount ?? ppl))
-    : allPhotos;
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
   const commentToShow = textContent ?? item.commentaire;
   const showHeader   = mode !== 'photos' && mode !== 'cont';
-  // Les rangées de photos après la première (photoStart > 0) n'affichent pas de bandeau répété
 
   const showComment  = mode !== 'photos' && commentToShow;
-  const showPhotos   = mode !== 'text' && mode !== 'cont' && photos.length > 0;
+  // Les photos ne se rendent que via les blocs-rangée (photoRow) construits par flattenBlocks.
+  const showPhotos   = mode === 'photos' && photoRow && allPhotos.length > 0;
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
+
+  // Cellule photo — absIdx = index ORIGINAL dans allPhotos (badges Vxx + recadrage corrects
+  // même quand le packing réorganise l'ordre d'affichage). `ar` = aspect de la cellule.
+  const renderPhotoCell = (absIdx, ar) => {
+    const ph = allPhotos[absIdx];
+    if (!ph) return null;
+    const hasAnnotations = ph.annotations?.length > 0;
+    const [cx, cy, cz] = effectiveCrop(ph);
+    const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
+    const arNum = ar === '3 / 4' ? 3 / 4 : 4 / 3;
+    return (
+      <div key={absIdx} style={{ position:'relative', aspectRatio:ar, overflow:'hidden', borderRadius:2 }}>
+        {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
+            l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
+            s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
+            aucune image cuite n'existe. */}
+        <img src={ph.annotated || ph.data} alt=""
+          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
+            objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
+            transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
+        {hasAnnotations && !ph.annotated && !!ph.data &&
+          <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum}/>}
+        {vxxNum != null && (
+          <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
+            V{vxxNum}
+          </div>
+        )}
+        {onPhotoCropChange && (
+          <button data-print="hide"
+            onClick={(e) => { e.stopPropagation(); setCropEditingPi(absIdx); }}
+            style={{ position:'absolute', bottom:4, right:4, background:'rgba(0,0,0,0.62)',
+              color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
+              fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
+              display:'flex', alignItems:'center', gap:4 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+            </svg>
+            Cadrer
+          </button>
+        )}
+        {cropEditingPi === absIdx && onPhotoCropChange && (
+          <PhotoCropEditor
+            photo={ph}
+            initialX={cx} initialY={cy} initialZ={cz}
+            onSave={(nx, ny, nz, norient) => { onPhotoCropChange(ph, nx, ny, nz, norient); setCropEditingPi(null); }}
+            onCancel={() => setCropEditingPi(null)}
+          />
+        )}
+      </div>
+    );
+  };
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
       {/* En-tête normal (titre + badges) */}
@@ -715,61 +777,33 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
           {(!cutMode || !onParaCut) && renderMarkup(commentToShow)}
         </div>
       )}
-      {/* Photos */}
-      {showPhotos && (
-        <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${photoCols ?? Math.min(ppl,3)},1fr)`, gap:3,
-          ...(isPortraitRow ? { justifyContent:'center' } : null) }}>
-          {photos.map((ph, pi) => {
-            const hasAnnotations = ph.annotations?.length > 0;
-            const [cx, cy, cz] = effectiveCrop(ph);
-            const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
-            return (
-              <div key={pi} style={{ position:'relative', aspectRatio:cellAR, overflow:'hidden', borderRadius:2 }}>
-                {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
-                    l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
-                    s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
-                    aucune image cuite n'existe. */}
-                <img src={ph.annotated || ph.data} alt=""
-                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
-                    objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
-                    transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
-                {hasAnnotations && !ph.annotated && !!ph.data &&
-                  <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={cellARn}/>}
-                {vxxNum != null && (
-                  <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
-                    V{vxxNum}
-                  </div>
-                )}
-                {onPhotoCropChange && (
-                  <button data-print="hide"
-                    onClick={(e) => { e.stopPropagation(); setCropEditingPi(pi); }}
-                    style={{ position:'absolute', bottom:4, right:4, background:'rgba(0,0,0,0.62)',
-                      color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
-                      fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
-                      display:'flex', alignItems:'center', gap:4 }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
-                    </svg>
-                    Cadrer
-                  </button>
-                )}
-                {cropEditingPi === pi && onPhotoCropChange && (
-                  <PhotoCropEditor
-                    photo={ph}
-                    initialX={cx} initialY={cy} initialZ={cz}
-                    onSave={(nx, ny, nz, norient) => { onPhotoCropChange(ph, nx, ny, nz, norient); setCropEditingPi(null); }}
-                    onCancel={() => setCropEditingPi(null)}
-                  />
-                )}
+      {/* Photos — trois layouts : rangée paysage, portraits côte à côte, mosaïque
+          portrait + paysages empilés. Largeurs mosaïque 9:8 ⇒ portrait (3:4) et colonne
+          de 2 paysages (4:3) ont la même hauteur — tailles quasi identiques aux rangées
+          standards, zéro blanc. */}
+      {showPhotos && (() => {
+        if (photoRow.kind === 'mosaic') {
+          return (
+            <div style={{ padding:'4px 6px 6px', display:'flex', gap:3, alignItems:'flex-start' }}>
+              <div style={{ flex:9, minWidth:0 }}>{renderPhotoCell(photoRow.portraitIdx, '3 / 4')}</div>
+              <div style={{ flex:8, minWidth:0, display:'flex', flexDirection:'column', gap:3 }}>
+                {photoRow.stackIdxs.map(i => renderPhotoCell(i, '4 / 3'))}
+                {/* 1 seul paysage : il reste en haut, le bas reste vide (choix utilisateur) */}
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          );
+        }
+        const isPortraits = photoRow.kind === 'portraits';
+        const colsN = isPortraits ? 2 : (photoCols ?? Math.min(ppl, 3));
+        return (
+          <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3 }}>
+            {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? '3 / 4' : '4 / 3'))}
+          </div>
+        );
+      })()}
       {/* Légende annotations photos — affichée une seule fois après la dernière rangée */}
       {showPhotos && (() => {
-        const isLastRow = photoStart == null || (photoStart + photos.length) >= allPhotos.length;
-        if (!isLastRow) return null;
+        if (!isLastPhotoRow) return null;
         const usedIds = new Set(allPhotos.flatMap(ph => (ph.annotations || []).filter(a => a.type === 'symbol').map(a => a.symbolId)));
         const hasVP = allPhotos.some(ph => (ph.annotations || []).some(a => a.type === 'viewpoint'));
         const syms = getAllSymbols().filter(s => usedIds.has(s.id));
@@ -2072,7 +2106,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoStart={block.photoStart} photoCount={block.photoCount} annotScale={annotScale}/>
+                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
                 }
               </div>
             ))}
@@ -2139,10 +2173,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               locId={block.locId}
                               vpPhotoOffset={block.vpPhotoOffset ?? 0}
                               vxxPhotoMap={block.vxxPhotoMap}
-                              photoStart={block.photoStart}
-                              photoCount={block.photoCount}
-                              photoOrient={block.photoOrient}
+                              photoRow={block.photoRow}
                               photoCols={block.photoCols}
+                              isLastPhotoRow={block.isLastPhotoRow ?? true}
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
