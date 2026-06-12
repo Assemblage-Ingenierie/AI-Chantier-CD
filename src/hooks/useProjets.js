@@ -3,6 +3,7 @@ import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, m
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
+import { getPhotoPref } from '../lib/photoPrefs.js';
 
 const MAX_HISTORY = 20;
 
@@ -558,6 +559,10 @@ export function useProjets(onSyncStatus) {
                   photos: photosMap[item.id]
                     ? photosMap[item.id].map(ph => {
                         const existing = existingById.get(ph.id) ?? existingByName.get(ph.name);
+                        // Réglages d'affichage rapport (recadrage + orientation portrait) :
+                        // source DURABLE = magasin photoPrefs indexé par id de ligne (survit au
+                        // reload quoi qu'il arrive) ; repli sur la photo locale en mémoire.
+                        const pref = getPhotoPref(ph.id) || {};
                         return {
                           name:           ph.name ?? '',
                           data:           ph.data ?? null,
@@ -565,13 +570,10 @@ export function useProjets(onSyncStatus) {
                           annotated:      ph.annotated ?? existing?.annotated ?? null,
                           annotations:    ph.annotations ?? null,
                           annotSizeScale: existing?.annotSizeScale ?? null,
-                          // Réglages d'affichage rapport (recadrage + orientation portrait) :
-                          // stockés uniquement en local — sans cette préservation, chaque
-                          // ré-hydratation les remettait à zéro (retour forcé en paysage).
-                          cropX:          existing?.cropX,
-                          cropY:          existing?.cropY,
-                          cropZoom:       existing?.cropZoom,
-                          orient:         existing?.orient,
+                          cropX:          pref.cropX    ?? existing?.cropX,
+                          cropY:          pref.cropY    ?? existing?.cropY,
+                          cropZoom:       pref.cropZoom ?? existing?.cropZoom,
+                          orient:         pref.orient   ?? existing?.orient,
                           _id:            ph.id,
                           _legacy:        ph._legacy ?? false,
                         };
