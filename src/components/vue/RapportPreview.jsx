@@ -9,6 +9,7 @@ import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, dedupPlanPaths } from '../../lib/vpNumbering.js';
 import { fetchPlanData } from '../../lib/storage.js';
+import { setPhotoPref } from '../../lib/photoPrefs.js';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -2190,6 +2191,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               annotScale={annotScale}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient) => {
                                 if (!photo) return;
+                                // Persistance durable par id de ligne photo (survit au reload
+                                // indépendamment de la chaîne cache/fusion/hydratation).
+                                if (photo._id) setPhotoPref(photo._id, { cropX: cx, cropY: cy, cropZoom: cz, orient });
                                 onUpdateItem(block.locId, block.item.id, {
                                   photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz, orient } : ph),
                                 });
