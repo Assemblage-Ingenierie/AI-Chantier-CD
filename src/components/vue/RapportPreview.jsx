@@ -175,17 +175,29 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
         });
       }
 
-      // Photos : une rangée (cols photos) = un bloc → s'insèrent ligne par ligne dans le flux
+      // Photos : une rangée = un bloc. On découpe d'abord en RUNS d'orientation homogène
+      // (les portraits ne se mélangent pas aux paysages dans une même rangée → hauteurs
+      // cohérentes), puis chaque run en rangées. Les portraits sont limités à 2 par rangée
+      // pour rester grands (façade entière lisible) ; les paysages gardent `cols`.
       if (photos.length > 0) {
-        for (let s = 0; s < photos.length; s += cols) {
-          const count = Math.min(cols, photos.length - s);
-          blocks.push({
-            type:'item',
-            id: s === 0 ? `${item.id}_ph` : `${item.id}_ph${s}`,
-            item, locId:loc.id, mode:'photos',
-            photoStart: s, photoCount: count,
-            vpPhotoOffset: photoOffset + s, vxxPhotoMap,
-          });
+        const isPortrait = (ph) => ph?.orient === 'portrait';
+        let s = 0;
+        while (s < photos.length) {
+          const portrait = isPortrait(photos[s]);
+          let e = s;
+          while (e < photos.length && isPortrait(photos[e]) === portrait) e++;
+          const runCols = portrait ? Math.min(cols, 2) : cols;
+          for (let r = s; r < e; r += runCols) {
+            const count = Math.min(runCols, e - r);
+            blocks.push({
+              type:'item',
+              id: r === 0 ? `${item.id}_ph` : `${item.id}_ph${r}`,
+              item, locId:loc.id, mode:'photos',
+              photoStart: r, photoCount: count, photoOrient: portrait ? 'portrait' : 'landscape', photoCols: runCols,
+              vpPhotoOffset: photoOffset + r, vxxPhotoMap,
+            });
+          }
+          s = e;
         }
       }
 
@@ -346,7 +358,7 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1 }) {
+function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3 }) {
   const cvRef = useRef();
   const [inferredW, setInferredW] = React.useState(null);
   const [inferredH, setInferredH] = React.useState(null);
@@ -381,7 +393,6 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1 }) {
     const cv = cvRef.current;
     if (!cv || !photo.annotations?.length || !effectiveW) return;
 
-    const containerAR = 4 / 3;
     const photoH = effectiveH || Math.round(effectiveW * 0.75);
     const photoAR = effectiveW / photoH;
     let drawW, drawH, cropXpx = 0, cropYpx = 0;
@@ -406,7 +417,7 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1 }) {
       : (drawW / Math.max(cssW || drawW, 350)) * 0.5;
     const sizeScale = baseSizeScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom]);
+  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom, containerAR]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
   return <canvas ref={cvRef} style={{
@@ -497,7 +508,9 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   const W_p = naturalSize?.w || photo.annotW || 1400;
   const H_p = naturalSize?.h || photo.annotH || Math.round(W_p * 0.75);
   const photoRatio = W_p / H_p;
-  const FRAME_RATIO = 4 / 3;
+  // Orientation du cadre dans le rapport : paysage 4:3 (défaut) ou portrait 3:4 (façade entière).
+  const [orient, setOrient] = React.useState(photo.orient === 'portrait' ? 'portrait' : 'landscape');
+  const FRAME_RATIO = orient === 'portrait' ? 3 / 4 : 4 / 3;
   const containerH = containerW / photoRatio;
 
   // Base frame dimensions at zoom=1
@@ -567,7 +580,18 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
         <div style={{ fontSize:13, fontWeight:700, color:'white', textAlign:'center', letterSpacing:0.2 }}>
           Recadrer la photo
         </div>
-        {/* Full original photo with draggable 4:3 crop frame */}
+        {/* Choix de l'orientation dans le rapport — portrait pour les façades hautes */}
+        <div style={{ display:'flex', gap:6, background:'#2c2c2e', borderRadius:9, padding:3 }}>
+          {[['landscape', 'Paysage', '▭'], ['portrait', 'Portrait', '▯']].map(([key, label, sym]) => (
+            <button key={key} onClick={() => setOrient(key)}
+              style={{ flex:1, padding:'7px 0', borderRadius:7, border:'none', cursor:'pointer',
+                fontSize:12, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+                background: orient === key ? DA.red : 'transparent', color: orient === key ? 'white' : '#aaa' }}>
+              <span style={{ fontSize:14, lineHeight:1 }}>{sym}</span>{label}
+            </button>
+          ))}
+        </div>
+        {/* Full original photo with draggable crop frame */}
         <div ref={containerRef}
           style={{ position:'relative', width:'100%', height:containerH, flexShrink:0,
             borderRadius:8, cursor:'grab', touchAction:'none', background:'#000', overflow:'hidden' }}
@@ -619,7 +643,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
           <button onClick={onCancel}
             style={{ flex:1, padding:10, borderRadius:8, background:'#2c2c2e', color:'#aaa',
               border:'none', cursor:'pointer', fontSize:12, fontWeight:600 }}>Annuler</button>
-          <button onClick={() => onSave(Math.round(px), Math.round(py), pz)}
+          <button onClick={() => onSave(Math.round(px), Math.round(py), pz, orient)}
             style={{ flex:2, padding:10, borderRadius:8, background:DA.red, color:'white',
               border:'none', cursor:'pointer', fontSize:13, fontWeight:700 }}>Valider</button>
         </div>
@@ -629,7 +653,11 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoStart, photoCount, photoOrient = 'landscape', photoCols = null, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
+  const isPortraitRow = photoOrient === 'portrait';
+  // Format de cellule : 4:3 paysage (défaut, inchangé) ou 3:4 portrait (façade entière).
+  const cellAR  = isPortraitRow ? '3 / 4' : '4 / 3';
+  const cellARn = isPortraitRow ? 3 / 4 : 4 / 3;
   const allPhotos = (item.photos || []).filter(p => p.data);
   // Pour un bloc-rangée, on affiche seulement la tranche photoStart..photoStart+photoCount
   const photos = (photoStart != null)
@@ -689,13 +717,14 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
       )}
       {/* Photos */}
       {showPhotos && (
-        <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${Math.min(ppl,3)},1fr)`, gap:3 }}>
+        <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${photoCols ?? Math.min(ppl,3)},1fr)`, gap:3,
+          ...(isPortraitRow ? { justifyContent:'center' } : null) }}>
           {photos.map((ph, pi) => {
             const hasAnnotations = ph.annotations?.length > 0;
             const [cx, cy, cz] = effectiveCrop(ph);
             const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + pi}`);
             return (
-              <div key={pi} style={{ position:'relative', aspectRatio:'4/3', overflow:'hidden', borderRadius:2 }}>
+              <div key={pi} style={{ position:'relative', aspectRatio:cellAR, overflow:'hidden', borderRadius:2 }}>
                 {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
                     l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
                     s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
@@ -705,7 +734,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                     objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
                     transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
                 {hasAnnotations && !ph.annotated && !!ph.data &&
-                  <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz}/>}
+                  <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={cellARn}/>}
                 {vxxNum != null && (
                   <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
                     V{vxxNum}
@@ -728,7 +757,7 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                   <PhotoCropEditor
                     photo={ph}
                     initialX={cx} initialY={cy} initialZ={cz}
-                    onSave={(nx, ny, nz) => { onPhotoCropChange(ph, nx, ny, nz); setCropEditingPi(null); }}
+                    onSave={(nx, ny, nz, norient) => { onPhotoCropChange(ph, nx, ny, nz, norient); setCropEditingPi(null); }}
                     onCancel={() => setCropEditingPi(null)}
                   />
                 )}
@@ -2112,13 +2141,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               vxxPhotoMap={block.vxxPhotoMap}
                               photoStart={block.photoStart}
                               photoCount={block.photoCount}
+                              photoOrient={block.photoOrient}
+                              photoCols={block.photoCols}
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
-                              onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz) => {
+                              onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient) => {
                                 if (!photo) return;
                                 onUpdateItem(block.locId, block.item.id, {
-                                  photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz } : ph),
+                                  photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz, orient } : ph),
                                 });
                               } : null}
                             />
