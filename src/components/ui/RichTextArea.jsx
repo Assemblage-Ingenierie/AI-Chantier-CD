@@ -99,6 +99,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   const editorRef = useRef(null);
   const isComposing = useRef(false); // IME (Chinese, Japanese…)
   const isTyping = useRef(false); // true seulement pendant la frappe active (pas simple focus)
+  const lastSyncKey = useRef(syncKey); // dernière valeur de syncKey traitée (détection de CHANGEMENT)
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -115,14 +116,19 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (el.innerHTML !== html) el.innerHTML = html;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Si value change depuis l'extérieur (IA, dictaphone, changement de visite) → resynchroniser
-  // syncKey incrémenté par le parent force la sync même si l'éditeur est en cours de frappe
+  // Si value change depuis l'extérieur (IA, dictaphone, changement de visite) → resynchroniser.
+  // La sync n'est FORCÉE que lorsque syncKey CHANGE réellement (événement IA/dictée), pas tant
+  // qu'il est non nul. Sinon, après une seule dictée/correction (syncKey passé à ≥1), la garde
+  // anti-écrasement pendant la frappe restait désactivée À VIE → l'éditeur réécrivait son
+  // contenu et blurait à chaque frappe → le texte « resettait à chaque fois ».
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    if (isTyping.current && !syncKey) return;
+    const forced = syncKey !== lastSyncKey.current;
+    lastSyncKey.current = syncKey;
+    if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (el.innerHTML !== html) { el.innerHTML = html; if (syncKey) el.blur(); }
+    if (el.innerHTML !== html) { el.innerHTML = html; if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
