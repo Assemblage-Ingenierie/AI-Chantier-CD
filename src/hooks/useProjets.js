@@ -313,7 +313,7 @@ export function useProjets(onSyncStatus) {
             applyPlanBgs(cached);
             const stillMissing = missingPlanIds.filter(id => !cached[id]);
             if (!stillMissing.length) return;
-            loadAllPlanBgs().then(bgsByProject => {
+            loadAllPlanBgs(stillMissing).then(bgsByProject => {
               const flat = {};
               for (const byPlan of Object.values(bgsByProject || {})) Object.assign(flat, byPlan);
               const fetched = {};

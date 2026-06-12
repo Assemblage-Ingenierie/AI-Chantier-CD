@@ -2,7 +2,10 @@ import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 
-const SIGNED_URL_TTL = 604800; // 7 jours — synchro avec urlCache.js
+// 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
+// navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
+// Allonger le TTL divise d'autant l'egress photos récurrent par appareil.
+const SIGNED_URL_TTL = 2592000;
 
 // v12 = format normalisé (tables séparées, sans placeholders __img__/__pdf__)
 const SK = 'chantierai_v12';
@@ -416,14 +419,19 @@ export async function hydratePlanLibrary(projectId) {
   } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }
 }
 
-// Récupère tous les bg de plans en une seule requête — utilisé pour préchauffer le cache
-// localStorage au démarrage. { projectId: { planId: bg } }
-export async function loadAllPlanBgs() {
+// Récupère les bg de plans en une seule requête — utilisé pour préchauffer le cache
+// au démarrage. { projectId: { planId: bg } }
+// `ids` (optionnel) : limite la requête aux seuls plans manquants — sans ce filtre, une seule
+// vignette absente du cache déclenchait le téléchargement de TOUS les bg de TOUS les projets
+// (des dizaines de Mo d'egress Supabase à chaque nouvel appareil ou cache vidé).
+export async function loadAllPlanBgs(ids = null) {
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('aichantier_chantier_plans')
+    let q = sb.from('aichantier_chantier_plans')
       .select('id,chantier_id,bg')
       .not('bg', 'is', null);
+    if (ids?.length) q = q.in('id', ids);
+    const { data, error } = await q;
     if (error || !data) return {};
     const byProject = {};
     for (const row of data) {
