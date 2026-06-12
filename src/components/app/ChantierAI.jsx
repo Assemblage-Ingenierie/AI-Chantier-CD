@@ -87,7 +87,13 @@ export default function ChantierAI({ profile, onLogout }) {
           const local = projetsRef.current.find(p => p.id === r.id);
           if (local && r.updated_at && local.updatedAt && r.updated_at > local.updatedAt) s.add(r.id);
         }
-        setStaleIds(s);
+        // Ne mettre à jour QUE si l'ensemble change réellement → évite un re-render de tout
+        // l'arbre toutes les 60 s / à chaque focus (churn inutile, et zéro effet de bord pendant
+        // la frappe). setState avec une nouvelle Set identique re-rendait à chaque tick.
+        setStaleIds(prev => {
+          if (prev.size === s.size && [...s].every(id => prev.has(id))) return prev;
+          return s;
+        });
       } catch {}
     };
     check();
