@@ -211,15 +211,20 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       if (VISIT_FIELDS.has(k)) visitUpd[k] = v;
       else projectUpd[k] = v;
     }
+    // Mise à jour FONCTIONNELLE : on recompose les visites à partir de l'état le plus récent
+    // (prev), pas du prop `projet` (qui peut être périmé si une autre mise à jour de champ de
+    // visite vient juste d'avoir lieu — ex : récap auto-généré écrasant les participants).
     if (Object.keys(visitUpd).length > 0) {
-      const newVisites = (projet.visites || []).map(v =>
-        v.id === selectedVisiteId ? { ...v, ...visitUpd } : v
-      );
-      onUpdate({ ...projectUpd, visites: newVisites });
+      onUpdate(prev => ({
+        ...projectUpd,
+        visites: (prev.visites || []).map(v =>
+          v.id === selectedVisiteId ? { ...v, ...visitUpd } : v
+        ),
+      }));
     } else {
       onUpdate(projectUpd);
     }
-  }, [projet.visites, selectedVisiteId, onUpdate]);
+  }, [selectedVisiteId, onUpdate]);
 
   const updateVisite = (visiteId, patch) => {
     const newVisites = visites.map(v => v.id === visiteId ? { ...v, ...patch } : v);
