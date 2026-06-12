@@ -107,7 +107,11 @@ function slimLoc(l) {
       ...item,
       planAnnotations: slimAnnot(item.planAnnotations),
       // eslint-disable-next-line no-unused-vars
-      photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
+      // _id (id de ligne DB) CONSERVÉ dans le cache : c'est lui qui rend l'upsert photo stable
+      // à travers les rechargements de page. Sans lui, une sauvegarde avant ré-hydratation
+      // attribuait un id aléatoire → ligne dupliquée en DB (visible depuis que la purge des
+      // orphelins est conservatrice). ~36 octets par photo, négligeable.
+      photos: (item.photos || []).map(({ _legacy, ...ph }) => ph),
     })),
   };
 }
