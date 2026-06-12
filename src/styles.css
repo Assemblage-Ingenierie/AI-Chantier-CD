@@ -74,8 +74,20 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   width: 100%;
   border-radius: 16px 16px 0 0;
   max-height: 88vh;
+  /* dvh quand dispo : exclut la barre d'URL dynamique de Safari mobile (le bas de la feuille
+     et son bouton « Enregistrer » collant ne passent plus sous la barre du navigateur). */
+  max-height: 88dvh;
+  /* Padding bas = safe-area iPhone (home indicator) → bouton d'action toujours atteignable. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   flex-direction: column;
+}
+.modal-sheet {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (min-width: 640px) {
+  /* Sur desktop la feuille est centrée, pas collée au bas → pas d'inset. */
+  .modal-sheet-flex, .modal-sheet { padding-bottom: 0; }
 }
 @media (min-width: 640px) {
   .modal-overlay,
