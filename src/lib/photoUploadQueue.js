@@ -130,34 +130,44 @@ export async function drainPhotoQueue() {
   try {
     const sb = await getSupabase();
     await persistSwConfig(sb); // toujours rafraîchir le token pour le Background Sync
-    const keys = (await idbReq(Q_STORE, 'readonly', s => s.getAllKeys())) || [];
-    if (!keys.length) return;
 
-    let idx = 0;
-    const worker = async () => {
-      while (idx < keys.length) {
-        const key = keys[idx++];
-        const entry = await idbReq(Q_STORE, 'readonly', s => s.get(key));
-        if (!entry) continue;
-        // Déjà confirmé (ex : Background Sync passé entre-temps) → juste nettoyer.
-        const done = await idbReq(D_STORE, 'readonly', s => s.get(key));
-        if (done) { await idbReq(Q_STORE, 'readwrite', s => s.delete(key)); continue; }
-        try {
-          const blob = await (await fetch(entry.dataUrl)).blob();
-          const { error } = await sb.storage.from('photos').upload(entry.path, blob, {
-            contentType: entry.contentType, upsert: true, cacheControl: '31536000',
-          });
-          if (error) throw error;
-          await idbReq(D_STORE, 'readwrite', s => s.put(entry.path, key));
-          await idbReq(Q_STORE, 'readwrite', s => s.delete(key));
-        } catch {
-          // Échec (réseau…) : l'entrée reste en file, re-tentée au prochain drain.
-          await idbReq(Q_STORE, 'readwrite', s => s.put({ ...entry, tries: (entry.tries || 0) + 1 }, key));
+    // Re-lire la file à chaque passe : les photos enfilées PENDANT un drain (rafale de prises
+    // puis téléphone rangé) sont reprises immédiatement, sans attendre online/visibilitychange.
+    // On s'arrête dès qu'une passe ne fait AUCUN progrès (réseau coupé) → pas de boucle à vide ;
+    // garde-fou de passes en plus contre un cas pathologique.
+    for (let pass = 0; pass < 100; pass++) {
+      const keys = (await idbReq(Q_STORE, 'readonly', s => s.getAllKeys())) || [];
+      if (!keys.length) break;
+
+      let idx = 0;
+      let progressed = false;
+      const worker = async () => {
+        while (idx < keys.length) {
+          const key = keys[idx++];
+          const entry = await idbReq(Q_STORE, 'readonly', s => s.get(key));
+          if (!entry) continue;
+          // Déjà confirmé (ex : Background Sync passé entre-temps) → juste nettoyer.
+          const done = await idbReq(D_STORE, 'readonly', s => s.get(key));
+          if (done) { await idbReq(Q_STORE, 'readwrite', s => s.delete(key)); progressed = true; continue; }
+          try {
+            const blob = await (await fetch(entry.dataUrl)).blob();
+            const { error } = await sb.storage.from('photos').upload(entry.path, blob, {
+              contentType: entry.contentType, upsert: true, cacheControl: '31536000',
+            });
+            if (error) throw error;
+            await idbReq(D_STORE, 'readwrite', s => s.put(entry.path, key));
+            await idbReq(Q_STORE, 'readwrite', s => s.delete(key));
+            progressed = true;
+          } catch {
+            // Échec (réseau…) : l'entrée reste en file, re-tentée au prochain drain.
+            await idbReq(Q_STORE, 'readwrite', s => s.put({ ...entry, tries: (entry.tries || 0) + 1 }, key));
+          }
+          refreshCount();
         }
-        refreshCount();
-      }
-    };
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      if (!progressed) break; // aucune photo n'est passée (hors-ligne) → inutile de re-boucler
+    }
   } catch { /* getSupabase indisponible (hors-ligne) → re-tenté plus tard */ }
   finally {
     _draining = false;

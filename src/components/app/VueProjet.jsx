@@ -268,6 +268,42 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
   }, [zoneDragIdx, zoneOverIdx, moveZone]);
 
+  // Réordonnancement TACTILE des zones (le drag HTML5 ne marche pas au doigt — mobile est la
+  // plateforme principale, cf. CLAUDE.md Règle N°4). On suit le doigt depuis la poignée et on
+  // calcule la zone survolée par rapport au milieu de chaque carte mesurée dans le DOM.
+  const zoneNodesRef = useRef(new Map()); // locIdx → élément DOM de la carte
+  const zoneTouch = useRef(null);
+  const startZoneTouch = useCallback((e, idx) => {
+    zoneDragDidMove.current = false;
+    zoneTouch.current = { from: idx, overIdx: idx };
+    setZoneDragIdx(idx); setZoneOverIdx(idx);
+    const onMove = (ev) => {
+      const t = ev.touches[0]; if (!t) return;
+      ev.preventDefault(); // touchAction:'none' sur la poignée → pas de scroll parasite
+      zoneDragDidMove.current = true;
+      let over = idx;
+      const entries = [...zoneNodesRef.current.entries()].sort((a, b) => a[0] - b[0]);
+      for (const [i, el] of entries) {
+        const r = el.getBoundingClientRect();
+        if (t.clientY < r.top + r.height / 2) { over = i; break; }
+        over = i;
+      }
+      zoneTouch.current.overIdx = over;
+      setZoneOverIdx(over);
+    };
+    const onEnd = () => {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onEnd);
+      const st = zoneTouch.current; zoneTouch.current = null;
+      if (zoneDragDidMove.current && st && st.from !== st.overIdx) moveZone(st.from, st.overIdx);
+      setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
+    };
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+  }, [moveZone]);
+
   const [openLocIds, setOpenLocIds] = useState(
     () => new Set((selectedVisite?.localisations || []).map(l => l.id))
   );
@@ -461,7 +497,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
-      <div style={{ background:DA.black, flexShrink:0 }}>
+      <div style={{ background:DA.black, flexShrink:0, paddingTop:'env(safe-area-inset-top, 0px)' }}>
 
         {isDesktop ? (
           <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:52, padding:'0 16px' }}>
@@ -624,6 +660,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
                       <div key={loc.id}
+                        ref={el => { if (el) zoneNodesRef.current.set(locIdx, el); else zoneNodesRef.current.delete(locIdx); }}
                         draggable
                         onDragStart={() => { setZoneDragIdx(locIdx); zoneDragDidMove.current = false; }}
                         onDragEnter={() => { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; }}
@@ -640,7 +677,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                         }}>
                         <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
                           <div onClick={e => e.stopPropagation()}
-                            style={{ flexShrink:0, padding:'6px 4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center' }}>
+                            onTouchStart={e => startZoneTouch(e, locIdx)}
+                            style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
                           <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}

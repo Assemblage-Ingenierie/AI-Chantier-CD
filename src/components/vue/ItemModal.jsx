@@ -371,8 +371,12 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     const r = new FileReader();
     r.onerror = () => res(null);
     r.onload = ev => {
+      // Repli : si l'image ne peut pas être décodée/ré-encodée (HEIC sur navigateur sans
+      // support, image partiellement corrompue…), on garde l'ORIGINAL non compressé plutôt
+      // que de perdre la photo. Plus lourd, mais zéro perte — le pipeline downscale au besoin.
+      const fallback = () => res({ data: ev.target.result, name: file.name });
       const img = new Image();
-      img.onerror = () => res(null);
+      img.onerror = fallback;
       img.onload = () => {
         try {
           const MAX = 1600;
@@ -384,7 +388,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
           const canvas = document.createElement('canvas');
           canvas.width = width; canvas.height = height;
           const ctx = canvas.getContext('2d');
-          if (!ctx) { res(null); return; }
+          if (!ctx) { fallback(); return; }
           ctx.drawImage(img, 0, 0, width, height);
           // Try WebP first; iOS < 17 falls back to PNG which is much larger than JPEG
           let dataUrl = canvas.toDataURL('image/webp', 0.82);
@@ -395,7 +399,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
           }
           const name = file.name.replace(/\.[^.]+$/, '.' + ext);
           res({ data: dataUrl, name });
-        } catch { res(null); }
+        } catch { fallback(); }
       };
       img.src = ev.target.result;
     };
