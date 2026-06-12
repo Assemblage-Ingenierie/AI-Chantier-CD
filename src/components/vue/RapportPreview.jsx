@@ -685,16 +685,18 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
 
   // Cellule photo — absIdx = index ORIGINAL dans allPhotos (badges Vxx + recadrage corrects
-  // même quand le packing réorganise l'ordre d'affichage). `ar` = aspect de la cellule.
+  // même quand le packing réorganise l'ordre d'affichage). `ar` = aspect de la cellule ;
+  // ar=null → la cellule REMPLIT son parent en absolu (portrait de mosaïque : hauteur
+  // dictée par la colonne paysages, pixel-perfect).
   const renderPhotoCell = (absIdx, ar) => {
     const ph = allPhotos[absIdx];
     if (!ph) return null;
     const hasAnnotations = ph.annotations?.length > 0;
     const [cx, cy, cz] = effectiveCrop(ph);
     const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
-    const arNum = ar === '3 / 4' ? 3 / 4 : 4 / 3;
+    const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
     return (
-      <div key={absIdx} style={{ position:'relative', aspectRatio:ar, overflow:'hidden', borderRadius:2 }}>
+      <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
             l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
@@ -783,12 +785,19 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
           standards, zéro blanc. */}
       {showPhotos && (() => {
         if (photoRow.kind === 'mosaic') {
+          // Hauteur EXACTEMENT identique : la colonne paysages (2 cellules 4:3 + gap interne)
+          // définit la hauteur de la rangée, et le portrait la remplit en absolu (inset:0) —
+          // sans ça, le portrait à aspect figé restait plus court de la valeur du gap (3px).
           return (
-            <div style={{ padding:'4px 6px 6px', display:'flex', gap:3, alignItems:'flex-start' }}>
-              <div style={{ flex:9, minWidth:0 }}>{renderPhotoCell(photoRow.portraitIdx, '3 / 4')}</div>
+            <div style={{ padding:'4px 6px 6px', display:'flex', gap:3, alignItems:'stretch' }}>
+              <div style={{ flex:9, minWidth:0, position:'relative' }}>
+                {renderPhotoCell(photoRow.portraitIdx, null)}
+              </div>
               <div style={{ flex:8, minWidth:0, display:'flex', flexDirection:'column', gap:3 }}>
                 {photoRow.stackIdxs.map(i => renderPhotoCell(i, '4 / 3'))}
-                {/* 1 seul paysage : il reste en haut, le bas reste vide (choix utilisateur) */}
+                {/* 1 seul paysage : slot vide au même format 4:3 → le bas reste vide (choix
+                    utilisateur) SANS écraser la hauteur du portrait. */}
+                {photoRow.stackIdxs.length < 2 && <div style={{ aspectRatio:'4 / 3' }}/>}
               </div>
             </div>
           );

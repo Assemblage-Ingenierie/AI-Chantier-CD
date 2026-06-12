@@ -544,6 +544,11 @@ export function useProjets(onSyncStatus) {
                 // only stores annotated_storage_url (signed URL) which may be null if the
                 // upload failed or if the photo predates the annotation feature. Without this,
                 // a page reload before the upload completes permanently loses ph.annotated.
+                // Correspondance avec la photo locale : par id de ligne DB (_id, fiable) puis
+                // par nom en repli. Sert à préserver les champs LOCAUX non stockés en DB.
+                const existingById = new Map(
+                  (item.photos || []).filter(p => p._id).map(p => [p._id, p])
+                );
                 const existingByName = new Map(
                   (item.photos || []).filter(p => p.name).map(p => [p.name, p])
                 );
@@ -552,7 +557,7 @@ export function useProjets(onSyncStatus) {
                   _photosHydrated: true,
                   photos: photosMap[item.id]
                     ? photosMap[item.id].map(ph => {
-                        const existing = existingByName.get(ph.name);
+                        const existing = existingById.get(ph.id) ?? existingByName.get(ph.name);
                         return {
                           name:           ph.name ?? '',
                           data:           ph.data ?? null,
@@ -560,6 +565,13 @@ export function useProjets(onSyncStatus) {
                           annotated:      ph.annotated ?? existing?.annotated ?? null,
                           annotations:    ph.annotations ?? null,
                           annotSizeScale: existing?.annotSizeScale ?? null,
+                          // Réglages d'affichage rapport (recadrage + orientation portrait) :
+                          // stockés uniquement en local — sans cette préservation, chaque
+                          // ré-hydratation les remettait à zéro (retour forcé en paysage).
+                          cropX:          existing?.cropX,
+                          cropY:          existing?.cropY,
+                          cropZoom:       existing?.cropZoom,
+                          orient:         existing?.orient,
                           _id:            ph.id,
                           _legacy:        ph._legacy ?? false,
                         };
