@@ -380,11 +380,12 @@ export function useProjets(onSyncStatus) {
         keptLocalIds.forEach(id => dirtyIds.current.add(id));
         userModified.current = true;
       }
-      // Only re-render if something actually changed
-      const changed = allMerged.some((rp, i) => {
-        const lp = projetsRef.current[i];
-        return !lp || lp.updatedAt !== rp.updatedAt || lp.id !== rp.id;
-      }) || allMerged.length !== projetsRef.current.length;
+      // Only re-render if something actually changed — comparé par ID (et non par index :
+      // allMerged est trié par nom, l'état local peut être dans un autre ordre, un renommage
+      // ou un ajout décalait les index et masquait un vrai changement / forçait un faux re-render).
+      const localById = new Map(projetsRef.current.map(p => [p.id, p]));
+      const changed = allMerged.length !== projetsRef.current.length
+        || allMerged.some(rp => { const lp = localById.get(rp.id); return !lp || lp.updatedAt !== rp.updatedAt; });
       if (changed) setProjets(allMerged);
     } catch (e) {
       // Ignore background refresh errors — no banner shown
