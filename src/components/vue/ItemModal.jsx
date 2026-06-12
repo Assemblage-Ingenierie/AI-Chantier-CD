@@ -885,9 +885,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                       draggable={false}
                     />
                     {(
-                      <button onClick={() => setConfirmDelPhotoIdx(i)}
-                        style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
-                        <Ic n="x" s={10}/>
+                      <button onClick={() => setConfirmDelPhotoIdx(i)} aria-label="Supprimer la photo"
+                        style={{ position:'absolute',top:4,right:4,background:'#E30513',color:'white',border:'none',borderRadius:'50%',width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer' }}>
+                        <Ic n="x" s={13}/>
                       </button>
                     )}
                     {ph.annotations?.length > 0 && (

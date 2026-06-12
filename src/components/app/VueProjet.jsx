@@ -344,9 +344,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     setOpenLocIds(prev => new Set([...prev, newLoc.id]));
   };
 
+  // Suppression de zone : retrait immédiat + toast « Annuler » (même pattern sûr que la
+  // suppression d'observation) — remplace le window.confirm bloquant, jarring sur mobile.
   const deleteLoc = (locId, nom) => {
-    if (!window.confirm(`Supprimer la zone "${nom}" et toutes ses observations ?`)) return;
-    onUpdateVisit({ localisations: visitProjet.localisations.filter(l => l.id !== locId) });
+    const prevLocs = visitProjet.localisations;
+    onUpdateVisit({ localisations: prevLocs.filter(l => l.id !== locId) });
+    showUndo(`Zone « ${nom || 'sans nom'} » supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
   };
 
   const toggleLoc = (locId) => {
@@ -780,12 +783,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                             <div style={{ position:'absolute', top:6, left:6, zIndex:2, display:'flex', gap:4 }}>
                                               <button onClick={toggleReportHidden}
                                                 title={pt.reportHidden ? 'Afficher dans le rapport' : 'Masquer du rapport'}
-                                                style={{ background: pt.reportHidden ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: pt.reportHidden ? '#bbb' : DA.gray, padding:0 }}>
-                                                <Ic n="eye" s={12}/>
+                                                aria-label={pt.reportHidden ? 'Afficher le plan dans le rapport' : 'Masquer le plan du rapport'}
+                                                style={{ background: pt.reportHidden ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color: pt.reportHidden ? '#bbb' : DA.gray, padding:0 }}>
+                                                <Ic n="eye" s={14}/>
                                               </button>
                                               {pt.bg && (
                                                 <button
                                                   title="Pivoter le plan 90° à droite"
+                                                  aria-label="Pivoter le plan 90 degrés à droite"
                                                   onClick={async (e) => {
                                                     e.stopPropagation();
                                                     const rotated = await rotateBg90CW(pt.bg);
@@ -804,8 +809,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                                     }));
                                                     onUpdate({ planLibrary: newLibrary, visites: newVisites });
                                                   }}
-                                                  style={{ background:'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:DA.gray, padding:0 }}>
-                                                  <Ic n="rotc" s={12}/>
+                                                  style={{ background:'rgba(255,255,255,0.85)', border:'none', borderRadius:6, width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:DA.gray, padding:0 }}>
+                                                  <Ic n="rotc" s={14}/>
                                                 </button>
                                               )}
                                             </div>

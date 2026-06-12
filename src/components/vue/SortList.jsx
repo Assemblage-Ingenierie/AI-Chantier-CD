@@ -283,9 +283,9 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                               ) : (
                                 <button
                                   onClick={e => { e.stopPropagation(); setConfirmDelPhoto({ item, photoIdx: realIdx }); }}
-                                  title="Supprimer"
-                                  style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-                                  <Ic n="x" s={isDesktop ? 12 : 10}/>
+                                  title="Supprimer" aria-label="Supprimer la photo"
+                                  style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 30, height: isDesktop ? 28 : 30, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                                  <Ic n="x" s={isDesktop ? 12 : 13}/>
                                 </button>
                               )
                             )}

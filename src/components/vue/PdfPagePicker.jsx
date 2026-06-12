@@ -148,7 +148,7 @@ export default function PdfPagePicker({ pdfData, pdfs, label, onSelectMany, onCl
         <p style={{ color:'rgba(255,255,255,0.4)', fontSize:11, margin:'0 0 10px', textAlign:'center' }}>
           Touchez pour (dé)sélectionner • appui long pour voir en grand
         </p>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(min(160px, 45vw), 1fr))', gap:14 }}>
           {pages.map((pg) => {
             const { key, num, thumb, docIdx } = pg;
             const sel = selected.has(key);
