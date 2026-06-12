@@ -13,6 +13,25 @@ import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
+import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
+
+// Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
+// pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
+// téléphone. À zéro = tout est sur Supabase, les autres appareils verront les photos.
+function PendingPhotosBadge() {
+  const [count, setCount] = useState(0);
+  useEffect(() => subscribePendingUploads(setCount), []);
+  if (count <= 0) return null;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8,
+      background:'rgba(251,191,36,0.15)', border:'1px solid rgba(251,191,36,0.4)', flexShrink:0 }}>
+      <Ic n="spn" s={10}/>
+      <span style={{ fontSize:10, fontWeight:700, color:'#FCD34D', whiteSpace:'nowrap' }}>
+        {count} photo{count > 1 ? 's' : ''} en attente
+      </span>
+    </div>
+  );
+}
 
 // Compare two plan background URLs ignoring signed-URL query params (token expiry).
 // Two locs are on the same physical plan only if their planBg points to the same file.
@@ -529,6 +548,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                   <span style={{ fontSize:10, fontWeight:600 }}>Actu.</span>
                 </button>
               )}
+              <PendingPhotosBadge/>
               {(() => {
                 const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
                 const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
@@ -821,6 +841,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
             onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
+            projetId={projet.id ?? null}
             visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
             visiteDate={visitProjet.dateVisite || null}
             ingenieur={visitProjet.ingenieur || ''}

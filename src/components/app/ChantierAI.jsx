@@ -5,6 +5,7 @@ import { useProjets } from '../../hooks/useProjets.js';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { fetchRemoteTimestamps } from '../../lib/storage.js';
 import { processDriveQueue } from '../../lib/driveUpload.js';
+import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
@@ -41,6 +42,10 @@ export default function ChantierAI({ profile, onLogout }) {
       }
     } finally { setRefreshing(false); }
   };
+
+  // File d'upload photos : reprend les envois en attente (photos prises sur site dont
+  // l'upload a été interrompu) dès l'ouverture de l'app, puis au retour en ligne/premier plan.
+  useEffect(() => { initPhotoUploadQueue(); }, []);
 
   // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
   useEffect(() => {

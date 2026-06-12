@@ -1,6 +1,7 @@
 import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
+import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -618,11 +619,19 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
     let storageUrl = ph.storage_url
       ? (extractPhotoPath(ph.storage_url) ?? ph.storage_url)
       : null;
+    // Upload anticipé : la photo a pu être poussée vers Storage dès sa prise (file
+    // photoUploadQueue) — on réutilise ce chemin au lieu de re-uploader les octets.
+    if (!storageUrl && ph._uploadId) {
+      storageUrl = await getQueuedUploadPath(ph._uploadId);
+    }
     if (storageUrl) {
       // path normalisé — réutiliser
     } else if (ph.data?.startsWith('data:')) {
       storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, ph.data);
       if (!storageUrl) continue;
+      // La file n'a pas encore traité cette photo mais saveRemote vient de l'uploader →
+      // retirer l'entrée pour éviter un second upload concurrent vers un autre chemin.
+      if (ph._uploadId) removeQueuedUpload(ph._uploadId);
     } else if (ph.data?.startsWith('http')) {
       storageUrl = extractPhotoPath(ph.data) ?? ph.data;
     } else {
