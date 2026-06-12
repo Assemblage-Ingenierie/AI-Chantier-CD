@@ -2005,7 +2005,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 </head><body>${pagesHtml}</body></html>`);
 
       win.document.close();
-      const doPrint = () => { try { win.focus(); win.print(); } catch {} };
+      // Pose explicite du titre : certains navigateurs n'utilisent pas le <title> écrit via
+      // document.write pour le nom du fichier « Enregistrer en PDF » → on le force.
+      try { win.document.title = printTitle; } catch {}
+      const doPrint = () => { try { win.document.title = printTitle; win.focus(); win.print(); } catch {} };
       // On n'attend que les images NON encore chargées (les data-URL et images en cache HTTP
       // sont déjà prêtes → résolution quasi instantanée). Plafond court pour ne pas bloquer.
       const waitImages = () => new Promise(resolve => {
