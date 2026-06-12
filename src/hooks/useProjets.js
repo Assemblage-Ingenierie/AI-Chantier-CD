@@ -440,11 +440,17 @@ export function useProjets(onSyncStatus) {
     historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), projetsRef.current];
   };
 
+  // upd peut être un objet OU une fonction (prev) => patch. La forme fonctionnelle recalcule
+  // le patch à partir de l'état LE PLUS RÉCENT → deux mises à jour rapprochées de champs
+  // différents (ex : participants + tableauRecap auto-généré sur la page de garde) ne
+  // s'écrasent plus mutuellement (le participant qui « disparaît puis réapparaît »).
   const updateProjet = (id, upd) => {
     pushHistory();
     dirtyIds.current.add(id);
     userModified.current = true;
-    setProjets((ps) => ps.map((p) => p.id === id ? { ...p, ...upd, updatedAt: new Date().toISOString() } : p));
+    setProjets((ps) => ps.map((p) => p.id === id
+      ? { ...p, ...(typeof upd === 'function' ? upd(p) : upd), updatedAt: new Date().toISOString() }
+      : p));
   };
 
   const deleteProjet = (id) => {
