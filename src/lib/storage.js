@@ -24,6 +24,11 @@ let _lastRemoteIds = null;
 let _knownVisitIdsByProject = new Map(); // projectId → Set<visitId>
 let _knownLocIdsByProject   = new Map(); // projectId → Set<locId>
 let _knownItemIdsByProject  = new Map(); // projectId → Set<itemId>
+// itemId → Set<photoId> connus au CHARGEMENT. Sert à la purge des photos orphelines :
+// on ne supprime QUE les photos connues au chargement et que l'utilisateur a depuis retirées.
+// Une photo absente de cet ensemble (ajoutée en parallèle par un AUTRE appareil) n'est jamais
+// supprimée → corrige la perte de lignes photos en édition concurrente PC + téléphone.
+let _knownPhotoIdsByItem    = new Map();
 
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
@@ -102,7 +107,11 @@ function slimLoc(l) {
       ...item,
       planAnnotations: slimAnnot(item.planAnnotations),
       // eslint-disable-next-line no-unused-vars
-      photos: (item.photos || []).map(({ _id, _legacy, ...ph }) => ph),
+      // _id (id de ligne DB) CONSERVÉ dans le cache : c'est lui qui rend l'upsert photo stable
+      // à travers les rechargements de page. Sans lui, une sauvegarde avant ré-hydratation
+      // attribuait un id aléatoire → ligne dupliquée en DB (visible depuis que la purge des
+      // orphelins est conservatrice). ~36 octets par photo, négligeable.
+      photos: (item.photos || []).map(({ _legacy, ...ph }) => ph),
     })),
   };
 }
@@ -352,7 +361,12 @@ export async function loadProjectPhotos(itemIds) {
       sort_order:  ph.sort_order,
       _legacy:     !ph.storage_url,
     }));
-    return groupBy(mapped, 'item_id');
+    const grouped = groupBy(mapped, 'item_id');
+    // Mémorise les ids photos connus au chargement (par item) → base de la purge sûre.
+    for (const [itemId, list] of Object.entries(grouped)) {
+      _knownPhotoIdsByItem.set(itemId, new Set(list.map(ph => ph.id).filter(Boolean)));
+    }
+    return grouped;
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
 }
 
@@ -614,6 +628,10 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
     : (item.photos || []);
 
   const result = [];
+  // incomplete = au moins une photo n'a pas pu être traitée (upload réseau KO, legacy
+  // illisible…). Dans ce cas l'appelant SAUTE la purge des orphelins pour cet item → on ne
+  // supprime jamais une photo existante à cause d'un échec transitoire (perte silencieuse).
+  let incomplete = false;
   for (let pi = 0; pi < rawPhotos.length; pi++) {
     const ph = rawPhotos[pi];
     let storageUrl = ph.storage_url
@@ -628,7 +646,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       // path normalisé — réutiliser
     } else if (ph.data?.startsWith('data:')) {
       storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, ph.data);
-      if (!storageUrl) continue;
+      if (!storageUrl) { incomplete = true; continue; }
       // La file n'a pas encore traité cette photo mais saveRemote vient de l'uploader →
       // retirer l'entrée pour éviter un second upload concurrent vers un autre chemin.
       if (ph._uploadId) removeQueuedUpload(ph._uploadId);
@@ -636,11 +654,11 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       storageUrl = extractPhotoPath(ph.data) ?? ph.data;
     } else {
       const legacyId = ph._id || ph.id;
-      if (!legacyId) continue;
+      if (!legacyId) { incomplete = true; continue; }
       const { data: legRow } = await sb.from('aichantier_item_photos').select('data').eq('id', legacyId).maybeSingle();
-      if (!legRow?.data) continue;
+      if (!legRow?.data) { incomplete = true; continue; }
       storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, legRow.data);
-      if (!storageUrl) continue;
+      if (!storageUrl) { incomplete = true; continue; }
       await sb.from('aichantier_item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
     }
     // Sauvegarder le composite annoté dans Storage si présent
@@ -668,7 +686,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
     }
     result.push(photoRow);
   }
-  return result;
+  return { rows: result, incomplete };
 }
 
 async function saveRemote(ps, dirtyIds = null) {
@@ -697,11 +715,13 @@ async function saveRemote(ps, dirtyIds = null) {
     // massive accidentelle (cf. incident 2026-05-13).
     const safeCap = Math.max(1, Math.floor(_lastRemoteIds.size * 0.5));
     if (toDelete.length > safeCap) {
-      console.error('saveRemote: refusing mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — local state likely stale');
-      errors.push({ message: `Sync interrompu : suppression suspecte de ${toDelete.length} projet(s). Rechargez la page.`, code: 'SAFETY_MASS_DELETE' });
-      return errors;
-    }
-    if (toDelete.length > 0) {
+      // Garde anti-catastrophe : on SAUTE uniquement l'étape de suppression (les projets
+      // « supprimés » seront simplement re-résolus au prochain chargement), mais on NE bloque
+      // PAS le reste du save — les upserts (éditions de texte, photos, etc.) doivent passer.
+      // Avant, un `return errors` ici interrompait toute la sauvegarde et coinçait les éditions.
+      // Les suppressions explicites utilisateur passent de toute façon par deleteRemoteProjet().
+      console.error('saveRemote: skipping suspicious mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — upserts continue');
+    } else if (toDelete.length > 0) {
       const { error } = await sb.from('aichantier_chantiers').delete().in('id', toDelete);
       if (error) errors.push(error);
     }
@@ -1018,10 +1038,12 @@ async function saveRemote(ps, dirtyIds = null) {
 
     // Photos : UPSERT par ID stable puis delete-orphans (jamais de perte si l'upsert échoue)
     const allPhotoRows = [];
+    const incompleteItems = new Set(); // items dont une photo n'a pas pu être traitée → pas de purge
     for (const { itemId, item } of itemRecords) {
       if (!itemsWithLocalPhotos.has(itemId)) continue;
-      const photos = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, slug);
-      allPhotoRows.push(...photos);
+      const { rows, incomplete } = await processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, slug);
+      allPhotoRows.push(...rows);
+      if (incomplete) incompleteItems.add(itemId);
     }
     const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
     let photoUpsertOk = false;
@@ -1035,20 +1057,31 @@ async function saveRemote(ps, dirtyIds = null) {
       else { photoUpsertOk = true; }
     } else { photoUpsertOk = true; }
 
-    // Delete orphans uniquement si l'upsert a réussi — jamais avant (évite la perte si insert échoue)
+    // Purge des photos orphelines — UNIQUEMENT si l'upsert a réussi, et de façon CONSERVATRICE :
+    // on ne supprime QUE les photos connues au chargement (_knownPhotoIdsByItem) que l'utilisateur
+    // a depuis retirées. Une photo ajoutée en parallèle par un AUTRE appareil (absente de
+    // l'ensemble connu) n'est JAMAIS supprimée → fini la perte de lignes photos en édition
+    // concurrente PC + téléphone. Les items dont une photo a échoué sont entièrement épargnés.
     if (photoUpsertOk) {
       const keptIdsByItem = new Map();
       for (const row of allPhotoRows) {
-        if (!keptIdsByItem.has(row.item_id)) keptIdsByItem.set(row.item_id, []);
-        keptIdsByItem.get(row.item_id).push(row.id);
+        if (!keptIdsByItem.has(row.item_id)) keptIdsByItem.set(row.item_id, new Set());
+        keptIdsByItem.get(row.item_id).add(row.id);
       }
       await Promise.all([...itemsWithLocalPhotos].map(itemId => {
-        const keptIds = keptIdsByItem.get(itemId) ?? [];
-        if (keptIds.length === 0) {
-          return sb.from('aichantier_item_photos').delete().eq('item_id', itemId);
-        }
-        const safeIds = keptIds.filter(id => typeof id === 'string' && /^[\w-]+$/.test(id));
-        return sb.from('aichantier_item_photos').delete().eq('item_id', itemId).not('id', 'in', `(${safeIds.join(',')})`);
+        if (incompleteItems.has(itemId)) return Promise.resolve(); // échec transitoire → on ne supprime rien
+        const known = _knownPhotoIdsByItem.get(itemId);
+        if (!known) return Promise.resolve(); // état chargé inconnu → on ne supprime rien (prudence)
+        const keptSet = keptIdsByItem.get(itemId) ?? new Set();
+        // À supprimer = photos connues au chargement que l'utilisateur a retirées (plus dans kept).
+        const toDelete = [...known].filter(id => !keptSet.has(id) && typeof id === 'string' && /^[\w-]+$/.test(id));
+        const p = toDelete.length
+          ? sb.from('aichantier_item_photos').delete().eq('item_id', itemId).in('id', toDelete)
+          : Promise.resolve();
+        // L'état connu de référence devient l'état sauvegardé (les ajouts concurrents seront
+        // découverts au prochain chargement) → cohérence pour les sauvegardes suivantes.
+        _knownPhotoIdsByItem.set(itemId, new Set(keptSet));
+        return p;
       }));
     }
 
