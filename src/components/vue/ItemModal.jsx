@@ -426,11 +426,14 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     setCompressing(true);
     Promise.all(filtered.map(compressPhoto))
       .then(done => {
-        // _uploadId : identifiant d'upload anticipé. La photo part vers Supabase Storage
-        // IMMÉDIATEMENT (file persistante, pool parallèle) au lieu d'attendre la sauvegarde
-        // différée — saveRemote réutilisera le chemin déjà uploadé. Champ neutre : ne pas
-        // utiliser `id`/`_id` ici (collision avec la logique d'hydratation des photos).
-        const valid = done.filter(Boolean).map(ph => ({ ...ph, _uploadId: crypto.randomUUID() }));
+        // _id : identifiant STABLE de la ligne photo en DB, attribué dès la création.
+        // INDISPENSABLE : processPhotosForItem (storage.js) fait `id: ph._id ?? ... ?? randomUUID()`.
+        // Sans _id local, chaque saveRemote (~5s) régénérait un UUID neuf → une nouvelle ligne
+        // upsertée à chaque cycle → photos dédoublées à l'infini. Même pattern que la
+        // duplication d'observation (VisitesScreen.jsx). L'hydratation matche justement par _id.
+        // _uploadId : handle d'upload anticipé (file photoUploadQueue) — la photo part vers
+        // Storage immédiatement ; saveRemote réutilise le chemin déjà uploadé. Rôle distinct du _id.
+        const valid = done.filter(Boolean).map(ph => ({ ...ph, _id: crypto.randomUUID(), _uploadId: crypto.randomUUID() }));
         if (valid.length < done.length) {
           alert(`${done.length - valid.length} photo(s) n'ont pas pu être traitées. Réessayez ou choisissez un autre fichier.`);
         }
