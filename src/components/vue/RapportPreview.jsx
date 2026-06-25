@@ -39,6 +39,10 @@ const MB  = 13  * S;  // 39px marge basse
 const HDR = 10  * S;  // 30px hauteur header
 const FTR = 8   * S;  // 24px hauteur footer
 const CW  = PW - 2 * MX; // 522px largeur contenu
+// Hauteur max d'un plan PORTRAIT dans le rapport : on le laisse remplir quasiment toute la
+// page (≈ hauteur de contenu utile moins titre + légende) pour qu'il soit lisible — au lieu
+// du plafond paysage de 340px qui réduisait les plans portrait en vignettes « riquiqui ».
+const PLAN_PORTRAIT_MAXH = PH - HDR - (MT - HDR) - (MB + FTR) - 96; // ≈ 678px
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────────────────────
 const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
@@ -871,13 +875,17 @@ function scalePlanPaths(paths, s) {
   });
 }
 
-function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null }) {
+function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null, onOrient = null }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
   const [renderedImg, setRenderedImg] = useState(null);
   const [fetchedBg, setFetchedBg] = useState(null);
   const [bgFetchDone, setBgFetchDone] = useState(false);
+  // Orientation du plan (détectée sur les dimensions naturelles de l'image) : un plan portrait
+  // est affiché en grand (pleine page) au lieu du plafond paysage de 340px, et remonté à
+  // RapportPreview (onOrient) pour qu'il soit isolé sur sa propre page.
+  const [isPortrait, setIsPortrait] = useState(false);
   // Le bg vient normalement de planLibrary (hydraté à l'ouverture du projet). S'il manque
   // encore (hydratation incomplète) et qu'on a un planId, on le récupère directement depuis
   // Supabase → le rapport ne reste plus bloqué sur « Plan en cours de chargement ».
@@ -889,6 +897,23 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     });
     return () => { cancelled = true; };
   }, [bg, planId]);
+
+  // Détection d'orientation : dimensions naturelles du fond de plan (indépendante du rendu
+  // annoté). portrait = nettement plus haut que large (seuil 1.05 pour ignorer le carré).
+  useEffect(() => {
+    const src = bg || fetchedBg || exported;
+    if (!src) return;
+    let cancelled = false;
+    const el = new window.Image();
+    el.onload = () => {
+      if (cancelled || !el.naturalWidth) return;
+      const portrait = el.naturalHeight > el.naturalWidth * 1.05;
+      setIsPortrait(portrait);
+      if (planId && onOrient) onOrient(planId, portrait ? 'portrait' : 'landscape');
+    };
+    el.src = src;
+    return () => { cancelled = true; };
+  }, [bg, fetchedBg, exported, planId, onOrient]);
 
   useEffect(() => {
     const bgSrc = bg || fetchedBg;
@@ -928,10 +953,11 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     </div>
   );
   if (!renderedImg) return null;
+  const maxH = isPortrait ? PLAN_PORTRAIT_MAXH : 340;
   return (
-    <div style={{ borderTop:`1px solid ${DA.border}`, background:'#f9f9f9', maxHeight:340, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
+    <div style={{ borderTop:`1px solid ${DA.border}`, background:'#f9f9f9', maxHeight:maxH, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <img src={renderedImg} alt={alt || 'Plan'}
-        style={{ width:'100%', maxHeight:340, objectFit:'contain', display:'block' }}/>
+        style={{ width:'100%', maxHeight:maxH, objectFit:'contain', display:'block' }}/>
     </div>
   );
 }
@@ -973,7 +999,7 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override).
   // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
   // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
@@ -1059,7 +1085,7 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
             {i > 0 && !cutMode && forced && (
               <div style={{ height:2, background:DA.red, opacity:0.3 }}/>
             )}
-            <SinglePlanImage bg={p.bg} planId={p.planId} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath}/>
+            <SinglePlanImage bg={p.bg} planId={p.planId} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath} onOrient={onOrient}/>
           </React.Fragment>
         );
       })}
@@ -1765,6 +1791,44 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const paraBreaks = useMemo(() =>
     new Set((pageBreaks || []).filter(id => /_p\d+$/.test(id))),
   [pageBreaks]);
+  // Orientation des plans (détectée au chargement de l'image par SinglePlanImage, remontée ici).
+  // planId → 'portrait' | 'landscape'. Sert à isoler automatiquement les plans portrait sur
+  // leur propre page (demande utilisateur : un plan portrait par page pour qu'il soit lisible).
+  const [planOrient, setPlanOrient] = useState({});
+  const handlePlanOrient = useCallback((planId, o) => {
+    if (!planId) return;
+    setPlanOrient(prev => (prev[planId] === o ? prev : { ...prev, [planId]: o }));
+  }, []);
+
+  // Sauts de page AUTOMATIQUES dérivés de l'orientation : on isole chaque plan portrait sur sa
+  // page. Réutilise les mêmes breakId que les sauts manuels (`plan-${loc.id}` pour le bloc plan,
+  // `plan-${loc.id}_ep_${i}` pour un plan extra) → splitPlanGroups + buildPages coupent comme
+  // pour un saut forcé, sans logique de pagination dédiée. Ignoré en mode « plans en fin ».
+  const portraitPlanBreaks = useMemo(() => {
+    const s = new Set();
+    if (plansEnFin) return s;
+    const lib = projet.planLibrary || [];
+    const bgResolvable = (planId, planBg, ann) =>
+      !!(ann?.exported || planBg || (planId && lib.find(p => p.id === planId)?.bg));
+    for (const loc of locs) {
+      const list = [];
+      if ((loc.planId || loc.planBg) && !loc.planReportHidden && bgResolvable(loc.planId, loc.planBg, loc.planAnnotations))
+        list.push({ planId: loc.planId, breakId: `plan-${loc.id}` });
+      (loc.extraPlans || []).forEach((ep, i) => {
+        if (!ep.reportHidden && bgResolvable(ep.planId, ep.planBg, ep.planAnnotations))
+          list.push({ planId: ep.planId, breakId: `plan-${loc.id}_ep_${i}` });
+      });
+      list.forEach((pl, k) => {
+        const cur  = planOrient[pl.planId] === 'portrait';
+        const prev = k > 0 && planOrient[list[k - 1].planId] === 'portrait';
+        // k===0 : le bloc plan démarre sa propre page si le 1er plan est portrait (séparé des
+        // photos au-dessus). k>0 : coupe entre deux plans dès que l'un des deux est portrait.
+        if (k === 0 ? cur : (cur || prev)) s.add(pl.breakId);
+      });
+    }
+    return s;
+  }, [locs, planOrient, plansEnFin, projet.planLibrary]);
+
   const breaks = useMemo(() => {
     const s = new Set(pageBreaks || []);
     for (const id of (pageBreaks || [])) {
@@ -1773,8 +1837,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         for (let i = 1; i <= 9; i++) s.add(`${base}_pms${i}`);
       }
     }
+    for (const id of portraitPlanBreaks) s.add(id);
     return s;
-  }, [pageBreaks]);
+  }, [pageBreaks, portraitPlanBreaks]);
   const [editingItem, setEditingItem] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const planLocs = useMemo(() => {
@@ -2133,7 +2198,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
                 }
               </div>
@@ -2194,7 +2259,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
