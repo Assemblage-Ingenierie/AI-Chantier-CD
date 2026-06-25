@@ -452,21 +452,15 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // Échelle du texte/symboles. annotSizeScale (figé à la cuisson) est prioritaire. Sinon
-    // (annotations existantes sans échelle figée) on utilise la MÊME référence que les plans :
-    // largeur naturelle / 1400. C'est exactement ce que produit l'annotateur sur desktop
-    // (ratio*0.5 = largeur/clientWidth*0.5 ≈ largeur/1400) → rendu cohérent, jamais énorme.
-    // L'ancien repli (drawW / largeur AFFICHÉE) explosait car la largeur affichée du rapport
-    // (~250px) est minuscule devant la largeur naturelle → texte gigantesque.
-    const baseSizeScale = photo.annotSizeScale != null
-      ? photo.annotSizeScale
-      : (effectiveW ? effectiveW / 1400 : 0.5);
-    const base = baseSizeScale / cropZoom;
-    // Échelles par type, multipliées par les curseurs PHOTOS (réglables dans le rapport).
-    // Curseurs à 1× → comportement identique à avant (texte=symbole=base, formes neutres).
+    // Échelle UNIFORME pour TOUTES les photos : fraction fixe de la largeur naturelle
+    // (largeur naturelle / 1400), exactement comme l'annotateur (cv.width/1400) → WYSIWYG.
+    // On n'utilise PLUS annotSizeScale : il était figé par photo au moment de l'annotation et
+    // dépendait de la largeur d'écran (ratio*0.5) → tailles incohérentes d'une photo à l'autre.
+    // Les curseurs PHOTOS (réglables dans le rapport) multiplient cette base, par type.
+    const base = (effectiveW ? effectiveW / 1400 : 0.5) / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations,
       { text: base * psText, symbol: base * psSym, shape: psShape }, base * psSym);
-  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom, containerAR, psText, psSym, psShape]);
+  }, [photo.annotations, effectiveW, effectiveH, cropX, cropY, cropZoom, containerAR, psText, psSym, psShape]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
   return <canvas ref={cvRef} style={{
