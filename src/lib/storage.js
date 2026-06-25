@@ -580,14 +580,20 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
 
 // Convertit un base64 data URL en blob et l'upload dans le bucket Storage `photos`.
 // Retourne le chemin relatif ou null en cas d'erreur.
-async function uploadPhotoToStorage(sb, projectSlug, itemId, photoIndex, name, base64) {
+// Convertit un base64 data URL en blob et l'upload dans le bucket Storage `photos`.
+// `key` = identifiant STABLE de la photo (id de ligne) → le chemin est DÉTERMINISTE
+// (`{slug}/{itemId}/{key}.{ext}`), donc ré-uploader la même photo écrase le même fichier
+// (upsert) au lieu de créer un nouveau chemin à chaque save (ancien `Date.now()` → fichiers
+// orphelins + storage_url différents indétectables par le dédoublonnage). Retourne le chemin.
+async function uploadPhotoToStorage(sb, projectSlug, itemId, key, name, base64) {
   try {
     const resp = await fetch(base64);
     const blob = await resp.blob();
     const rawExt = (name || 'photo').replace(/.*\./, '') || 'webp';
     const ext = rawExt === 'webp' ? 'webp' : rawExt === 'jpg' || rawExt === 'jpeg' ? 'jpg' : rawExt;
     const contentType = blob.type || (ext === 'webp' ? 'image/webp' : 'image/jpeg');
-    const path = `${projectSlug}/${itemId}/${Date.now()}_${photoIndex}.${ext}`;
+    const safeKey = String(key).replace(/[^\w-]/g, '');
+    const path = `${projectSlug}/${itemId}/${safeKey}.${ext}`;
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType, upsert: true, cacheControl: '31536000' });
     if (error) { console.warn('Storage upload error:', error); return null; }
     return path;
@@ -661,6 +667,11 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
   let incomplete = false;
   for (let pi = 0; pi < rawPhotos.length; pi++) {
     const ph = rawPhotos[pi];
+    // ID de ligne STABLE pour la photo. Ordre des fallbacks : _id (assigné à la création depuis
+    // dd24b00) → id → _uploadId (handle de la file d'upload, stable, présent sur les clients de
+    // l'ère "upload queue" mais sans _id) → dernier recours random. CRUCIAL : sans token stable,
+    // chaque save régénérait un UUID → une nouvelle ligne à chaque cycle → doublons à l'infini.
+    const rowId = ph._id ?? ph.id ?? ph._uploadId ?? crypto.randomUUID();
     let storageUrl = ph.storage_url
       ? (extractPhotoPath(ph.storage_url) ?? ph.storage_url)
       : null;
@@ -672,7 +683,8 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
     if (storageUrl) {
       // path normalisé — réutiliser
     } else if (ph.data?.startsWith('data:')) {
-      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, ph.data);
+      // Chemin déterministe (clé = rowId) → ré-upload écrase le même fichier, pas de doublon.
+      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, rowId, ph.name, ph.data);
       if (!storageUrl) { incomplete = true; continue; }
       // La file n'a pas encore traité cette photo mais saveRemote vient de l'uploader →
       // retirer l'entrée pour éviter un second upload concurrent vers un autre chemin.
@@ -684,7 +696,7 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       if (!legacyId) { incomplete = true; continue; }
       const { data: legRow } = await sb.from('aichantier_item_photos').select('data').eq('id', legacyId).maybeSingle();
       if (!legRow?.data) { incomplete = true; continue; }
-      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, pi, ph.name, legRow.data);
+      storageUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, rowId, ph.name, legRow.data);
       if (!storageUrl) { incomplete = true; continue; }
       await sb.from('aichantier_item_photos').update({ storage_url: storageUrl, data: null }).eq('id', legacyId);
     }
@@ -693,13 +705,13 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       ? (extractPhotoPath(ph.annotated_storage_url) ?? ph.annotated_storage_url)
       : null;
     if (!annotatedUrl && ph.annotated?.startsWith('data:')) {
-      annotatedUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, `${pi}_annot`, ph.name, ph.annotated);
+      annotatedUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, `${rowId}_annot`, ph.name, ph.annotated);
     } else if (!annotatedUrl && ph.annotated?.startsWith('http')) {
       annotatedUrl = extractPhotoPath(ph.annotated) ?? null;
     }
 
     const photoRow = {
-      id: ph._id ?? ph.id ?? crypto.randomUUID(), // ID stable → upsert sûr, jamais de perte
+      id: rowId, // ID stable → upsert idempotent, jamais de ligne dupliquée
       item_id: itemId,
       name: ph.name ?? '',
       storage_url: storageUrl,
