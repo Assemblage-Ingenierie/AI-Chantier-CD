@@ -147,6 +147,19 @@ export default function RapportTab({ projet, onUpdate }) {
     if (kind === 'symbol') { setScaleSymbol(v); localStorage.setItem('chantierai_scale_symbol', String(v)); }
   };
 
+  // Échelles SÉPARÉES pour les annotations des PHOTOS (indépendantes des plans). Défaut 1× →
+  // les rapports existants ne bougent pas tant qu'on n'y touche pas. Appliquées au rendu des
+  // annotations photo dans le rapport (couche overlay).
+  const [scaleTextPhoto,   setScaleTextPhoto]   = useState(() => _read('chantierai_scale_photo_text', 1));
+  const [scaleSymbolPhoto, setScaleSymbolPhoto] = useState(() => _read('chantierai_scale_photo_symbol', 1));
+  const [scaleShapePhoto,  setScaleShapePhoto]  = useState(() => _read('chantierai_scale_photo_shape', 1));
+  const photoAnnotScales = useMemo(() => ({ text: scaleTextPhoto, shape: scaleShapePhoto, symbol: scaleSymbolPhoto }), [scaleTextPhoto, scaleShapePhoto, scaleSymbolPhoto]);
+  const setScalePhoto = (kind, v) => {
+    if (kind === 'text')   { setScaleTextPhoto(v);   localStorage.setItem('chantierai_scale_photo_text', String(v)); }
+    if (kind === 'shape')  { setScaleShapePhoto(v);  localStorage.setItem('chantierai_scale_photo_shape', String(v)); }
+    if (kind === 'symbol') { setScaleSymbolPhoto(v); localStorage.setItem('chantierai_scale_photo_symbol', String(v)); }
+  };
+
   const pageBreaks = projet.rapportPageBreaks || [];
 
   // Nettoie le commentaire : supprime HTML, markdown, puis tronque
@@ -393,10 +406,10 @@ export default function RapportTab({ projet, onUpdate }) {
             </div>
           </div>
 
-          {/* Taille des annotations — 3 échelles indépendantes (coordonnées avec l'annotateur) */}
+          {/* Taille des annotations — PLANS — 3 échelles indépendantes (coordonnées avec l'annotateur) */}
           <div>
             <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
-              Taille des annotations
+              Taille des annotations · Plans
             </label>
             {[
               { kind:'text',   lbl:'Texte',    val:scaleText },
@@ -413,6 +426,29 @@ export default function RapportTab({ projet, onUpdate }) {
             ))}
             <p style={{ fontSize:9.5, color:DA.grayL, margin:'3px 0 0', fontStyle:'italic' }}>
               Affecte les marqueurs des plans. Réglages partagés avec l'annotateur.
+            </p>
+          </div>
+
+          {/* Taille des annotations — PHOTOS — échelles distinctes des plans */}
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
+              Taille des annotations · Photos
+            </label>
+            {[
+              { kind:'text',   lbl:'Texte',    val:scaleTextPhoto },
+              { kind:'shape',  lbl:'Formes',   val:scaleShapePhoto },
+              { kind:'symbol', lbl:'Symboles', val:scaleSymbolPhoto },
+            ].map(s => (
+              <div key={s.kind} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:5 }}>
+                <span style={{ fontSize:10, fontWeight:600, color:DA.gray, minWidth:58 }}>{s.lbl}</span>
+                <input type="range" min="0.3" max="3" step="0.1" value={s.val}
+                  onChange={e => setScalePhoto(s.kind, parseFloat(e.target.value))}
+                  style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
+                <span style={{ fontSize:11, fontWeight:700, color:DA.black, minWidth:30, textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+              </div>
+            ))}
+            <p style={{ fontSize:9.5, color:DA.grayL, margin:'3px 0 0', fontStyle:'italic' }}>
+              Affecte les annotations dessinées sur les photos (texte, flèches, symboles).
             </p>
           </div>
 
@@ -503,6 +539,7 @@ export default function RapportTab({ projet, onUpdate }) {
         includeTableauRecap={projet.includeTableauRecap !== false}
         tableauRecap={projet.tableauRecap || []}
         annotScales={annotScales}
+        photoAnnotScales={photoAnnotScales}
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         conclusionAlign={projet.conclusionAlign ?? 'left'}

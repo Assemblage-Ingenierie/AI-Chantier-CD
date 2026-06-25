@@ -397,7 +397,10 @@ function ZoneHeader({ loc }) {
   );
 }
 
-function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3 }) {
+function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3, photoScale = { text: 1, shape: 1, symbol: 1 } }) {
+  const psText  = photoScale?.text   ?? 1;
+  const psSym   = photoScale?.symbol ?? 1;
+  const psShape = photoScale?.shape  ?? 1;
   const cvRef = useRef();
   const [inferredW, setInferredW] = React.useState(null);
   const [inferredH, setInferredH] = React.useState(null);
@@ -458,9 +461,12 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
     const baseSizeScale = photo.annotSizeScale != null
       ? photo.annotSizeScale
       : (effectiveW ? effectiveW / 1400 : 0.5);
-    const sizeScale = baseSizeScale / cropZoom;
-    drawAnnotationPaths(ctx, photo.annotations, sizeScale);
-  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom, containerAR]);
+    const base = baseSizeScale / cropZoom;
+    // Échelles par type, multipliées par les curseurs PHOTOS (réglables dans le rapport).
+    // Curseurs à 1× → comportement identique à avant (texte=symbole=base, formes neutres).
+    drawAnnotationPaths(ctx, photo.annotations,
+      { text: base * psText, symbol: base * psSym, shape: psShape }, base * psSym);
+  }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom, containerAR, psText, psSym, psShape]);
 
   if (!photo.annotations?.length || !effectiveW) return null;
   return <canvas ref={cvRef} style={{
@@ -696,7 +702,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null }) {
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 } }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -719,18 +725,23 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
     const [cx, cy, cz] = effectiveCrop(ph);
     const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
     const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
+    // Curseurs « taille annotations photos » actifs (≠ 1×) → on privilégie la couche overlay
+    // (re-dessin live, sensible aux curseurs) plutôt que le composite cuit (taille figée).
+    const photoScaleActive = (photoAnnotScales?.text ?? 1) !== 1 || (photoAnnotScales?.symbol ?? 1) !== 1 || (photoAnnotScales?.shape ?? 1) !== 1;
+    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || photoScaleActive);
+    const imgSrc = (photoScaleActive && ph.data) ? ph.data : (ph.annotated || ph.data);
     return (
       <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
             l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
             aucune image cuite n'existe. */}
-        <img src={ph.annotated || ph.data} alt=""
+        <img src={imgSrc} alt=""
           style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
             objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
             transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
-        {hasAnnotations && !ph.annotated && !!ph.data &&
-          <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum}/>}
+        {useAnnotOverlay &&
+          <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum} photoScale={photoAnnotScales}/>}
         {/* Bouton « Annoter » (haut-droite) : ouvre l'outil d'annotation sur la photo —
             permet de retoucher / déplacer les annotations directement depuis le rapport. */}
         {onAnnotatePhoto && !!ph.data && (
@@ -1807,7 +1818,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2301,6 +2312,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
+                              photoAnnotScales={photoAnnotScales}
                               onAnnotatePhoto={onAnnotatePhoto}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient) => {
                                 if (!photo) return;
