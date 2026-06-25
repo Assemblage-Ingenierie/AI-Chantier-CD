@@ -2,6 +2,12 @@
 
 ---
 
+## 🟢 RÈGLE N°0 — APPELER L'UTILISATEUR PAR SON PRÉNOM
+
+**L'utilisateur s'appelle Thomas.** Le saluer/l'appeler par son prénom (« Thomas ») **au début de chaque réponse qui ouvre une nouvelle mise à jour ou une nouvelle demande**. Cela sert aussi de point de repère pour vérifier la continuité du contexte au fil de la conversation.
+
+---
+
 ## 🟡 RÈGLE N°1 — PUSH ET MERGE AUTOMATIQUE AUTORISÉS
 
 **L'utilisateur a donné accord général pour pusher et merger sur `main` sans demander confirmation à chaque fois, tant que les changements sont sûrs et ne cassent rien.**
