@@ -362,11 +362,38 @@ export async function loadProjectPhotos(itemIds) {
       _legacy:     !ph.storage_url,
     }));
     const grouped = groupBy(mapped, 'item_id');
-    // Mémorise les ids photos connus au chargement (par item) → base de la purge sûre.
+    // Mémorise TOUS les ids bruts (AVANT dédoublonnage) → la purge conservatrice de saveRemote
+    // (delete known-not-kept) pourra ainsi nettoyer en base les lignes en double héritées du
+    // bug d'historique (id régénéré à chaque save → des dizaines de lignes pour la même photo).
     for (const [itemId, list] of Object.entries(grouped)) {
       _knownPhotoIdsByItem.set(itemId, new Set(list.map(ph => ph.id).filter(Boolean)));
     }
-    return grouped;
+    // Dédoublonnage AFFICHAGE : une même photo (même item + storage_url) a pu être upsertée
+    // des dizaines de fois (ancien bug d'id non stable, corrigé depuis). On n'en garde qu'UNE
+    // par storage_url, en préférant la version annotée. Conséquence immédiate : Stas ne voit
+    // plus les doublons (plus besoin de supprimer à la main) ; la base se nettoie au prochain
+    // enregistrement via la purge. Les photos legacy sans storage_url sont toutes conservées.
+    const deduped = {};
+    for (const [itemId, list] of Object.entries(grouped)) {
+      const keptByUrl = new Map(); // storage_url → photo gardée
+      const out = [];
+      for (const ph of list) {
+        if (!ph.storage_url) { out.push(ph); continue; }
+        const prev = keptByUrl.get(ph.storage_url);
+        if (!prev) { keptByUrl.set(ph.storage_url, ph); out.push(ph); continue; }
+        // Doublon : si la nouvelle porte des annotations et pas la gardée, on la substitue.
+        const phAnnot   = !!(ph.annotated || ph.annotations?.length);
+        const prevAnnot = !!(prev.annotated || prev.annotations?.length);
+        if (phAnnot && !prevAnnot) {
+          const i = out.indexOf(prev);
+          if (i >= 0) out[i] = ph;
+          keptByUrl.set(ph.storage_url, ph);
+        }
+        // sinon : doublon ignoré (pas affiché)
+      }
+      deduped[itemId] = out;
+    }
+    return deduped;
   } catch (e) { console.warn('loadProjectPhotos error:', e); return null; }
 }
 
