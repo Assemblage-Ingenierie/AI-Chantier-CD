@@ -395,7 +395,7 @@ function getShapeHandles(ap) {
   return [];
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'pen', locId = null, photoVpNums = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -410,6 +410,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // renseignée pendant le dessin → garantit que le hit-test coïncide pixel-près avec ce qui
   // est affiché (la largeur mesurée diffère de l'approximation par nb de caractères).
   const resizeHandleRef = useRef(null); // { idx, x, y, twU } | null
+  const vpRotateHandleRef = useRef(null); // { idx, x, y, cx, cy } poignée de rotation du viewpoint sélectionné
+  const vpRotateDragRef   = useRef(null); // { idx, cx, cy } rotation en cours
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
@@ -777,8 +779,24 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         });
       } else if (ap.x != null) {
         ctx.beginPath(); ctx.arc(ap.x, ap.y, 28 * Math.max(1, sSym), 0, Math.PI * 2); ctx.stroke();
+        // Viewpoint : poignée de ROTATION (knob bleu) — la tenir et tourner autour pour
+        // réorienter le cône librement. Le glisser-déplacer du corps reste le déplacement.
+        if (ap.type === 'viewpoint') {
+          const R = 46 * Math.max(1, sSym);
+          const ang = ap.angle || 0;
+          const hx = ap.x + Math.cos(ang) * R, hy = ap.y + Math.sin(ang) * R;
+          vpRotateHandleRef.current = { idx: selAnnot.idx, x: hx, y: hy, cx: ap.x, cy: ap.y };
+          ctx.setLineDash([]);
+          ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
+          ctx.beginPath(); ctx.moveTo(ap.x, ap.y); ctx.lineTo(hx, hy); ctx.stroke();
+          const kr = 9 * Math.max(1, sSym);
+          ctx.fillStyle = '#4A9EFF'; ctx.strokeStyle = 'white'; ctx.lineWidth = 2.5 * ratio;
+          ctx.beginPath(); ctx.arc(hx, hy, kr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
       }
       ctx.restore();
+    } else {
+      vpRotateHandleRef.current = null;
     }
   }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
 
@@ -1015,6 +1033,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
     const cv = cvRef.current;
     const pos = getXY(e, cv);
+
+    // Poignée de ROTATION d'un viewpoint sélectionné : priorité absolue, quel que soit l'outil.
+    {
+      const rotH = vpRotateHandleRef.current;
+      if (selAnnot !== null && rotH && rotH.idx === selAnnot.idx &&
+          Math.hypot(pos.x - rotH.x, pos.y - rotH.y) < 24 * (cv.width / cv.clientWidth)) {
+        vpRotateDragRef.current = { idx: selAnnot.idx, cx: rotH.cx, cy: rotH.cy };
+        if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
+        setDrawing(true);
+        return;
+      }
+    }
 
     if (tool === 'select') {
       const hitR = 22 * (cv.width / cv.clientWidth);
@@ -1390,6 +1420,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }));
       return;
     }
+    // Rotation libre d'un viewpoint : l'angle suit le doigt/curseur autour du centre.
+    if (drawing && vpRotateDragRef.current) {
+      const { idx, cx, cy } = vpRotateDragRef.current;
+      const ang = Math.atan2(pos.y - cy, pos.x - cx);
+      setPaths(prev => prev.map((p, i) => i === idx ? { ...p, angle: ang } : p));
+      return;
+    }
     if (drawing && selAnnot !== null && annotDragRef.current) {
       const { origData, tapX, tapY } = annotDragRef.current;
       const dx = pos.x - tapX, dy = pos.y - tapY;
@@ -1432,6 +1469,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     e.preventDefault();
     // Relâchement → on masque l'aperçu photo (affiché pendant l'appui long sur un marqueur).
     if (vpHoldRef.current || vpPreview) { clearTimeout(vpHoldRef.current); vpHoldRef.current = null; setVpPreview(null); }
+    if (vpRotateDragRef.current) { vpRotateDragRef.current = null; setDrawing(false); return; }
     if (panRef.current) { panRef.current = null; return; }
     if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
     if (gestureRef.current) {
@@ -1724,7 +1762,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ flex:1,overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
             <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,width:'max-content' }}>
               {[
-                { k:'select', n:'sel',  lbl:'Sélect.' },
+                // « Sélect. » est le mode PAR DÉFAUT : pas de bouton sur desktop (on en sort en
+                // choisissant un outil, on y revient avec Échap). Conservé sur mobile (pas d'Échap).
+                ...(isMob ? [{ k:'select', n:'sel',  lbl:'Sélect.' }] : []),
                 { k:'pen',    n:'pen',  lbl:'Dessin'  },
                 { k:'text',   n:'txt',  lbl:'Texte'   },
                 { k:'shape',  n:'shp',  lbl:'Formes'  },
@@ -2057,18 +2097,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             } sélectionné
           </span>
-          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · ↺ ↻ pour réorienter' : ''}</span>
-          {/* Réorientation du viewpoint (le glisser-déplacer reste inchangé) — ±15° par clic */}
-          {paths[selAnnot.idx].type === 'viewpoint' && (
-            <>
-              <button title="Pivoter à gauche" aria-label="Pivoter le marqueur à gauche"
-                onClick={() => setPaths(p => p.map((pp, i) => i === selAnnot.idx ? { ...pp, angle: (pp.angle || 0) - Math.PI / 12 } : pp))}
-                style={{ padding:'4px 9px',background:'#333',color:'white',border:'none',borderRadius:6,fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:1 }}>↺</button>
-              <button title="Pivoter à droite" aria-label="Pivoter le marqueur à droite"
-                onClick={() => setPaths(p => p.map((pp, i) => i === selAnnot.idx ? { ...pp, angle: (pp.angle || 0) + Math.PI / 12 } : pp))}
-                style={{ padding:'4px 9px',background:'#333',color:'white',border:'none',borderRadius:6,fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:1 }}>↻</button>
-            </>
-          )}
+          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}</span>
           <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
