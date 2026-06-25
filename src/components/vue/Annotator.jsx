@@ -448,9 +448,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     const v = parseFloat(localStorage.getItem(key) ?? String(fb));
     return isNaN(v) ? fb : Math.max(0.3, Math.min(5, v));
   };
-  const [scaleText,   setScaleText]   = useState(() => _readScale('chantierai_scale_text', _oldAnnot));
-  const [scaleSymbol, setScaleSymbol] = useState(() => _readScale('chantierai_scale_symbol', _oldAnnot));
-  const [scaleShape,  setScaleShape]  = useState(() => _readScale('chantierai_scale_shape', 1));
+  // Contexte PHOTO (exportSizeMultiplier 7) vs PLAN (2) : les photos utilisent les curseurs de
+  // taille PHOTOS (mêmes clés que le rapport → l'aperçu de l'annotateur correspond au rapport),
+  // les plans gardent les curseurs plans. Évite que régler la taille des photos ne change les plans.
+  const isPhotoCtx = exportSizeMultiplier === 7;
+  const SCALE_KEY = (base) => isPhotoCtx ? `chantierai_scale_photo_${base}` : `chantierai_scale_${base}`;
+  const [scaleText,   setScaleText]   = useState(() => _readScale(SCALE_KEY('text'),   isPhotoCtx ? 1 : _oldAnnot));
+  const [scaleSymbol, setScaleSymbol] = useState(() => _readScale(SCALE_KEY('symbol'), isPhotoCtx ? 1 : _oldAnnot));
+  const [scaleShape,  setScaleShape]  = useState(() => _readScale(SCALE_KEY('shape'),  1));
   const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(false);
@@ -518,11 +523,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ectx.save();
       ectx.scale(EW / cv.width, EH / cv.height);
       const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-      const drawScales = { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape };
+      // Même base que l'affichage live et le rapport : photos = cv.width/1400 (uniforme,
+      // indépendant de l'écran), plans = ratio*0.5 (inchangé).
+      const baseScale = isPhotoCtx ? cv.width / 1400 : ratio * 0.5;
+      const drawScales = { text: baseScale * scaleText, symbol: baseScale * scaleSymbol, shape: scaleShape };
       drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, drawScales, ratio);
       ectx.restore();
       const sc = hqScaleRef.current;
-      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: ratio * 0.5 * scaleSymbol };
+      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol };
     },
   }), [paths, scaleText, scaleSymbol, scaleShape, exportSizeMultiplier, vpNumByPath, vpBase]);
 
@@ -604,8 +612,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (bgRef.current) ctx.drawImage(bgRef.current, 0, 0, cv.width, cv.height);
 
     const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : 1;
-    const sText = ratio * 0.5 * scaleText;   // échelle texte
-    const sSym  = ratio * 0.5 * scaleSymbol; // échelle symboles + viewpoints
+    // Photos : échelle texte/symboles = largeur naturelle / 1400 (indépendante de l'écran),
+    // IDENTIQUE au rapport → l'aperçu reflète exactement le rendu final, et toutes les photos
+    // sont uniformes. Plans : inchangé (ratio*0.5, comportement validé).
+    const baseScale = isPhotoCtx ? cv.width / 1400 : ratio * 0.5;
+    const sText = baseScale * scaleText;   // échelle texte
+    const sSym  = baseScale * scaleSymbol; // échelle symboles + viewpoints
     const strokeScale = ratio;               // tracés : normalisés en pixels écran
     const drawScales = { text: sText, symbol: sSym, shape: scaleShape };
 
@@ -1709,10 +1721,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   // Slider de taille CONTEXTUEL : ne pilote que le type lié à l'outil sélectionné.
   const scaleCtl = tool === 'text'
-    ? { val: scaleText,   set: setScaleText,   label: 'TAILLE TEXTE',   key: 'chantierai_scale_text' }
+    ? { val: scaleText,   set: setScaleText,   label: 'TAILLE TEXTE',   key: SCALE_KEY('text') }
     : tool === 'shape'
-    ? { val: scaleShape,  set: setScaleShape,  label: 'TAILLE FORMES',  key: 'chantierai_scale_shape' }
-    : { val: scaleSymbol, set: setScaleSymbol, label: 'TAILLE SYMBOLES', key: 'chantierai_scale_symbol' };
+    ? { val: scaleShape,  set: setScaleShape,  label: 'TAILLE FORMES',  key: SCALE_KEY('shape') }
+    : { val: scaleSymbol, set: setScaleSymbol, label: 'TAILLE SYMBOLES', key: SCALE_KEY('symbol') };
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
