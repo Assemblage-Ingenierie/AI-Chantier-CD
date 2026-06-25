@@ -696,7 +696,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null }) {
+function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -731,6 +731,22 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
             transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
         {hasAnnotations && !ph.annotated && !!ph.data &&
           <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum}/>}
+        {/* Bouton « Annoter » (haut-droite) : ouvre l'outil d'annotation sur la photo —
+            permet de retoucher / déplacer les annotations directement depuis le rapport. */}
+        {onAnnotatePhoto && !!ph.data && (
+          <button data-print="hide"
+            onClick={(e) => { e.stopPropagation(); onAnnotatePhoto(locId, item, ph); }}
+            title="Annoter / modifier les annotations de la photo"
+            style={{ position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.62)',
+              color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
+              fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
+              display:'flex', alignItems:'center', gap:4 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+            </svg>
+            Annoter
+          </button>
+        )}
         {vxxNum != null && (
           <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
             V{vxxNum}
@@ -1782,7 +1798,7 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2276,6 +2292,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}
+                              onAnnotatePhoto={onAnnotatePhoto}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient) => {
                                 if (!photo) return;
                                 // Persistance durable par id de ligne photo (survit au reload
