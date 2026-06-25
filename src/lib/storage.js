@@ -600,6 +600,61 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, key, name, base64) 
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
+// ── Images COLLÉES dans les commentaires (feature « comme Word ») ───────────────────────────
+// Stockées dans le bucket photos sous comments/<itemId>/<uuid>.<ext> (pas de base64 en base).
+// Le HTML du commentaire garde l'URL signée (src) + le chemin stable (data-cimg) pour re-signer.
+export async function uploadCommentImage(dataUrl, itemId) {
+  try {
+    if (!dataUrl?.startsWith('data:')) return null;
+    const sb = await getSupabase();
+    const m = /^data:image\/([a-z0-9.+-]+)/i.exec(dataUrl);
+    const ext = m ? (m[1] === 'jpeg' ? 'jpg' : m[1].replace(/[^a-z0-9]/gi, '') || 'png') : 'png';
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const path = `comments/${itemId || 'misc'}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || `image/${ext}`, upsert: true, cacheControl: '31536000' });
+    if (error) { console.warn('uploadCommentImage error:', error); return null; }
+    return path;
+  } catch (e) { console.warn('uploadCommentImage error:', e); return null; }
+}
+
+// Signe un lot de chemins d'images de commentaire (réutilise le cache d'URL signées).
+export async function signCommentPaths(paths) {
+  const uniq = [...new Set((paths || []).filter(Boolean))];
+  if (!uniq.length) return {};
+  const out = {};
+  try {
+    const { cached, missing } = getCachedUrls(uniq);
+    Object.assign(out, cached);
+    if (missing.length) {
+      const sb = await getSupabase();
+      const { data: signed } = await sb.storage.from('photos').createSignedUrls(missing, SIGNED_URL_TTL);
+      const fresh = {};
+      for (const s of (signed ?? [])) if (s.signedUrl) { out[s.path] = s.signedUrl; fresh[s.path] = s.signedUrl; }
+      setCachedUrls(fresh, SIGNED_URL_TTL);
+    }
+  } catch (e) { console.warn('signCommentPaths error:', e); }
+  return out;
+}
+
+// Re-signe les <img data-cimg> d'un HTML de commentaire (src à jour). Affichage uniquement.
+// Sert à garder l'éditeur fonctionnel même si l'URL signée stockée a expiré.
+export async function resolveCommentHtml(html) {
+  if (!html || !html.includes('data-cimg')) return html;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const imgs = Array.from(doc.querySelectorAll('img[data-cimg]'));
+    if (!imgs.length) return html;
+    const map = await signCommentPaths(imgs.map(i => i.getAttribute('data-cimg')));
+    let changed = false;
+    for (const img of imgs) {
+      const p = img.getAttribute('data-cimg');
+      if (map[p] && img.getAttribute('src') !== map[p]) { img.setAttribute('src', map[p]); changed = true; }
+    }
+    return changed ? doc.body.innerHTML : html;
+  } catch { return html; }
+}
+
 // Upload de l'image HD d'un plan (WebP haute résolution) dans le bucket `photos`.
 // Retourne le chemin relatif (stocké dans la colonne `data` du plan) ou null.
 async function uploadPlanHd(sb, chantierId, planId, base64) {

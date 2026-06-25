@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 
 // Convertit l'ancien format markdown (** __ *) en HTML pour l'éditeur
 function mdToHtml(text) {
@@ -19,7 +19,7 @@ function mdToHtml(text) {
 function isHtml(text) {
   if (!text) return false;
   if (/&(amp|lt|gt|nbsp|quot);/i.test(text)) return true;
-  return /<\/?(strong|em|u|br|b|i|div|p|s|ul|ol|li|strike|span)\b/i.test(text);
+  return /<\/?(strong|em|u|br|b|i|div|p|s|ul|ol|li|strike|span|img)\b/i.test(text);
 }
 
 // Répare un texte où des balises ont été échappées une ou plusieurs fois
@@ -92,14 +92,26 @@ export function htmlToPlain(html) {
   return tmp.value;
 }
 
+// Applique le style d'affichage d'une image collée à partir de ses attributs data-w / data-align.
+// Image en BLOC sur sa propre ligne (comme le rendu rapport), alignée à gauche/centre/droite.
+function applyCommentImgStyle(img) {
+  const w = parseFloat(img.getAttribute('data-w')) || 60;
+  const align = img.getAttribute('data-align') || 'center';
+  const margin = align === 'left' ? '8px auto 8px 0' : align === 'right' ? '8px 0 8px auto' : '8px auto';
+  img.style.cssText = `width:${Math.max(15, Math.min(100, w))}%;max-width:100%;height:auto;display:block;margin:${margin};border-radius:4px;cursor:pointer;`;
+}
+
 const RichTextArea = forwardRef(function RichTextArea(
-  { value, onChange, placeholder, style, onFocus, onBlur, textAlign = 'left', syncKey },
+  { value, onChange, placeholder, style, onFocus, onBlur, textAlign = 'left', syncKey, onPasteImage, onAnnotateImage },
   ref
 ) {
   const editorRef = useRef(null);
+  const wrapperRef = useRef(null);
   const isComposing = useRef(false); // IME (Chinese, Japanese…)
   const isTyping = useRef(false); // true seulement pendant la frappe active (pas simple focus)
   const lastSyncKey = useRef(syncKey); // dernière valeur de syncKey traitée (détection de CHANGEMENT)
+  const [selImg, setSelImg] = useState(null);   // <img> collée sélectionnée (barre flottante)
+  const [imgBox, setImgBox] = useState(null);   // position de la barre flottante {top,left,width}
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -107,6 +119,22 @@ const RichTextArea = forwardRef(function RichTextArea(
     getEditor: () => editorRef.current,
     resetTyping: () => { isTyping.current = false; },
   }));
+
+  // Position de la barre d'outils image, relative au conteneur (position:relative).
+  const refreshImgBox = (img) => {
+    if (!img || !wrapperRef.current) return;
+    const wr = wrapperRef.current.getBoundingClientRect();
+    const ir = img.getBoundingClientRect();
+    setImgBox({ top: Math.max(0, ir.top - wr.top - 34), left: ir.left - wr.left });
+  };
+
+  // Désélection de l'image quand on clique en dehors de l'éditeur ET de la barre.
+  useEffect(() => {
+    if (!selImg) return;
+    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setSelImg(null); };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [selImg]);
 
   // Init: convertir markdown → HTML une seule fois au montage
   useEffect(() => {
@@ -128,7 +156,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (el.innerHTML !== html) { el.innerHTML = html; if (forced) el.blur(); }
+    if (el.innerHTML !== html) { el.innerHTML = html; setSelImg(null); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
@@ -138,8 +166,55 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (el) onChange(normalizeHtmlOutput(el.innerHTML));
   };
 
-  // Coller : nettoyer les attributs dangereux, garder la mise en forme simple
+  // Insère une <img> collée à la position du curseur (ou en fin si pas de sélection).
+  const insertCommentImage = (url, path, savedRange) => {
+    const el = editorRef.current;
+    if (!el) return;
+    const img = document.createElement('img');
+    img.src = url;
+    img.setAttribute('data-cimg', path);
+    img.setAttribute('data-w', '60');
+    img.setAttribute('data-align', 'center');
+    applyCommentImgStyle(img);
+    el.focus();
+    let range = savedRange;
+    const sel = window.getSelection();
+    if (!range || !el.contains(range.commonAncestorContainer)) {
+      range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false); // fin du contenu
+    }
+    range.insertNode(img);
+    // Saut de ligne après l'image + curseur après, pour continuer à écrire dessous.
+    const br = document.createElement('br');
+    img.after(br);
+    range.setStartAfter(br); range.collapse(true);
+    sel.removeAllRanges(); sel.addRange(range);
+    handleInput();
+  };
+
+  // Coller : image (capture d'écran) → upload bucket + insertion ; sinon mise en forme simple.
   const handlePaste = (e) => {
+    const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
+    const imgItem = items.find(it => it.kind === 'file' && it.type.startsWith('image/'));
+    if (imgItem && onPasteImage) {
+      e.preventDefault();
+      const file = imgItem.getAsFile();
+      if (!file) return;
+      // Mémoriser la position du curseur AVANT l'upload (async).
+      const sel = window.getSelection();
+      const savedRange = sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)
+        ? sel.getRangeAt(0).cloneRange() : null;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await onPasteImage(reader.result);
+          if (res?.url && res?.path) insertCommentImage(res.url, res.path, savedRange);
+        } catch { /* upload KO : on n'insère rien */ }
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
     e.preventDefault();
     const html = e.clipboardData.getData('text/html');
     if (html) {
@@ -150,6 +225,22 @@ const RichTextArea = forwardRef(function RichTextArea(
       document.execCommand('insertText', false, text);
     }
   };
+
+  // Sélection d'une image collée au clic → barre flottante (redimensionner / aligner / annoter / supprimer).
+  const handleEditorClick = (e) => {
+    if (e.target?.tagName === 'IMG' && e.target.getAttribute('data-cimg') != null) {
+      setSelImg(e.target);
+      refreshImgBox(e.target);
+    } else if (selImg) {
+      setSelImg(null);
+    }
+  };
+
+  // Mutations sur l'image sélectionnée (puis persistance via handleInput).
+  const setImgWidth = (w) => { if (!selImg) return; selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); refreshImgBox(selImg); handleInput(); };
+  const setImgAlign = (a) => { if (!selImg) return; selImg.setAttribute('data-align', a); applyCommentImgStyle(selImg); refreshImgBox(selImg); handleInput(); };
+  const deleteImg = () => { if (!selImg) return; const next = selImg.nextSibling; if (next && next.tagName === 'BR') next.remove(); selImg.remove(); setSelImg(null); handleInput(); };
+  const annotateImg = () => { if (!selImg || !onAnnotateImage) return; const p = selImg.getAttribute('data-cimg'); setSelImg(null); onAnnotateImage(p); };
 
   // Ctrl+B/I/U → execCommand (natif, WYSIWYG)
   const handleKeyDown = (e) => {
@@ -162,7 +253,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   const isEmpty = !value || value === '<br>' || value === '';
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={wrapperRef} style={{ position: 'relative' }}>
       {isEmpty && (
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, padding: style?.padding ?? '12px 14px',
@@ -172,12 +263,46 @@ const RichTextArea = forwardRef(function RichTextArea(
           {placeholder}
         </div>
       )}
+      {/* Barre flottante d'une image collée sélectionnée */}
+      {selImg && imgBox && (
+        <div style={{ position:'absolute', top:imgBox.top, left:imgBox.left, zIndex:30,
+          display:'flex', alignItems:'center', gap:6, background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'4px 8px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11 }}>
+          <span style={{ opacity:0.7 }}>Taille</span>
+          <input type="range" min="15" max="100" step="5"
+            value={parseFloat(selImg.getAttribute('data-w')) || 60}
+            onChange={e => setImgWidth(parseFloat(e.target.value))}
+            style={{ width:90, accentColor:'#E30513', cursor:'pointer' }}/>
+          {[['left','⬱'],['center','⬍'],['right','⬲']].map(([a, sym]) => {
+            const active = (selImg.getAttribute('data-align') || 'center') === a;
+            const lbl = a === 'left' ? 'Gauche' : a === 'right' ? 'Droite' : 'Centre';
+            return (
+              <button key={a} title={lbl} onClick={() => setImgAlign(a)}
+                style={{ background: active ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555',
+                  borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
+                {a === 'left' ? '◧' : a === 'right' ? '◨' : '▣'}
+              </button>
+            );
+          })}
+          {onAnnotateImage && (
+            <button title="Annoter l'image" onClick={annotateImg}
+              style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
+              ✎ Annoter
+            </button>
+          )}
+          <button title="Supprimer l'image" onClick={deleteImg}
+            style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:13 }}>
+            🗑
+          </button>
+        </div>
+      )}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
         onPaste={handlePaste}
+        onClick={handleEditorClick}
         onKeyDown={handleKeyDown}
         onCompositionStart={() => { isComposing.current = true; }}
         onCompositionEnd={() => { isComposing.current = false; handleInput(); }}
