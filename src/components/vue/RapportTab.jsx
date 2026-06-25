@@ -6,6 +6,7 @@ import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 import JSZip from 'jszip';
 import Annotator from './Annotator.jsx';
+import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   const taRef = useRef();
@@ -85,6 +86,7 @@ export default function RapportTab({ projet, onUpdate }) {
   const previewRef = useRef();
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [editingPlan, setEditingPlan] = useState(null); // { locId, epIdx, bg, paths }
+  const [editingPhoto, setEditingPhoto] = useState(null); // { locId, itemId, photo, bg, paths }
   const [panelW, setPanelW] = useState(() => {
     const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
     return saved >= 220 && saved <= 600 ? saved : 300;
@@ -522,6 +524,10 @@ export default function RapportTab({ projet, onUpdate }) {
         onUpdateConclusionAlign={a => onUpdate({ conclusionAlign: a })}
         onAnnotScaleChange={(kind, v) => setScale(kind, v)}
         onEditPlan={(locId, epIdx, bg, paths) => setEditingPlan({ locId, epIdx, bg, paths })}
+        onAnnotatePhoto={(locId, item, photo) => {
+          if (!photo?.data) return;
+          setEditingPhoto({ locId, itemId: item.id, photo, bg: photo.data, paths: photo.annotations || [] });
+        }}
       />
 
       {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
@@ -548,6 +554,29 @@ export default function RapportTab({ projet, onUpdate }) {
             });
             onUpdate({ localisations: updatedLocs });
             setEditingPlan(null);
+          }}
+        />
+      )}
+
+      {/* ── Annotateur photo (retouche rapide depuis le rapport) ── */}
+      {editingPhoto && (
+        <Annotator
+          bgImage={editingPhoto.bg}
+          savedPaths={editingPhoto.paths}
+          title="Annoter la photo"
+          onClose={() => setEditingPhoto(null)}
+          onSave={(paths, exported, dims) => {
+            const loc = localisations.find(l => l.id === editingPhoto.locId);
+            const item = loc?.items?.find(i => i.id === editingPhoto.itemId);
+            if (item) {
+              // Échelle durable (survit au reload) — même filet que l'éditeur.
+              setPhotoAnnotPref(editingPhoto.photo?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
+              const updatedPhotos = (item.photos || []).map(p => p === editingPhoto.photo
+                ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null }
+                : p);
+              onUpdateItem(editingPhoto.locId, editingPhoto.itemId, { photos: updatedPhotos, _photosHydrated: true });
+            }
+            setEditingPhoto(null);
           }}
         />
       )}
