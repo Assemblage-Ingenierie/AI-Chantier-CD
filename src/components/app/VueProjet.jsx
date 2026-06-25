@@ -14,6 +14,7 @@ import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
+import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -413,6 +414,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
     const switchToPhoto = (newRealIdx) => {
       const annotation = annotatorRef.current?.getAnnotation();
+      if (annotation) setPhotoAnnotPref(ph?._id, { annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale });
       const updatedItem = annotation
         ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale ?? null } : p) }
         : item;
@@ -449,6 +451,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onNext={nextRealIdx !== null ? () => switchToPhoto(nextRealIdx) : null}
           photoPosition={validIdxs.length > 1 ? `${navPos + 1} / ${validIdxs.length}` : null}
           onSave={(paths, exported, dims) => {
+            setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
             const updatedItem = {
               ...item,
               _photosHydrated: true,
