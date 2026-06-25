@@ -3,7 +3,7 @@ import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, m
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
-import { getPhotoPref } from '../lib/photoPrefs.js';
+import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 
 const MAX_HISTORY = 20;
 
@@ -565,7 +565,8 @@ export function useProjets(onSyncStatus) {
                   photos: photosMap[item.id]
                     ? photosMap[item.id].map(ph => {
                         const existing = existingById.get(ph.id) ?? existingByName.get(ph.name);
-                        // Réglages d'affichage rapport (recadrage + orientation portrait) :
+                        // Réglages d'affichage rapport (recadrage + orientation portrait) ET
+                        // métadonnées d'échelle des annotations (annotW/H + annotSizeScale) :
                         // source DURABLE = magasin photoPrefs indexé par id de ligne (survit au
                         // reload quoi qu'il arrive) ; repli sur la photo locale en mémoire.
                         const pref = getPhotoPref(ph.id) || {};
@@ -574,8 +575,16 @@ export function useProjets(onSyncStatus) {
                           data:           ph.data ?? null,
                           storage_url:    ph.storage_url ?? null,
                           annotated:      ph.annotated ?? existing?.annotated ?? null,
-                          annotations:    ph.annotations ?? null,
-                          annotSizeScale: existing?.annotSizeScale ?? null,
+                          // annotations : repli sur la valeur locale si la lecture DB n'en
+                          // renvoie pas (chargement partiel, écriture en cours) — sinon les
+                          // annotations « disparaissaient » jusqu'au prochain rechargement propre.
+                          annotations:    ph.annotations ?? existing?.annotations ?? null,
+                          // annotW/H + annotSizeScale ne sont PAS en base : on les relit du
+                          // magasin durable (photoPrefs) puis de la mémoire locale. Sans ça,
+                          // annotSizeScale repassait à null → annotations rendues ÉNORMES.
+                          annotW:         pref.annotW ?? existing?.annotW ?? null,
+                          annotH:         pref.annotH ?? existing?.annotH ?? null,
+                          annotSizeScale: pref.annotSizeScale ?? existing?.annotSizeScale ?? null,
                           cropX:          pref.cropX    ?? existing?.cropX,
                           cropY:          pref.cropY    ?? existing?.cropY,
                           cropZoom:       pref.cropZoom ?? existing?.cropZoom,
@@ -584,7 +593,11 @@ export function useProjets(onSyncStatus) {
                           _legacy:        ph._legacy ?? false,
                         };
                       })
-                    : [],
+                    // La lecture DB ne renvoie rien pour cet item (chargement partiel/timing) :
+                    // NE PAS écraser par [] des photos locales déjà présentes (cache hydraté),
+                    // sinon les photos annotées « disparaissent » jusqu'au prochain reload propre.
+                    // Priorité absolue : zéro perte (Règle N°2).
+                    : (item.photos?.length ? item.photos : []),
                 };
               }),
             })),

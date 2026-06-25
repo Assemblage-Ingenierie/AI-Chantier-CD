@@ -9,6 +9,7 @@ import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { uploadToDrive } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
+import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -460,6 +461,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     const applyCurrentAnnotation = () => {
       const a = annotatorRef.current?.getAnnotation?.();
       if (!a) return;
+      setPhotoAnnotPref(ph?._id, { annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale });
       setForm(f => ({
         ...f,
         photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: a.paths, annotated: a.annotated, annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale ?? null } : p),
@@ -476,6 +478,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         bgImage={ph?.data}
         savedPaths={ph?.annotations || []}
         onSave={(paths, exported, dims) => {
+          setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
           setForm(f => ({
             ...f,
             photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),

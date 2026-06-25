@@ -24,7 +24,13 @@ function writeAll(map) {
 }
 
 // Champs d'affichage que l'on persiste (jamais les pixels de l'image).
-const FIELDS = ['orient', 'cropX', 'cropY', 'cropZoom'];
+//   - orient / cropX / cropY / cropZoom : recadrage + orientation rapport.
+//   - annotW / annotH / annotSizeScale : dimensions de référence + échelle calibrée des
+//     ANNOTATIONS de la photo. Ces trois champs ne sont PAS stockés en base (pas de colonne) :
+//     transités par le cache + la fusion + l'hydratation, ils se perdaient (annotSizeScale null
+//     → le rendu repassait sur une estimation grossière → annotations ÉNORMES au rechargement).
+//     Indexés ici par l'ID stable de la ligne photo, ils survivent à toute la chaîne de sync.
+const FIELDS = ['orient', 'cropX', 'cropY', 'cropZoom', 'annotW', 'annotH', 'annotSizeScale'];
 
 export function getPhotoPref(id) {
   if (!id) return null;
@@ -40,6 +46,21 @@ export function setPhotoPref(id, prefs) {
   const map = { ...readAll() };
   const cur = { ...(map[id] || {}) };
   for (const f of FIELDS) if (prefs[f] !== undefined) cur[f] = prefs[f];
+  map[id] = cur;
+  writeAll(map);
+}
+
+// Persiste l'échelle calibrée des annotations d'une photo (filet durable id-keyé). N'écrit
+// QUE des nombres finis → ne remplace jamais une valeur valide par null/undefined si l'appelant
+// n'a pas la donnée. Sans calibration durable, annotSizeScale se perdait et les annotations
+// réapparaissaient ÉNORMES après rechargement.
+export function setPhotoAnnotPref(id, { annotW, annotH, annotSizeScale } = {}) {
+  if (!id) return;
+  const map = { ...readAll() };
+  const cur = { ...(map[id] || {}) };
+  if (Number.isFinite(annotW))         cur.annotW = annotW;
+  if (Number.isFinite(annotH))         cur.annotH = annotH;
+  if (Number.isFinite(annotSizeScale)) cur.annotSizeScale = annotSizeScale;
   map[id] = cur;
   writeAll(map);
 }
