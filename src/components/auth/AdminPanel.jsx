@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
-import { recoverPhotosFromStorage } from '../../lib/storage.js';
+import { recoverPhotosFromStorage, cleanupDuplicatePhotos } from '../../lib/storage.js';
 import { DA } from '../../lib/constants.js';
 
 export default function AdminPanel({ onClose, onPendingCountChange }) {
@@ -9,6 +9,8 @@ export default function AdminPanel({ onClose, onPendingCountChange }) {
   const [err, setErr] = useState('');
   const [recovering, setRecovering] = useState(false);
   const [recoverResult, setRecoverResult] = useState(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState(null);
 
   const fetchProfiles = async () => {
     setLoading(true); setErr('');
@@ -42,6 +44,13 @@ export default function AdminPanel({ onClose, onPendingCountChange }) {
     const result = await recoverPhotosFromStorage();
     setRecoverResult(result);
     setRecovering(false);
+  };
+
+  const handleCleanup = async () => {
+    setCleaning(true); setCleanResult(null);
+    const deleted = await cleanupDuplicatePhotos();
+    setCleanResult(deleted);
+    setCleaning(false);
   };
 
   const deleteProfile = async (id, email) => {
@@ -138,6 +147,19 @@ export default function AdminPanel({ onClose, onPendingCountChange }) {
                 {recoverResult.recovered} photo(s) récupérée(s)
                 {recoverResult.errors.length > 0 && ` — ${recoverResult.errors.length} erreur(s)`}
                 {recoverResult.recovered > 0 && ' — rechargez la page puis rouvrez le projet.'}
+              </div>
+            )}
+
+            <div style={{ fontSize:12,color:DA.gray,margin:'14px 0 8px' }}>
+              Supprime les lignes de photos en double (même observation + même fichier), héritées de l'ancien bug de duplication. Conserve une copie par photo.
+            </div>
+            <button onClick={handleCleanup} disabled={cleaning}
+              style={{ fontSize:12,fontWeight:700,padding:'7px 16px',borderRadius:8,border:`1px solid ${DA.red}`,background:'white',color:DA.red,cursor:cleaning?'default':'pointer',opacity:cleaning?0.6:1 }}>
+              {cleaning ? 'Nettoyage en cours…' : '🧹 Nettoyer les photos en double'}
+            </button>
+            {cleanResult != null && (
+              <div style={{ marginTop:8,fontSize:12,color:DA.urgGrn,fontWeight:600 }}>
+                {cleanResult} doublon(s) supprimé(s){cleanResult > 0 ? ' — rechargez la page.' : ''}
               </div>
             )}
           </div>
