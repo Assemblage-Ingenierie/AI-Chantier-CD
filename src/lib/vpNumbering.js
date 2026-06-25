@@ -21,9 +21,7 @@ export function computeVpNumbering(localisations) {
   const vxxPhotoMap = new Map();
   const vpNumByPath = new Map();
   const groupNum    = new Map(); // groupKey → numéro
-  const usedNums    = new Set();
   let g = 0;
-  const nextFree = () => { do { g++; } while (usedNums.has(g)); usedNums.add(g); return g; };
 
   const fp = (vp) => `${Math.round(vp.x ?? -1)}|${Math.round(vp.y ?? -1)}|${vp.photoIdx ?? '_'}`;
   const groupKey = (vp, ownerId) =>
@@ -32,15 +30,15 @@ export function computeVpNumbering(localisations) {
     : vp._vpId ? `I:${vp._vpId}`
     : `F:${fp(vp)}`;
 
-  // Attribue (et mémorise) le numéro d'un marqueur selon son groupe d'identité.
+  // Attribue le numéro d'un marqueur selon son groupe d'identité (R2 : même photo de la même
+  // zone = même numéro, même sur plusieurs plans). Numérotation CONTINUE et COMPACTE : chaque
+  // nouveau groupe reçoit le numéro suivant dans l'ordre d'apparition (++g). Conséquence : une
+  // suppression recompacte automatiquement toute la séquence (plus de trou), sans réutiliser le
+  // vpNum figé — c'est le comportement « continu, sans trou » choisi.
   const assignNum = (vp, ownerId) => {
     const key = groupKey(vp, ownerId);
     let num = groupNum.get(key);
-    if (num == null) {
-      if (vp.vpNum != null && !usedNums.has(vp.vpNum)) { num = vp.vpNum; usedNums.add(num); g = Math.max(g, num); }
-      else num = nextFree();
-      groupNum.set(key, num);
-    }
+    if (num == null) { num = ++g; groupNum.set(key, num); }
     vpNumByPath.set(vp, num);
     if (vp._vpId) vpNumByPath.set(vp._vpId, num);
     return num;
