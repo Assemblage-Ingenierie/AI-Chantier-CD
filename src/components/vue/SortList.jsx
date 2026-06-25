@@ -5,7 +5,7 @@ import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
-export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhoto }) {
+export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhoto, onMovePhotoAcross }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -253,20 +253,47 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                     const shown = validPhotos;
                     const extra = 0;
                     return (
-                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}
+                        // Déposer dans le vide de la zone photos d'une observation → y déplacer la
+                        // photo glissée (depuis une autre observation/zone). Les photos elles-mêmes
+                        // gèrent leur propre drop (réordonner / déposer dessus) via stopPropagation.
+                        onDragOver={onMovePhotoAcross ? (e => { if (e.dataTransfer.types.includes('text/photo')) e.preventDefault(); }) : undefined}
+                        onDrop={onMovePhotoAcross ? (e => {
+                          let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
+                          if (!d || d.fromItemId === item.id) return;
+                          e.preventDefault();
+                          onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
+                        }) : undefined}>
                         {shown.map((ph, pi) => {
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);
                           const openPhoto = () => { if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } };
                           const src = ph.annotated || ph.data;
-                          const canReorder = !!onReorderPhoto && validPhotos.length > 1;
+                          // Glissable dès qu'on peut réordonner OU déplacer entre observations →
+                          // la poignée apparaît MÊME sur une photo seule (pour la sortir ailleurs).
+                          const canDrag = !!(onReorderPhoto || onMovePhotoAcross);
                           return (
                           <div key={pi}
-                            draggable={canReorder}
-                            onDragStart={canReorder ? (e => { e.stopPropagation(); clearTimeout(photoLP.current.timer); photoDragRef.current = { itemId: item.id, from: realIdx }; }) : undefined}
-                            onDragOver={canReorder ? (e => { e.preventDefault(); e.stopPropagation(); }) : undefined}
-                            onDrop={canReorder ? (e => { e.preventDefault(); e.stopPropagation(); const d = photoDragRef.current; if (d && d.itemId === item.id) reorderPhotos(item, d.from, realIdx); photoDragRef.current = null; }) : undefined}
-                            onDragEnd={canReorder ? (() => { photoDragRef.current = null; }) : undefined}
+                            draggable={canDrag}
+                            onDragStart={canDrag ? (e => {
+                              e.stopPropagation(); clearTimeout(photoLP.current.timer);
+                              const payload = { fromLocId: locId, fromItemId: item.id, fromPhotoIdx: realIdx };
+                              photoDragRef.current = payload;
+                              // dataTransfer = canal qui survit au passage d'une zone (SortList) à l'autre.
+                              try { e.dataTransfer.setData('text/photo', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'move'; } catch {}
+                            }) : undefined}
+                            onDragOver={canDrag ? (e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); e.stopPropagation(); } }) : undefined}
+                            onDrop={canDrag ? (e => {
+                              e.preventDefault(); e.stopPropagation();
+                              let d = null;
+                              try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
+                              if (!d) d = photoDragRef.current;
+                              if (!d) return;
+                              if (d.fromItemId === item.id) reorderPhotos(item, d.fromPhotoIdx, realIdx);
+                              else onMovePhotoAcross?.(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
+                              photoDragRef.current = null;
+                            }) : undefined}
+                            onDragEnd={canDrag ? (() => { photoDragRef.current = null; }) : undefined}
                             style={{ position:'relative', flexShrink:0 }}>
                             <img src={src} alt=""
                               draggable={false}
@@ -297,8 +324,8 @@ export default function SortList({ items, onReorder, onEdit, onDelete, onAnnotat
                                 <Ic n="snd" s={isDesktop ? 13 : 14}/>
                               </button>
                             )}
-                            {canReorder && (
-                              <div title="Glisser pour réordonner"
+                            {canDrag && (
+                              <div title="Glisser pour réordonner ou déplacer vers une autre observation"
                                 style={{ position:'absolute', bottom:4, right:4, background:'rgba(0,0,0,0.55)', color:'white', borderRadius:6, width: isDesktop ? 26 : 22, height: isDesktop ? 26 : 22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'grab', flexShrink:0, pointerEvents:'none' }}>
                                 <Ic n="srt" s={isDesktop ? 13 : 11}/>
                               </div>
