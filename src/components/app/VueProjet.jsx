@@ -748,6 +748,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           <div style={{ borderTop:`1px solid ${DA.border}` }}>
                             <SortList
                               items={items}
+                              locId={loc.id}
+                              onMovePhotoAcross={movePhoto}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
                                 if (item?._quickSuivi) { saveItem(loc.id, item); return; }
