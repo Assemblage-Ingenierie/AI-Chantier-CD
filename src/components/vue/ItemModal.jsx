@@ -10,6 +10,7 @@ import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { uploadToDrive } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -84,6 +85,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
+  const [annotatingCommentImg, setAnnotatingCommentImg] = useState(null); // { path, src } image collée du commentaire
   const [annotatingPlanIdx, setAnnotatingPlanIdx] = useState(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [confirmDelPhotoIdx, setConfirmDelPhotoIdx] = useState(null);
@@ -93,6 +95,37 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
   const bumpSync = () => setEditorSyncKey(k => k + 1);
+
+  // ── Images collées dans le commentaire (feature « comme Word ») ──────────────────────────
+  // À l'ouverture : re-signe les URLs des images du commentaire (les URLs stockées peuvent
+  // avoir expiré) → l'éditeur affiche toujours les images.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const c = form.commentaire;
+      if (!c || !c.includes('data-cimg')) return;
+      const resolved = await resolveCommentHtml(c);
+      if (!cancelled && resolved !== c) { setForm(f => ({ ...f, commentaire: resolved })); bumpSync(); }
+    })();
+    return () => { cancelled = true; };
+  }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Coller une image : upload dans le bucket photos → { path, url } pour insertion dans l'éditeur.
+  const handlePasteCommentImage = useCallback(async (dataUrl) => {
+    const path = await uploadCommentImage(dataUrl, form.id);
+    if (!path) return null;
+    const map = await signCommentPaths([path]);
+    return map[path] ? { path, url: map[path] } : null;
+  }, [form.id]);
+
+  // Annoter une image du commentaire : ouvrir l'annotateur sur son image courante.
+  const handleAnnotateCommentImage = useCallback((path) => {
+    try {
+      const doc = new DOMParser().parseFromString(form.commentaire || '', 'text/html');
+      const img = doc.querySelector(`img[data-cimg="${path}"]`);
+      if (img?.getAttribute('src')) setAnnotatingCommentImg({ path, src: img.getAttribute('src') });
+    } catch { /* ignore */ }
+  }, [form.commentaire]);
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [correcting, setCorrecting] = useState(false);
@@ -454,6 +487,40 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   };
 
 
+  // Annotateur d'une image COLLÉE du commentaire : on cuit le composite annoté, on l'upload,
+  // puis on remplace src + data-cimg de l'image dans le HTML du commentaire.
+  if (annotatingCommentImg) {
+    return (
+      <Annotator
+        bgImage={annotatingCommentImg.src}
+        savedPaths={[]}
+        title="Annoter l'image"
+        onClose={() => setAnnotatingCommentImg(null)}
+        onSave={async (paths, exported) => {
+          const oldPath = annotatingCommentImg.path;
+          setAnnotatingCommentImg(null);
+          if (!exported) return;
+          const newPath = await uploadCommentImage(exported, form.id);
+          if (!newPath) return;
+          const map = await signCommentPaths([newPath]);
+          const url = map[newPath];
+          if (!url) return;
+          setForm(f => {
+            try {
+              const doc = new DOMParser().parseFromString(f.commentaire || '', 'text/html');
+              const img = doc.querySelector(`img[data-cimg="${oldPath}"]`);
+              if (!img) return f;
+              img.setAttribute('src', url);
+              img.setAttribute('data-cimg', newPath);
+              return { ...f, commentaire: doc.body.innerHTML };
+            } catch { return f; }
+          });
+          bumpSync();
+        }}
+      />
+    );
+  }
+
   if (annotatingPhotoIdx !== null) {
     const ph = form.photos[annotatingPhotoIdx];
     const total = form.photos.length;
@@ -702,7 +769,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 value={form.commentaire || ''}
                 syncKey={editorSyncKey}
                 onChange={val => setForm(f => ({ ...f, commentaire: val }))}
-                placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves…"
+                onPasteImage={handlePasteCommentImage}
+                onAnnotateImage={handleAnnotateCommentImage}
+                placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves… (Ctrl+V pour coller une capture)"
                 textAlign={form.commentaireAlign || 'left'}
                 style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:64, fontSize:15, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
                 onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}

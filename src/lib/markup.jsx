@@ -16,7 +16,7 @@ function decodeEntities(s) {
 // les balises avec attributs comme <u style="...">, <span class="...">.
 function isHtml(text) {
   if (!text) return false;
-  return /<\/?(strong|b|em|i|u|s|strike|del|br|div|p|ul|ol|li|span|h[1-6]|blockquote)\b/i.test(text)
+  return /<\/?(strong|b|em|i|u|s|strike|del|br|div|p|ul|ol|li|span|h[1-6]|blockquote|img)\b/i.test(text)
     || text.includes('&gt;') || text.includes('&lt;') || text.includes('&amp;') || text.includes('&nbsp;');
 }
 
@@ -76,6 +76,25 @@ function renderHtml(html) {
     if (tag === 'br') {
       if (current.length === 0) blocks.push({ items: [], isBullet: false });
       else flush();
+      return;
+    }
+
+    // Image collée dans le commentaire (feature « comme Word ») : rendue sur sa propre ligne,
+    // largeur (data-w %) et alignement (data-align) tels que réglés dans l'éditeur.
+    if (tag === 'img') {
+      const src = node.getAttribute('src');
+      if (src) {
+        flush();
+        const align = node.getAttribute('data-align') || 'center';
+        const wAttr = parseFloat(node.getAttribute('data-w'));
+        const width = Number.isFinite(wAttr) ? `${Math.max(10, Math.min(100, wAttr))}%` : '60%';
+        const justify = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+        blocks.push({ items: [
+          <span key={k()} style={{ display: 'flex', justifyContent: justify, margin: '6px 0' }}>
+            <img src={src} alt="" style={{ width, maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block' }}/>
+          </span>
+        ], isBullet: false });
+      }
       return;
     }
 
