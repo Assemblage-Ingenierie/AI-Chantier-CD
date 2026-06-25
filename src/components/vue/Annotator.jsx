@@ -571,15 +571,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // comptés via vpBase). Au niveau rapport, la numérotation se ré-harmonise par identité photo.
   const vpBaseRef = useRef(vpBase); vpBaseRef.current = vpBase;
   const resequenceVps = (arr) => {
-    const order = arr
-      .map((p, i) => ({ p, i }))
-      .filter(x => x.p.type === 'viewpoint')
-      .sort((a, b) => (a.p.vpNum ?? 1e9) - (b.p.vpNum ?? 1e9));
-    if (!order.length) return arr;
-    const numByIdx = new Map();
-    order.forEach((x, k) => numByIdx.set(x.i, vpBaseRef.current + k + 1));
-    return arr.map((p, i) => numByIdx.has(i)
-      ? { ...p, vpNum: numByIdx.get(i), label: `V${numByIdx.get(i)}` } : p);
+    // Ordre du TABLEAU (= ordre d'apparition utilisé par computeVpNumbering côté rapport) →
+    // numéros compacts vpBase+1, +2… cohérents entre l'annotateur live et le rapport.
+    let k = vpBaseRef.current;
+    return arr.map(p => {
+      if (p.type !== 'viewpoint') return p;
+      k += 1;
+      return { ...p, vpNum: k, label: `V${k}` };
+    });
   };
 
   // Appui long (sans bouger) sur un marqueur viewpoint → affiche la photo correspondante.
