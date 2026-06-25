@@ -809,10 +809,19 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
           {cutMode && onParaCut && (() => {
             const ps = splitTextSegs(commentToShow || '');
             if (ps.length < 2) return renderMarkup(commentToShow);
+            // CHAQUE segment est rendu en BLOC (display:block) : sans ça, renderMarkup d'un
+            // paragraphe seul renvoie du contenu INLINE → les segments se collaient sur la même
+            // ligne (« …Paris.La visite… ») → le texte se reflowait, la hauteur s'effondrait et
+            // le mode coupe ne ressemblait plus ni au mode normal ni au PDF. L'écart vertical
+            // reprend celui de renderMarkup (≈1.5em si paragraphes séparés par une ligne vide,
+            // sinon 0.3em) pour que les trois représentations coïncident.
+            const gap = /\n{2,}/.test(commentToShow || '') ? '1.5em' : '0.3em';
             return ps.map((para, i) => (
               <React.Fragment key={i}>
                 {i > 0 && <ParaCutZone paraId={`${item.id}_p${i - 1}`} onCut={onParaCut}/>}
-                {renderMarkup(para)}
+                <span style={{ display:'block', marginBottom: i < ps.length - 1 ? gap : 0 }}>
+                  {renderMarkup(para)}
+                </span>
               </React.Fragment>
             ));
           })()}
