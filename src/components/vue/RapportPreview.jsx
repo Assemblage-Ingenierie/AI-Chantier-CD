@@ -449,11 +449,15 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, drawW, drawH);
     if (cropXpx !== 0 || cropYpx !== 0) ctx.translate(-cropXpx, -cropYpx);
-    // Use the exact sizeScale from when the annotation was baked (stored in annotSizeScale).
-    // Falls back to a size estimate if not available (legacy annotations).
+    // Échelle du texte/symboles. annotSizeScale (figé à la cuisson) est prioritaire. Sinon
+    // (annotations existantes sans échelle figée) on utilise la MÊME référence que les plans :
+    // largeur naturelle / 1400. C'est exactement ce que produit l'annotateur sur desktop
+    // (ratio*0.5 = largeur/clientWidth*0.5 ≈ largeur/1400) → rendu cohérent, jamais énorme.
+    // L'ancien repli (drawW / largeur AFFICHÉE) explosait car la largeur affichée du rapport
+    // (~250px) est minuscule devant la largeur naturelle → texte gigantesque.
     const baseSizeScale = photo.annotSizeScale != null
       ? photo.annotSizeScale
-      : (drawW / Math.max(cssW || drawW, 350)) * 0.5;
+      : (effectiveW ? effectiveW / 1400 : 0.5);
     const sizeScale = baseSizeScale / cropZoom;
     drawAnnotationPaths(ctx, photo.annotations, sizeScale);
   }, [photo.annotations, effectiveW, effectiveH, cssW, cropX, cropY, cropZoom, containerAR]);

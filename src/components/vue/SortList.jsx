@@ -2,8 +2,47 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 import { renderMarkup } from '../../lib/markup.jsx';
+import { drawAnnotationPaths } from './Annotator.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
+
+// Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe ; sinon,
+// si la photo porte des annotations (paths) mais que le composite manque (upload jamais abouti),
+// on RECUIT le composite côté client (image + paths) pour que les inscriptions restent VISIBLES
+// dans l'éditeur — sans ça, les photos annotées apparaissaient nues (« je n'ai plus rien »).
+// Même échelle que le rapport/plans : annotSizeScale figé, sinon largeur naturelle / 1400.
+function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
+  const [baked, setBaked] = useState(null);
+  useEffect(() => {
+    setBaked(null);
+    if (photo.annotated || !photo.annotations?.length || !photo.data) return;
+    let cancelled = false;
+    const img = new window.Image();
+    img.onload = () => {
+      if (cancelled || !img.naturalWidth) return;
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const scale = photo.annotSizeScale != null ? photo.annotSizeScale : img.naturalWidth / 1400;
+        drawAnnotationPaths(ctx, photo.annotations, scale);
+        setBaked(cv.toDataURL('image/jpeg', 0.9));
+      } catch { setBaked(null); }
+    };
+    img.onerror = () => {};
+    img.src = photo.data;
+    return () => { cancelled = true; };
+  }, [photo.data, photo.annotated, photo.annotations, photo.annotSizeScale]);
+  const src = photo.annotated || baked || photo.data;
+  return (
+    <img src={src} alt="" draggable={false}
+      onPointerDown={e => { e.stopPropagation(); startLP(src); }}
+      onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
+      onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
+      style={imgStyle}/>
+  );
+}
 
 export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
@@ -268,7 +307,6 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);
                           const openPhoto = () => { if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } };
-                          const src = ph.annotated || ph.data;
                           // Glissable dès qu'on peut réordonner OU déplacer entre observations →
                           // la poignée apparaît MÊME sur une photo seule (pour la sortir ailleurs).
                           const canDrag = !!(onReorderPhoto || onMovePhotoAcross);
@@ -295,14 +333,13 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                             }) : undefined}
                             onDragEnd={canDrag ? (() => { photoDragRef.current = null; }) : undefined}
                             style={{ position:'relative', flexShrink:0 }}>
-                            <img src={src} alt=""
-                              draggable={false}
-                              onPointerDown={e => { e.stopPropagation(); startPhotoLP(src); }}
-                              onPointerUp={endPhotoLP}
-                              onPointerLeave={endPhotoLP}
-                              onPointerCancel={endPhotoLP}
-                              onClick={e => { e.stopPropagation(); if (photoLP.current.fired) { photoLP.current.fired = false; return; } openPhoto(); }}
-                              style={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
+                            <AnnotatedThumb
+                              photo={ph}
+                              onOpen={openPhoto}
+                              startLP={startPhotoLP}
+                              endLP={endPhotoLP}
+                              lpRef={photoLP}
+                              imgStyle={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
                                 <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.45)', borderRadius: isDesktop ? 10 : 6 }}
