@@ -5,7 +5,7 @@ import { renderMarkup } from '../../lib/markup.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
-export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhoto, onMovePhotoAcross }) {
+export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -315,14 +315,6 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                                   <Ic n="x" s={isDesktop ? 12 : 13}/>
                                 </button>
                               )
-                            )}
-                            {onMovePhoto && (
-                              <button
-                                onClick={e => { e.stopPropagation(); onMovePhoto(item, realIdx); }}
-                                title="Déplacer vers une autre observation" aria-label="Déplacer la photo vers une autre observation"
-                                style={{ position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 30, height: isDesktop ? 28 : 30, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-                                <Ic n="snd" s={isDesktop ? 13 : 14}/>
-                              </button>
                             )}
                             {canDrag && (
                               <div title="Glisser pour réordonner ou déplacer vers une autre observation"
