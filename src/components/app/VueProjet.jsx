@@ -327,6 +327,33 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
+  // Déplace une photo d'une observation vers une autre (même zone ou autre zone). La photo
+  // garde son objet (donc son _id stable) → côté Supabase l'upsert met simplement à jour
+  // item_id ; la purge de l'observation source ne la supprime pas (sa ligne pointe désormais
+  // vers la destination). Les deux observations sont marquées _photosHydrated pour être sauvées.
+  const movePhoto = useCallback((fromLocId, fromItemId, photoIdx, toLocId, toItemId) => {
+    const fromLoc = visitProjet.localisations.find(l => l.id === fromLocId);
+    const fromItem = fromLoc?.items?.find(i => i.id === fromItemId);
+    const photo = fromItem?.photos?.[photoIdx];
+    if (!photo) return;
+    const locs = visitProjet.localisations.map(l => {
+      let items = l.items || [];
+      let changed = false;
+      if (l.id === fromLocId) {
+        items = items.map(i => i.id === fromItemId
+          ? { ...i, _photosHydrated: true, photos: (i.photos || []).filter((_, idx) => idx !== photoIdx) } : i);
+        changed = true;
+      }
+      if (l.id === toLocId) {
+        items = items.map(i => i.id === toItemId
+          ? { ...i, _photosHydrated: true, photos: [...(i.photos || []), photo] } : i);
+        changed = true;
+      }
+      return changed ? { ...l, items } : l;
+    });
+    onUpdateVisit({ localisations: locs });
+  }, [visitProjet.localisations, onUpdateVisit]);
+
   const showUndo = useCallback((label, onUndo) => {
     clearTimeout(undoTimerRef.current);
     setUndoToast({ label, onUndo });
@@ -735,6 +762,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               onReorderPhoto={(item, photos) => {
                                 patchItem(loc.id, { ...item, photos, _photosHydrated: true });
                               }}
+                              onMovePhoto={(item, photoIdx) => setModal({ t:'movePhoto', locId: loc.id, item, photoIdx })}
                             />
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
@@ -862,10 +890,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
           <span>{undoToast.label}</span>
-          <button onClick={() => { undoToast.onUndo(); setUndoToast(null); clearTimeout(undoTimerRef.current); }}
-            style={{ background:DA.red, color:'white', border:'none', borderRadius:7, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
-            Annuler
-          </button>
+          {undoToast.onUndo && (
+            <button onClick={() => { undoToast.onUndo(); setUndoToast(null); clearTimeout(undoTimerRef.current); }}
+              style={{ background:DA.red, color:'white', border:'none', borderRadius:7, padding:'4px 10px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+              Annuler
+            </button>
+          )}
           <button onClick={() => setUndoToast(null)} style={{ background:'rgba(255,255,255,0.1)', border:'none', color:'rgba(255,255,255,0.6)', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontSize:11 }}>×</button>
         </div>
       )}
@@ -1023,6 +1053,56 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           }}
         />
       )}
+
+      {modal?.t === 'movePhoto' && (() => {
+        const srcPhoto = modal.item?.photos?.[modal.photoIdx];
+        const srcSrc = srcPhoto?.annotated || srcPhoto?.data || null;
+        return (
+          <div className="modal-overlay" style={{ zIndex:120 }} onClick={() => setModal(null)}>
+            <div className="modal-sheet-flex" onClick={e => e.stopPropagation()}>
+              <div style={{ padding:'16px 18px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0, display:'flex', alignItems:'center', gap:12 }}>
+                {srcSrc && <img src={srcSrc} alt="" style={{ width:48, height:48, objectFit:'cover', borderRadius:8, border:`1px solid ${DA.border}`, flexShrink:0 }}/>}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:0 }}>Déplacer la photo vers…</p>
+                  <p style={{ fontSize:12, color:DA.gray, margin:'2px 0 0' }}>Choisissez l'observation de destination</p>
+                </div>
+                <button onClick={() => setModal(null)} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}><Ic n="x" s={20}/></button>
+              </div>
+              <div style={{ flex:1, overflowY:'auto', padding:'10px 14px' }}>
+                {visitProjet.localisations.map(loc => {
+                  const targets = (loc.items || []).filter(i => !(loc.id === modal.locId && i.id === modal.item.id));
+                  if (!targets.length) return null;
+                  return (
+                    <div key={loc.id} style={{ marginBottom:12 }}>
+                      <p style={{ fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.5, margin:'0 0 6px' }}>{loc.nom || 'Zone'}</p>
+                      <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                        {targets.map(it => {
+                          const nPh = (it.photos || []).filter(p => p.data || p.storage_url).length;
+                          return (
+                            <button key={it.id}
+                              onClick={() => {
+                                movePhoto(modal.locId, modal.item.id, modal.photoIdx, loc.id, it.id);
+                                setModal(null);
+                                showUndo('Photo déplacée', null);
+                              }}
+                              style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1px solid ${DA.border}`, background:'white', cursor:'pointer', textAlign:'left', width:'100%' }}>
+                              <div style={{ width:6, height:6, borderRadius:'50%', background:URGENCE[it.urgence]?.dot || DA.border, flexShrink:0 }}/>
+                              <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:600, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                {it.titre?.trim() || '(observation sans titre)'}
+                              </span>
+                              <span style={{ fontSize:11, color:DA.grayL, flexShrink:0 }}>{nPh} photo{nPh !== 1 ? 's' : ''}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
