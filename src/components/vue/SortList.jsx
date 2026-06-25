@@ -6,41 +6,53 @@ import { drawAnnotationPaths } from './Annotator.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
-// Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe ; sinon,
+// Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe. Sinon,
 // si la photo porte des annotations (paths) mais que le composite manque (upload jamais abouti),
-// on RECUIT le composite côté client (image + paths) pour que les inscriptions restent VISIBLES
-// dans l'éditeur — sans ça, les photos annotées apparaissaient nues (« je n'ai plus rien »).
-// Même échelle que le rapport/plans : annotSizeScale figé, sinon largeur naturelle / 1400.
+// on superpose un CANVAS qui dessine UNIQUEMENT les annotations (pas l'image) par-dessus la photo
+// — exactement comme l'aperçu rapport. Crucial : on ne lit jamais les pixels de l'image (pas de
+// toDataURL), donc le canvas n'est jamais « tainted » par l'URL signée cross-origin de Supabase
+// (la 1re version cuisait image + paths → toDataURL levait une SecurityError → repli sur la photo
+// nue → « je n'ai plus rien »). Même échelle que le rapport/plans : annotSizeScale figé sinon
+// largeur naturelle / 1400. L'alignement est exact tant que la vignette n'est pas rognée
+// (width:auto → ratio naturel conservé), ce qui est le cas courant.
 function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
-  const [baked, setBaked] = useState(null);
+  const cvRef = useRef(null);
+  const [dims, setDims] = useState(null);
+  const hasAnnot = !photo.annotated && photo.annotations?.length > 0 && !!photo.data;
+
+  // Dimensions naturelles (repère des paths) — lecture de naturalWidth/Height seulement, jamais
+  // les pixels → autorisé en cross-origin, aucun risque de canvas tainted.
   useEffect(() => {
-    setBaked(null);
-    if (photo.annotated || !photo.annotations?.length || !photo.data) return;
+    if (!hasAnnot) { setDims(null); return; }
     let cancelled = false;
     const img = new window.Image();
-    img.onload = () => {
-      if (cancelled || !img.naturalWidth) return;
-      try {
-        const cv = document.createElement('canvas');
-        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
-        const ctx = cv.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const scale = photo.annotSizeScale != null ? photo.annotSizeScale : img.naturalWidth / 1400;
-        drawAnnotationPaths(ctx, photo.annotations, scale);
-        setBaked(cv.toDataURL('image/jpeg', 0.9));
-      } catch { setBaked(null); }
-    };
-    img.onerror = () => {};
+    img.onload = () => { if (!cancelled && img.naturalWidth) setDims({ w: img.naturalWidth, h: img.naturalHeight }); };
     img.src = photo.data;
     return () => { cancelled = true; };
-  }, [photo.data, photo.annotated, photo.annotations, photo.annotSizeScale]);
-  const src = photo.annotated || baked || photo.data;
+  }, [hasAnnot, photo.data]);
+
+  useEffect(() => {
+    const cv = cvRef.current;
+    if (!cv || !dims) return;
+    cv.width = dims.w; cv.height = dims.h;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, dims.w, dims.h);
+    const scale = photo.annotSizeScale != null ? photo.annotSizeScale : dims.w / 1400;
+    drawAnnotationPaths(ctx, photo.annotations, scale);
+  }, [dims, photo.annotations, photo.annotSizeScale]);
+
+  const src = photo.annotated || photo.data;
   return (
-    <img src={src} alt="" draggable={false}
-      onPointerDown={e => { e.stopPropagation(); startLP(src); }}
-      onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
-      onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
-      style={imgStyle}/>
+    <span style={{ position:'relative', display:'inline-block', flexShrink:0, lineHeight:0 }}>
+      <img src={src} alt="" draggable={false}
+        onPointerDown={e => { e.stopPropagation(); startLP(src); }}
+        onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
+        onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
+        style={imgStyle}/>
+      {hasAnnot && dims && (
+        <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', borderRadius: imgStyle?.borderRadius }}/>
+      )}
+    </span>
   );
 }
 
