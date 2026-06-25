@@ -460,6 +460,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const lastSymPlaceRef = useRef(0);
   const [stripZoom,  setStripZoom]  = useState(null);
   const stripLPRef   = useRef({ timer: null, fired: false });
+  // Aperçu photo d'un viewpoint au survol long (clic maintenu sur le marqueur, sans bouger).
+  const [vpPreview, setVpPreview] = useState(null); // { src, label } | null
+  const vpHoldRef    = useRef(null); // timer d'appui long sur un marqueur viewpoint
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
@@ -559,6 +562,38 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       return { ...p, label: `V${vpBase + extra}` };
     });
   };
+
+  // Renumérote les viewpoints du plan de façon COMPACTE (V1,V2,… sans trou) après suppression.
+  // Le numéro figé (vpNum) est la source de vérité → on le réécrit dans l'ordre courant des
+  // marqueurs, en repartant de vpBase+1 (les numéros des autres plans/observations sont déjà
+  // comptés via vpBase). Au niveau rapport, la numérotation se ré-harmonise par identité photo.
+  const vpBaseRef = useRef(vpBase); vpBaseRef.current = vpBase;
+  const resequenceVps = (arr) => {
+    const order = arr
+      .map((p, i) => ({ p, i }))
+      .filter(x => x.p.type === 'viewpoint')
+      .sort((a, b) => (a.p.vpNum ?? 1e9) - (b.p.vpNum ?? 1e9));
+    if (!order.length) return arr;
+    const numByIdx = new Map();
+    order.forEach((x, k) => numByIdx.set(x.i, vpBaseRef.current + k + 1));
+    return arr.map((p, i) => numByIdx.has(i)
+      ? { ...p, vpNum: numByIdx.get(i), label: `V${numByIdx.get(i)}` } : p);
+  };
+
+  // Appui long (sans bouger) sur un marqueur viewpoint → affiche la photo correspondante.
+  // Annulé dès qu'on bouge (cf. onMove) → le déplacement du marqueur reste prioritaire.
+  const startVpHold = (vp) => {
+    clearTimeout(vpHoldRef.current);
+    vpHoldRef.current = setTimeout(() => {
+      vpHoldRef.current = null;
+      const ph = (photos || [])[vp.photoIdx];
+      const src = ph?.annotated || ph?.data || null;
+      const label = `V${resolveGv(vp) ?? vp.vpNum ?? ''}`;
+      if (src) setVpPreview({ src, label });
+      else setVpPreview({ src: null, label });
+    }, 450);
+  };
+  const endVpHold = () => { clearTimeout(vpHoldRef.current); vpHoldRef.current = null; setVpPreview(null); };
 
   const redraw = useCallback(() => {
     const cv = cvRef.current;
@@ -799,7 +834,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (_selAnnot !== null) {
           e.preventDefault();
-          setPaths(p => p.filter((_, i) => i !== _selAnnot.idx));
+          const wasVp = _paths[_selAnnot.idx]?.type === 'viewpoint';
+          setPaths(p => {
+            const next = p.filter((_, i) => i !== _selAnnot.idx);
+            return wasVp ? resequenceVps(next) : next; // V2→V1, V3→V2… (pas de trou)
+          });
           setSelAnnot(null);
           annotDragRef.current = null;
         } else if (_selTextIdx !== null) {
@@ -1007,6 +1046,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (p.type === 'viewpoint' && Math.hypot(p.x - pos.x, p.y - pos.y) < hitR) {
           setSelAnnot({ idx: i }); setSelTextIdx(null);
           annotDragRef.current = { idx: i, origData: { ...p }, tapX: pos.x, tapY: pos.y };
+          if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
+          startVpHold(p);
           setDrawing(true); return;
         }
         if (p.type === 'symbol') {
@@ -1082,6 +1123,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (hitIdx >= 0) {
         setSelAnnot({ idx: hitIdx });
         annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx] }, tapX: pos.x, tapY: pos.y };
+        if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
+        startVpHold(paths[hitIdx]);
         setDrawing(true);
         return;
       }
@@ -1350,6 +1393,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (drawing && selAnnot !== null && annotDragRef.current) {
       const { origData, tapX, tapY } = annotDragRef.current;
       const dx = pos.x - tapX, dy = pos.y - tapY;
+      // Mouvement réel → ce n'est pas un appui long : on annule l'aperçu photo du viewpoint.
+      if (vpHoldRef.current && Math.hypot(dx, dy) > 6) { clearTimeout(vpHoldRef.current); vpHoldRef.current = null; }
       setPaths(prev => prev.map((p, i) => {
         if (i !== selAnnot.idx) return p;
         if (origData.pts) return { ...p, pts: origData.pts.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) };
@@ -1385,6 +1430,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const onEnd = e => {
     e.preventDefault();
+    // Relâchement → on masque l'aperçu photo (affiché pendant l'appui long sur un marqueur).
+    if (vpHoldRef.current || vpPreview) { clearTimeout(vpHoldRef.current); vpHoldRef.current = null; setVpPreview(null); }
     if (panRef.current) { panRef.current = null; return; }
     if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
     if (gestureRef.current) {
@@ -2010,12 +2057,27 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             } sélectionné
           </span>
-          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer</span>
+          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · ↺ ↻ pour réorienter' : ''}</span>
+          {/* Réorientation du viewpoint (le glisser-déplacer reste inchangé) — ±15° par clic */}
+          {paths[selAnnot.idx].type === 'viewpoint' && (
+            <>
+              <button title="Pivoter à gauche" aria-label="Pivoter le marqueur à gauche"
+                onClick={() => setPaths(p => p.map((pp, i) => i === selAnnot.idx ? { ...pp, angle: (pp.angle || 0) - Math.PI / 12 } : pp))}
+                style={{ padding:'4px 9px',background:'#333',color:'white',border:'none',borderRadius:6,fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:1 }}>↺</button>
+              <button title="Pivoter à droite" aria-label="Pivoter le marqueur à droite"
+                onClick={() => setPaths(p => p.map((pp, i) => i === selAnnot.idx ? { ...pp, angle: (pp.angle || 0) + Math.PI / 12 } : pp))}
+                style={{ padding:'4px 9px',background:'#333',color:'white',border:'none',borderRadius:6,fontSize:14,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:1 }}>↻</button>
+            </>
+          )}
           <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
           </button>
-          <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selAnnot.idx)); setSelAnnot(null); annotDragRef.current = null; }}
+          <button onClick={() => {
+              const wasVp = paths[selAnnot.idx]?.type === 'viewpoint';
+              setPaths(p => { const next = p.filter((_,i) => i !== selAnnot.idx); return wasVp ? resequenceVps(next) : next; });
+              setSelAnnot(null); annotDragRef.current = null;
+            }}
             style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
             <Ic n="del" s={13}/>
           </button>
@@ -2102,6 +2164,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {stripZoom && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
           <img src={stripZoom} alt="" style={{ maxWidth:'96vw', maxHeight:'94vh', objectFit:'contain', borderRadius:6, boxShadow:'0 8px 50px rgba(0,0,0,0.7)' }}/>
+        </div>
+      )}
+      {/* Aperçu de la photo correspondant au marqueur (appui long maintenu) */}
+      {vpPreview && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:200, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:14, pointerEvents:'none' }}>
+          <span style={{ color:'white', fontSize:18, fontWeight:800, background:DA.red, borderRadius:8, padding:'4px 14px' }}>{vpPreview.label}</span>
+          {vpPreview.src
+            ? <img src={vpPreview.src} alt="" style={{ maxWidth:'96vw', maxHeight:'84vh', objectFit:'contain', borderRadius:6, boxShadow:'0 8px 50px rgba(0,0,0,0.7)' }}/>
+            : <span style={{ color:'rgba(255,255,255,0.7)', fontSize:14 }}>Photo non disponible sur cet appareil</span>}
         </div>
       )}
       {/* ── Bande de photos (sans labels V1/V2) ── */}
