@@ -550,10 +550,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Numérotation Vxx : p.vpNum (figé à la pose, source de vérité) > numéro résolu au
   // chargement (gvByVpIdRef) > numérotation globale (vpNumByPath).
   const resolveGv = (p) => {
-    if (p.vpNum != null) return p.vpNum;
+    // Numéro GLOBAL COMPACT d'abord (cohérent avec le rapport et les vignettes) : gvByVpIdRef
+    // (résolu au chargement, survit à la migration JSON) puis vpNumByPath. Le numéro figé
+    // p.vpNum n'est qu'un REPLI : il peut être périmé (ex. baké à V11 lors d'une session passée)
+    // et ne doit PAS masquer le vrai numéro compact — sinon l'annotateur affiche V11 alors que le
+    // rapport affiche V1.
     const g = gvByVpIdRef.current.get(p._vpId);
     if (g != null) return g;
-    return vpNumByPath ? getVpNum(vpNumByPath, p) : null;
+    if (vpNumByPath) { const n = getVpNum(vpNumByPath, p); if (n != null) return n; }
+    return p.vpNum != null ? p.vpNum : null;
   };
   // Prochain numéro libre : max(global, numéros du plan courant) + 1 — jamais de réutilisation.
   const ownVpMax = paths.reduce((m, p) => p.type === 'viewpoint' ? Math.max(m, p.vpNum ?? resolveGv(p) ?? 0) : m, 0);
@@ -579,12 +584,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // comptés via vpBase). Au niveau rapport, la numérotation se ré-harmonise par identité photo.
   const vpBaseRef = useRef(vpBase); vpBaseRef.current = vpBase;
   const resequenceVps = (arr) => {
-    // Ordre du TABLEAU (= ordre d'apparition utilisé par computeVpNumbering côté rapport) →
-    // numéros compacts vpBase+1, +2… cohérents entre l'annotateur live et le rapport.
-    let k = vpBaseRef.current;
+    // Recompaction après suppression. ANCRE = plus petit numéro global ACTUEL sur ce plan (et non
+    // vpBase) → on recompacte la plage du plan SANS la décaler vers des numéros hauts (sinon on
+    // réintroduirait V11). On met aussi à jour gvByVpIdRef pour que l'affichage live (resolveGv,
+    // qui lit gvByVpIdRef en priorité) reflète immédiatement la recompaction. La recompaction
+    // GLOBALE définitive (1..N) est refaite par computeVpNumbering au prochain rendu du rapport.
+    const vps = arr.filter(p => p.type === 'viewpoint');
+    if (!vps.length) return arr;
+    let base = Infinity;
+    for (const p of vps) { const n = resolveGv(p); if (typeof n === 'number') base = Math.min(base, n); }
+    if (!isFinite(base)) base = (vpBaseRef.current || 0) + 1;
+    let k = base - 1;
     return arr.map(p => {
       if (p.type !== 'viewpoint') return p;
       k += 1;
+      if (p._vpId) gvByVpIdRef.current.set(p._vpId, k);
       return { ...p, vpNum: k, label: `V${k}` };
     });
   };
