@@ -10,6 +10,7 @@ import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, dedupPlanPaths } from '../../lib/vpNumbering.js';
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
+import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -1515,63 +1516,104 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
   ];
 
-  const [aiLoading, setAiLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(null); // 'gen' | 'propos' | 'fix' | null
   const [aiErr, setAiErr] = useState(null);
+  const [proposals, setProposals] = useState(null); // null | string[]
+  const [convSyncKey, setConvSyncKey] = useState(0); // force le rafraîchissement de l'éditeur après l'IA
+
+  // Contexte COMPLET du rapport pour l'IA (méta + intro + toutes les observations par zone).
+  const buildContext = () => {
+    const meta = [
+      `Projet : ${projet.nom || '—'}`,
+      projet.adresse ? `Adresse : ${projet.adresse}` : null,
+      projet.maitreOuvrage ? `Maître d'ouvrage : ${projet.maitreOuvrage}` : null,
+      dateStr ? `Date de visite : ${dateStr}` : null,
+    ].filter(Boolean).join('\n');
+    const urg = { haute: 0, moyenne: 0, basse: 0 };
+    const zones = (localisations || []).map(loc => {
+      const its = (loc.items || []).filter(i => i.titre || i.commentaire);
+      if (!its.length) return null;
+      const lines = its.map(i => {
+        const u = i.urgence || 'basse'; urg[u] = (urg[u] || 0) + 1;
+        const lab = u === 'haute' ? 'URGENT' : u === 'moyenne' ? 'À planifier' : 'Mineur';
+        const c = stripMarkup(i.commentaire || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+        return `  • [${lab}] ${i.titre || ''}${c ? ` — ${c}` : ''}`;
+      }).join('\n');
+      return `Zone « ${loc.nom || '—'} » :\n${lines}`;
+    }).filter(Boolean).join('\n\n');
+    const count = urg.haute + urg.moyenne + urg.basse;
+    return { meta, zones, urg, count };
+  };
+
+  const ask = async (prompt, maxTokens = 700) => {
+    const d = await callAIProxy({
+      feature: 'conclusion',
+      model: 'claude-sonnet-4-6',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return d.content?.[0]?.text?.trim() || '';
+  };
+
+  const CONSIGNES = `Consignes de rédaction :
+- Commence par rappeler le contexte et l'objet de la visite (reprends l'introduction du rapport).
+- Synthétise les constats marquants et leur niveau de gravité, SANS les lister un par un.
+- Termine par des recommandations claires et hiérarchisées (actions prioritaires).
+- Ton professionnel, factuel et fluide. 2 à 3 paragraphes (8 à 14 lignes).
+- Pas de markdown, pas de titres, pas de listes à puces — uniquement du texte rédigé.`;
 
   const generateConclusion = async () => {
-    setAiLoading(true); setAiErr(null);
+    setAiLoading('gen'); setAiErr(null); setProposals(null);
     try {
-      // Résumé structuré des observations pour le prompt
-      const items = localisations.flatMap(loc =>
-        (loc.items || []).filter(i => i.titre).map(i => ({
-          zone: loc.nom || '',
-          titre: i.titre || '',
-          urgence: i.urgence || 'basse',
-          commentaire: (i.commentaire || '').replace(/<[^>]+>/g, '').slice(0, 200),
-        }))
-      );
-      const urgCounts = { haute: 0, moyenne: 0, basse: 0 };
-      items.forEach(i => { urgCounts[i.urgence] = (urgCounts[i.urgence] || 0) + 1; });
+      const { meta, zones, urg, count } = buildContext();
+      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. À partir du rapport de visite ci-dessous, rédige la CONCLUSION du rapport, en français.
 
-      const obsText = localisations.map(loc => {
-        const zoneItems = (loc.items || []).filter(i => i.titre);
-        if (!zoneItems.length) return null;
-        const lines = zoneItems.map(i => {
-          const urgLabel = i.urgence === 'haute' ? 'URGENT' : i.urgence === 'moyenne' ? 'À planifier' : 'Mineur';
-          const comment = (i.commentaire || '').replace(/<[^>]+>/g, '').slice(0, 150);
-          return `  - [${urgLabel}] ${i.titre}${comment ? ` : ${comment}` : ''}`;
-        }).join('\n');
-        return `Zone ${loc.nom} :\n${lines}`;
-      }).filter(Boolean).join('\n\n');
+${meta}
+Observations (${count} au total : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :
+${zones}
 
-      const projetNom = projet.nom || 'ce projet';
-      const dateVisite = dateStr || 'date non précisée';
-      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. Rédige une conclusion professionnelle de rapport de visite de chantier en français.
-
-Projet : ${projetNom}
-Date de visite : ${dateVisite}
-Nombre d'observations : ${items.length} (${urgCounts.haute} urgentes, ${urgCounts.moyenne} à planifier, ${urgCounts.basse} mineures)
-
-Observations par zone :
-${obsText}
-
-Rédige une conclusion de 4 à 6 phrases :
-- Rappelle brièvement le contexte de la visite
-- Synthétise les principaux désordres constatés et leur niveau de gravité
-- Formule une recommandation d'action prioritaire
-- Ton professionnel, factuel, sans markdown, sans titre, sans liste — uniquement du texte continu`;
-
-      const d = await callAIProxy({
-        feature: 'conclusion',
-        model: 'claude-sonnet-4-6',
-        max_tokens: 400,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const text = d.content?.[0]?.text?.trim();
-      if (text) onUpdateConclusion(text);
-    } catch(e) { setAiErr(e.message || 'Erreur IA'); }
-    setAiLoading(false);
+${CONSIGNES}`;
+      const text = await ask(prompt, 700);
+      if (text) { onUpdateConclusion(text); setConvSyncKey(k => k + 1); }
+    } catch (e) { setAiErr(e.message || 'Erreur IA'); }
+    setAiLoading(null);
   };
+
+  const generateProposals = async () => {
+    setAiLoading('propos'); setAiErr(null);
+    try {
+      const { meta, zones, urg, count } = buildContext();
+      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. À partir du rapport de visite ci-dessous, propose TROIS conclusions DIFFÉRENTES (angles/longueurs variés : une concise, une détaillée, une orientée recommandations).
+
+${meta}
+Observations (${count} au total : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :
+${zones}
+
+${CONSIGNES}
+
+Sépare les trois propositions par une ligne contenant uniquement « ### ». Ne numérote pas, n'ajoute aucun titre.`;
+      const text = await ask(prompt, 1200);
+      const variants = text.split(/\n?#{3,}\n?/).map(s => s.trim()).filter(Boolean);
+      setProposals(variants.length ? variants : (text ? [text] : []));
+    } catch (e) { setAiErr(e.message || 'Erreur IA'); }
+    setAiLoading(null);
+  };
+
+  const correctSpelling = async () => {
+    const plain = htmlToPlain(conclusion || '').trim();
+    if (!plain) { setAiErr('Rien à corriger.'); return; }
+    setAiLoading('fix'); setAiErr(null);
+    try {
+      const prompt = `Corrige UNIQUEMENT l'orthographe, la grammaire, les accords et la ponctuation du texte ci-dessous. Ne change pas le sens, le style ni la structure, n'ajoute rien, ne reformule pas. Réponds uniquement par le texte corrigé.
+
+${plain}`;
+      const text = await ask(prompt, 700);
+      if (text) { onUpdateConclusion(text); setConvSyncKey(k => k + 1); }
+    } catch (e) { setAiErr(e.message || 'Erreur IA'); }
+    setAiLoading(null);
+  };
+
+  const useProposal = (txt) => { onUpdateConclusion(txt); setConvSyncKey(k => k + 1); setProposals(null); };
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
@@ -1580,12 +1622,22 @@ Rédige une conclusion de 4 à 6 phrases :
         <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:12, display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Conclusion</span>
           {isEditable && (
-            <div data-print="hide" style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
-              {/* Bouton génération IA */}
-              <button onClick={generateConclusion} disabled={aiLoading}
+            <div data-print="hide" style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto', flexWrap:'wrap', justifyContent:'flex-end' }}>
+              {/* Génération IA — résumé pro de tout le rapport */}
+              <button onClick={generateConclusion} disabled={!!aiLoading}
                 style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.red}`, background: aiLoading ? DA.grayXL : DA.redL, color: aiLoading ? DA.grayL : DA.red, fontSize:8, fontWeight:700, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
-                {aiLoading ? <Ic n="spn" s={9}/> : <Ic n="spk" s={9}/>}
-                {aiLoading ? 'Génération…' : 'Générer via IA'}
+                {aiLoading === 'gen' ? <Ic n="spn" s={9}/> : <Ic n="spk" s={9}/>}
+                {aiLoading === 'gen' ? 'Génération…' : 'Générer via IA'}
+              </button>
+              {/* Propositions IA — 3 variantes à choisir */}
+              <button onClick={generateProposals} disabled={!!aiLoading}
+                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.red}`, background:'white', color: aiLoading ? DA.grayL : DA.red, fontSize:8, fontWeight:700, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
+                {aiLoading === 'propos' ? <Ic n="spn" s={9}/> : '✨'} Propositions
+              </button>
+              {/* Correction orthographe/grammaire du texte courant */}
+              <button onClick={correctSpelling} disabled={!!aiLoading || !conclusion}
+                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.border}`, background:'white', color: (aiLoading || !conclusion) ? DA.grayL : DA.gray, fontSize:8, fontWeight:700, cursor: (aiLoading || !conclusion) ? 'default' : 'pointer', letterSpacing:'0.03em' }}>
+                {aiLoading === 'fix' ? <Ic n="spn" s={9}/> : '✓'} Corriger l'ortho
               </button>
               {onUpdateConclusionAlign && (
                 <div style={{ display:'flex', gap:3 }}>
@@ -1604,13 +1656,33 @@ Rédige une conclusion de 4 à 6 phrases :
           )}
         </div>
         {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
+        {/* Propositions IA — cartes cliquables (insérées dans la conclusion au clic) */}
+        {isEditable && proposals && (
+          <div data-print="hide" style={{ marginBottom:10, display:'flex', flexDirection:'column', gap:6 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:8, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:'0.05em' }}>Propositions — cliquer pour utiliser</span>
+              <button onClick={() => setProposals(null)} style={{ marginLeft:'auto', border:'none', background:'none', color:DA.grayL, cursor:'pointer', fontSize:11 }}>✕</button>
+            </div>
+            {proposals.length === 0 && <div style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>Aucune proposition.</div>}
+            {proposals.map((p, i) => (
+              <button key={i} onClick={() => useProposal(p)}
+                style={{ textAlign:'left', border:`1px solid ${DA.border}`, borderRadius:6, padding:'8px 10px', background:'#FAFAFA', cursor:'pointer', fontSize:9.5, lineHeight:1.5, color:'#222' }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = DA.red; e.currentTarget.style.background = DA.redL; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = DA.border; e.currentTarget.style.background = '#FAFAFA'; }}>
+                <span style={{ display:'block', fontSize:7.5, fontWeight:800, color:DA.red, marginBottom:3 }}>OPTION {i + 1}</span>
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         {isEditable ? (
-          <textarea
+          <RichTextArea
             value={conclusion || ''}
-            onChange={e => onUpdateConclusion(e.target.value)}
-            placeholder="Saisissez votre conclusion ou générez-la via IA…"
-            rows={8}
-            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', boxSizing:'border-box', resize:'vertical', outline:'none', textAlign: conclusionAlign || 'left' }}
+            syncKey={convSyncKey}
+            onChange={onUpdateConclusion}
+            textAlign={conclusionAlign || 'left'}
+            placeholder="Saisissez votre conclusion, générez-la via IA ou choisissez une proposition…"
+            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', boxSizing:'border-box', minHeight:200 }}
           />
         ) : (
           <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', minHeight:60, textAlign: conclusionAlign }}>
