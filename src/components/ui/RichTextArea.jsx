@@ -112,6 +112,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   const lastSyncKey = useRef(syncKey); // dernière valeur de syncKey traitée (détection de CHANGEMENT)
   const [selImg, setSelImg] = useState(null);   // <img> collée sélectionnée (barre flottante)
   const [imgBox, setImgBox] = useState(null);   // position de la barre flottante {top,left,width}
+  const [selImgW, setSelImgW] = useState(60);   // largeur % live de l'image sélectionnée (curseur fluide)
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -230,14 +231,21 @@ const RichTextArea = forwardRef(function RichTextArea(
   const handleEditorClick = (e) => {
     if (e.target?.tagName === 'IMG' && e.target.getAttribute('data-cimg') != null) {
       setSelImg(e.target);
+      setSelImgW(parseFloat(e.target.getAttribute('data-w')) || 60);
       refreshImgBox(e.target);
     } else if (selImg) {
       setSelImg(null);
     }
   };
 
-  // Mutations sur l'image sélectionnée (puis persistance via handleInput).
-  const setImgWidth = (w) => { if (!selImg) return; selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); refreshImgBox(selImg); handleInput(); };
+  // Redimensionnement FLUIDE : pendant le glissé du curseur on ne met à jour QUE le DOM de
+  // l'image (pas de re-render parent → pas de saccade). On persiste une seule fois au relâché.
+  // L'annotation éventuelle est cuite DANS l'image → elle reste toujours proportionnelle.
+  const resizeLive = (w) => {
+    setSelImgW(w);
+    if (selImg) { selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); refreshImgBox(selImg); }
+  };
+  const resizeCommit = () => { if (selImg) handleInput(); };
   const setImgAlign = (a) => { if (!selImg) return; selImg.setAttribute('data-align', a); applyCommentImgStyle(selImg); refreshImgBox(selImg); handleInput(); };
   const deleteImg = () => { if (!selImg) return; const next = selImg.nextSibling; if (next && next.tagName === 'BR') next.remove(); selImg.remove(); setSelImg(null); handleInput(); };
   const annotateImg = () => { if (!selImg || !onAnnotateImage) return; const p = selImg.getAttribute('data-cimg'); setSelImg(null); onAnnotateImage(p); };
@@ -266,32 +274,38 @@ const RichTextArea = forwardRef(function RichTextArea(
       {/* Barre flottante d'une image collée sélectionnée */}
       {selImg && imgBox && (
         <div style={{ position:'absolute', top:imgBox.top, left:imgBox.left, zIndex:30,
-          display:'flex', alignItems:'center', gap:6, background:'#1f1f1f', color:'#fff',
-          borderRadius:6, padding:'4px 8px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11 }}>
-          <span style={{ opacity:0.7 }}>Taille</span>
-          <input type="range" min="15" max="100" step="5"
-            value={parseFloat(selImg.getAttribute('data-w')) || 60}
-            onChange={e => setImgWidth(parseFloat(e.target.value))}
-            style={{ width:90, accentColor:'#E30513', cursor:'pointer' }}/>
-          {[['left','⬱'],['center','⬍'],['right','⬲']].map(([a, sym]) => {
+          display:'flex', alignItems:'center', gap:8, background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'5px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, whiteSpace:'nowrap' }}>
+          {/* Taille — curseur fin (pas de 1 %), valeur affichée, persisté au relâché */}
+          <span style={{ opacity:0.65, fontWeight:600 }}>Taille</span>
+          <input type="range" min="15" max="100" step="1" value={selImgW}
+            onChange={e => resizeLive(parseFloat(e.target.value))}
+            onPointerUp={resizeCommit} onMouseUp={resizeCommit} onKeyUp={resizeCommit}
+            style={{ width:130, accentColor:'#E30513', cursor:'pointer' }}/>
+          <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selImgW)}%</span>
+          <span style={{ width:1, height:18, background:'#444' }}/>
+          {/* Position — boutons explicites */}
+          <span style={{ opacity:0.65, fontWeight:600 }}>Position</span>
+          {[['left','Gauche'],['center','Centre'],['right','Droite']].map(([a, lbl]) => {
             const active = (selImg.getAttribute('data-align') || 'center') === a;
-            const lbl = a === 'left' ? 'Gauche' : a === 'right' ? 'Droite' : 'Centre';
             return (
-              <button key={a} title={lbl} onClick={() => setImgAlign(a)}
-                style={{ background: active ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555',
-                  borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
-                {a === 'left' ? '◧' : a === 'right' ? '◨' : '▣'}
+              <button key={a} title={`Aligner à ${lbl.toLowerCase()}`} onClick={() => setImgAlign(a)}
+                style={{ background: active ? '#E30513' : 'transparent', color:'#fff',
+                  border:`1px solid ${active ? '#E30513' : '#555'}`, borderRadius:4, padding:'3px 8px',
+                  cursor:'pointer', fontSize:11, fontWeight:700 }}>
+                {lbl}
               </button>
             );
           })}
+          <span style={{ width:1, height:18, background:'#444' }}/>
           {onAnnotateImage && (
             <button title="Annoter l'image" onClick={annotateImg}
-              style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
+              style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
               ✎ Annoter
             </button>
           )}
           <button title="Supprimer l'image" onClick={deleteImg}
-            style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'2px 7px', cursor:'pointer', fontSize:13 }}>
+            style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>
             🗑
           </button>
         </div>
