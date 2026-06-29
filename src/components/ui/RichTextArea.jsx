@@ -94,11 +94,22 @@ export function htmlToPlain(html) {
 
 // Applique le style d'affichage d'une image collée à partir de ses attributs data-w / data-align.
 // Image en BLOC sur sa propre ligne (comme le rendu rapport), alignée à gauche/centre/droite.
+// cursor:grab → indique qu'on peut la glisser pour la déplacer dans le texte.
 function applyCommentImgStyle(img) {
   const w = parseFloat(img.getAttribute('data-w')) || 60;
   const align = img.getAttribute('data-align') || 'center';
   const margin = align === 'left' ? '8px auto 8px 0' : align === 'right' ? '8px 0 8px auto' : '8px auto';
-  img.style.cssText = `width:${Math.max(15, Math.min(100, w))}%;max-width:100%;height:auto;display:block;margin:${margin};border-radius:4px;cursor:pointer;`;
+  img.style.cssText = `width:${Math.max(15, Math.min(100, w))}%;max-width:100%;height:auto;display:block;margin:${margin};border-radius:4px;cursor:grab;`;
+}
+
+// Position d'insertion (caret) sous le point de drop — compatible Chrome/Firefox.
+function caretRangeFromPoint(x, y) {
+  if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y);
+    if (p) { const r = document.createRange(); r.setStart(p.offsetNode, p.offset); r.collapse(true); return r; }
+  }
+  return null;
 }
 
 const RichTextArea = forwardRef(function RichTextArea(
@@ -107,6 +118,7 @@ const RichTextArea = forwardRef(function RichTextArea(
 ) {
   const editorRef = useRef(null);
   const wrapperRef = useRef(null);
+  const draggedImgRef = useRef(null); // image collée en cours de glisser-déposer
   const isComposing = useRef(false); // IME (Chinese, Japanese…)
   const isTyping = useRef(false); // true seulement pendant la frappe active (pas simple focus)
   const lastSyncKey = useRef(syncKey); // dernière valeur de syncKey traitée (détection de CHANGEMENT)
@@ -243,12 +255,44 @@ const RichTextArea = forwardRef(function RichTextArea(
   // L'annotation éventuelle est cuite DANS l'image → elle reste toujours proportionnelle.
   const resizeLive = (w) => {
     setSelImgW(w);
-    if (selImg) { selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); refreshImgBox(selImg); }
+    // NE PAS repositionner la barre pendant le redimensionnement : l'image étant centrée, son
+    // bord bouge quand la largeur change → la barre « sautait ». On la laisse fixe (position
+    // calculée à la sélection).
+    if (selImg) { selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); }
   };
   const resizeCommit = () => { if (selImg) handleInput(); };
-  const setImgAlign = (a) => { if (!selImg) return; selImg.setAttribute('data-align', a); applyCommentImgStyle(selImg); refreshImgBox(selImg); handleInput(); };
   const deleteImg = () => { if (!selImg) return; const next = selImg.nextSibling; if (next && next.tagName === 'BR') next.remove(); selImg.remove(); setSelImg(null); handleInput(); };
   const annotateImg = () => { if (!selImg || !onAnnotateImage) return; const p = selImg.getAttribute('data-cimg'); setSelImg(null); onAnnotateImage(p); };
+
+  // Glisser-déposer pour DÉPLACER une image collée dans le texte. On n'intercepte QUE le drag
+  // d'une de nos images (data-cimg) ; le glissé de texte natif de contentEditable reste intact.
+  const handleDragStart = (e) => {
+    if (e.target?.tagName === 'IMG' && e.target.getAttribute('data-cimg') != null) {
+      draggedImgRef.current = e.target;
+      try { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; } catch { /* noop */ }
+      setSelImg(null); // masque la barre pendant le déplacement
+    } else {
+      draggedImgRef.current = null; // glissé de texte → laisser le navigateur gérer
+    }
+  };
+  const handleDragOver = (e) => {
+    if (draggedImgRef.current) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch { /* noop */ } }
+  };
+  const handleDrop = (e) => {
+    const img = draggedImgRef.current;
+    if (!img) return; // glissé de texte → laisser le comportement natif
+    e.preventDefault();
+    draggedImgRef.current = null;
+    const el = editorRef.current;
+    const range = caretRangeFromPoint(e.clientX, e.clientY);
+    if (!el || !range || !el.contains(range.startContainer)) return;
+    const br = (img.nextSibling && img.nextSibling.tagName === 'BR') ? img.nextSibling : null;
+    range.insertNode(img);          // un nœud déjà dans le DOM est DÉPLACÉ par insertNode
+    if (br) img.after(br);
+    else if (!(img.nextSibling && img.nextSibling.tagName === 'BR')) img.after(document.createElement('br'));
+    setSelImg(null);
+    handleInput();
+  };
 
   // Ctrl+B/I/U → execCommand (natif, WYSIWYG)
   const handleKeyDown = (e) => {
@@ -284,20 +328,6 @@ const RichTextArea = forwardRef(function RichTextArea(
             style={{ width:130, accentColor:'#E30513', cursor:'pointer' }}/>
           <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selImgW)}%</span>
           <span style={{ width:1, height:18, background:'#444' }}/>
-          {/* Position — boutons explicites */}
-          <span style={{ opacity:0.65, fontWeight:600 }}>Position</span>
-          {[['left','Gauche'],['center','Centre'],['right','Droite']].map(([a, lbl]) => {
-            const active = (selImg.getAttribute('data-align') || 'center') === a;
-            return (
-              <button key={a} title={`Aligner à ${lbl.toLowerCase()}`} onClick={() => setImgAlign(a)}
-                style={{ background: active ? '#E30513' : 'transparent', color:'#fff',
-                  border:`1px solid ${active ? '#E30513' : '#555'}`, borderRadius:4, padding:'3px 8px',
-                  cursor:'pointer', fontSize:11, fontWeight:700 }}>
-                {lbl}
-              </button>
-            );
-          })}
-          <span style={{ width:1, height:18, background:'#444' }}/>
           {onAnnotateImage && (
             <button title="Annoter l'image" onClick={annotateImg}
               style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
@@ -318,6 +348,9 @@ const RichTextArea = forwardRef(function RichTextArea(
         onPaste={handlePaste}
         onClick={handleEditorClick}
         onKeyDown={handleKeyDown}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         onCompositionStart={() => { isComposing.current = true; }}
         onCompositionEnd={() => { isComposing.current = false; handleInput(); }}
         onFocus={onFocus}
