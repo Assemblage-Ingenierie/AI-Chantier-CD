@@ -1567,27 +1567,34 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     return out.length ? out : (text ? [text.trim()] : []);
   };
 
-  const CONCL_SYS = `Tu es ingénieur structure chez Assemblage Ingénierie et tu rédiges la CONCLUSION d'un rapport de visite, en français. Règles ABSOLUES :
-- NE répète PAS la présentation/description du bâtiment ou du projet (localisation, « à cheval sur deux bâtiments », typologie…) : c'est du contexte, pas une conclusion. Ne raconte pas la vie.
-- Ne cite jamais le nom ni le code de l'affaire.
-- Va à l'essentiel : synthétise les CONSTATS marquants et leur gravité, puis les RECOMMANDATIONS et suites à donner.
-- CONCIS : 2 à 3 courts paragraphes maximum, séparés par une ligne vide.
-- Orthographe et grammaire parfaites. Pas de markdown, pas de titres, pas de listes à puces. Texte rédigé, fluide, professionnel.`;
+  const CONCL_SYS = `Tu es ingénieur structure chez Assemblage Ingénierie. Tu rédiges la conclusion d'un rapport de visite, en français. Règles ABSOLUES :
+- NE répète PAS la présentation/description du bâtiment ou du projet (localisation, « à cheval sur deux bâtiments », typologie…) ni le nom/code de l'affaire : ce n'est pas une conclusion, ne raconte pas la vie.
+- Va à l'essentiel : les CONSTATS marquants et leur gravité, puis les RECOMMANDATIONS et suites à donner.
+- Orthographe et grammaire parfaites, ton professionnel, sans tiret long (—).`;
 
-  // SUPER bouton unique : génère une conclusion concise (résumé pro, ortho corrigée) ET des
-  // points techniques d'amélioration à ajouter — d'un seul clic (fusion Générer + Propositions + Ortho).
+  // SUPER bouton unique : UN SEUL appel IA renvoie la conclusion ET les points d'amélioration
+  // (séparés par ===POINTS===). On NE fait PAS deux appels en parallèle : le throttle client
+  // (15s/feature) refusait le 2e → « Attends 15s » et rien ne se lançait.
   const generateAll = async () => {
     setAiLoading(true); setAiErr(null); setProposals(null); setApplied(new Set());
     try {
       const { meta, zones, urg, count } = buildContext();
       const base = `${meta}\nObservations (${count} : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :\n${zones}`;
-      const [concl, props] = await Promise.all([
-        ask(`Rédige la conclusion à partir de ces éléments :\n\n${base}`, 700, CONCL_SYS),
-        ask(`À partir de ces éléments, propose 4 à 6 POINTS TECHNIQUES qu'on pourrait ajouter à la conclusion : précisions structurelles, points de vigilance, réserves ou recommandations non triviales. Sans répéter une simple présentation. Chaque point : 1 à 2 phrases rédigées, prêtes à coller.\nFormat strict : « 1. … », « 2. … ». Sans intro ni conclusion.\n\n${base}`,
-          1000, `Tu es ingénieur structure senior. Concis, factuel, orthographe parfaite, sans markdown, sans tiret long.`),
-      ]);
+      const prompt = `À partir des éléments ci-dessous, produis EXACTEMENT DEUX sections séparées par une ligne contenant uniquement « ===POINTS=== ».
+
+SECTION 1 — la CONCLUSION : 2 à 3 courts paragraphes séparés par une ligne vide, texte rédigé et fluide (pas de markdown, pas de titre, pas de liste). Synthèse des constats + recommandations hiérarchisées.
+
+===POINTS===
+
+SECTION 2 — 4 à 6 POINTS TECHNIQUES qu'on pourrait AJOUTER à la conclusion (précisions structurelles, points de vigilance, réserves, recommandations non triviales). Chaque point : 1 à 2 phrases rédigées, prêtes à coller. Format « 1. … », « 2. … ».
+
+Éléments du rapport :
+${base}`;
+      const out = await ask(prompt, 1400, CONCL_SYS);
+      const parts = out.split(/\n?===\s*POINTS\s*===\n?/i);
+      const concl = (parts[0] || '').trim();
       if (concl) { onUpdateConclusion(concl); setConvSyncKey(k => k + 1); }
-      setProposals(parseNumbered(props));
+      setProposals(parseNumbered((parts[1] || '').trim()));
     } catch (e) { setAiErr(e.message || 'Erreur IA'); }
     setAiLoading(false);
   };
