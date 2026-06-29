@@ -1516,21 +1516,24 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     { k:'left', sym:'←' }, { k:'center', sym:'↔' }, { k:'right', sym:'→' }, { k:'justify', sym:'☰' },
   ];
 
-  const [aiLoading, setAiLoading] = useState(null); // 'gen' | 'propos' | 'fix' | null
+  const [aiLoading, setAiLoading] = useState(false);
   const [aiErr, setAiErr] = useState(null);
   const [proposals, setProposals] = useState(null); // null | string[]
+  const [applied, setApplied] = useState(new Set()); // indices des points déjà ajoutés
   const [convSyncKey, setConvSyncKey] = useState(0); // force le rafraîchissement de l'éditeur après l'IA
+  const convRef = useRef(null);
 
-  // Contexte COMPLET du rapport pour l'IA (méta + intro + toutes les observations par zone).
+  // Contexte du rapport pour l'IA. On ÉCARTE les paragraphes de simple présentation/contexte
+  // (ex. « présentation du bâtiment ») : inutiles en conclusion, l'IA les répétait.
   const buildContext = () => {
-    // On NE transmet PAS le nom / code de l'affaire (ex. A711…) : inutile dans la conclusion.
     const meta = [
       projet.adresse ? `Adresse : ${projet.adresse}` : null,
       dateStr ? `Date de visite : ${dateStr}` : null,
     ].filter(Boolean).join('\n');
+    const isPresentation = (t) => /pr[ée]sentation|introduction|contexte/i.test(t || '');
     const urg = { haute: 0, moyenne: 0, basse: 0 };
     const zones = (localisations || []).map(loc => {
-      const its = (loc.items || []).filter(i => i.titre || i.commentaire);
+      const its = (loc.items || []).filter(i => (i.titre || i.commentaire) && !isPresentation(i.titre));
       if (!its.length) return null;
       const lines = its.map(i => {
         const u = i.urgence || 'basse'; urg[u] = (urg[u] || 0) + 1;
@@ -1544,86 +1547,74 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     return { meta, zones, urg, count };
   };
 
-  const ask = async (prompt, maxTokens = 700) => {
+  const ask = async (prompt, maxTokens, system) => {
     const d = await callAIProxy({
-      feature: 'conclusion',
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
+      feature: 'conclusion', model: 'claude-sonnet-4-6', max_tokens: maxTokens, system,
       messages: [{ role: 'user', content: prompt }],
     });
     return d.content?.[0]?.text?.trim() || '';
   };
 
-  const CONSIGNES = `Consignes de rédaction :
-- Ne mentionne JAMAIS le nom ni le code de l'affaire (ex. A711…) : c'est inutile.
-- Présente le texte en PARAGRAPHES séparés par une LIGNE VIDE, pour une lecture claire :
-  • 1er paragraphe : rappel du contexte et de l'objet de la visite (reprends l'introduction).
-  • 2e paragraphe : synthèse des constats marquants et de leur gravité (sans les lister un par un).
-  • 3e paragraphe : recommandations claires et hiérarchisées (actions prioritaires).
-- Ton professionnel, factuel et fluide. Pas de markdown, pas de titres, pas de listes à puces.`;
-
-  const generateConclusion = async () => {
-    setAiLoading('gen'); setAiErr(null); setProposals(null);
-    try {
-      const { meta, zones, urg, count } = buildContext();
-      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. À partir du rapport de visite ci-dessous, rédige la CONCLUSION du rapport, en français.
-
-${meta}
-Observations (${count} au total : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :
-${zones}
-
-${CONSIGNES}`;
-      const text = await ask(prompt, 800);
-      if (text) { onUpdateConclusion(text); setConvSyncKey(k => k + 1); }
-    } catch (e) { setAiErr(e.message || 'Erreur IA'); }
-    setAiLoading(null);
+  // Parse une liste « 1. … 2. … » (ou puces) en tableau, comme les suggestions de la visite.
+  const parseNumbered = (text) => {
+    const out = []; let cur = null;
+    for (const line of (text || '').split('\n')) {
+      const m = line.match(/^\s*(?:\d+[.)]|[-•])\s+(.+)/);
+      if (m) { if (cur != null) out.push(cur.trim()); cur = m[1]; }
+      else if (cur != null && line.trim()) cur += ' ' + line.trim();
+    }
+    if (cur != null) out.push(cur.trim());
+    return out.length ? out : (text ? [text.trim()] : []);
   };
 
-  // « Propositions » = points techniques d'AMÉLIORATION à AJOUTER à la conclusion (et non des
-  // conclusions alternatives). On clique un point → il s'ajoute en fin de conclusion.
-  const generateProposals = async () => {
-    setAiLoading('propos'); setAiErr(null);
+  const CONCL_SYS = `Tu es ingénieur structure chez Assemblage Ingénierie et tu rédiges la CONCLUSION d'un rapport de visite, en français. Règles ABSOLUES :
+- NE répète PAS la présentation/description du bâtiment ou du projet (localisation, « à cheval sur deux bâtiments », typologie…) : c'est du contexte, pas une conclusion. Ne raconte pas la vie.
+- Ne cite jamais le nom ni le code de l'affaire.
+- Va à l'essentiel : synthétise les CONSTATS marquants et leur gravité, puis les RECOMMANDATIONS et suites à donner.
+- CONCIS : 2 à 3 courts paragraphes maximum, séparés par une ligne vide.
+- Orthographe et grammaire parfaites. Pas de markdown, pas de titres, pas de listes à puces. Texte rédigé, fluide, professionnel.`;
+
+  // SUPER bouton unique : génère une conclusion concise (résumé pro, ortho corrigée) ET des
+  // points techniques d'amélioration à ajouter — d'un seul clic (fusion Générer + Propositions + Ortho).
+  const generateAll = async () => {
+    setAiLoading(true); setAiErr(null); setProposals(null); setApplied(new Set());
     try {
       const { meta, zones, urg, count } = buildContext();
-      const currentText = htmlToPlain(conclusion || '').trim();
-      const prompt = `Tu es ingénieur structure chez Assemblage Ingénierie. À partir du rapport de visite et de la conclusion actuelle ci-dessous, propose 4 à 6 POINTS TECHNIQUES D'AMÉLIORATION à AJOUTER à la conclusion : précisions techniques manquantes, points de vigilance structurels, recommandations ou réserves pertinentes non encore mentionnées.
-
-${meta}
-Observations (${count} au total : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :
-${zones}
-
-Conclusion actuelle :
-${currentText || '(vide)'}
-
-Chaque point = 1 à 3 phrases, rédigé, prêt à être collé tel quel dans la conclusion (ton professionnel, pas de markdown). Sépare chaque point par une ligne contenant uniquement « ### ». Ne numérote pas, n'ajoute pas de titre.`;
-      const text = await ask(prompt, 1000);
-      const variants = text.split(/\n?#{3,}\n?/).map(s => s.replace(/^[-•\d.\s]+/, '').trim()).filter(Boolean);
-      setProposals(variants.length ? variants : (text ? [text] : []));
+      const base = `${meta}\nObservations (${count} : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :\n${zones}`;
+      const [concl, props] = await Promise.all([
+        ask(`Rédige la conclusion à partir de ces éléments :\n\n${base}`, 700, CONCL_SYS),
+        ask(`À partir de ces éléments, propose 4 à 6 POINTS TECHNIQUES qu'on pourrait ajouter à la conclusion : précisions structurelles, points de vigilance, réserves ou recommandations non triviales. Sans répéter une simple présentation. Chaque point : 1 à 2 phrases rédigées, prêtes à coller.\nFormat strict : « 1. … », « 2. … ». Sans intro ni conclusion.\n\n${base}`,
+          1000, `Tu es ingénieur structure senior. Concis, factuel, orthographe parfaite, sans markdown, sans tiret long.`),
+      ]);
+      if (concl) { onUpdateConclusion(concl); setConvSyncKey(k => k + 1); }
+      setProposals(parseNumbered(props));
     } catch (e) { setAiErr(e.message || 'Erreur IA'); }
-    setAiLoading(null);
-  };
-
-  const correctSpelling = async () => {
-    const plain = htmlToPlain(conclusion || '').trim();
-    if (!plain) { setAiErr('Rien à corriger.'); return; }
-    setAiLoading('fix'); setAiErr(null);
-    try {
-      const prompt = `Corrige UNIQUEMENT l'orthographe, la grammaire, les accords et la ponctuation du texte ci-dessous. Ne change pas le sens, le style ni la structure, n'ajoute rien, ne reformule pas. Réponds uniquement par le texte corrigé.
-
-${plain}`;
-      const text = await ask(prompt, 700);
-      if (text) { onUpdateConclusion(text); setConvSyncKey(k => k + 1); }
-    } catch (e) { setAiErr(e.message || 'Erreur IA'); }
-    setAiLoading(null);
+    setAiLoading(false);
   };
 
   // Ajoute un point d'amélioration À LA FIN de la conclusion (nouveau paragraphe), sans écraser.
-  const useProposal = (txt) => {
+  const useProposal = (txt, i) => {
     const para = `<div>${txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>`;
     const cur = (conclusion || '').trim();
     const next = cur ? `${cur}<div><br></div>${para}` : para;
     onUpdateConclusion(next); setConvSyncKey(k => k + 1);
-    setProposals(prev => (prev || []).filter(p => p !== txt)); // le point ajouté quitte la liste
+    setApplied(prev => new Set([...prev, i]));
+  };
+
+  // Alignement FIABLE : applique la commande à TOUT le contenu de l'éditeur (execCommand sur le
+  // contentEditable = méthode canonique, contrairement au style React qui ne « prenait » pas),
+  // persiste le HTML, et met aussi conclusionAlign pour le conteneur du rapport.
+  const applyAlign = (k) => {
+    onUpdateConclusionAlign?.(k);
+    const ed = convRef.current?.getEditor?.();
+    if (!ed) return;
+    ed.focus();
+    const sel = window.getSelection();
+    const r = document.createRange(); r.selectNodeContents(ed);
+    sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand(k === 'center' ? 'justifyCenter' : k === 'right' ? 'justifyRight' : k === 'justify' ? 'justifyFull' : 'justifyLeft');
+    sel.removeAllRanges();
+    onUpdateConclusion(ed.innerHTML); setConvSyncKey(k2 => k2 + 1);
   };
 
   return (
@@ -1634,26 +1625,17 @@ ${plain}`;
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Conclusion</span>
           {isEditable && (
             <div data-print="hide" style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto', flexWrap:'wrap', justifyContent:'flex-end' }}>
-              {/* Génération IA — résumé pro de tout le rapport */}
-              <button onClick={generateConclusion} disabled={!!aiLoading}
-                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.red}`, background: aiLoading ? DA.grayXL : DA.redL, color: aiLoading ? DA.grayL : DA.red, fontSize:8, fontWeight:700, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
-                {aiLoading === 'gen' ? <Ic n="spn" s={9}/> : <Ic n="spk" s={9}/>}
-                {aiLoading === 'gen' ? 'Génération…' : 'Générer via IA'}
-              </button>
-              {/* Propositions IA — 3 variantes à choisir */}
-              <button onClick={generateProposals} disabled={!!aiLoading}
-                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.red}`, background:'white', color: aiLoading ? DA.grayL : DA.red, fontSize:8, fontWeight:700, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
-                {aiLoading === 'propos' ? <Ic n="spn" s={9}/> : '✨'} Propositions
-              </button>
-              {/* Correction orthographe/grammaire du texte courant */}
-              <button onClick={correctSpelling} disabled={!!aiLoading || !conclusion}
-                style={{ display:'flex', alignItems:'center', gap:4, padding:'3px 8px', borderRadius:5, border:`1.5px solid ${DA.border}`, background:'white', color: (aiLoading || !conclusion) ? DA.grayL : DA.gray, fontSize:8, fontWeight:700, cursor: (aiLoading || !conclusion) ? 'default' : 'pointer', letterSpacing:'0.03em' }}>
-                {aiLoading === 'fix' ? <Ic n="spn" s={9}/> : '✓'} Corriger l'ortho
+              {/* SUPER bouton unique : résume tout le rapport (concis, ortho corrigée) + propose
+                  des points techniques à ajouter, d'un seul clic. */}
+              <button onClick={generateAll} disabled={aiLoading}
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 11px', borderRadius:6, border:`1.5px solid ${DA.red}`, background: aiLoading ? DA.grayXL : DA.red, color: aiLoading ? DA.grayL : 'white', fontSize:9, fontWeight:800, cursor: aiLoading ? 'wait' : 'pointer', letterSpacing:'0.03em' }}>
+                {aiLoading ? <Ic n="spn" s={10}/> : <Ic n="spk" s={10}/>}
+                {aiLoading ? 'Génération…' : 'Générer via IA'}
               </button>
               {onUpdateConclusionAlign && (
                 <div style={{ display:'flex', gap:3 }}>
                   {ALIGNS.map(a => (
-                    <button key={a.k} onClick={() => onUpdateConclusionAlign(a.k)}
+                    <button key={a.k} onClick={() => applyAlign(a.k)}
                       style={{ width:22, height:22, borderRadius:4, fontSize:11, cursor:'pointer',
                         border:`1.5px solid ${conclusionAlign===a.k ? DA.red : DA.border}`,
                         background: conclusionAlign===a.k ? DA.redL : 'white',
@@ -1676,18 +1658,19 @@ ${plain}`;
             </div>
             {proposals.length === 0 && <div style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>Aucune proposition.</div>}
             {proposals.map((p, i) => (
-              <button key={i} onClick={() => useProposal(p)}
-                style={{ textAlign:'left', border:`1px solid ${DA.border}`, borderRadius:6, padding:'8px 10px', background:'#FAFAFA', cursor:'pointer', fontSize:9.5, lineHeight:1.5, color:'#222', display:'flex', gap:6 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = DA.red; e.currentTarget.style.background = DA.redL; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = DA.border; e.currentTarget.style.background = '#FAFAFA'; }}>
-                <span style={{ color:DA.red, fontWeight:800, flexShrink:0 }}>＋</span>
-                <span>{p}</span>
-              </button>
+              <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, border:`1px solid ${applied.has(i) ? '#A7D7B0' : DA.border}`, borderRadius:6, padding:'7px 10px', background: applied.has(i) ? '#EAF7EE' : '#FAFAFA' }}>
+                <span style={{ flex:1, fontSize:9.5, lineHeight:1.5, color:'#222' }}>{p}</span>
+                <button onClick={() => useProposal(p, i)} disabled={applied.has(i)}
+                  style={{ flexShrink:0, background: applied.has(i) ? '#2E7D32' : DA.red, color:'white', border:'none', borderRadius:5, padding:'4px 10px', fontSize:9, fontWeight:700, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.7 : 1 }}>
+                  {applied.has(i) ? '✓ Ajouté' : '＋ Ajouter'}
+                </button>
+              </div>
             ))}
           </div>
         )}
         {isEditable ? (
           <RichTextArea
+            ref={convRef}
             value={conclusion || ''}
             syncKey={convSyncKey}
             onChange={onUpdateConclusion}
