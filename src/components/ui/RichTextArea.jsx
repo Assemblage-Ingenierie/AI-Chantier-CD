@@ -149,6 +149,17 @@ const RichTextArea = forwardRef(function RichTextArea(
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [selImg]);
 
+  // Alignement : appliqué IMPÉRATIVEMENT sur le contentEditable (le style React seul ne
+  // suffisait pas selon le contenu déjà saisi → les boutons gauche/centre/droite/justifier
+  // « ne marchaient pas »). On le pose sur le conteneur ET sur chaque bloc enfant.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const ta = textAlign || 'left';
+    el.style.textAlign = ta;
+    el.querySelectorAll('div,p,li,h1,h2,h3,h4,h5,h6').forEach(b => { b.style.textAlign = ta; });
+  }, [textAlign, value, syncKey]);
+
   // Init: convertir markdown → HTML une seule fois au montage
   useEffect(() => {
     const el = editorRef.current;
