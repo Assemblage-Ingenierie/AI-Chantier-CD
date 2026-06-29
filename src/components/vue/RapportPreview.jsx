@@ -8,7 +8,7 @@ import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { computeVpNumbering, dedupPlanPaths } from '../../lib/vpNumbering.js';
-import { fetchPlanData } from '../../lib/storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 
 function makeIconDataUrl(drawFn) {
@@ -955,30 +955,43 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     if (!paths?.length) { setRenderedImg(bgSrc); return; }
     // Dédoublonne les annotations + numérote les viewpoints (1 seul Vxx par marqueur sur le plan).
     const drawPaths = dedupPlanPaths(paths, vpNumByPath);
-    const el = new window.Image();
-    el.onload = () => {
-      const cv  = document.createElement('canvas');
-      cv.width  = el.naturalWidth;
-      cv.height = el.naturalHeight;
-      const ctx = cv.getContext('2d');
-      ctx.drawImage(el, 0, 0, cv.width, cv.height);
-      // Échelles par type (texte/forme/symbole). deferredAnnotScale peut être un nombre
-      // (rétro-compat) ou un objet { text, shape, symbol }. strokeScale=base*symbole pour
-      // conserver l'épaisseur des tracés/formes comme avant (au repos = identique).
-      const base = cv.width / 1400;
-      const _o = deferredAnnotScale && typeof deferredAnnotScale === 'object';
-      const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
-      const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
-      const shapeF = _o ? (deferredAnnotScale.shape  ?? 1) : 1;
-      drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, 1), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
-      // JPEG (qualité 0.92) plutôt que PNG : le plan est opaque (fond blanc) donc aucune
-      // transparence perdue, mais le data-URL est ~10× plus léger → aperçu et surtout
-      // génération PDF (document.write de la fenêtre d'impression) nettement plus rapides.
-      setRenderedImg(cv.toDataURL('image/jpeg', 0.92));
-    };
-    el.onerror = () => setRenderedImg(exported || bgSrc);
-    el.src = bgSrc;
-  }, [exported, paths, bg, fetchedBg, deferredAnnotScale, vpNumByPath]);
+    let cancelled = false;
+    (async () => {
+      // Rendu sur l'image HAUTE DÉFINITION du plan quand elle existe : le bg de la bibliothèque
+      // est une vignette → marqueurs Vxx et texte FLOUS (surtout en plan portrait pleine page).
+      // L'image HD donne un canvas à haute résolution → marqueurs nets (mêmes tailles, juste plus
+      // nets car dessinés puis réduits). Repli sur la vignette si pas de HD. Memoïsé (_hdCache).
+      let src = bgSrc;
+      if (planId) { try { const hd = await fetchPlanHdDataUrl(planId); if (hd) src = hd; } catch { /* repli vignette */ } }
+      if (cancelled) return;
+      const el = new window.Image();
+      el.onload = () => {
+        if (cancelled) return;
+        // Plafond de résolution : assez pour une impression A4 nette, sans data-URL géant.
+        const MAXW = 2400;
+        const sc = el.naturalWidth > MAXW ? MAXW / el.naturalWidth : 1;
+        const cv  = document.createElement('canvas');
+        cv.width  = Math.max(1, Math.round(el.naturalWidth * sc));
+        cv.height = Math.max(1, Math.round(el.naturalHeight * sc));
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(el, 0, 0, cv.width, cv.height);
+        // Échelles par type (texte/forme/symbole). base = largeur canvas / 1400 → taille des
+        // marqueurs INCHANGÉE à l'écran (elle suit la largeur), seule la NETTETÉ augmente.
+        const base = cv.width / 1400;
+        const _o = deferredAnnotScale && typeof deferredAnnotScale === 'object';
+        const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
+        const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
+        const shapeF = _o ? (deferredAnnotScale.shape  ?? 1) : 1;
+        drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, 1), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
+        // JPEG 0.95 : qualité supérieure pour ne pas flouter le texte fin des marqueurs (le plan
+        // reste opaque → pas de transparence perdue), data-URL toujours raisonnable.
+        setRenderedImg(cv.toDataURL('image/jpeg', 0.95));
+      };
+      el.onerror = () => { if (!cancelled) setRenderedImg(exported || bgSrc); };
+      el.src = src;
+    })();
+    return () => { cancelled = true; };
+  }, [exported, paths, bg, fetchedBg, deferredAnnotScale, vpNumByPath, planId]);
 
   // Chargement en attente uniquement si le fetch n'est pas encore terminé
   if (!renderedImg && !bg && !fetchedBg && !bgFetchDone) return (
