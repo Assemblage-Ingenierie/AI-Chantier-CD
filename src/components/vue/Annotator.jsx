@@ -1733,12 +1733,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     ? (shapePanelFilled ? 'OPACITÉ REMPLI ✏' : 'OPACITÉ CONTOUR ✏')
     : 'OPACITÉ';
 
-  // Slider de taille CONTEXTUEL : ne pilote que le type lié à l'outil sélectionné.
-  const scaleCtl = tool === 'text'
-    ? { val: scaleText,   set: setScaleText,   label: 'TAILLE TEXTE',   key: SCALE_KEY('text') }
-    : tool === 'shape'
-    ? { val: scaleShape,  set: setScaleShape,  label: 'TAILLE FORMES',  key: SCALE_KEY('shape') }
-    : { val: scaleSymbol, set: setScaleSymbol, label: 'TAILLE SYMBOLES', key: SCALE_KEY('symbol') };
+  // Trois curseurs de taille (Texte / Formes / Symboles), comme l'éditeur de rapport, affichés
+  // ensemble au niveau des couleurs. Chacun pilote son type indépendamment (clés partagées).
+  const scaleCtls = [
+    { lbl: 'Texte',    val: scaleText,   set: setScaleText,   key: SCALE_KEY('text') },
+    { lbl: 'Formes',   val: scaleShape,  set: setScaleShape,  key: SCALE_KEY('shape') },
+    { lbl: 'Symboles', val: scaleSymbol, set: setScaleSymbol, key: SCALE_KEY('symbol') },
+  ];
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
@@ -1895,6 +1896,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   display:'flex',alignItems:'center',justifyContent:'center' }}/>
             ))}
           </div>
+          {/* Tailles Texte / Formes / Symboles — comme l'éditeur de rapport, au niveau des couleurs */}
+          {scaleCtls.map(s => (
+            <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
+              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>{s.lbl}</span>
+              <input type="range" min="0.3" max="5" step="0.1" value={s.val}
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
+                style={{ width:74,accentColor:DA.red,cursor:'pointer' }}/>
+              <span style={{ color:'#bbb',fontSize:10,fontWeight:700,minWidth:26,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+            </div>
+          ))}
         </div>}
       </div>
 
@@ -1918,21 +1929,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   cursor:'pointer',flexShrink:0 }}/>
             ))}
           </div>
+          {/* Tailles Texte / Formes / Symboles (mobile) */}
+          {scaleCtls.map(s => (
+            <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:8 }}>
+              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
+              <input type="range" min="0.3" max="5" step="0.1" value={s.val}
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
+                style={{ flex:1,accentColor:DA.red,cursor:'pointer' }}/>
+              <span style={{ color:'#bbb',fontSize:11,fontWeight:700,minWidth:28,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+            </div>
+          ))}
         </div>
       )}
-
-      {/* ── Taille CONTEXTUELLE : ne modifie que le type de l'outil sélectionné ── */}
-      <div style={{ background:'#1a1a1a',padding:'5px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0,borderBottom:'1px solid #222' }}>
-        <span style={{ color:'#888',fontSize:10,fontWeight:600,whiteSpace:'nowrap',letterSpacing:0.3 }}>{scaleCtl.label}</span>
-        <input type="range" min="0.3" max="5" step="0.1" value={scaleCtl.val}
-          onChange={e => {
-            const v = parseFloat(e.target.value);
-            scaleCtl.set(v);
-            localStorage.setItem(scaleCtl.key, String(v));
-          }}
-          style={{ flex:1,accentColor:DA.red,cursor:'pointer' }}/>
-        <span style={{ color:'#ccc',fontSize:11,fontWeight:700,minWidth:30,textAlign:'right' }}>{scaleCtl.val.toFixed(1)}×</span>
-      </div>
 
       {/* ── Symbol picker — catégories ── */}
       {showSyms && tool === 'symbol' && (
