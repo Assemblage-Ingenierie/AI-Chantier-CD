@@ -1582,7 +1582,11 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
       const base = `${meta}\nObservations (${count} : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :\n${zones}`;
       const prompt = `À partir des éléments ci-dessous, produis EXACTEMENT DEUX sections séparées par une ligne contenant uniquement « ===POINTS=== ».
 
-SECTION 1 — la CONCLUSION : 2 à 3 courts paragraphes séparés par une ligne vide, texte rédigé et fluide (pas de markdown, pas de titre, pas de liste). Synthèse des constats + recommandations hiérarchisées.
+SECTION 1 — la CONCLUSION, en 3 courts paragraphes séparés par une ligne vide, dans CET ordre précis :
+  1) PROBLÈME PRINCIPAL : expose en quelques phrases l'enjeu central de la mission (ce que le client veut faire — typiquement la démolition de cloisons/murs — et notre analyse : porteur ou non, risques, ce qu'on en pense). NE décris PAS le bâtiment.
+  2) SOLUTION : la méthodologie ou solution technique préconisée pour traiter ce problème (étaiement, vérifications, renforcements, suivi…).
+  3) CONCLUSION : la synthèse finale et la recommandation / les suites à donner.
+Texte rédigé et fluide, professionnel, sans markdown, sans titre, sans liste, sans répéter la présentation du bâtiment.
 
 ===POINTS===
 
@@ -1656,9 +1660,24 @@ ${base}`;
           )}
         </div>
         {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
-        {/* Propositions IA — cartes cliquables (insérées dans la conclusion au clic) */}
+        {isEditable ? (
+          <RichTextArea
+            ref={convRef}
+            value={conclusion || ''}
+            syncKey={convSyncKey}
+            onChange={onUpdateConclusion}
+            textAlign={conclusionAlign || 'left'}
+            placeholder="Saisissez votre conclusion, générez-la via IA ou choisissez une proposition…"
+            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', boxSizing:'border-box', minHeight:200 }}
+          />
+        ) : (
+          <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', minHeight:60, textAlign: conclusionAlign }}>
+            {conclusion ? renderMarkup(conclusion) : <span style={{ color:'#4D4D4D', fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
+          </div>
+        )}
+        {/* Propositions IA — APRÈS le texte : points cliquables à ajouter à la conclusion. */}
         {isEditable && proposals && (
-          <div data-print="hide" style={{ marginBottom:10, display:'flex', flexDirection:'column', gap:6 }}>
+          <div data-print="hide" style={{ marginTop:10, display:'flex', flexDirection:'column', gap:6 }}>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
               <span style={{ fontSize:8, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:'0.05em' }}>Points d'amélioration — cliquer pour ajouter à la conclusion</span>
               <button onClick={() => setProposals(null)} style={{ marginLeft:'auto', border:'none', background:'none', color:DA.grayL, cursor:'pointer', fontSize:11 }}>✕</button>
@@ -1673,21 +1692,6 @@ ${base}`;
                 </button>
               </div>
             ))}
-          </div>
-        )}
-        {isEditable ? (
-          <RichTextArea
-            ref={convRef}
-            value={conclusion || ''}
-            syncKey={convSyncKey}
-            onChange={onUpdateConclusion}
-            textAlign={conclusionAlign || 'left'}
-            placeholder="Saisissez votre conclusion, générez-la via IA ou choisissez une proposition…"
-            style={{ width:'100%', fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', boxSizing:'border-box', minHeight:200 }}
-          />
-        ) : (
-          <div style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#000', lineHeight:1.5, whiteSpace:'pre-wrap', border:`1px solid #DFE4E8`, borderRadius:4, padding:'10px 12px', background:'white', minHeight:60, textAlign: conclusionAlign }}>
-            {conclusion ? renderMarkup(conclusion) : <span style={{ color:'#4D4D4D', fontStyle:'italic' }}>Aucune conclusion saisie.</span>}
           </div>
         )}
       </div>
