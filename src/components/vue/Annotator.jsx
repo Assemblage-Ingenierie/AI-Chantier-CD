@@ -1293,6 +1293,36 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
       // ── Outil polygone : clic = sommet, double-clic/snap = fermeture ──
       if (shapeTool === 'poly') {
+        // Tant qu'on n'a PAS commencé à tracer (aucun sommet posé), un clic sur une forme
+        // existante la MANIPULE (poignée de resize, ou sélection + déplacement) au lieu de
+        // démarrer un nouveau polygone → on peut enfin re-sélectionner/recolorer une zone.
+        if (polyPts.length === 0) {
+          if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
+            const ap = paths[selAnnot.idx];
+            const rhr = 14 * (cv.width / cv.clientWidth);
+            for (const h of getShapeHandles(ap)) {
+              if (Math.hypot(pos.x - h.x, pos.y - h.y) < rhr) {
+                resizeDragRef.current = { handle: h.id, origData: { ...ap, pts: ap.pts ? ap.pts.map(pt => ({...pt})) : undefined }, idx: selAnnot.idx };
+                setDrawing(true); return;
+              }
+            }
+          }
+          for (let i = paths.length - 1; i >= 0; i--) {
+            const p = paths[i];
+            if (p.type !== 'shape') continue;
+            const hit = (p.shape === 'poly' && p.pts?.length > 1)
+              ? (pos.x >= Math.min(...p.pts.map(pt=>pt.x)) - hitR && pos.x <= Math.max(...p.pts.map(pt=>pt.x)) + hitR &&
+                 pos.y >= Math.min(...p.pts.map(pt=>pt.y)) - hitR && pos.y <= Math.max(...p.pts.map(pt=>pt.y)) + hitR)
+              : (p.x1 != null && pos.x >= Math.min(p.x1,p.x2) - hitR && pos.x <= Math.max(p.x1,p.x2) + hitR &&
+                 pos.y >= Math.min(p.y1,p.y2) - hitR && pos.y <= Math.max(p.y1,p.y2) + hitR);
+            if (hit) {
+              setSelAnnot({ idx: i }); setSelTextIdx(null);
+              annotDragRef.current = { idx: i, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
+              setDrawing(true); return;
+            }
+          }
+          setSelAnnot(null); // clic dans le vide → démarrage d'un nouveau polygone
+        }
         const now = Date.now();
         const lt = lastTapRef.current;
         const snapR = 22 * (cv.width / cv.clientWidth);
@@ -1741,6 +1771,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     { lbl: 'Symboles', val: scaleSymbol, set: setScaleSymbol, key: SCALE_KEY('symbol') },
   ];
 
+  // Couleur / épaisseur appliquées à l'élément SÉLECTIONNÉ — texte (selTextIdx) OU forme /
+  // symbole / viewpoint (selAnnot) → cliquer une couleur recolore la forme sélectionnée
+  // (avant : seul le texte changeait, d'où « impossible de mettre la zone en blanc »).
+  const recolorSelection = (cl) => {
+    setColor(cl);
+    setPaths(prev => prev.map((p, i) =>
+      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx))
+        ? { ...p, color: cl } : p));
+  };
+  const resizeSelection = (sz) => {
+    setSize(sz);
+    setPaths(prev => prev.map((p, i) =>
+      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx))
+        ? { ...p, size: sz } : p));
+  };
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
 
@@ -1872,10 +1918,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         {!isMob && <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
           <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             {ANNOT_COLORS.map(cl => (
-              <button key={cl} onClick={() => {
-                setColor(cl);
-                if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,color:cl} : p));
-              }}
+              <button key={cl} onClick={() => recolorSelection(cl)}
                 style={{ width:26,height:26,borderRadius:'50%',background:cl,
                   border:`3px solid ${color===cl?'white':'transparent'}`,
                   boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',
@@ -1885,10 +1928,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
             <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3 }}>ÉPAISSEUR</span>
             {[1,3,6].map(sz => (
-              <button key={sz} onClick={() => {
-                setSize(sz);
-                if (selTextIdx !== null) setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,size:sz} : p));
-              }}
+              <button key={sz} onClick={() => resizeSelection(sz)}
                 style={{ width:sz*3+14,height:sz*3+14,borderRadius:'50%',
                   background:size===sz?'white':'#555',
                   border:`2px solid ${size===sz?'white':'#444'}`,
@@ -1914,7 +1954,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         <div style={{ background:DA.black,padding:'8px 12px',display:'flex',flexDirection:'column',gap:8,flexShrink:0,borderBottom:'1px solid #333' }}>
           <div style={{ display:'flex',gap:7,flexWrap:'wrap',alignItems:'center' }}>
             {ANNOT_COLORS.map(cl => (
-              <button key={cl} onClick={() => { setColor(cl); if (selTextIdx!==null) setPaths(prev=>prev.map((p,i)=>i===selTextIdx?{...p,color:cl}:p)); }}
+              <button key={cl} onClick={() => recolorSelection(cl)}
                 style={{ width:30,height:30,borderRadius:'50%',background:cl,
                   border:`3px solid ${color===cl?'white':'transparent'}`,
                   boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',cursor:'pointer',flexShrink:0 }}/>
@@ -1923,7 +1963,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ display:'flex',alignItems:'center',gap:8 }}>
             <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>ÉPAISSEUR</span>
             {[1,3,6].map(sz => (
-              <button key={sz} onClick={() => { setSize(sz); if (selTextIdx!==null) setPaths(prev=>prev.map((p,i)=>i===selTextIdx?{...p,size:sz}:p)); }}
+              <button key={sz} onClick={() => resizeSelection(sz)}
                 style={{ width:sz*3+18,height:sz*3+18,borderRadius:'50%',
                   background:size===sz?'white':'#555',border:`2px solid ${size===sz?'white':'#444'}`,
                   cursor:'pointer',flexShrink:0 }}/>
