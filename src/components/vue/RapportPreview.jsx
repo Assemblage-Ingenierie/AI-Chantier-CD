@@ -7,7 +7,7 @@ import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { computeVpNumbering, dedupPlanPaths } from '../../lib/vpNumbering.js';
+import { computeVpNumbering, dedupPlanPaths, photoVpKey } from '../../lib/vpNumbering.js';
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
@@ -718,13 +718,20 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
     if (!ph) return null;
     const hasAnnotations = ph.annotations?.length > 0;
     const [cx, cy, cz] = effectiveCrop(ph);
-    const vxxNum = vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
+    // Badge Vxx : identité photo (_id) d'abord — robuste si l'ordre/index a changé ou si le
+    // marqueur vient d'un plan d'observation — puis repli sur l'index aplati historique.
+    const vxxNum = vxxPhotoMap?.get(photoVpKey(ph)) ?? vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
     const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
     // Curseurs « taille annotations photos » actifs (≠ 1×) → on privilégie la couche overlay
     // (re-dessin live, sensible aux curseurs) plutôt que le composite cuit (taille figée).
     const photoScaleActive = (photoAnnotScales?.text ?? 1) !== 1 || (photoAnnotScales?.symbol ?? 1) !== 1 || (photoAnnotScales?.shape ?? 1) !== 1;
-    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || photoScaleActive);
-    const imgSrc = (photoScaleActive && ph.data) ? ph.data : (ph.annotated || ph.data);
+    // Overlay re-dessiné par-dessus la photo BRUTE quand on agrandit (curseurs ≠ 1×). On ne le
+    // fait QUE si on peut le rendre de façon SYNCHRONE (annotW connu, hydraté depuis photoPrefs)
+    // → garantit que le PDF a TOUJOURS les annotations. Sinon (ex. annotW absent sur un autre
+    // appareil) on retombe sur le composite cuit : annotations présentes (à 1×), jamais perdues.
+    const overlaySync = hasAnnotations && !!ph.data && ph.annotW != null;
+    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || (photoScaleActive && overlaySync));
+    const imgSrc = useAnnotOverlay ? ph.data : (ph.annotated || ph.data);
     return (
       <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que

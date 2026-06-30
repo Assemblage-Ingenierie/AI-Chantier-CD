@@ -147,11 +147,13 @@ export default function RapportTab({ projet, onUpdate }) {
     if (kind === 'symbol') { setScaleSymbol(v); localStorage.setItem('chantierai_scale_symbol', String(v)); }
   };
 
-  // Échelles SÉPARÉES pour les annotations des PHOTOS (indépendantes des plans). Défaut 1× →
-  // les rapports existants ne bougent pas tant qu'on n'y touche pas. Appliquées au rendu des
-  // annotations photo dans le rapport (couche overlay).
-  const [scaleTextPhoto,   setScaleTextPhoto]   = useState(() => _read('chantierai_scale_photo_text', 1));
-  const [scaleSymbolPhoto, setScaleSymbolPhoto] = useState(() => _read('chantierai_scale_photo_symbol', 1));
+  // Échelles SÉPARÉES pour les annotations des PHOTOS (indépendantes des plans). Appliquées au
+  // rendu des annotations photo dans le rapport (couche overlay). Défaut 1.5× pour le texte et
+  // les symboles : à l'échelle réelle (largeur/1400, fidèle à l'annotateur) la boîte de texte
+  // devient illisible dans les petites cellules du rapport → on l'agrandit côté rapport
+  // uniquement (l'annotateur n'est PAS modifié). Reste ajustable via les curseurs.
+  const [scaleTextPhoto,   setScaleTextPhoto]   = useState(() => _read('chantierai_scale_photo_text', 1.5));
+  const [scaleSymbolPhoto, setScaleSymbolPhoto] = useState(() => _read('chantierai_scale_photo_symbol', 1.5));
   const [scaleShapePhoto,  setScaleShapePhoto]  = useState(() => _read('chantierai_scale_photo_shape', 1));
   const photoAnnotScales = useMemo(() => ({ text: scaleTextPhoto, shape: scaleShapePhoto, symbol: scaleSymbolPhoto }), [scaleTextPhoto, scaleShapePhoto, scaleSymbolPhoto]);
   const setScalePhoto = (kind, v) => {
