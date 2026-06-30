@@ -1627,6 +1627,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         x: nx, y: ny, angle: nAng,
         label: `V${num}`, color, size,
         photoIdx: pIdx,
+        // Identité STABLE de la photo ciblée (id de ligne) : permet au rapport de poser le badge
+        // par identité, robuste à la propagation et aux changements d'ordre/index des photos.
+        photoId: (pIdx != null && photos) ? (photos[pIdx]?._id ?? photos[pIdx]?.id ?? null) : null,
         vpNum: num,
         originLocId: locId ?? null,
       }]);

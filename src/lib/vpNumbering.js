@@ -51,16 +51,36 @@ export function computeVpNumbering(localisations) {
     return num;
   };
 
+  // Index globaux pour résoudre l'ORIGINE d'un marqueur (la propagation copie un marqueur sur
+  // les plans d'autres zones partageant le même plan, avec originLocId = zone/observation
+  // d'origine ; son photoIdx indexe alors les photos de l'ORIGINE, pas de la zone courante).
+  const locById = new Map();
+  const itemById = new Map();
+  const zoneFlatCache = new Map();
+  for (const l of (localisations || [])) {
+    if (l?.id != null) locById.set(l.id, l);
+    for (const it of (l.items || [])) if (it?.id != null) itemById.set(it.id, it);
+  }
+  // Photos APLATIES d'une zone, dans l'ORDRE EXACT vu par l'annotateur des plans de zone
+  // (PlanLocModal : items.flatMap(photos avec data)) → vp.photoIdx d'un plan de zone indexe
+  // cette liste.
+  const zoneFlatOf = (l) => {
+    if (!l) return [];
+    if (!zoneFlatCache.has(l.id)) {
+      zoneFlatCache.set(l.id, (l.items || []).flatMap(it => (it.photos || []).filter(p => p.data)));
+    }
+    return zoneFlatCache.get(l.id);
+  };
+  // Badge par IDENTITÉ photo (clé `pid:${_id}`), résolu GLOBALEMENT : peu importe le plan/la zone
+  // qui porte le marqueur, le badge suit la photo. La clé d'INDEX (`${locId}_${idx}`) reste un
+  // repli pour les photos legacy sans _id, posée uniquement pour la zone propriétaire.
+  const addBadge = (photoId, idxKey, num) => {
+    if (idxKey && !vxxPhotoMap.has(idxKey)) vxxPhotoMap.set(idxKey, num);
+    if (photoId != null) { const pk = `pid:${photoId}`; if (!vxxPhotoMap.has(pk)) vxxPhotoMap.set(pk, num); }
+  };
+  const idOf = (ph) => ph ? (ph._id ?? ph.id ?? null) : null;
+
   for (const loc of (localisations || [])) {
-    // Photos APLATIES de la zone, dans l'ORDRE EXACT vu par l'annotateur des plans de zone
-    // (PlanLocModal : items.flatMap(photos avec data)) → vp.photoIdx d'un plan de zone indexe
-    // cette liste. Sert à retrouver la photo (et son _id) pour le badge par identité.
-    const zoneFlat = (loc.items || []).flatMap(it => (it.photos || []).filter(p => p.data));
-    const addBadge = (ph, idxKey, num) => {
-      if (idxKey && !vxxPhotoMap.has(idxKey)) vxxPhotoMap.set(idxKey, num); // repli index
-      const pk = photoVpKey(ph);
-      if (pk && !vxxPhotoMap.has(pk)) vxxPhotoMap.set(pk, num);              // identité (prioritaire au lookup)
-    };
     // 1) Plans de la ZONE (principal + extra) — photoIdx indexe les photos de la zone.
     const zonePaths = [
       ...((loc.planAnnotations?.paths || [])),
@@ -69,25 +89,28 @@ export function computeVpNumbering(localisations) {
     for (const vp of zonePaths) {
       if (vp.type !== 'viewpoint') continue;
       const num = assignNum(vp, loc.id);
-      if (vp.photoIdx != null && (vp.originLocId == null || vp.originLocId === loc.id)) {
-        addBadge(zoneFlat[vp.photoIdx], `${loc.id}_${vp.photoIdx}`, num);
-      }
+      if (vp.photoIdx == null) continue;
+      const isOwner = vp.originLocId == null || vp.originLocId === loc.id;
+      // Identité : photoId figé à la pose (futur) sinon résolu via les photos de l'ORIGINE.
+      const originLoc = vp.originLocId != null ? (locById.get(vp.originLocId) || loc) : loc;
+      const photoId = vp.photoId ?? idOf(zoneFlatOf(originLoc)[vp.photoIdx]);
+      addBadge(photoId, isOwner ? `${loc.id}_${vp.photoIdx}` : null, num);
     }
     // 2) Plans des OBSERVATIONS (item.plans) — photoIdx indexe les photos de l'observation ;
-    //    le badge est posé à l'index APLATI dans la zone (offset cumulé par observation) pour
-    //    coïncider avec la grille photo du rapport.
+    //    le badge d'index est posé à l'index APLATI dans la zone (offset cumulé par observation)
+    //    pour coïncider avec la grille photo du rapport.
     let photoOffset = 0;
     for (const item of (loc.items || [])) {
       for (const pl of (item.plans || [])) {
         for (const vp of (pl.planAnnotations?.paths || [])) {
           if (vp.type !== 'viewpoint') continue;
           const num = assignNum(vp, item.id);
-          if (vp.photoIdx != null && (vp.originLocId == null || vp.originLocId === item.id)) {
-            // Plan d'OBSERVATION : photoIdx indexe item.photos (liste passée à l'annotateur,
-            // NON filtrée). On retrouve donc la photo dans item.photos[photoIdx] pour son _id ;
-            // la clé d'index reste l'index APLATI filtré (photoOffset + photoIdx) comme repli.
-            addBadge((item.photos || [])[vp.photoIdx], `${loc.id}_${photoOffset + vp.photoIdx}`, num);
-          }
+          if (vp.photoIdx == null) continue;
+          const isOwner = vp.originLocId == null || vp.originLocId === item.id;
+          const originItem = vp.originLocId != null ? (itemById.get(vp.originLocId) || item) : item;
+          // photoIdx indexe item.photos (liste NON filtrée passée à l'annotateur).
+          const photoId = vp.photoId ?? idOf((originItem.photos || [])[vp.photoIdx]);
+          addBadge(photoId, isOwner ? `${loc.id}_${photoOffset + vp.photoIdx}` : null, num);
         }
       }
       photoOffset += (item.photos || []).filter(p => p.data).length;
