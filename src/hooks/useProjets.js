@@ -405,8 +405,27 @@ export function useProjets(onSyncStatus) {
       // Boîte noire immédiate avant fermeture (filet ultime indépendant de la sync réseau).
       clearTimeout(snapshotRef.current);
       saveSnapshot(projetsRef.current);
+      // Si une sauvegarde tourne déjà, on la laisse finir : ne PAS annuler le debounce ni vider
+      // dirtyIds (sinon on ne refléterait pas l'état réel → la boîte « non sauvegardé » se
+      // rouvrirait à tort après un reload annulé, cf. bug signalé).
+      if (savingRef.current) return;
       clearTimeout(debounceRef.current);
-      if (!savingRef.current) saveData(projetsRef.current, onSyncStatus, new Set(dirtyIds.current));
+      // Même protocole que le debounce : on vide dirtyIds de façon optimiste et on PERSISTE cet
+      // état (synchrone, localStorage) → après un reload annulé OU un vrai reload, la boîte ne se
+      // rouvre plus à tort et l'état persisté est cohérent. En cas d'échec réseau on RESTAURE
+      // dirtyIds + l'état persisté : la donnée n'est jamais perdue (saveSnapshot + cache local la
+      // conservent, et la prochaine sauvegarde la renverra).
+      savingRef.current = true;
+      const ids = new Set(dirtyIds.current);
+      dirtyIds.current.clear();
+      setPersistedDirtyIds(dirtyIds.current);
+      const restore = () => {
+        dirtyIds.current = new Set([...ids, ...dirtyIds.current]);
+        setPersistedDirtyIds(dirtyIds.current);
+      };
+      Promise.resolve(saveData(projetsRef.current, onSyncStatus, ids))
+        .then((ok) => { if (!ok) restore(); savingRef.current = false; })
+        .catch(() => { restore(); savingRef.current = false; });
     };
     // Avertir avant de quitter S'IL RESTE des modifs non synchronisées (fenêtre debounce 2 s
     // ou sync en échec) — empêche la fermeture qui faisait perdre le travail PC non sauvé.
