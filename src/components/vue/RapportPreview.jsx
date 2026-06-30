@@ -1567,9 +1567,14 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     return out.length ? out : (text ? [text.trim()] : []);
   };
 
-  const CONCL_SYS = `Tu es ingénieur structure chez Assemblage Ingénierie. Tu rédiges la conclusion d'un rapport de visite, en français. Règles ABSOLUES :
+  const CONCL_SYS = `Tu es ingénieur structure chez Assemblage Ingénierie. Tu rédiges la CONCLUSION d'un rapport de visite, en français.
+
+DÉFINITION à respecter : conclure, c'est terminer le raisonnement en le RÉSUMANT en quelques phrases, voire quelques mots. La conclusion est la partie FINALE et SYNTHÉTIQUE du rapport — pas une ré-exposition.
+
+Règles ABSOLUES :
+- SOIS BREF : quelques phrases suffisent. On résume, on ne redéveloppe pas.
 - NE répète PAS la présentation/description du bâtiment ou du projet (localisation, « à cheval sur deux bâtiments », typologie…) ni le nom/code de l'affaire : ce n'est pas une conclusion, ne raconte pas la vie.
-- Va à l'essentiel : les CONSTATS marquants et leur gravité, puis les RECOMMANDATIONS et suites à donner.
+- Synthétise l'essentiel : l'enjeu/le constat principal, puis la recommandation/les suites à donner.
 - Orthographe et grammaire parfaites, ton professionnel, sans tiret long (—).`;
 
   // SUPER bouton unique : UN SEUL appel IA renvoie la conclusion ET les points d'amélioration
@@ -1582,11 +1587,11 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
       const base = `${meta}\nObservations (${count} : ${urg.haute} urgentes, ${urg.moyenne} à planifier, ${urg.basse} mineures) :\n${zones}`;
       const prompt = `À partir des éléments ci-dessous, produis EXACTEMENT DEUX sections séparées par une ligne contenant uniquement « ===POINTS=== ».
 
-SECTION 1 — la CONCLUSION, en 3 courts paragraphes séparés par une ligne vide, dans CET ordre précis :
-  1) PROBLÈME PRINCIPAL : expose en quelques phrases l'enjeu central de la mission (ce que le client veut faire — typiquement la démolition de cloisons/murs — et notre analyse : porteur ou non, risques, ce qu'on en pense). NE décris PAS le bâtiment.
-  2) SOLUTION : la méthodologie ou solution technique préconisée pour traiter ce problème (étaiement, vérifications, renforcements, suivi…).
-  3) CONCLUSION : la synthèse finale et la recommandation / les suites à donner.
-Texte rédigé et fluide, professionnel, sans markdown, sans titre, sans liste, sans répéter la présentation du bâtiment.
+SECTION 1 — la CONCLUSION, COURTE et SYNTHÉTIQUE (quelques phrases en tout, pas un pavé), en 3 brefs paragraphes séparés par une ligne vide, dans CET ordre :
+  1) PROBLÈME PRINCIPAL : 1 à 2 phrases sur l'enjeu central (ce que le client veut faire — typiquement la démolition de cloisons/murs — et notre analyse : porteur ou non, risque). NE décris PAS le bâtiment.
+  2) SOLUTION : 1 à 2 phrases sur la méthodologie/solution préconisée (étaiement, vérifications, renforcements…).
+  3) CONCLUSION : 1 à 2 phrases de synthèse finale et la recommandation / les suites à donner.
+Au total une dizaine de lignes MAXIMUM. Texte rédigé et fluide, professionnel, sans markdown, sans titre, sans liste, sans répéter la présentation du bâtiment.
 
 ===POINTS===
 
