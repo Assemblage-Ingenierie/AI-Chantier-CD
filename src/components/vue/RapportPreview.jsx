@@ -398,6 +398,11 @@ function ZoneHeader({ loc }) {
   );
 }
 
+// Facteur d'agrandissement des annotations PHOTO dans le rapport (texte + symboles), appliqué
+// par-dessus l'échelle fidèle largeur/1400. Indépendant du curseur photo → s'applique même si
+// l'utilisateur a déjà une valeur de curseur enregistrée. Ajuste ici si trop grand / trop petit.
+const REPORT_ANNOT_BOOST = 1.7;
+
 function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3, photoScale = { text: 1, shape: 1, symbol: 1 } }) {
   const psText  = photoScale?.text   ?? 1;
   const psSym   = photoScale?.symbol ?? 1;
@@ -458,7 +463,11 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
     // On n'utilise PLUS annotSizeScale : il était figé par photo au moment de l'annotation et
     // dépendait de la largeur d'écran (ratio*0.5) → tailles incohérentes d'une photo à l'autre.
     // Les curseurs PHOTOS (réglables dans le rapport) multiplient cette base, par type.
-    const base = (effectiveW ? effectiveW / 1400 : 0.5) / cropZoom;
+    // Agrandissement de BASE côté rapport (REPORT_ANNOT_BOOST) : à l'échelle fidèle
+    // (largeur/1400) la boîte de texte est illisible dans les petites cellules → on agrandit
+    // texte + symboles dans le RAPPORT uniquement (l'annotateur n'est pas modifié). Le curseur
+    // photo (psText/psSym, défaut 1) reste un ajustement par-dessus.
+    const base = ((effectiveW ? effectiveW / 1400 : 0.5) / cropZoom) * REPORT_ANNOT_BOOST;
     drawAnnotationPaths(ctx, photo.annotations,
       { text: base * psText, symbol: base * psSym, shape: psShape }, base * psSym);
   }, [photo.annotations, effectiveW, effectiveH, cropX, cropY, cropZoom, containerAR, psText, psSym, psShape]);
@@ -724,13 +733,13 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
     const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
     // Curseurs « taille annotations photos » actifs (≠ 1×) → on privilégie la couche overlay
     // (re-dessin live, sensible aux curseurs) plutôt que le composite cuit (taille figée).
-    const photoScaleActive = (photoAnnotScales?.text ?? 1) !== 1 || (photoAnnotScales?.symbol ?? 1) !== 1 || (photoAnnotScales?.shape ?? 1) !== 1;
-    // Overlay re-dessiné par-dessus la photo BRUTE quand on agrandit (curseurs ≠ 1×). On ne le
-    // fait QUE si on peut le rendre de façon SYNCHRONE (annotW connu, hydraté depuis photoPrefs)
-    // → garantit que le PDF a TOUJOURS les annotations. Sinon (ex. annotW absent sur un autre
-    // appareil) on retombe sur le composite cuit : annotations présentes (à 1×), jamais perdues.
+    // On veut TOUJOURS l'overlay re-dessiné (par-dessus la photo BRUTE) pour appliquer
+    // l'agrandissement rapport (REPORT_ANNOT_BOOST) — le composite cuit, lui, est figé à 1×.
+    // On l'utilise dès qu'il est rendable de façon SYNCHRONE (annotW connu, hydraté depuis
+    // photoPrefs) → le PDF a toujours les annotations. Sinon (annotW absent, ex. autre appareil)
+    // on retombe sur le composite cuit : annotations présentes (à 1×), jamais perdues.
     const overlaySync = hasAnnotations && !!ph.data && ph.annotW != null;
-    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || (photoScaleActive && overlaySync));
+    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || overlaySync);
     const imgSrc = useAnnotOverlay ? ph.data : (ph.annotated || ph.data);
     return (
       <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
