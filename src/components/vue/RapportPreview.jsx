@@ -402,10 +402,12 @@ function ZoneHeader({ loc }) {
   );
 }
 
-// Facteur d'agrandissement des annotations PHOTO dans le rapport (texte + symboles), appliqué
-// par-dessus l'échelle fidèle largeur/1400. Indépendant du curseur photo → s'applique même si
-// l'utilisateur a déjà une valeur de curseur enregistrée. Ajuste ici si trop grand / trop petit.
-const REPORT_ANNOT_BOOST = 1.7;
+// Facteur d'échelle des annotations PHOTO dans le rapport, par-dessus l'échelle largeur/1400.
+// = 1.0 → le rapport rend les annotations EXACTEMENT à la taille de l'éditeur (même formule,
+// même curseur « Texte »/« Symboles » via les mêmes clés localStorage) : taille identique entre
+// l'éditeur et le rapport. Pour des annotations plus grosses, monter le curseur « Texte » dans
+// l'éditeur → ça agrandit l'éditeur ET le rapport ensemble, sans jamais les désynchroniser.
+const REPORT_ANNOT_BOOST = 1.0;
 
 function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3, photoScale = { text: 1, shape: 1, symbol: 1 } }) {
   const psText  = photoScale?.text   ?? 1;
