@@ -1716,6 +1716,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const validPhotos = (photos || []).filter(ph => ph.data);
 
   const selectPhoto = (ph, i) => {
+    // Si un marqueur viewpoint est SÉLECTIONNÉ, on LIE cette photo au marqueur existant
+    // (définit/répare le lien marqueur↔photo, sans le redessiner). C'est le moyen de corriger
+    // un marqueur posé sans photo (photoIdx=null → pas de badge dans le rapport).
+    const selIdx = selAnnot?.idx;
+    if (selIdx != null && paths[selIdx]?.type === 'viewpoint') {
+      setPaths(prev => prev.map((p, idx) => idx === selIdx
+        ? { ...p, photoIdx: i, photoId: ph?._id ?? ph?.id ?? null }
+        : p));
+      setActivePh(null);
+      return;
+    }
     const isActive = activePh?.photoIdx === i;
     setActivePh(isActive ? null : { photoIdx: i, src: ph.data });
     setTool('viewpoint');
@@ -1730,6 +1741,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const endStripLP = () => { clearTimeout(stripLPRef.current.timer); setStripZoom(null); };
 
   const selText = selTextIdx !== null ? paths[selTextIdx] : null;
+  // Marqueur viewpoint sélectionné (pour lier/relier une photo via la bande de photos).
+  const selVp = (selAnnot !== null && paths[selAnnot.idx]?.type === 'viewpoint') ? paths[selAnnot.idx] : null;
   const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const duplicateAnnot = (src) => {
@@ -2280,6 +2293,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             : <span style={{ color:'rgba(255,255,255,0.7)', fontSize:14 }}>Photo non disponible sur cet appareil</span>}
         </div>
       )}
+      {/* ── Aide : un marqueur est sélectionné → taper une photo le lie à cette photo ── */}
+      {selVp && validPhotos.length > 0 && (
+        <div style={{ background:'#0b6', color:'white', padding:'5px 12px', fontSize:12, fontWeight:700, flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
+          <Ic n="img" s={15}/>
+          <span>Repère {selVp.label || 'V?'} sélectionné — tape une photo ci-dessous pour la lier{selVp.photoIdx != null ? ' (vert = photo actuelle)' : ''}.</span>
+        </div>
+      )}
       {/* ── Bande de photos (sans labels V1/V2) ── */}
       {validPhotos.length > 0 && (
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>
@@ -2291,6 +2311,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           </button>
           {validPhotos.map((ph, i) => {
             const isActive = activePh?.photoIdx === i;
+            const isLinkedToSel = selVp && selVp.photoIdx === i; // photo liée au marqueur sélectionné
             const sz = photoStripBig ? 104 : 56;
             return (
               <button key={i}
@@ -2299,7 +2320,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 onPointerUp={endStripLP}
                 onPointerCancel={endStripLP}
                 title={ph.name || `Photo ${i + 1}`}
-                style={{ flexShrink:0,padding:0,background:'none',border:`3px solid ${isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s,width 0.15s,height 0.15s' }}>
+                style={{ flexShrink:0,padding:0,background:'none',border:`3px solid ${isLinkedToSel ? '#22c55e' : isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s,width 0.15s,height 0.15s' }}>
                 <img src={ph.data} alt="" style={{ width:sz,height:sz,objectFit:'cover',display:'block' }}/>
               </button>
             );
