@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -15,14 +15,18 @@ const MAX_HISTORY = 20;
 //   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
 //   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
 //   Si null (1ère/legacy session) : seuls les projets déjà dans dirtyIds sont traités comme unsynced.
-function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null) {
+function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
   // When previousRemoteIds is null (first/legacy session), only treat local-only projects
   // as unsynced if they are explicitly dirty — prevents stale deleted projects from being
   // re-pushed to Supabase by users who cleared localStorage or never ran the persisted-IDs code.
+  // ⚠️ ANTI-RÉSURRECTION : un projet TOMBSTONÉ (supprimé, mémo durable) n'est JAMAIS considéré
+  // comme « unsynced » → il ne peut plus être ré-poussé dans Supabase ni re-mis en cache, même
+  // s'il traîne encore dans le cache local. C'était LA cause des projets supprimés qui revenaient.
   const unsynced   = localPs.filter(p =>
     !remoteIds.has(p.id) &&
+    !(deletedIds && deletedIds.has(p.id)) &&
     (previousRemoteIds !== null ? !previousRemoteIds.has(p.id) : dirtyIds.has(p.id))
   );
 
@@ -243,7 +247,7 @@ export function useProjets(onSyncStatus) {
         if (userModified.current) return;
 
         const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current);
         // Mark locally-newer and unsynced projects dirty so saves are targeted.
         // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
         // that were deleted by another user between our loadData() and our save.
@@ -375,7 +379,7 @@ export function useProjets(onSyncStatus) {
       const remotePs = await loadData();
       if (!remotePs.length) return;
       const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds);
+      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current);
       // If local-only plans/locs were found, mark dirty and trigger a save
       if (keptLocalIds.size > 0) {
         keptLocalIds.forEach(id => dirtyIds.current.add(id));
@@ -814,6 +818,9 @@ export function useProjets(onSyncStatus) {
     for (const p of prev) {
       const curr = currMap.get(p.id);
       if (!curr || curr.updatedAt !== p.updatedAt) dirtyIds.current.add(p.id);
+      // Undo d'une suppression : on LÈVE le tombstone du projet restauré, sinon il serait
+      // re-filtré / non re-poussé (et donc « re-supprimé » au prochain chargement).
+      if (deletedIdsRef.current.has(p.id)) { deletedIdsRef.current.delete(p.id); removePersistedDeletedId(p.id); }
     }
     setProjets(prev);
     return true;
@@ -861,6 +868,8 @@ export function useProjets(onSyncStatus) {
       return next;
     });
     lostIds.forEach(id => dirtyIds.current.add(id));
+    // Restauration explicite → lever le tombstone des projets restaurés (sinon re-filtrés).
+    lostIds.forEach(id => { if (deletedIdsRef.current.has(id)) { deletedIdsRef.current.delete(id); removePersistedDeletedId(id); } });
     setBackupRecovery(null);
   }, [backupRecovery]);
 

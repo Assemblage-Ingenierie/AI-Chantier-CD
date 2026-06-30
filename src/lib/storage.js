@@ -527,7 +527,10 @@ export async function deleteRemoteProjet(id) {
       return false;
     }
     if (_lastRemoteIds) _lastRemoteIds.delete(id);
-    removePersistedDeletedId(id); // suppression confirmée — plus besoin de bloquer les polls
+    // Tombstone DURABLE : on NE l'efface PLUS après confirmation. Il continue de bloquer toute
+    // résurrection (filtrage du remote ET du cache local non encore purgé qui serait sinon
+    // ré-poussé via la logique « unsynced »). Le tombstone n'est levé QUE si l'utilisateur
+    // restaure explicitement le projet (undo / restauration boîte noire).
     return true;
   } catch (e) { console.warn('deleteRemoteProjet error:', e); return false; }
 }
@@ -1214,7 +1217,9 @@ function addPersistedDeletedId(id) {
   } catch {}
 }
 
-function removePersistedDeletedId(id) {
+// Exporté : lève le tombstone d'un projet quand l'utilisateur le RESTAURE explicitement
+// (undo d'une suppression, restauration boîte noire) → il pourra de nouveau être chargé/sauvé.
+export function removePersistedDeletedId(id) {
   try {
     const ids = getPersistedDeletedIds();
     ids.delete(id);
