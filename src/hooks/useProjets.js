@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -230,6 +230,10 @@ export function useProjets(onSyncStatus) {
     // Snapshot des IDs remote connus AVANT que loadData() ne les mette à jour.
     // Critique pour distinguer "supprimé ailleurs" de "vraiment unsynced".
     const previousRemoteIds = getPersistedRemoteIds();
+    // Phase 2 : tombstones SERVEUR (partagés entre appareils). Récupérés en parallèle et fusionnés
+    // dans deletedIdsRef AVANT le filtrage → un projet supprimé sur un autre appareil est bloqué
+    // ici aussi. Défensif : Set vide si la table n'existe pas encore (migration non appliquée).
+    const tombstonePromise = loadDeletedChantierIds().catch(() => new Set());
     // Lire la dernière sauvegarde « boîte noire » AVANT tout merge — sert à détecter
     // si le chargement aboutit à MOINS de contenu que ce qui était sauvegardé localement
     // (scénario : modif PC non synchronisée écrasée par le remote au rechargement).
@@ -240,9 +244,13 @@ export function useProjets(onSyncStatus) {
       .catch(() => {})
       .finally(() => setHydrated(true));
 
-    loadData()
-      .then((remotePs) => {
+    Promise.all([loadData(), tombstonePromise])
+      .then(([remotePs, serverDeleted]) => {
         setLoadError(null);
+        // Fusionner les tombstones serveur (Phase 2) dans le mémo local AVANT tout filtrage.
+        if (serverDeleted && serverDeleted.size) {
+          serverDeleted.forEach(id => { deletedIdsRef.current.add(id); addPersistedDeletedId(id); });
+        }
         if (!remotePs.length) return;
         if (userModified.current) return;
 
@@ -818,9 +826,13 @@ export function useProjets(onSyncStatus) {
     for (const p of prev) {
       const curr = currMap.get(p.id);
       if (!curr || curr.updatedAt !== p.updatedAt) dirtyIds.current.add(p.id);
-      // Undo d'une suppression : on LÈVE le tombstone du projet restauré, sinon il serait
-      // re-filtré / non re-poussé (et donc « re-supprimé » au prochain chargement).
-      if (deletedIdsRef.current.has(p.id)) { deletedIdsRef.current.delete(p.id); removePersistedDeletedId(p.id); }
+      // Undo d'une suppression : on LÈVE le tombstone (local ET serveur) du projet restauré,
+      // sinon il serait re-filtré / non re-poussé (et donc « re-supprimé ») au prochain chargement.
+      if (deletedIdsRef.current.has(p.id)) {
+        deletedIdsRef.current.delete(p.id);
+        removePersistedDeletedId(p.id);
+        removeDeletedChantierTombstone(p.id);
+      }
     }
     setProjets(prev);
     return true;
@@ -868,8 +880,11 @@ export function useProjets(onSyncStatus) {
       return next;
     });
     lostIds.forEach(id => dirtyIds.current.add(id));
-    // Restauration explicite → lever le tombstone des projets restaurés (sinon re-filtrés).
-    lostIds.forEach(id => { if (deletedIdsRef.current.has(id)) { deletedIdsRef.current.delete(id); removePersistedDeletedId(id); } });
+    // Restauration explicite → lever le tombstone (local ET serveur) des projets restaurés.
+    lostIds.forEach(id => {
+      if (deletedIdsRef.current.has(id)) { deletedIdsRef.current.delete(id); removePersistedDeletedId(id); }
+      removeDeletedChantierTombstone(id);
+    });
     setBackupRecovery(null);
   }, [backupRecovery]);
 

@@ -512,6 +512,7 @@ export async function hydratePlans(_projectId) {
 // Appelé au moment où l'utilisateur confirme la suppression, en complément du filtre local.
 export async function deleteRemoteProjet(id) {
   addPersistedDeletedId(id); // persisté immédiatement — survit à un rechargement avant confirmation
+  insertDeletedChantierTombstone(id); // tombstone SERVEUR (Phase 2) — partagé entre appareils
   try {
     const sb = await getSupabase();
     // .select('id') retourne les lignes supprimées — permet de détecter un silence RLS
@@ -533,6 +534,36 @@ export async function deleteRemoteProjet(id) {
     // restaure explicitement le projet (undo / restauration boîte noire).
     return true;
   } catch (e) { console.warn('deleteRemoteProjet error:', e); return false; }
+}
+
+// ── Tombstones SERVEUR (table aichantier_deleted_chantiers) — Phase 2 ──
+// Partagés entre tous les appareils d'un utilisateur → un appareil avec un cache périmé ne peut
+// plus ressusciter un projet supprimé ailleurs. TOUT est DÉFENSIF : si la migration n'est pas
+// encore appliquée (table absente), les erreurs sont avalées et l'app continue avec le seul
+// tombstone LOCAL (Phase 1). Aucun risque à déployer ce code avant la migration.
+export async function insertDeletedChantierTombstone(id) {
+  if (!id) return;
+  try {
+    const sb = await getSupabase();
+    await sb.from('aichantier_deleted_chantiers').upsert({ id }, { onConflict: 'id' });
+  } catch { /* table absente / réseau — ignoré */ }
+}
+
+export async function loadDeletedChantierIds() {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_deleted_chantiers').select('id');
+    if (error || !Array.isArray(data)) return new Set();
+    return new Set(data.map(r => r.id));
+  } catch { return new Set(); }
+}
+
+export async function removeDeletedChantierTombstone(id) {
+  if (!id) return;
+  try {
+    const sb = await getSupabase();
+    await sb.from('aichantier_deleted_chantiers').delete().eq('id', id);
+  } catch { /* ignoré */ }
 }
 
 // Suppression immédiate d'un plan depuis Supabase — contourne la sauvegarde différée (debounce 2s).
@@ -827,8 +858,11 @@ async function saveRemote(ps, dirtyIds = null) {
 
   // Sauvegarder uniquement les projets modifiés (évite timeout sur gros volumes)
   // Filtre aussi les orphelins (id null/undefined) → évite 23502 sur upsert.
+  // ⚠️ ANTI-RÉSURRECTION : ne JAMAIS upserter un projet tombstoné (supprimé). Ceinture +
+  // bretelles : même si un projet supprimé traîne encore dans `ps`, il n'est pas ré-inséré.
+  const _deletedIds = getPersistedDeletedIds();
   const toSave = (dirtyIds && dirtyIds.size > 0 ? ps.filter(p => dirtyIds.has(p.id)) : ps)
-    .filter(p => p.id);
+    .filter(p => p.id && !_deletedIds.has(p.id));
 
   for (const p of toSave) {
     const visitesMetadata = (p.visites || []).map(v => ({
@@ -1209,7 +1243,7 @@ export function getPersistedDeletedIds() {
   } catch { return new Set(); }
 }
 
-function addPersistedDeletedId(id) {
+export function addPersistedDeletedId(id) {
   try {
     const ids = getPersistedDeletedIds();
     ids.add(id);
