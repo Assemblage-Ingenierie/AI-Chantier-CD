@@ -119,6 +119,41 @@ export function computeVpNumbering(localisations) {
   return { vxxPhotoMap, vpNumByPath, max: g };
 }
 
+// DIAGNOSTIC (mode ?vxxdebug=1) : renvoie, par localisation, la liste brute des marqueurs
+// viewpoint (zone + observations) avec les champs déterminants pour le badge, et la liste
+// aplatie des _id de photos de la zone. Aucun effet en production normale.
+export function debugVpNumbering(localisations) {
+  const out = [];
+  const idOf = (ph) => ph ? (ph._id ?? ph.id ?? null) : null;
+  const shortId = (id) => id == null ? '∅' : String(id).slice(0, 6);
+  for (const loc of (localisations || [])) {
+    const zoneFlat = (loc.items || []).flatMap(it => (it.photos || []).filter(p => p.data));
+    const markers = [];
+    const pushVp = (vp, plan, ownerId) => {
+      if (vp.type !== 'viewpoint') return;
+      markers.push({
+        plan, label: vp.label, vpNum: vp.vpNum,
+        photoIdx: vp.photoIdx ?? null,
+        originLocId: shortId(vp.originLocId),
+        ownerId: shortId(ownerId),
+        photoId: shortId(vp.photoId),
+        resolvedId: shortId(idOf(zoneFlat[vp.photoIdx])),
+      });
+    };
+    for (const vp of (loc.planAnnotations?.paths || [])) pushVp(vp, 'zone', loc.id);
+    (loc.extraPlans || []).forEach((ep, i) => (ep.planAnnotations?.paths || []).forEach(vp => pushVp(vp, `extra${i}`, loc.id)));
+    for (const item of (loc.items || []))
+      for (const pl of (item.plans || []))
+        for (const vp of (pl.planAnnotations?.paths || [])) pushVp(vp, `obs:${shortId(item.id)}`, item.id);
+    out.push({
+      locNom: loc.nom, locId: shortId(loc.id),
+      zoneFlatIds: zoneFlat.map((p, i) => `${i}:${shortId(idOf(p))}`),
+      markers,
+    });
+  }
+  return out;
+}
+
 // Lookup helper : 1) vpNum figé dans le marqueur, 2) _vpId (stable), 3) ref objet.
 export function getVpNum(vpNumByPath, vp) {
   if (vpNumByPath) {

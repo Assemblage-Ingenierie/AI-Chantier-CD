@@ -7,7 +7,11 @@ import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { computeVpNumbering, dedupPlanPaths, photoVpKey } from '../../lib/vpNumbering.js';
+import { computeVpNumbering, dedupPlanPaths, photoVpKey, debugVpNumbering } from '../../lib/vpNumbering.js';
+
+// Mode diagnostic Vxx : activé via ?vxxdebug=1 dans l'URL. Affiche un panneau + étiquettes photo
+// pour comprendre pourquoi un badge ne se pose pas. Sans effet en utilisation normale.
+const VXX_DEBUG = typeof window !== 'undefined' && /[?&]vxxdebug=1\b/.test(window.location.search);
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
@@ -772,6 +776,12 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
         {vxxNum != null && (
           <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
             V{vxxNum}
+          </div>
+        )}
+        {VXX_DEBUG && (
+          <div style={{ position:'absolute', bottom:2, left:2, background:'rgba(0,0,0,0.78)', color:'#7CFC00', fontSize:7, fontWeight:700, borderRadius:2, padding:'1px 3px', pointerEvents:'none', lineHeight:1.3, fontFamily:'monospace', maxWidth:'90%' }}>
+            flat={vpPhotoOffset + absIdx} id={String(ph?._id ?? ph?.id ?? '∅').slice(0,6)}<br/>
+            pid={vxxPhotoMap?.get(photoVpKey(ph)) ?? '—'} idx={vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`) ?? '—'} ann={hasAnnotations ? 'O' : 'N'}
           </div>
         )}
         {onPhotoCropChange && (
@@ -1931,6 +1941,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
+  const vxxDebugData = useMemo(() => VXX_DEBUG ? debugVpNumbering(localisations) : null, [localisations]);
 
   // breaks effectifs = breaks manuels + breaks dérivés des découpages de paragraphes
   const paraBreaks = useMemo(() =>
@@ -2265,6 +2276,20 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   return (
     <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
+      {VXX_DEBUG && vxxDebugData && (
+        <div data-print="hide" style={{ maxHeight:'40vh', overflow:'auto', background:'#111', color:'#0f0', fontFamily:'monospace', fontSize:10, lineHeight:1.4, padding:'8px 10px', flexShrink:0, borderBottom:'2px solid #0f0' }}>
+          <div style={{ color:'#fff', fontWeight:700, marginBottom:4 }}>VXX DEBUG — marqueurs viewpoint par localisation (screenshote ce panneau)</div>
+          {vxxDebugData.map((d, i) => (
+            <div key={i} style={{ marginBottom:6 }}>
+              <div style={{ color:'#ff0' }}>● {d.locNom} (loc={d.locId}) — photos zone: [{d.zoneFlatIds.join(', ')}]</div>
+              {d.markers.length === 0 ? <div style={{ color:'#f88' }}>  aucun marqueur viewpoint</div> :
+                d.markers.map((m, j) => (
+                  <div key={j}>  {m.plan} {m.label} vpNum={String(m.vpNum)} photoIdx={String(m.photoIdx)} origin={m.originLocId} owner={m.ownerId} photoId={m.photoId} →resolved={m.resolvedId}</div>
+                ))}
+            </div>
+          ))}
+        </div>
+      )}
       {/* Bandeau mode coupe */}
       {cutMode && (
         <div data-print="hide" style={{ background:'#E30513', color:'white', padding:'5px 14px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
