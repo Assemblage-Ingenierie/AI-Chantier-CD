@@ -15,7 +15,7 @@ const MAX_HISTORY = 20;
 //   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
 //   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
 //   Si null (1ère/legacy session) : seuls les projets déjà dans dirtyIds sont traités comme unsynced.
-function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null) {
+export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
   // When previousRemoteIds is null (first/legacy session), only treat local-only projects
