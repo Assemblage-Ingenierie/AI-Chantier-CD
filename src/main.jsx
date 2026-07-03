@@ -2,6 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './styles.css';
+import { installGlobalErrorHandlers } from './lib/logger.js';
+
+// Capture les erreurs hors rendu React (rejets de promesses, erreurs de sync) que
+// l'ErrorBoundary ne voit pas → remontée serveur via /api/log.
+installGlobalErrorHandlers();
 
 // ── Service worker — mise à jour SILENCIEUSE (jamais de reload pendant l'usage) ──
 // Un reload forcé sur 'controllerchange' réinitialisait l'historique en plein usage

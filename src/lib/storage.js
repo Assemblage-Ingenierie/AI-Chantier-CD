@@ -1295,7 +1295,9 @@ async function saveRemote(ps, dirtyIds = null) {
   }
 
   if (errors.length > 0) {
-    console.warn('saveRemote errors:', errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint })));
+    const summary = errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint }));
+    console.warn('saveRemote errors:', summary);
+    logWarn('saveRemote.errors', { count: errors.length, errors: summary });
   }
   return errors;
 }

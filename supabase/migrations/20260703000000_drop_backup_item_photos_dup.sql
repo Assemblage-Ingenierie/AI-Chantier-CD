@@ -1,0 +1,11 @@
+-- Suppression de la table de sauvegarde temporaire des photos dupliquées, créée le 19/06/2026
+-- lors du nettoyage des doublons (bug d'id de ligne non stable, corrigé par dd24b00).
+--
+-- Motif :
+--   1. RLS DÉSACTIVÉ sur cette table (advisor Supabase niveau ERROR) → 1889 lignes exposées
+--      à quiconque possède la clé anon. Faille de sécurité.
+--   2. Backup devenu inutile : les données live (aichantier_item_photos) sont saines depuis
+--      2 semaines. Aucune FK entrante, table autonome.
+--
+-- Vérifié avant suppression : backup_rows=1889, live_rows=769, incoming_fks=0.
+DROP TABLE IF EXISTS public._backup_item_photos_dup_20260619;

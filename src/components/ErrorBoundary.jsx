@@ -1,4 +1,5 @@
 import React from 'react';
+import { logError } from '../lib/logger.js';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -7,7 +8,10 @@ export default class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(e) { return { error: e }; }
-  componentDidCatch(e, info) { console.error('ChantierAI crash:', e, info); }
+  componentDidCatch(e, info) {
+    console.error('ChantierAI crash:', e, info);
+    logError('react.crash', { message: e?.message, stack: e?.stack?.slice(0, 1000), componentStack: info?.componentStack?.slice(0, 1000) });
+  }
 
   render() {
     if (this.state.error) {
