@@ -15,7 +15,8 @@
 
 const DB_NAME = 'chantierai_plans';
 const STORE   = 'thumbs';
-const VERSION = 1;
+const HD_STORE = 'hd'; // images HD des plans (data URL WebP, 2-5 Mo) — évite le re-fetch réseau à chaque session
+const VERSION = 2;
 
 let _dbPromise = null;
 
@@ -28,6 +29,7 @@ function openDb() {
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+        if (!db.objectStoreNames.contains(HD_STORE)) db.createObjectStore(HD_STORE);
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror   = () => resolve(null);
@@ -69,6 +71,37 @@ export async function setPlanThumbs(map) {
       const tx = db.transaction(STORE, 'readwrite');
       const store = tx.objectStore(STORE);
       for (const [id, bg] of entries) store.put(bg, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
+// Image HD d'un plan (data URL) — retourne la valeur en cache ou null.
+export async function getPlanHd(planId) {
+  if (!planId) return null;
+  const db = await openDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(HD_STORE, 'readonly');
+      const r = tx.objectStore(HD_STORE).get(planId);
+      r.onsuccess = () => resolve(r.result ?? null);
+      r.onerror   = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+
+// Persiste l'image HD d'un plan (data URL). Ne rejette jamais.
+export async function setPlanHd(planId, dataUrl) {
+  if (!planId || typeof dataUrl !== 'string' || !dataUrl) return;
+  const db = await openDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(HD_STORE, 'readwrite');
+      tx.objectStore(HD_STORE).put(dataUrl, planId);
       tx.oncomplete = () => resolve();
       tx.onerror    = () => resolve();
       tx.onabort    = () => resolve();

@@ -12,6 +12,13 @@ import { computeVpNumbering, dedupPlanPaths, photoVpKey, debugVpNumbering } from
 // Mode diagnostic Vxx : activé via ?vxxdebug=1 dans l'URL. Affiche un panneau + étiquettes photo
 // pour comprendre pourquoi un badge ne se pose pas. Sans effet en utilisation normale.
 const VXX_DEBUG = typeof window !== 'undefined' && /[?&]vxxdebug=1\b/.test(window.location.search);
+
+// Mémoïsation de la compression PDF (audit point 2 — egress). Chaque export PDF re-fetchait
+// TOUTES les photos du rapport à résolution capteur. Ce cache (clé = URL signée source) évite
+// de re-télécharger + re-compresser une photo déjà traitée dans la même session — un second
+// export, ou une photo apparaissant à la fois en récap et en observation, réutilise le résultat.
+const _pdfCompressCache = new Map();
+const _PDF_COMPRESS_CACHE_MAX = 400;
 import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
@@ -2144,6 +2151,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         const isData = src.startsWith('data:image/');
         if (isData && src.length < 400000) return src;        // petit data URL → on garde
         if (!isData && !/^https?:/i.test(src)) return src;     // blob:/autre → on ne touche pas
+        // Cache de session : une URL signée déjà compressée n'est pas re-téléchargée.
+        // (uniquement les URL distantes — un data URL n'a pas d'egress à économiser.)
+        if (!isData && _pdfCompressCache.has(src)) return _pdfCompressCache.get(src);
         let objUrl = null;
         try {
           let loadSrc = src;
@@ -2154,7 +2164,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             objUrl = URL.createObjectURL(blob);
             loadSrc = objUrl;
           }
-          return await new Promise(resolve => {
+          const result = await new Promise(resolve => {
             const img = new window.Image();
             img.onload = () => {
               try {
@@ -2178,6 +2188,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             img.onerror = () => resolve(src);
             img.src = loadSrc;
           });
+          if (!isData) {
+            if (_pdfCompressCache.size >= _PDF_COMPRESS_CACHE_MAX) _pdfCompressCache.clear();
+            _pdfCompressCache.set(src, result);
+          }
+          return result;
         } catch { return src; }
         finally { if (objUrl) URL.revokeObjectURL(objUrl); }
       };

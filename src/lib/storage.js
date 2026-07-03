@@ -3,6 +3,7 @@ import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
+import { getPlanHd, setPlanHd } from './planThumbCache.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -642,6 +643,32 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, key, name, base64) 
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
+// Compresse une image data URL via canvas (borne la plus grande dimension, sort en WebP).
+// Retourne une data URL WebP, ou null si échec (image illisible, canvas indisponible…) →
+// l'appelant retombe alors sur l'original, garantissant zéro perte de fonctionnalité.
+function compressImageDataUrl(dataUrl, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const longest = Math.max(img.width, img.height) || 1;
+          const scale = Math.min(1, maxDim / longest);
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const out = canvas.toDataURL('image/webp', quality);
+          resolve(out?.startsWith('data:image/webp') ? out : null);
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    } catch { resolve(null); }
+  });
+}
+
 // ── Images COLLÉES dans les commentaires (feature « comme Word ») ───────────────────────────
 // Stockées dans le bucket photos sous comments/<itemId>/<uuid>.<ext> (pas de base64 en base).
 // Le HTML du commentaire garde l'URL signée (src) + le chemin stable (data-cimg) pour re-signer.
@@ -649,9 +676,19 @@ export async function uploadCommentImage(dataUrl, itemId) {
   try {
     if (!dataUrl?.startsWith('data:')) return null;
     const sb = await getSupabase();
-    const m = /^data:image\/([a-z0-9.+-]+)/i.exec(dataUrl);
-    const ext = m ? (m[1] === 'jpeg' ? 'jpg' : m[1].replace(/[^a-z0-9]/gi, '') || 'png') : 'png';
-    const resp = await fetch(dataUrl);
+    // Compression avant upload : une capture d'écran collée (PNG plein écran) pèse plusieurs Mo.
+    // On la réduit (≤1600px, WebP 0.82) comme les photos d'items. SVG ou échec → original conservé.
+    let uploadUrl = dataUrl;
+    let ext;
+    if (!/^data:image\/svg/i.test(dataUrl)) {
+      const compressed = await compressImageDataUrl(dataUrl);
+      if (compressed) { uploadUrl = compressed; ext = 'webp'; }
+    }
+    if (!ext) {
+      const m = /^data:image\/([a-z0-9.+-]+)/i.exec(uploadUrl);
+      ext = m ? (m[1] === 'jpeg' ? 'jpg' : m[1].replace(/[^a-z0-9]/gi, '') || 'png') : 'png';
+    }
+    const resp = await fetch(uploadUrl);
     const blob = await resp.blob();
     const path = `comments/${itemId || 'misc'}/${crypto.randomUUID()}.${ext}`;
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || `image/${ext}`, upsert: true, cacheControl: '31536000' });
@@ -723,10 +760,16 @@ const _hdCache = new Map(); // planId → dataUrl | Promise<dataUrl|null>
 
 // Récupère l'image HD d'un plan sous forme de data URL (évite le canvas "tainted" à l'export).
 // Lit le chemin Storage dans la colonne `data`, génère une signed URL, puis la convertit.
+// Cache à deux niveaux (audit point 2 — egress) : mémoire session, puis IndexedDB persistant
+// → une HD déjà téléchargée n'est plus re-fetchée à la session suivante (2-5 Mo économisés/plan).
 export async function fetchPlanHdDataUrl(planId) {
   if (_hdCache.has(planId)) return _hdCache.get(planId);
   const promise = (async () => {
     try {
+      // 1) IndexedDB : HD déjà téléchargée lors d'une session précédente → zéro egress.
+      const cached = await getPlanHd(planId);
+      if (cached) return cached;
+
       const sb = await getSupabase();
       const { data: row, error } = await sb.from('aichantier_chantier_plans')
         .select('data').eq('id', planId).single();
@@ -739,12 +782,15 @@ export async function fetchPlanHdDataUrl(planId) {
       if (!signed?.signedUrl) return null;
       const resp = await fetch(signed.signedUrl);
       const blob = await resp.blob();
-      return await new Promise((res, rej) => {
+      const dataUrl = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
         r.onerror = rej;
         r.readAsDataURL(blob);
       });
+      // 2) Persister pour les prochaines sessions (best-effort, ne bloque pas le retour).
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) setPlanHd(planId, dataUrl);
+      return dataUrl;
     } catch (e) { console.warn('fetchPlanHdDataUrl error:', e); return null; }
   })();
   _hdCache.set(planId, promise);
