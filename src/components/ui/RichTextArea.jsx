@@ -83,6 +83,7 @@ export function htmlToPlain(html) {
   if (!html) return '';
   const stripped = unescapeStrayTags(html)
     .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')          // chaque puce sur sa propre ligne (sinon « AB » collé)
     .replace(/<\/(p|div)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/\n{3,}/g, '\n\n');
