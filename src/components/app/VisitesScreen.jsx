@@ -40,7 +40,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         }).join('\n---\n');
         const r = await callAIProxy({
           feature: 'visite_summaries',
-          messages: [{ role: 'user', content: `Pour chaque visite de chantier, génère un résumé thématique très court (5 à 9 mots, style télégraphique, majuscule initiale, sans point final). Capture les grands thèmes, corps de métier ou sujets principaux. Exemple: "Étanchéité, gros œuvre, suivi démolition SOGED"\nRéponds UNIQUEMENT avec un JSON valide: {"id": "résumé thématique"}\n\n${blocks}` }]
+          messages: [{ role: 'user', content: `Pour chaque visite de chantier, génère un résumé thématique très court (5 à 9 mots, style télégraphique, majuscule initiale, sans point final). Capture les grands thèmes, corps de métier ou sujets principaux. Exemple: "Étanchéité, gros œuvre, suivi démolition SOGED". N'utilise jamais de tiret cadratin ni demi-cadratin (« — » ou « – ») : sépare par des virgules.\nRéponds UNIQUEMENT avec un JSON valide: {"id": "résumé thématique"}\n\n${blocks}` }]
         });
         const raw = r.content?.[0]?.text || '';
         const match = raw.match(/\{[\s\S]*\}/);
