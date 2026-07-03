@@ -1,0 +1,28 @@
+name: CI
+
+# Bloque le merge sur main si les tests ou le build échouent (cf. flux CLAUDE.md :
+# branche feature → merge sur main → déploiement Vercel). Le lint est informatif
+# (le code existant a des avertissements pré-existants à résorber progressivement).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Tests unitaires (bloquant)
+        run: npm test
+      - name: Build production (bloquant)
+        run: npm run build
+      - name: Lint (informatif)
+        run: npm run lint
+        continue-on-error: true
