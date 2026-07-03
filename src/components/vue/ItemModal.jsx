@@ -14,10 +14,6 @@ import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
-function encodeHtml(text) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // Strips leading words of txt that overlap with the tail of already-committed text.
 // Guards against iOS SpeechRecognition resending previously-heard audio on auto-restart.
 function stripLeadingOverlap(txt, committed) {
@@ -35,28 +31,63 @@ function stripLeadingOverlap(txt, committed) {
   return txt;
 }
 
+// Remplace le passage `del` (extrait copié depuis le texte BRUT) par `add` dans un commentaire
+// HTML riche. L'ancienne version cherchait `del` DANS CHAQUE segment texte isolément → dès que
+// l'extrait chevauchait une balise (<div>, <br>, image inline…), il n'était retrouvé nulle part
+// et le texte restait INCHANGÉ (bug « la reformulation ne change plus mon texte »).
+// Nouvelle version : matching TOLÉRANT aux frontières de balises via le DOM. On concatène les
+// nœuds texte, on compare EN IGNORANT les espaces (les sauts de ligne de l'extrait viennent des
+// balises, absents des nœuds ; &nbsp; varie), puis on remplace la plage exacte sur les nœuds.
 function patchHtmlText(html, del, add) {
   if (!del) return html;
-  const searchEnc = encodeHtml(del);
-  const replaceEnc = encodeHtml(add);
-  const TAG_RE = /(<[^>]*>)/g;
-  const parts = [];
-  let pos = 0, m;
-  TAG_RE.lastIndex = 0;
-  while ((m = TAG_RE.exec(html)) !== null) {
-    if (m.index > pos) parts.push({ tag: false, s: html.slice(pos, m.index) });
-    parts.push({ tag: true, s: m[0] });
-    pos = m.index + m[0].length;
+  let doc;
+  try { doc = new DOMParser().parseFromString(html || '', 'text/html'); }
+  catch { return html; }
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let flat = '';
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    nodes.push({ node: n, start: flat.length, len: n.nodeValue.length });
+    flat += n.nodeValue;
   }
-  if (pos < html.length) parts.push({ tag: false, s: html.slice(pos) });
-  let replaced = false;
-  return parts.map(p => {
-    if (p.tag || replaced) return p.s;
-    const idx = p.s.indexOf(searchEnc);
-    if (idx < 0) return p.s;
-    replaced = true;
-    return p.s.slice(0, idx) + replaceEnc + p.s.slice(idx + searchEnc.length);
-  }).join('');
+  // Projection SANS espaces + table de correspondance vers les positions dans `flat`.
+  let compact = ''; const map = [];
+  for (let i = 0; i < flat.length; i++) {
+    if (/\s/.test(flat[i])) continue;
+    compact += flat[i]; map.push(i);
+  }
+  const needle = del.replace(/\s+/g, '');
+  if (!needle) return html;
+  const ci = compact.indexOf(needle);
+  if (ci < 0) return html; // extrait introuvable → on ne touche à rien (sûr)
+  const flatStart = map[ci];
+  const flatEnd = map[ci + needle.length - 1] + 1; // borne exclusive
+  // Édition des nœuds texte sur [flatStart, flatEnd) : insérer `add` au début, vider le reste.
+  let firstDone = false;
+  for (const it of nodes) {
+    const nStart = it.start, nEnd = it.start + it.len;
+    const oStart = Math.max(nStart, flatStart), oEnd = Math.min(nEnd, flatEnd);
+    if (oStart >= oEnd) continue; // pas de chevauchement
+    const t = it.node.nodeValue;
+    const before = t.slice(0, oStart - nStart);
+    const after = t.slice(oEnd - nStart);
+    if (!firstDone) {
+      firstDone = true;
+      const parent = it.node.parentNode;
+      if (!parent) return html;
+      const frag = doc.createDocumentFragment();
+      if (before) frag.appendChild(doc.createTextNode(before));
+      String(add).split('\n').forEach((line, i) => {
+        if (i > 0) frag.appendChild(doc.createElement('br'));
+        if (line) frag.appendChild(doc.createTextNode(line));
+      });
+      if (after) frag.appendChild(doc.createTextNode(after));
+      parent.replaceChild(frag, it.node);
+    } else {
+      it.node.nodeValue = after; // nœuds suivants dans la plage : on ne garde que la fin
+    }
+  }
+  return doc.body.innerHTML;
 }
 
 export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
