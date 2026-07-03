@@ -8,6 +8,16 @@ import { logEvent } from '../lib/logger.js';
 
 const MAX_HISTORY = 20;
 
+// Visites épinglées « hors-ligne » (V3) — persistées pour survivre au rechargement.
+const PINNED_VISITES_KEY = '_chantierai_pinned_visites_v1';
+function getPinnedVisiteIds() {
+  try { const a = JSON.parse(localStorage.getItem(PINNED_VISITES_KEY) || '[]'); return Array.isArray(a) ? new Set(a) : new Set(); }
+  catch { return new Set(); }
+}
+function writePinnedVisiteIds(set) {
+  try { localStorage.setItem(PINNED_VISITES_KEY, JSON.stringify([...set])); } catch {}
+}
+
 // Shared merge helper — called both on initial load and on background polls.
 // Takes remote data and current local state, returns the merged array + updates cache.
 //
@@ -212,8 +222,23 @@ export function useProjets(onSyncStatus) {
   const cacheSaveRef = useRef(null); // debounce pour la sauvegarde localStorage rapide
   const snapshotRef = useRef(null);  // debounce pour la boîte noire IndexedDB
 
+  // ── Indicateurs de sync exposés à l'UI (V1/V2/V3) ──────────────────────────────
+  // Miroir RÉACTIF de dirtyIds (ref non observable) → permet aux badges par projet de
+  // savoir quels projets ont des modifs locales en attente.
+  const [dirtyProjectIds, setDirtyProjectIds] = useState(new Set());
+  const syncDirtyMirror = () => setDirtyProjectIds(new Set(dirtyIds.current));
+  // Mode « visite hors-ligne » (V3) : suspend VOLONTAIREMENT la sync distante (le cache local
+  // et la boîte noire continuent). Non persisté → un rechargement rétablit la sync normale
+  // (filet de sécurité : on ne reste jamais bloqué en mode visite après un reload).
+  const [syncPaused, setSyncPausedState] = useState(false);
+  const syncPausedRef = useRef(false);
+  // Visites épinglées hors-ligne (V3) — pré-hydratées et marquées comme telles.
+  const [pinnedVisites, setPinnedVisites] = useState(() => getPinnedVisiteIds());
+  const pinnedVisitesRef = useRef(pinnedVisites);
+
   useEffect(() => {
     projetsRef.current = projets;
+    syncDirtyMirror(); // garder le miroir réactif des projets « non synchronisés » à jour pour les badges
     // Sauvegarde localStorage accélérée (500 ms) dès que l'utilisateur a modifié quelque chose.
     // Réduit la fenêtre de perte de données en cas de crash navigateur (vs. 2 s pour Supabase).
     if (!userModified.current) return;
@@ -375,6 +400,10 @@ export function useProjets(onSyncStatus) {
   useEffect(() => {
     if (!hydrated) return;
     if (!userModified.current) return;
+    // Mode visite (V3) : la sync distante est volontairement suspendue. Le cache local (500 ms)
+    // et la boîte noire continuent → aucune donnée en péril, mais aucun aller-retour réseau sur
+    // une connexion de chantier instable. La sync se fera en fin de visite (setVisitMode(false)).
+    if (syncPausedRef.current) { onSyncStatus?.('paused'); return; }
     onSyncStatus?.('saving');
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
@@ -383,9 +412,11 @@ export function useProjets(onSyncStatus) {
       savingRef.current = true;
       const ids = new Set(dirtyIds.current);
       dirtyIds.current.clear();
+      syncDirtyMirror();
       const ok = await saveData(projets, onSyncStatus, ids);
       if (!ok) {
         dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
+        syncDirtyMirror();
         // Auto-retry after 15s — covers brief mobile network drops without user action
         clearTimeout(retryRef.current);
         retryRef.current = setTimeout(async () => {
@@ -396,11 +427,13 @@ export function useProjets(onSyncStatus) {
           const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds);
           if (!retryOk) dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
           setPersistedDirtyIds(dirtyIds.current); // refléter l'état après (re)tentative
+          syncDirtyMirror();
           savingRef.current = false;
         }, 15000);
       }
       // Persister l'état réel des dirtyIds après la sauvegarde (vidé si succès, restauré sinon).
       setPersistedDirtyIds(dirtyIds.current);
+      syncDirtyMirror();
       savingRef.current = false;
     }, 2000);
     return () => clearTimeout(debounceRef.current);
@@ -410,6 +443,7 @@ export function useProjets(onSyncStatus) {
   // Silently merges remote changes when there are no pending local changes.
   const pollRemote = useCallback(async () => {
     if (savingRef.current || dirtyIds.current.size > 0) return;
+    if (syncPausedRef.current) return; // mode visite : pas de merge distant pendant la visite
     try {
       const previousRemoteIds = getPersistedRemoteIds();
       const remotePs = await loadData();
@@ -445,6 +479,10 @@ export function useProjets(onSyncStatus) {
       // Boîte noire immédiate avant fermeture (filet ultime indépendant de la sync réseau).
       clearTimeout(snapshotRef.current);
       saveSnapshot(projetsRef.current);
+      // Mode visite (V3) : on NE synchronise PAS vers le remote à la fermeture — la boîte noire
+      // et le cache local ont déjà sauvegardé. La sync se fera à la fin de visite ou, au pire, au
+      // prochain démarrage (le mode visite ne survit pas au reload → sync normale reprend).
+      if (syncPausedRef.current) return;
       // Si une sauvegarde tourne déjà, on la laisse finir : ne PAS annuler le debounce ni vider
       // dirtyIds (sinon on ne refléterait pas l'état réel → la boîte « non sauvegardé » se
       // rouvrirait à tort après un reload annulé, cf. bug signalé).
@@ -918,5 +956,45 @@ export function useProjets(onSyncStatus) {
 
   const dismissBackupRecovery = useCallback(() => setBackupRecovery(null), []);
 
-  return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery };
+  // ── Mode visite hors-ligne (V3) ────────────────────────────────────────────────
+  // Active/désactive la suspension VOLONTAIRE de la sync distante. À la désactivation
+  // (fin de visite), on force une sauvegarde immédiate des modifs accumulées.
+  const setVisitMode = useCallback((on) => {
+    syncPausedRef.current = on;
+    setSyncPausedState(on);
+    if (!on && dirtyIds.current.size) {
+      const ids = new Set(dirtyIds.current);
+      dirtyIds.current.clear();
+      setPersistedDirtyIds(dirtyIds.current);
+      syncDirtyMirror();
+      onSyncStatus?.('saving');
+      Promise.resolve(saveData(projetsRef.current, onSyncStatus, ids)).then(ok => {
+        if (!ok) {
+          dirtyIds.current = new Set([...ids, ...dirtyIds.current]);
+          setPersistedDirtyIds(dirtyIds.current);
+          syncDirtyMirror();
+        }
+      });
+    }
+  }, [onSyncStatus]);
+
+  // Épingle une visite « hors-ligne » : pré-hydrate ses photos + les plans du projet, puis la
+  // marque comme prête. But : garantir que tout est en cache local AVANT une visite sans réseau.
+  const pinVisite = useCallback(async (projectId, visiteId) => {
+    const next = new Set(pinnedVisitesRef.current); next.add(visiteId);
+    pinnedVisitesRef.current = next; setPinnedVisites(next); writePinnedVisiteIds(next);
+    try {
+      await hydratePhotos(projectId, visiteId);
+      const lm = await hydratePlanLibrary(projectId);
+      await hydratePlans(projectId, lm);
+    } catch (e) { console.warn('pinVisite hydratation:', e); }
+  }, []);
+
+  const unpinVisite = useCallback((visiteId) => {
+    const next = new Set(pinnedVisitesRef.current); next.delete(visiteId);
+    pinnedVisitesRef.current = next; setPinnedVisites(next); writePinnedVisiteIds(next);
+  }, []);
+
+  return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite };
 }

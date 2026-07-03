@@ -2,6 +2,19 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA, SUIVI, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
+import SyncBadge from '../ui/SyncBadge.jsx';
+
+// État de sync d'une visite pour son badge (V2) :
+//  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
+//  - notloaded : contient des observations dont les photos ne sont pas encore en cache local
+//                (elles se téléchargent à l'ouverture — « ne charger que les visites qu'on ouvre »)
+//  - synced    : rien à signaler
+function visiteSyncState(v, pinned) {
+  if (pinned) return 'pinned';
+  const items = (v.localisations || []).flatMap(l => l.items || []);
+  if (items.length > 0 && !items.every(it => it._photosHydrated)) return 'notloaded';
+  return 'synced';
+}
 
 function stripHtml(html) {
   return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -11,8 +24,18 @@ const VSUMMARY_KEY = '_aivsummaries_v1';
 const loadVSummaryCache = () => { try { return JSON.parse(localStorage.getItem(VSUMMARY_KEY) || '{}'); } catch { return {}; } };
 const saveVSummaryCache = (o) => { try { localStorage.setItem(VSUMMARY_KEY, JSON.stringify(o)); } catch {}; };
 
-export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
+export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false,
+  dirty = false, stale = false, visitMode = false, onToggleVisitMode = null, pinnedVisites = new Set(), onPinVisite = null, onUnpinVisite = null }) {
   const visites = projet.visites || [];
+  const [pinningId, setPinningId] = useState(null); // visite en cours de pré-téléchargement
+
+  const togglePin = async (e, visiteId) => {
+    e.stopPropagation();
+    if (pinnedVisites.has(visiteId)) { onUnpinVisite?.(visiteId); return; }
+    setPinningId(visiteId);
+    try { await onPinVisite?.(projet.id, visiteId); }
+    finally { setPinningId(null); }
+  };
   const [editingId, setEditingId] = useState(null); // visite en mode édition
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
@@ -250,9 +273,21 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
               <span style={{ fontSize:10, fontWeight:600 }}>Actu.</span>
             </button>
           )}
+          {onToggleVisitMode && (
+            <button onClick={() => onToggleVisitMode(!visitMode)}
+              title={visitMode ? 'Sync suspendue pendant la visite — appuyez pour synchroniser et reprendre' : 'Suspendre la sync réseau pendant la visite (travail 100% hors-ligne, sync en fin de visite)'}
+              style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 9px', borderRadius:8, flexShrink:0, cursor:'pointer',
+                background: visitMode ? 'rgba(4,120,87,0.25)' : 'rgba(255,255,255,0.08)',
+                border: `1px solid ${visitMode ? 'rgba(16,185,129,0.6)' : 'rgba(255,255,255,0.15)'}`,
+                color: visitMode ? '#6EE7B7' : 'rgba(255,255,255,0.65)' }}>
+              <span style={{ fontSize:12, lineHeight:1 }}>{visitMode ? '📴' : '📶'}</span>
+              <span style={{ fontSize:10, fontWeight:700, whiteSpace:'nowrap' }}>{visitMode ? 'Visite' : 'Visite'}</span>
+            </button>
+          )}
           {(() => {
-            const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
-            const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur' : 'Sauvegardé';
+            // Mode visite prioritaire ; sinon état réel (erreur/save/dirty non sync/à jour dispo).
+            const dotColor = visitMode ? '#6EE7B7' : syncStatus === 'ok' ? (dirty ? '#FCD34D' : stale ? '#93C5FD' : '#4ADE80') : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
+            const dotLabel = visitMode ? 'Hors-ligne' : syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur' : dirty ? 'Non sync.' : stale ? 'MàJ dispo' : 'Sauvegardé';
             return (
               <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8, flexShrink:0,
                 background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : syncStatus==='saving' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)',
@@ -304,6 +339,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             const isOver     = overIdx === i && dragIdx !== i;
             const isEditing  = editingId === v.id;
             const visiteNum  = i + 1;
+            const pinned     = pinnedVisites.has(v.id);
+            const vstate     = visiteSyncState(v, pinned);
 
             return (
               <div key={v.id}
@@ -347,8 +384,13 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   <div onClick={() => onSelectVisite(v.id)}
                     style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap:10, padding:'16px 16px', cursor:'pointer', minWidth:0 }}>
 
-                    {/* Titre */}
-                    <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3 }}>{v.label || `Visite ${visiteNum}`}</p>
+                    {/* Titre + badge de sync visite (V2) */}
+                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                      <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3, flex:1, minWidth:0 }}>{v.label || `Visite ${visiteNum}`}</p>
+                      {pinningId === v.id
+                        ? <SyncBadge state="syncing" label="Téléchargement…" />
+                        : <SyncBadge state={vstate} />}
+                    </div>
 
                     {/* Meta : date + ingénieur sur une ligne */}
                     <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
@@ -469,6 +511,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     onMouseLeave={e => { if (!isEditing) { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.gray; e.currentTarget.style.borderColor = DA.border; } }}>
                     <Ic n="pen" s={15}/>
                   </button>
+                  {onPinVisite && (
+                    <button onClick={e => togglePin(e, v.id)}
+                      disabled={pinningId === v.id}
+                      title={pinned ? 'Retirer du hors-ligne' : 'Préparer cette visite pour le hors-ligne (télécharger photos + plans)'}
+                      style={{ width:34, height:34, padding:0, background: pinned ? '#ECFDF5' : DA.grayXL, border:`1px solid ${pinned ? '#A7F3D0' : DA.border}`, color: pinned ? '#047857' : DA.grayL, cursor: pinningId === v.id ? 'default' : 'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, lineHeight:1 }}>
+                      {pinningId === v.id ? <Ic n="spn" s={14}/> : '📌'}
+                    </button>
+                  )}
                   <button onClick={e => duplicateVisite(e, v.id)}
                     title="Dupliquer cette visite"
                     style={{ width:34, height:34, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
