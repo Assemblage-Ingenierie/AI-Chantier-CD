@@ -1567,9 +1567,9 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
         const u = i.urgence || 'basse'; urg[u] = (urg[u] || 0) + 1;
         const lab = u === 'haute' ? 'URGENT' : u === 'moyenne' ? 'À planifier' : 'Mineur';
         const c = stripMarkup(i.commentaire || '').replace(/\s+/g, ' ').trim().slice(0, 600);
-        return `  • [${lab}] ${i.titre || ''}${c ? ` — ${c}` : ''}`;
+        return `  • [${lab}] ${i.titre || ''}${c ? ` : ${c}` : ''}`;
       }).join('\n');
-      return `Zone « ${loc.nom || '—'} » :\n${lines}`;
+      return `Zone « ${loc.nom || '(sans nom)'} » :\n${lines}`;
     }).filter(Boolean).join('\n\n');
     const count = urg.haute + urg.moyenne + urg.basse;
     return { meta, zones, urg, count };
@@ -1603,7 +1603,8 @@ Règles ABSOLUES :
 - SOIS BREF : quelques phrases suffisent. On résume, on ne redéveloppe pas.
 - NE répète PAS la présentation/description du bâtiment ou du projet (localisation, « à cheval sur deux bâtiments », typologie…) ni le nom/code de l'affaire : ce n'est pas une conclusion, ne raconte pas la vie.
 - Synthétise l'essentiel : l'enjeu/le constat principal, puis la recommandation/les suites à donner.
-- Orthographe et grammaire parfaites, ton professionnel, sans tiret long (—).`;
+- Orthographe et grammaire parfaites, ton professionnel.
+- INTERDICTION DE STYLE : n'utilise JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – ») comme ponctuation, c'est une marque d'écriture IA ; emploie une virgule, un deux-points, une parenthèse ou un point.`;
 
   // SUPER bouton unique : UN SEUL appel IA renvoie la conclusion ET les points d'amélioration
   // (séparés par ===POINTS===). On NE fait PAS deux appels en parallèle : le throttle client
@@ -1785,7 +1786,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
     setLoadingAI(row.itemId); setAiErr(null);
     try {
       const txt = row.commentaire.replace(/<[^>]+>/g, ' ').replace(/\*{1,3}/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
-      const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"• désordre 1\\n• désordre 2 (un bullet par problème constaté, 2-3 max)","solution":"• solution 1\\n• solution 2 (un bullet par réparation préconisée, 2-3 max, ou chaîne vide si aucune solution évoquée)"}. En français, factuel, sans ponctuation finale, sans markdown.`;
+      const prompt = `Observation de visite de chantier (zone "${row.locNom}") :\n${txt}\n\nRéponds UNIQUEMENT en JSON valide, sans texte autour : {"desordre":"• désordre 1\\n• désordre 2 (un bullet par problème constaté, 2-3 max)","solution":"• solution 1\\n• solution 2 (un bullet par réparation préconisée, 2-3 max, ou chaîne vide si aucune solution évoquée)"}. En français, factuel, sans ponctuation finale, sans markdown. N'utilise jamais de tiret cadratin ni demi-cadratin (« — » ou « – »).`;
       const d = await callAIProxy({ feature: 'recap_row', _waitOk: opts.waitOk, model: 'claude-haiku-4-5-20251001', max_tokens: 200, messages: [{ role: 'user', content: prompt }] });
       const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
