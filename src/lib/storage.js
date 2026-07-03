@@ -2,6 +2,7 @@ import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
+import { logEvent, logWarn } from './logger.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -29,6 +30,11 @@ let _knownItemIdsByProject  = new Map(); // projectId → Set<itemId>
 // Une photo absente de cet ensemble (ajoutée en parallèle par un AUTRE appareil) n'est jamais
 // supprimée → corrige la perte de lignes photos en édition concurrente PC + téléphone.
 let _knownPhotoIdsByItem    = new Map();
+// projectId → updated_at DISTANT connu au dernier chargement/écriture réussie.
+// Sert à détecter dans saveRemote qu'un AUTRE appareil a écrit depuis notre chargement
+// (remote.updated_at avancé au-delà de cette valeur) avant qu'on n'écrase — pour LOGGER
+// le conflit au lieu de l'écraser silencieusement (last-write-wins tracé, cf. audit point 1).
+let _loadedUpdatedAtByProject = new Map();
 
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
@@ -277,6 +283,8 @@ async function loadRemote() {
     // les locs/items/visites ajoutés par un autre utilisateur après notre chargement.
     _knownVisitIdsByProject.set(c.id, new Set(visites.map(v => v.id)));
     _knownLocIdsByProject.set(c.id, new Set(allLocs.map(l => l.id)));
+    // updated_at distant à ce chargement — référence pour détecter un conflit d'écriture concurrent.
+    if (c.updated_at) _loadedUpdatedAtByProject.set(c.id, c.updated_at);
     const _allKnownItemIds = new Set();
     allLocs.forEach(l => { (itemsByLoc[l.id] ?? []).forEach(it => _allKnownItemIds.add(it.id)); });
     _knownItemIdsByProject.set(c.id, _allKnownItemIds);
@@ -849,6 +857,9 @@ async function saveRemote(ps, dirtyIds = null) {
       // Avant, un `return errors` ici interrompait toute la sauvegarde et coinçait les éditions.
       // Les suppressions explicites utilisateur passent de toute façon par deleteRemoteProjet().
       console.error('saveRemote: skipping suspicious mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — upserts continue');
+      // Remontée serveur : cette garde était totalement silencieuse. Si elle se déclenche chez
+      // un utilisateur (corruption cache), on veut le savoir sans attendre un signalement.
+      logWarn('saveRemote.massDeleteBlocked', { attempted: toDelete.length, cap: safeCap, knownRemote: _lastRemoteIds.size });
     } else if (toDelete.length > 0) {
       const { error } = await sb.from('aichantier_chantiers').delete().in('id', toDelete);
       if (error) errors.push(error);
@@ -920,7 +931,7 @@ async function saveRemote(ps, dirtyIds = null) {
     // (évite le bug précédent : "merger ici ramenait les visites supprimées")
     let mergedVisitesMetadata = visitesMetadata;
     try {
-      const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites').eq('id', p.id).single();
+      const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites,updated_at').eq('id', p.id).single();
       if (dbMeta?.visites?.length) {
         const localVisitIdSet = new Set(visitesMetadata.map(v => v.id));
         const knownVisitIds   = _knownVisitIdsByProject.get(p.id);
@@ -928,6 +939,21 @@ async function saveRemote(ps, dirtyIds = null) {
           !localVisitIdSet.has(v.id) && knownVisitIds != null && !knownVisitIds.has(v.id)
         );
         if (dbOnlyVisits.length > 0) mergedVisitesMetadata = [...visitesMetadata, ...dbOnlyVisits];
+      }
+      // ── Détection de conflit de version (audit point 1) ──────────────────────────
+      // Si le remote a AVANCÉ depuis notre dernier chargement/écriture, un AUTRE appareil a
+      // écrit entre-temps. On ne PEUT PAS résoudre automatiquement sans risque (horloges
+      // désynchronisées entre appareils → cf. commentaire statut) et on ne veut PAS perdre
+      // l'édition active de l'utilisateur. On LOGGUE donc le conflit (last-write-wins tracé)
+      // au lieu de l'écraser en silence — c'est la donnée qui manquait pour diagnostiquer
+      // les pertes signalées. La restauration reste possible via la boîte noire.
+      const loadedAt = _loadedUpdatedAtByProject.get(p.id);
+      if (loadedAt && dbMeta?.updated_at && dbMeta.updated_at > loadedAt) {
+        logEvent('saveRemote.conflict', {
+          projet: p.id, nom: p.nom,
+          loadedAt, remoteAt: dbMeta.updated_at, localAt: p.updatedAt ?? null,
+          note: 'remote avancé depuis le chargement — écrasement LWW tracé',
+        });
       }
     } catch {}
     // Mettre à jour les IDs de visites connus après l'écriture (pour pouvoir supprimer une visite créée en session)
@@ -952,6 +978,9 @@ async function saveRemote(ps, dirtyIds = null) {
       }
       errors.push(chantierRes.error); continue;
     }
+    // Notre écriture fait désormais foi : la référence de version devient `now` pour ne pas
+    // détecter un faux conflit à la prochaine sauvegarde de CE même appareil.
+    _loadedUpdatedAtByProject.set(p.id, now);
 
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
@@ -1318,6 +1347,7 @@ export function clearLocalData() {
   _knownVisitIdsByProject = new Map();
   _knownLocIdsByProject   = new Map();
   _knownItemIdsByProject  = new Map();
+  _loadedUpdatedAtByProject = new Map();
 }
 
 // Récupère uniquement id + updated_at depuis Supabase — poll léger pour détecter les MàJ distantes

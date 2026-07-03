@@ -4,6 +4,7 @@ import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
+import { logEvent } from '../lib/logger.js';
 
 const MAX_HISTORY = 20;
 
@@ -255,6 +256,33 @@ export function useProjets(onSyncStatus) {
         if (userModified.current) return;
 
         const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
+
+        // ── Péremption des dirtyIds périmés (audit point 1, scénario 2) ──────────────
+        // Un appareil resté hors-ligne longtemps garde des dirtyIds persistés SANS limite d'âge.
+        // Au retour, le chemin « dirty » de mergeWithLocal fait gagner ce local périmé et écrase
+        // en base des données plus récentes écrites ailleurs entre-temps. On neutralise ce cas :
+        // pour un projet dirty dont le remote est STRICTEMENT plus récent que notre édition locale,
+        //   - si notre édition locale est très ancienne (> 7 j) → cache périmé : on laisse gagner le
+        //     remote (retire le dirty AVANT le merge). La boîte noire garde une copie restaurable.
+        //   - sinon (conflit récent) → on GARDE le local (édition active), mais on TRACE le conflit.
+        const STALE_DIRTY_MS = 7 * 24 * 3600 * 1000;
+        const remoteById = new Map(filteredRemote.map(r => [r.id, r]));
+        for (const id of [...dirtyIds.current]) {
+          const lp = projetsRef.current.find(p => p.id === id);
+          const rp = remoteById.get(id);
+          if (!lp || !rp || !rp.updatedAt || !lp.updatedAt) continue;
+          if (rp.updatedAt > lp.updatedAt) {
+            const age = Date.now() - Date.parse(lp.updatedAt);
+            if (age > STALE_DIRTY_MS) {
+              dirtyIds.current.delete(id);
+              setPersistedDirtyIds(dirtyIds.current);
+              logEvent('load.staleDirtyDropped', { projet: id, nom: lp.nom, localAt: lp.updatedAt, remoteAt: rp.updatedAt, ageDays: Math.round(age / 86400000) });
+            } else {
+              logEvent('load.versionConflict', { projet: id, nom: lp.nom, localAt: lp.updatedAt, remoteAt: rp.updatedAt });
+            }
+          }
+        }
+
         const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current);
         // Mark locally-newer and unsynced projects dirty so saves are targeted.
         // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
