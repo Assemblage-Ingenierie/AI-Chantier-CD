@@ -232,7 +232,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         value={loc.nom}
                         onSave={nom => renameLoc(loc.id, nom)}
                         style={{ fontSize:14,fontWeight:700,color:DA.black }}
-                        inputStyle={{ fontSize:14,fontWeight:700 }}
+                        inputStyle={{ fontSize:16,fontWeight:700 }}
                       />
                     </div>
                     <span style={{ fontSize:11,color:DA.grayL,flexShrink:0 }}>

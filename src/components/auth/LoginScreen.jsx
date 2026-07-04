@@ -68,7 +68,7 @@ export default function LoginScreen({ onLogin }) {
   const input = {
     width: '100%', padding: '10px 12px', borderRadius: 8,
     border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)',
-    color: 'white', fontSize: 14, boxSizing: 'border-box', outline: 'none',
+    color: 'white', fontSize: 16, boxSizing: 'border-box', outline: 'none',
   };
   const btn = (bg, color = 'white') => ({
     width: '100%', padding: 11, borderRadius: 8, border: 'none',

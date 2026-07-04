@@ -127,7 +127,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
           <div key={k} style={{ marginBottom:12 }}>
             <label style={{ display:'block', fontSize:11, fontWeight:700, color:DA.gray, marginBottom:5, textTransform:'uppercase', letterSpacing:0.5 }}>{l}</label>
             <input value={f[k]} onChange={e => setF(x => ({ ...x, [k]: e.target.value }))} placeholder={ph}
-              style={{ width:'100%', border:`1px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', fontSize:13, outline:'none', boxSizing:'border-box' }}
+              style={{ width:'100%', border:`1px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', fontSize:16, outline:'none', boxSizing:'border-box' }}
               onFocus={e => e.target.style.borderColor = DA.red}
               onBlur={e  => e.target.style.borderColor = DA.border}/>
           </div>

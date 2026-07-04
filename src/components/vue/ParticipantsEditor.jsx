@@ -90,7 +90,7 @@ function InlineEditForm({ contact, onSave, onCancel, saving }) {
         <input key={k} value={form[k]}
           onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
           placeholder={lbl}
-          style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6,
+          style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6,
             padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}/>
       ))}
       <div style={{ display:'flex', gap:6, marginTop:2 }}>
@@ -346,7 +346,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
             <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Rechercher…"
-              style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
+              style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
           </div>
           <div style={{ maxHeight:220, overflowY:'auto' }}>
             {loadingC
@@ -367,7 +367,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
               <div style={{ padding:'6px 8px', borderBottom:`1px solid ${DA.border}` }}>
                 <input value={extSearch} onChange={e => setExtSearch(e.target.value)}
                   placeholder="Rechercher dans les contacts…"
-                  style={{ width:'100%', fontSize:11, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
+                  style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
               </div>
               <div style={{ maxHeight:180, overflowY:'auto' }}>
                 {loadingC
@@ -409,7 +409,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
             value={quickSearch}
             onChange={e => setQuickSearch(e.target.value)}
             placeholder="Rechercher un intervenant…"
-            style={{ flex:1, border:'none', outline:'none', fontSize:12, fontFamily:'inherit', background:'transparent', color:DA.black }}
+            style={{ flex:1, border:'none', outline:'none', fontSize:16, fontFamily:'inherit', background:'transparent', color:DA.black }}
           />
           {quickSearch && (
             <button onClick={() => setQuickSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, display:'flex', alignItems:'center', padding:0 }}>

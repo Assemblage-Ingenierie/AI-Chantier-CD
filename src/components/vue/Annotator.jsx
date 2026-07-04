@@ -1804,7 +1804,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column' }}>
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column',
+      paddingTop:'env(safe-area-inset-top, 0px)',paddingBottom:'env(safe-area-inset-bottom, 0px)',
+      paddingLeft:'env(safe-area-inset-left, 0px)',paddingRight:'env(safe-area-inset-right, 0px)' }}>
 
       {/* ── Navigation photo précédente / suivante (flèches cliquables + touches ←/→) ── */}
       {onPrev && (
@@ -1890,14 +1892,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             <button onClick={onClose}
               style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:44 }}
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,minWidth:44,minHeight:44 }}
               title="Fermer">
               <Ic n="x" s={22}/>
               {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>}
             </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
               style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:44 }}
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,minWidth:44,minHeight:44 }}
               title="Annuler dernière action">
               <Ic n="und" s={22}/>
               {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>}

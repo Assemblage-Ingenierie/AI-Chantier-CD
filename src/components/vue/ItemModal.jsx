@@ -732,7 +732,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé</label>
             <input value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
               placeholder="Ex: Fissures, Humidité…"
-              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box' }}
+              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
           </div>
 
@@ -807,7 +807,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 onAnnotateImage={handleAnnotateCommentImage}
                 placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves… (Ctrl+V pour coller une capture)"
                 textAlign={form.commentaireAlign || 'left'}
-                style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:64, fontSize:15, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
+                style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:64, fontSize:16, lineHeight:1.7, minHeight: isDesktop ? 260 : 90, boxSizing:'border-box', fontFamily:'inherit' }}
                 onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
                 onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
               />
