@@ -58,7 +58,7 @@ export default function ProjectCard({ p, arc, stale = false, onSelect, onUpd, on
       <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
-            <p style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
+            <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
             {stale && (
               <span style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:3, fontSize:10, fontWeight:800, color:'#1D4ED8', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:20, padding:'2px 8px', whiteSpace:'nowrap' }}>
                 <Ic n="rld" s={9}/> Mis à jour
