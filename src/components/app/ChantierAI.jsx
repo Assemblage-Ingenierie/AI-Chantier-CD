@@ -9,6 +9,7 @@ import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import AccountModal from '../auth/AccountModal.jsx';
 import SettingsModal from '../ui/SettingsModal.jsx';
+import ContactsManagerModal from '../vue/ContactsManagerModal.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
@@ -24,6 +25,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [showAdmin, setShowAdmin] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showContacts, setShowContacts] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [showNew, setShowNew] = useState(false);
@@ -359,6 +361,12 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
                   style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
                   <Ic n="sld" s={16}/> Paramètres
                 </button>
+                {!isMobile && (
+                  <button onClick={() => { setShowContacts(true); setHeaderMenuOpen(false); }}
+                    style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                    <Ic n="usr" s={16}/> Carnet d'intervenants
+                  </button>
+                )}
                 {profile?.role === 'admin' && (
                   <button onClick={() => { setShowAdmin(true); setPendingCount(0); setHeaderMenuOpen(false); }}
                     style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
@@ -524,6 +532,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
       {showAdmin && <AdminPanel currentUserId={profile?.id} onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
       {showAccount && <AccountModal profile={profile} session={session} onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)}/>}
+      {showContacts && <ContactsManagerModal projets={projets} onClose={() => setShowContacts(false)}/>}
 
       {undoToast && (
         <div style={{ position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:'rgba(30,30,30,0.92)',color:'#fff',padding:'10px 20px',borderRadius:10,fontSize:13,fontWeight:600,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',zIndex:9999,pointerEvents:'none',display:'flex',alignItems:'center',gap:8 }}>
