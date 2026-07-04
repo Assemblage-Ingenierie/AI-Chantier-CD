@@ -37,7 +37,6 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     finally { setPinningId(null); }
   };
   const [editingId, setEditingId] = useState(null); // visite en mode édition
-  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
 
@@ -296,21 +295,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             </button>
           )}
           {onRefresh && (
-            <div style={{ position:'relative', flexShrink:0 }}>
-              <button onClick={() => setHeaderMenuOpen(v => !v)} aria-label="Plus d'options" title="Plus d'options"
-                style={{ width:44, height:44, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <Ic n="dts" s={18}/>
-              </button>
-              {headerMenuOpen && <div onClick={() => setHeaderMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:69 }}/>}
-              {headerMenuOpen && (
-                <div style={{ position:'absolute', top:'100%', right:0, marginTop:2, background:'white', borderRadius:10, boxShadow:'0 8px 28px rgba(0,0,0,0.3)', zIndex:70, minWidth:180, overflow:'hidden' }}>
-                  <button onClick={() => { onRefresh(); setHeaderMenuOpen(false); }} disabled={refreshing}
-                    style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', fontSize:13, color:DA.gray, background:'none', border:'none', cursor:refreshing?'default':'pointer', textAlign:'left' }}>
-                    {refreshing ? <Ic n="spn" s={15}/> : <Ic n="rld" s={15}/>} Actualiser
-                  </button>
-                </div>
-              )}
-            </div>
+            <button onClick={onRefresh} disabled={refreshing} aria-label="Actualiser" title="Actualiser depuis le serveur"
+              style={{ width:44, height:44, flexShrink:0, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:refreshing?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              {refreshing ? <Ic n="spn" s={18}/> : <Ic n="rld" s={18}/>}
+            </button>
           )}
         </div>
       </div>

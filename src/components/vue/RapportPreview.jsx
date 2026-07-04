@@ -2320,22 +2320,13 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       )}
 
       {/* ── Barre de navigation pages ── */}
-      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', alignItems:'center', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)', position:'relative' }}>
-        {/* Gauche : Paramètres */}
-        <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
-          {onTogglePanel && (
-            <button
-              onClick={onTogglePanel}
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
-                background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
-                color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)' }}>
-              <Ic n="sld" s={13}/>
-              <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
-            </button>
-          )}
-        </div>
-        {/* Centre : navigation pages — centré sur la largeur totale du viewport */}
-        <div style={{ position:'absolute', left:`calc(50vw - ${panelOpen ? panelW : 0}px)`, transform:'translateX(-50%)', display:'flex', alignItems:'center', gap:6 }}>
+      {/* Sur écran étroit, le pager (absolu, centré 50vw) chevauchait les boutons Photos/PDF
+          → il passe sur sa PROPRE ligne en dessous. Une seule ligne conservée sur desktop. */}
+      {(() => { const narrow = typeof window !== 'undefined' && window.innerWidth < 640;
+      const pager = (
+        <div style={ narrow
+          ? { display:'flex', alignItems:'center', justifyContent:'center', gap:6 }
+          : { position:'absolute', left:`calc(50vw - ${panelOpen ? panelW : 0}px)`, transform:'translateX(-50%)', display:'flex', alignItems:'center', gap:6 }}>
           <button
             onClick={() => scrollToPage(currentPage - 1)}
             disabled={currentPage <= 1}
@@ -2352,26 +2343,49 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             ›
           </button>
         </div>
-        {/* Droite : export — Photos d'abord, PDF ensuite */}
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
-          {onExportPhotos && totalPhotos > 0 && (
-            <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
-                background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
-              {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
-              <span>Photos ({totalPhotos})</span>
-            </button>
-          )}
-          {onExportPdf && (
-            <button onClick={onExportPdf} data-print="hide"
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
-                background: DA.red, color:'white', fontSize:11, fontWeight:700 }}>
-              <Ic n="fil" s={12}/>
-              <span>PDF</span>
-            </button>
-          )}
+      );
+      return (
+      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', flexDirection:'column', gap:6, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display:'flex', alignItems:'center', position:'relative' }}>
+          {/* Gauche : Paramètres */}
+          <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
+            {onTogglePanel && (
+              <button
+                onClick={onTogglePanel}
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                  background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
+                  color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)' }}>
+                <Ic n="sld" s={13}/>
+                <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
+              </button>
+            )}
+          </div>
+          {/* Centre : navigation pages — sur la même ligne uniquement si l'écran est assez large */}
+          {!narrow && pager}
+          {/* Droite : export — Photos d'abord, PDF ensuite */}
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+            {onExportPhotos && totalPhotos > 0 && (
+              <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
+                  background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
+                {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
+                <span>Photos ({totalPhotos})</span>
+              </button>
+            )}
+            {onExportPdf && (
+              <button onClick={onExportPdf} data-print="hide"
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                  background: DA.red, color:'white', fontSize:11, fontWeight:700 }}>
+                <Ic n="fil" s={12}/>
+                <span>PDF</span>
+              </button>
+            )}
+          </div>
         </div>
+        {/* Écran étroit : pager sur sa propre ligne, centré */}
+        {narrow && pager}
       </div>
+      ); })()}
 
       {/* ── Zone défilante ── */}
       <div ref={scrollRef}

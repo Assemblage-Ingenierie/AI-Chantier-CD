@@ -1049,9 +1049,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     : `${safeName} - CR.pdf`;
 
   if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-    // Mobile : ouvrir dans le viewer PDF natif (iOS/Android)
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    // Mobile : feuille « Rapport prêt » + partage natif. L'ancien window.open(blob)
+    // remplaçait l'app par le PDF en PWA installée (standalone = pas de barre de
+    // navigation) → aucun moyen de revenir, il fallait tuer l'app.
+    showPdfReadySheet(blob, url, filename);
   } else {
     const a = document.createElement('a');
     a.href = url;
@@ -1061,4 +1062,54 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
+}
+
+// Feuille « Rapport prêt » (mobile). Le partage natif (navigator.share) affiche la feuille
+// iOS/Android PAR-DESSUS l'app — on n'en sort jamais, contrairement à window.open(blob).
+// Passer par un bouton garantit aussi le "user gesture" exigé par iOS : un share appelé
+// directement après les longues secondes de génération serait rejeté (NotAllowedError).
+function showPdfReadySheet(blob, url, filename) {
+  const id = '__pdf_ready__';
+  document.getElementById(id)?.remove();
+  const wrap = document.createElement('div');
+  wrap.id = id;
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:flex-end;justify-content:center;';
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'background:#fff;border-radius:16px 16px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom,0px));width:100%;max-width:480px;display:flex;flex-direction:column;gap:10px;font-family:inherit;';
+  const title = document.createElement('p');
+  title.style.cssText = 'margin:0;font-size:15px;font-weight:800;color:#222;';
+  title.textContent = 'Rapport PDF prêt';
+  const sub = document.createElement('p');
+  sub.style.cssText = 'margin:0 0 6px;font-size:12px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+  sub.textContent = filename;
+  const shareBtn = document.createElement('button');
+  shareBtn.style.cssText = 'width:100%;padding:14px;border:none;border-radius:12px;background:#E30513;color:#fff;font-size:14px;font-weight:800;cursor:pointer;';
+  shareBtn.textContent = 'Enregistrer / Partager';
+  const closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'width:100%;padding:12px;border:1px solid #E5E5E5;border-radius:12px;background:#fff;color:#555;font-size:13px;font-weight:600;cursor:pointer;';
+  closeBtn.textContent = 'Fermer';
+  const cleanup = () => { wrap.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); };
+  shareBtn.onclick = async () => {
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        cleanup();
+        return;
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') return; // partage annulé — garder la feuille pour réessayer
+    }
+    // Repli (share fichiers indisponible) : ancre de téléchargement — Android télécharge,
+    // iOS Safari ouvre un onglet AVEC barre de navigation (retour possible).
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener'; a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    cleanup();
+  };
+  closeBtn.onclick = cleanup;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) cleanup(); });
+  sheet.append(title, sub, shareBtn, closeBtn);
+  wrap.append(sheet);
+  document.body.appendChild(wrap);
 }
