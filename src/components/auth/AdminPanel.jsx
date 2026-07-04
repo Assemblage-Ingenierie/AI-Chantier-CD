@@ -2,11 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
 import { recoverPhotosFromStorage, cleanupDuplicatePhotos } from '../../lib/storage.js';
 import { DA } from '../../lib/constants.js';
+import { Ic } from '../ui/Icons.jsx';
 
-export default function AdminPanel({ onClose, onPendingCountChange }) {
+// Nom affichable : first/last si présents, sinon ancien full_name (compat), sinon email.
+function fullName(p) {
+  const fl = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+  return fl || p.full_name || '';
+}
+
+export default function AdminPanel({ onClose, onPendingCountChange, currentUserId }) {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [savingId, setSavingId] = useState(null);
+  const [showTools, setShowTools] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [recoverResult, setRecoverResult] = useState(null);
   const [cleaning, setCleaning] = useState(false);
@@ -25,141 +34,189 @@ export default function AdminPanel({ onClose, onPendingCountChange }) {
   };
 
   useEffect(() => { fetchProfiles(); }, []);
-
-  // Rafraîchissement automatique toutes les 20s (détecte les nouvelles connexions)
-  useEffect(() => {
-    const t = setInterval(fetchProfiles, 20000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { const t = setInterval(fetchProfiles, 20000); return () => clearInterval(t); }, []);
 
   const setApproval = async (id, approved) => {
+    setSavingId(id);
     const sb = await getSupabase();
     const { error } = await sb.from('aichantier_profiles').update({ is_approved: approved }).eq('id', id);
-    if (error) setErr(error.message);
-    else fetchProfiles();
-  };
-
-  const handleRecover = async () => {
-    setRecovering(true); setRecoverResult(null);
-    const result = await recoverPhotosFromStorage();
-    setRecoverResult(result);
-    setRecovering(false);
-  };
-
-  const handleCleanup = async () => {
-    setCleaning(true); setCleanResult(null);
-    const deleted = await cleanupDuplicatePhotos();
-    setCleanResult(deleted);
-    setCleaning(false);
-  };
-
-  const deleteProfile = async (id, email) => {
-    if (!window.confirm(`Supprimer définitivement "${email}" ?`)) return;
-    const sb = await getSupabase();
-    const { error } = await sb.from('aichantier_profiles').delete().eq('id', id);
-    if (error) setErr(error.message);
-    else fetchProfiles();
+    if (error) setErr(error.message); else await fetchProfiles();
+    setSavingId(null);
   };
 
   const setRole = async (id, role) => {
+    setSavingId(id);
     const sb = await getSupabase();
     const { error } = await sb.from('aichantier_profiles').update({ role }).eq('id', id);
-    if (error) setErr(error.message);
-    else fetchProfiles();
+    if (error) setErr(error.message); else await fetchProfiles();
+    setSavingId(null);
   };
 
-  const pending = profiles.filter(p => !p.is_approved);
-  const approved = profiles.filter(p => p.is_approved);
+  const deleteProfile = async (id, email) => {
+    if (!window.confirm(`Supprimer définitivement le compte « ${email} » ? Cette action est irréversible.`)) return;
+    setSavingId(id);
+    const sb = await getSupabase();
+    const { error } = await sb.from('aichantier_profiles').delete().eq('id', id);
+    if (error) setErr(error.message); else await fetchProfiles();
+    setSavingId(null);
+  };
 
-  const UserRow = ({ p, highlight }) => (
-    <div key={p.id} style={{ display:'flex',alignItems:'center',padding:'10px 12px',borderRadius:8,gap:8,background:highlight?'#FFF5F5':'white',border:highlight?`1px solid rgba(185,28,28,0.2)`:`1px solid ${DA.border}`,marginBottom:6 }}>
-      <div style={{ flex:1,minWidth:0 }}>
-        <div style={{ fontSize:13,fontWeight:700,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-          {p.full_name || p.email || p.id.slice(0,8)}
-        </div>
-        {p.full_name && <div style={{ fontSize:11,color:DA.gray,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.email}</div>}
-      </div>
-      <span style={{ fontSize:11,color:DA.gray,padding:'2px 6px',borderRadius:8,background:DA.grayXL,flexShrink:0 }}>{p.role || 'user'}</span>
-      <div style={{ display:'flex',gap:4,flexShrink:0 }}>
-        {p.is_approved
-          ? <button onClick={() => setApproval(p.id, false)} style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:DA.red }}>Révoquer</button>
-          : <button onClick={() => setApproval(p.id, true)} style={{ fontSize:12,padding:'6px 14px',borderRadius:6,border:'none',background:DA.urgGrn,color:'white',cursor:'pointer',fontWeight:700 }}>✓ Approuver</button>
-        }
-        {p.role !== 'admin'
-          ? <button onClick={() => setRole(p.id, 'admin')} style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:DA.gray }}>→Admin</button>
-          : <button onClick={() => setRole(p.id, 'user')} style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',cursor:'pointer',color:DA.gray }}>→User</button>
-        }
-        <button onClick={() => deleteProfile(p.id, p.email || p.id)}
-          style={{ fontSize:11,padding:'4px 8px',borderRadius:6,border:`1px solid #FECDD3`,background:'#FFF1F2',cursor:'pointer',color:DA.red }}>🗑</button>
-      </div>
-    </div>
+  const handleRecover = async () => { setRecovering(true); setRecoverResult(null); setRecoverResult(await recoverPhotosFromStorage()); setRecovering(false); };
+  const handleCleanup = async () => { setCleaning(true); setCleanResult(null); setCleanResult(await cleanupDuplicatePhotos()); setCleaning(false); };
+
+  const pending  = profiles.filter(p => !p.is_approved);
+  const approved = profiles.filter(p => p.is_approved);
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 760;
+
+  // ── Contrôles réutilisés (desktop + mobile) ──
+  const RoleSelect = ({ p }) => (
+    <select value={p.role === 'admin' ? 'admin' : 'user'} disabled={savingId === p.id}
+      onChange={e => setRole(p.id, e.target.value)}
+      style={{ fontSize:13, padding:'6px 8px', borderRadius:7, border:`1px solid ${DA.border}`, background:'white', color:DA.black, cursor:'pointer', fontFamily:'inherit' }}>
+      <option value="admin">Administrateur</option>
+      <option value="user">Utilisateur</option>
+    </select>
+  );
+  const RevokeBtn = ({ p }) => (
+    <button onClick={() => setApproval(p.id, false)} disabled={savingId === p.id}
+      style={{ fontSize:13, fontWeight:600, padding:'6px 14px', borderRadius:7, border:`1px solid #FCA5A5`, background:'white', color:DA.red, cursor:'pointer', whiteSpace:'nowrap' }}>
+      Révoquer
+    </button>
+  );
+  // Suppression définitive du compte — conservée (feature existante), discrète.
+  const DeleteBtn = ({ p }) => (
+    <button onClick={() => deleteProfile(p.id, p.email || p.id)} disabled={savingId === p.id}
+      aria-label="Supprimer le compte" title="Supprimer définitivement le compte"
+      style={{ width:34, height:34, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:7, border:`1px solid ${DA.border}`, background:'white', color:DA.grayL, cursor:'pointer' }}>
+      <Ic n="del" s={15}/>
+    </button>
   );
 
   return (
     <div className="modal-overlay-dark">
-      <div className="modal-sheet-flex">
+      <div className="modal-sheet-flex" style={{ maxWidth:1100 }}>
 
-        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 16px 12px',borderBottom:`1px solid ${DA.border}`,flexShrink:0 }}>
-          <div style={{ fontWeight:800,fontSize:15,color:DA.black }}>Administration</div>
-          <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-            <button onClick={fetchProfiles} style={{ fontSize:11,padding:'4px 9px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',color:DA.gray,cursor:'pointer' }}>↻ Rafraîchir</button>
-            <button onClick={onClose} style={{ background:'none',border:'none',fontSize:22,cursor:'pointer',color:DA.gray,lineHeight:1 }}>×</button>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 18px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0 }}>
+          <div>
+            <p style={{ fontWeight:800, fontSize:17, color:DA.black, margin:0 }}>Administration</p>
+            <p style={{ fontSize:12, color:DA.grayL, margin:'2px 0 0' }}>Gestion des comptes utilisateurs</p>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <button onClick={fetchProfiles} aria-label="Rafraîchir" title="Rafraîchir"
+              style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:600, padding:'7px 12px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
+              <Ic n="rld" s={14}/> {isDesktop && 'Rafraîchir'}
+            </button>
+            <button onClick={onClose} aria-label="Fermer" style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, width:40, height:40, display:'flex', alignItems:'center', justifyContent:'center' }}><Ic n="x" s={20}/></button>
           </div>
         </div>
 
-        <div style={{ flex:1,overflowY:'auto',padding:'0 16px' }}>
+        <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
 
-          {/* ── En attente d'approbation ── */}
+          {err && <div style={{ padding:'8px 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, fontSize:12, color:DA.red, marginBottom:12 }}>{err}</div>}
+
+          {/* ── Demandes en attente ── */}
           {!loading && pending.length > 0 && (
-            <div style={{ padding:'14px 0',borderBottom:`1px solid ${DA.border}` }}>
-              <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:10 }}>
-                <span style={{ width:8,height:8,borderRadius:'50%',background:DA.red,display:'inline-block',animation:'pulse 1.5s infinite' }}/>
-                <span style={{ fontSize:13,fontWeight:800,color:DA.red }}>
-                  {pending.length} demande{pending.length > 1 ? 's' : ''} en attente
-                </span>
+            <div style={{ marginBottom:20 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                <span style={{ width:8, height:8, borderRadius:'50%', background:DA.red, display:'inline-block' }}/>
+                <span style={{ fontSize:13, fontWeight:800, color:DA.red }}>{pending.length} demande{pending.length > 1 ? 's' : ''} en attente</span>
               </div>
-              {pending.map(p => <UserRow key={p.id} p={p} highlight={true}/>)}
+              {pending.map(p => (
+                <div key={p.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:9, background:'#FFF5F5', border:'1px solid rgba(185,28,28,0.2)', marginBottom:6 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fullName(p) || p.email}</div>
+                    <div style={{ fontSize:11, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.email}</div>
+                  </div>
+                  <button onClick={() => setApproval(p.id, true)} disabled={savingId === p.id}
+                    style={{ fontSize:13, fontWeight:700, padding:'7px 16px', borderRadius:7, border:'none', background:DA.urgGrn, color:'white', cursor:'pointer', display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
+                    <Ic n="chk" s={14}/> Approuver
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* ── Membres approuvés ── */}
-          <div style={{ padding:'14px 0',borderBottom:`1px solid ${DA.border}` }}>
-            <div style={{ fontSize:12,fontWeight:700,color:DA.gray,marginBottom:10,textTransform:'uppercase',letterSpacing:0.5 }}>
-              Membres actifs ({approved.length})
-            </div>
-            {loading && <div style={{ padding:20,textAlign:'center',color:DA.gray,fontSize:13 }}>Chargement...</div>}
-            {err && <div style={{ padding:10,color:DA.red,fontSize:13 }}>{err}</div>}
-            {!loading && approved.map(p => <UserRow key={p.id} p={p} highlight={false}/>)}
+          {/* ── Membres ── */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <Ic n="usr" s={15}/>
+            <span style={{ fontSize:12, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6 }}>Membres ({approved.length})</span>
           </div>
 
-          {/* ── Récupération photos ── */}
-          <div style={{ padding:'14px 0' }}>
-            <div style={{ fontSize:12,fontWeight:700,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Outils</div>
-            <div style={{ fontSize:12,color:DA.gray,marginBottom:8 }}>
-              Scanne le Storage et recrée les enregistrements de photos manquants.
-            </div>
-            <button onClick={handleRecover} disabled={recovering}
-              style={{ fontSize:12,fontWeight:700,padding:'7px 16px',borderRadius:8,border:'none',background:DA.red,color:'white',cursor:recovering?'default':'pointer',opacity:recovering?0.6:1 }}>
-              {recovering ? 'Récupération en cours…' : '🔍 Récupérer les photos'}
-            </button>
-            {recoverResult && (
-              <div style={{ marginTop:8,fontSize:12,color:recoverResult.errors.length?DA.red:DA.urgGrn,fontWeight:600 }}>
-                {recoverResult.recovered} photo(s) récupérée(s)
-                {recoverResult.errors.length > 0 && ` — ${recoverResult.errors.length} erreur(s)`}
-                {recoverResult.recovered > 0 && ' — rechargez la page puis rouvrez le projet.'}
-              </div>
-            )}
+          {loading && <div style={{ padding:24, textAlign:'center', color:DA.gray, fontSize:13 }}>Chargement…</div>}
 
-            <div style={{ fontSize:12,color:DA.gray,margin:'14px 0 8px' }}>
-              Supprime les lignes de photos en double (même observation + même fichier), héritées de l'ancien bug de duplication. Conserve une copie par photo.
+          {/* Desktop : tableau */}
+          {!loading && isDesktop && (
+            <div style={{ overflowX:'auto', border:`1px solid ${DA.border}`, borderRadius:10 }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+                <thead>
+                  <tr style={{ background:DA.black }}>
+                    {['Prénom', 'Nom', 'Poste', 'E-mail', 'Statut', ''].map((h, i) => (
+                      <th key={i} style={{ textAlign: i >= 4 ? 'right' : 'left', padding:'11px 14px', color:'white', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {approved.map((p, idx) => (
+                    <tr key={p.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
+                      <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.first_name || '—'}</td>
+                      <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.last_name || ''}</td>
+                      <td style={{ padding:'11px 14px', color:DA.red }}>{p.job_title || '—'}</td>
+                      <td style={{ padding:'11px 14px', color:DA.gray }}>{p.email}</td>
+                      <td style={{ padding:'11px 14px', textAlign:'right', whiteSpace:'nowrap' }}>
+                        {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL, marginRight:8 }}>(vous)</span>}
+                        <RoleSelect p={p}/>
+                      </td>
+                      <td style={{ padding:'11px 14px', textAlign:'right' }}>
+                        <div style={{ display:'inline-flex', alignItems:'center', gap:6 }}><RevokeBtn p={p}/><DeleteBtn p={p}/></div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <button onClick={handleCleanup} disabled={cleaning}
-              style={{ fontSize:12,fontWeight:700,padding:'7px 16px',borderRadius:8,border:`1px solid ${DA.red}`,background:'white',color:DA.red,cursor:cleaning?'default':'pointer',opacity:cleaning?0.6:1 }}>
-              {cleaning ? 'Nettoyage en cours…' : '🧹 Nettoyer les photos en double'}
+          )}
+
+          {/* Mobile : cartes empilées */}
+          {!loading && !isDesktop && approved.map(p => (
+            <div key={p.id} style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'12px', marginBottom:8, background:'white' }}>
+              <div style={{ display:'flex', alignItems:'baseline', gap:6, flexWrap:'wrap' }}>
+                <span style={{ fontSize:14, fontWeight:800, color:DA.black }}>{fullName(p) || '—'}</span>
+                {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL }}>(vous)</span>}
+              </div>
+              {p.job_title && <div style={{ fontSize:12, color:DA.red, marginTop:1 }}>{p.job_title}</div>}
+              <div style={{ fontSize:12, color:DA.gray, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.email}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
+                <RoleSelect p={p}/>
+                <div style={{ flex:1 }}/>
+                <RevokeBtn p={p}/>
+                <DeleteBtn p={p}/>
+              </div>
+            </div>
+          ))}
+
+          {/* ── Outils (repliés par défaut) ── */}
+          <div style={{ marginTop:20, borderTop:`1px solid ${DA.border}`, paddingTop:14 }}>
+            <button onClick={() => setShowTools(v => !v)}
+              style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:800, color:DA.gray, background:'none', border:'none', cursor:'pointer', textTransform:'uppercase', letterSpacing:0.5, padding:0 }}>
+              <span style={{ display:'inline-block', transform: showTools ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}><Ic n="chv" s={14}/></span>
+              Outils de maintenance
             </button>
-            {cleanResult != null && (
-              <div style={{ marginTop:8,fontSize:12,color:DA.urgGrn,fontWeight:600 }}>
-                {cleanResult} doublon(s) supprimé(s){cleanResult > 0 ? ' — rechargez la page.' : ''}
+            {showTools && (
+              <div style={{ marginTop:12 }}>
+                <p style={{ fontSize:12, color:DA.gray, margin:'0 0 8px' }}>Scanne le Storage et recrée les enregistrements de photos manquants.</p>
+                <button onClick={handleRecover} disabled={recovering}
+                  style={{ fontSize:12, fontWeight:700, padding:'7px 16px', borderRadius:8, border:'none', background:DA.red, color:'white', cursor:recovering?'default':'pointer', opacity:recovering?0.6:1 }}>
+                  {recovering ? 'Récupération…' : 'Récupérer les photos'}
+                </button>
+                {recoverResult && <div style={{ marginTop:8, fontSize:12, color:recoverResult.errors.length?DA.red:DA.urgGrn, fontWeight:600 }}>{recoverResult.recovered} photo(s) récupérée(s){recoverResult.errors.length > 0 && ` — ${recoverResult.errors.length} erreur(s)`}{recoverResult.recovered > 0 && ' — rechargez la page.'}</div>}
+
+                <p style={{ fontSize:12, color:DA.gray, margin:'14px 0 8px' }}>Supprime les lignes de photos en double (conserve une copie par photo).</p>
+                <button onClick={handleCleanup} disabled={cleaning}
+                  style={{ fontSize:12, fontWeight:700, padding:'7px 16px', borderRadius:8, border:`1px solid ${DA.red}`, background:'white', color:DA.red, cursor:cleaning?'default':'pointer', opacity:cleaning?0.6:1 }}>
+                  {cleaning ? 'Nettoyage…' : 'Nettoyer les photos en double'}
+                </button>
+                {cleanResult != null && <div style={{ marginTop:8, fontSize:12, color:DA.urgGrn, fontWeight:600 }}>{cleanResult} doublon(s) supprimé(s){cleanResult > 0 ? ' — rechargez la page.' : ''}</div>}
               </div>
             )}
           </div>

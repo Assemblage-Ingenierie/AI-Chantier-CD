@@ -521,7 +521,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
 
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
       {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
+      {showAdmin && <AdminPanel currentUserId={profile?.id} onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
       {showAccount && <AccountModal profile={profile} session={session} onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)}/>}
 
