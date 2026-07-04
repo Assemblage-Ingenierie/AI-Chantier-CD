@@ -956,6 +956,39 @@ export function useProjets(onSyncStatus) {
 
   const dismissBackupRecovery = useCallback(() => setBackupRecovery(null), []);
 
+  // ── Re-synchronisation au retour du réseau ─────────────────────────────────────
+  // Sans ceci, les modifs faites hors-ligne restaient en attente jusqu'à la prochaine
+  // édition (debounce) ou au prochain rechargement — le badge « Erreur/Non sync »
+  // persistait après reconnexion. Même protocole que le flush de setVisitMode :
+  // vidage optimiste de dirtyIds + restauration complète en cas d'échec.
+  useEffect(() => {
+    let retryTimer = null;
+    const flushOnline = () => {
+      if (syncPausedRef.current) return; // mode visite : la sync reprend à la fin de visite
+      if (savingRef.current) {
+        // Une sauvegarde (vouée à l'échec hors-ligne) est en vol : réessayer une fois après.
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(flushOnline, 3000);
+        return;
+      }
+      if (!dirtyIds.current.size) { onSyncStatus?.('ok'); return; }
+      const ids = new Set(dirtyIds.current);
+      dirtyIds.current.clear();
+      setPersistedDirtyIds(dirtyIds.current);
+      syncDirtyMirror();
+      onSyncStatus?.('saving');
+      Promise.resolve(saveData(projetsRef.current, onSyncStatus, ids)).then(ok => {
+        if (!ok) {
+          dirtyIds.current = new Set([...ids, ...dirtyIds.current]);
+          setPersistedDirtyIds(dirtyIds.current);
+          syncDirtyMirror();
+        }
+      });
+    };
+    window.addEventListener('online', flushOnline);
+    return () => { clearTimeout(retryTimer); window.removeEventListener('online', flushOnline); };
+  }, [onSyncStatus]);
+
   // ── Mode visite hors-ligne (V3) ────────────────────────────────────────────────
   // Active/désactive la suspension VOLONTAIRE de la sync distante. À la désactivation
   // (fin de visite), on force une sauvegarde immédiate des modifs accumulées.

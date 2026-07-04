@@ -1480,18 +1480,22 @@ export async function savePlanBgNow(chantierId, plans) {
 }
 
 
+// Hors-ligne, un échec de sync est ATTENDU : statut 'offline' (silencieux, le bandeau
+// hors-ligne global informe déjà) au lieu de 'error' + toast rouge anxiogène.
+const _offline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
 export async function saveData(ps, onStatus, dirtyIds = null) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
     const errors = await saveRemote(ps, dirtyIds);
     const ok = errors.length === 0;
-    onStatus?.(ok ? 'ok' : 'error');
-    if (!ok) showSyncWarning(errors[0]);
+    onStatus?.(ok ? 'ok' : _offline() ? 'offline' : 'error');
+    if (!ok && !_offline()) showSyncWarning(errors[0]);
     return ok;
   } catch (e) {
     console.warn('Save error:', e);
-    onStatus?.('error');
+    onStatus?.(_offline() ? 'offline' : 'error');
     return false;
   }
 }

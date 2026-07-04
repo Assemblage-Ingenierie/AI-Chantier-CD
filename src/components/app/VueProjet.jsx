@@ -536,7 +536,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
-      <div style={{ background:DA.black, flexShrink:0, paddingTop:'env(safe-area-inset-top, 0px)' }}>
+      {/* Safe-area gérée par l'espaceur global de ChantierAI — pas de padding env() ici */}
+      <div style={{ background:DA.black, flexShrink:0 }}>
 
         {isDesktop ? (
           <div style={{ position:'relative', display:'flex', alignItems:'center', minHeight:52, padding:'0 16px' }}>
@@ -616,7 +617,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
               <PendingPhotosBadge/>
-              {syncStatus !== 'ok' && (
+              {/* 'offline' = silencieux : le bandeau hors-ligne global informe déjà */}
+              {syncStatus !== 'ok' && syncStatus !== 'offline' && (
                 <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8,
                   background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : 'rgba(251,191,36,0.15)',
                   border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':'rgba(251,191,36,0.4)'}`,

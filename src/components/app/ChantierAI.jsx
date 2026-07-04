@@ -309,13 +309,20 @@ export default function ChantierAI({ profile, onLogout }) {
       {/* Zone invisible (coin haut-gauche) : 5 taps activent le diagnostic retour (#navdebug) */}
       <div onClick={onDebugTap} style={{ position:'fixed', top:0, left:0, width:44, height:44, zIndex:100000, background:'transparent' }} />
 
+      {/* Barre d'état iOS (notch/Dynamic Island) : en PWA black-translucent le contenu passe
+          SOUS la barre système. Cet espaceur réserve la zone UNE SEULE FOIS pour toute l'app —
+          headers ET bandeaux d'alerte (hors-ligne, erreur, restauration) démarrent en dessous.
+          Les headers d'écran ne doivent plus porter leur propre env(safe-area-inset-top). */}
+      <div style={{ height:'env(safe-area-inset-top, 0px)', flexShrink:0, background:(isMobile && ouvert) ? DA.black : DA.white }} />
+
       {/* Header — caché sur mobile quand dans un projet */}
-      {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',paddingTop:'max(8px, env(safe-area-inset-top, 0px))',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
+      {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
           <img src={headerLogoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          {syncStatus !== 'ok' && (
+          {/* 'offline' = silencieux : le bandeau hors-ligne global informe déjà */}
+          {syncStatus !== 'ok' && syncStatus !== 'offline' && (
             <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?DA.redL:'#FEF3C7' }}>
               {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor }}/>}
               <span style={{ color:syncStatus==='error'?DA.red:DA.urgAmb,fontSize:10,fontWeight:600 }}>{dotLabel}</span>

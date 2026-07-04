@@ -256,7 +256,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
       {/* Header */}
-      <div style={{ background:DA.black, flexShrink:0, paddingTop:'env(safe-area-inset-top, 0px)' }}>
+      {/* Safe-area gérée par l'espaceur global de ChantierAI — pas de padding env() ici */}
+      <div style={{ background:DA.black, flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:2, padding:'0 6px', minHeight:52 }}>
           <button onClick={onBack} aria-label="Retour au projet" title="Retour au projet"
             style={{ width:44, height:44, flexShrink:0, color:'rgba(255,255,255,0.75)', background:'transparent', border:'none', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
@@ -269,6 +270,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
           {(() => {
             // Silencieux quand tout va bien ; en mode visite, la sync est intentionnellement
             // suspendue (le bouton 📴 ci-dessous suffit) sauf en cas d'erreur réelle.
+            // Hors-ligne : silencieux aussi — le bandeau hors-ligne global informe déjà.
+            if (syncStatus === 'offline') return null;
             if (visitMode && syncStatus !== 'error') return null;
             if (!visitMode && syncStatus === 'ok' && !dirty && !stale) return null;
             const dotColor = syncStatus === 'ok' ? (dirty ? '#FCD34D' : stale ? '#93C5FD' : '#4ADE80') : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
