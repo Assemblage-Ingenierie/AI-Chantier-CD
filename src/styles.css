@@ -36,6 +36,13 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 /* ── Largeur de page desktop — évite les stats/cartes étirées sur toute la largeur ── */
 .page-wrap { max-width: 1400px; margin: 0 auto; width: 100%; }
 
+/* ── Taille d'interface (Paramètres) — zoom des listes/fiches uniquement ──
+   `zoom` scale texte + boutons + espacements ensemble : pas de casse de layout.
+   Volontairement NON appliqué à l'Annotator ni à l'aperçu Rapport (rendus hors
+   de ces conteneurs). Amplitude modérée pour rester lisible et imprimable. */
+.ui-scale-compact { zoom: 0.9; }
+.ui-scale-large   { zoom: 1.12; }
+
 
 /* ── Card projet : horizontal mobile → vertical desktop ── */
 .proj-card { display:flex; flex-direction:row; align-items:stretch; height:96px; }

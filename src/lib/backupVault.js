@@ -187,6 +187,23 @@ export async function clearSnapshots() {
   });
 }
 
+// Poids approximatif de la boîte noire (tous les instantanés), en octets. Affichage Paramètres.
+export async function estimateSnapshotBytes() {
+  const db = await openDb();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).getAll();
+      req.onsuccess = () => {
+        const n = (req.result || []).reduce((sum, s) => sum + JSON.stringify(s?.data ?? '').length, 0);
+        resolve(n);
+      };
+      req.onerror = () => resolve(0);
+    } catch { resolve(0); }
+  });
+}
+
 // Compare un instantané au state chargé. Retourne la liste des projets dont le contenu
 // a NETTEMENT diminué (ou disparu) — signal d'une possible perte de données.
 // Conservateur : ne signale que les régressions importantes pour éviter les faux positifs

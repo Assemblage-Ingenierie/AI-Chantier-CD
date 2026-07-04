@@ -5,7 +5,7 @@ import WaitingScreen from './WaitingScreen.jsx';
 import ChantierAI from '../app/ChantierAI.jsx';
 
 export default function AuthGate() {
-  const { authState, session, profile, logout, handleSession } = useAuth();
+  const { authState, session, profile, logout, handleSession, applyProfile } = useAuth();
 
   // Déconnexion explicite ou compte non approuvé — seuls vrais blocages
   if (authState === 'loggedout') return <LoginScreen onLogin={handleSession} />;
@@ -14,5 +14,5 @@ export default function AuthGate() {
   // 'loading' ET 'approved' → on affiche l'app immédiatement
   // La vérification Supabase se termine en arrière-plan ; si la session
   // est invalide, authState passera à 'loggedout' et l'écran de login s'affichera.
-  return <ChantierAI profile={profile} onLogout={logout} />;
+  return <ChantierAI profile={profile} session={session} onLogout={logout} onProfileSaved={applyProfile} />;
 }

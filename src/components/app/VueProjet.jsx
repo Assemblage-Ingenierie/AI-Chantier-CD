@@ -15,6 +15,7 @@ import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -171,6 +172,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [visitLabelVal, setVisitLabelVal] = useState('');
   const [editingProjetNom, setEditingProjetNom] = useState(false);
   const [projetNomVal, setProjetNomVal] = useState('');
+  const uiScale = useUiScale();
 
   useEffect(() => {
     if (!selectedVisiteId && visites.length > 0) setSelectedVisiteId(visites[0].id);
@@ -666,7 +668,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {tab === 'visite' && (
-            <div style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
+            <div className={uiScaleClass(uiScale)} style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>

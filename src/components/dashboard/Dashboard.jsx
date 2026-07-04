@@ -3,6 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import ProjectCard from './ProjectCard.jsx';
 import PhotoModal from './PhotoModal.jsx';
+import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 
 const STEPS = [
   { n:1, icon:'plus', t:'Créez un projet', d:'"Nouveau" en haut à droite' },
@@ -14,6 +15,7 @@ const STEPS = [
 export default function Dashboard({ projets, remoteLoaded, staleIds = new Set(), dirtyIds = new Set(), syncStatus = 'ok', onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
+  const uiScale = useUiScale();
 
   const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base', numeric: true });
   const actifs   = projets.filter(p => p.statut !== 'archive').sort(byName);
@@ -24,7 +26,7 @@ export default function Dashboard({ projets, remoteLoaded, staleIds = new Set(),
   ];
 
   return (
-    <div className="page-wrap" style={{ padding:16,display:'flex',flexDirection:'column',gap:18 }} onClick={() => menuOpen && setMenuOpen(null)}>
+    <div className={`page-wrap ${uiScaleClass(uiScale)}`} style={{ padding:16,display:'flex',flexDirection:'column',gap:18 }} onClick={() => menuOpen && setMenuOpen(null)}>
 
       {/* En-tête */}
       <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between' }}>

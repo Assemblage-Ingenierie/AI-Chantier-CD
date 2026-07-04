@@ -108,3 +108,38 @@ export async function setPlanHd(planId, dataUrl) {
     } catch { resolve(); }
   });
 }
+
+// Poids approximatif du cache plans (vignettes + HD), en octets. Les valeurs sont des
+// data URL (chaînes) → longueur ≈ octets. Sert à l'affichage dans les Paramètres.
+export async function estimatePlanCacheBytes() {
+  const db = await openDb();
+  if (!db) return 0;
+  const sumStore = (name) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(name, 'readonly');
+      const req = tx.objectStore(name).getAll();
+      req.onsuccess = () => resolve((req.result || []).reduce((n, v) => n + (typeof v === 'string' ? v.length : 0), 0));
+      req.onerror   = () => resolve(0);
+    } catch { resolve(0); }
+  });
+  const [a, b] = await Promise.all([sumStore(STORE), sumStore(HD_STORE)]);
+  return a + b;
+}
+
+// Vide le cache plans (vignettes + HD). SANS RISQUE : tout est re-téléchargeable depuis
+// Supabase Storage à la prochaine ouverture d'un projet. Ne touche ni aux données projets
+// ni à la file d'upload photos ni à la boîte noire.
+export async function clearPlanCache() {
+  const db = await openDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction([STORE, HD_STORE], 'readwrite');
+      tx.objectStore(STORE).clear();
+      tx.objectStore(HD_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}

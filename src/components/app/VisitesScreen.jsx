@@ -3,6 +3,7 @@ import { DA, SUIVI, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import SyncBadge from '../ui/SyncBadge.jsx';
+import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -27,6 +28,7 @@ const saveVSummaryCache = (o) => { try { localStorage.setItem(VSUMMARY_KEY, JSON
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false,
   dirty = false, stale = false, visitMode = false, onToggleVisitMode = null, pinnedVisites = new Set(), onPinVisite = null, onUnpinVisite = null }) {
   const visites = projet.visites || [];
+  const uiScale = useUiScale();
   const [pinningId, setPinningId] = useState(null); // visite en cours de pré-téléchargement
 
   const togglePin = async (e, visiteId) => {
@@ -305,7 +307,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
       {/* Liste */}
       <div ref={wrapperRef} style={{ flex:1, overflowY:'auto', background:'#E8E8E8' }}>
-        <div style={{ maxWidth:860, margin:'0 auto', padding:'20px 16px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+        <div className={uiScaleClass(uiScale)} style={{ maxWidth:860, margin:'0 auto', padding:'20px 16px 24px', display:'flex', flexDirection:'column', gap:14 }}>
 
         {/* Titre de section */}
         <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', padding:'0 4px 6px', borderBottom:`2px solid ${DA.red}`, marginBottom:2 }}>

@@ -7,19 +7,23 @@ import { fetchRemoteTimestamps } from '../../lib/storage.js';
 import { processDriveQueue } from '../../lib/driveUpload.js';
 import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
+import AccountModal from '../auth/AccountModal.jsx';
+import SettingsModal from '../ui/SettingsModal.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
 import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 import VisitesScreen from './VisitesScreen.jsx';
 
-export default function ChantierAI({ profile, onLogout }) {
+export default function ChantierAI({ profile, session, onLogout, onProfileSaved }) {
   // Logo wordmark complet — utiliser le PNG HD local pour éviter qu'un fichier
   // Supabase incorrect (e.g. sigle uploadé sur le path du logo) ne casse le header.
   const headerLogoUrl = '/logo_Ai_rouge_HD.png';
   const logoUrl = useBrandingLogo();
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [showNew, setShowNew] = useState(false);
@@ -346,18 +350,26 @@ export default function ChantierAI({ profile, onLogout }) {
             </button>
             {headerMenuOpen && <div onClick={() => setHeaderMenuOpen(false)} style={{ position:'fixed',inset:0,zIndex:69 }}/>}
             {headerMenuOpen && (
-              <div style={{ position:'absolute',top:'100%',right:0,marginTop:4,background:DA.white,borderRadius:10,boxShadow:'0 8px 28px rgba(0,0,0,0.18)',border:`1px solid ${DA.border}`,zIndex:70,minWidth:190,overflow:'hidden' }}>
+              <div style={{ position:'absolute',top:'100%',right:0,marginTop:4,background:DA.white,borderRadius:10,boxShadow:'0 8px 28px rgba(0,0,0,0.18)',border:`1px solid ${DA.border}`,zIndex:70,minWidth:200,overflow:'hidden' }}>
+                <button onClick={() => { setShowAccount(true); setHeaderMenuOpen(false); }}
+                  style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}>
+                  <Ic n="usr" s={16}/> Mon compte
+                </button>
+                <button onClick={() => { setShowSettings(true); setHeaderMenuOpen(false); }}
+                  style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                  <Ic n="sld" s={16}/> Paramètres
+                </button>
                 {profile?.role === 'admin' && (
                   <button onClick={() => { setShowAdmin(true); setPendingCount(0); setHeaderMenuOpen(false); }}
-                    style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}>
-                    Administration
+                    style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                    <span style={{ display:'flex',alignItems:'center',gap:10 }}><Ic n="usr" s={16}/> Administration</span>
                     {pendingCount > 0 && <span style={{ background:DA.red,color:'white',borderRadius:10,fontSize:11,fontWeight:800,padding:'1px 7px' }}>{pendingCount}</span>}
                   </button>
                 )}
                 {onLogout && (
                   <button onClick={() => { setHeaderMenuOpen(false); onLogout(); }}
-                    style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop: profile?.role === 'admin' ? `1px solid ${DA.border}` : 'none' }}>
-                    Se déconnecter
+                    style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.red,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                    <Ic n="x" s={16}/> Se déconnecter
                   </button>
                 )}
               </div>
@@ -510,6 +522,8 @@ export default function ChantierAI({ profile, onLogout }) {
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
       {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
+      {showAccount && <AccountModal profile={profile} session={session} onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)}/>}
 
       {undoToast && (
         <div style={{ position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:'rgba(30,30,30,0.92)',color:'#fff',padding:'10px 20px',borderRadius:10,fontSize:13,fontWeight:600,boxShadow:'0 4px 20px rgba(0,0,0,0.3)',zIndex:9999,pointerEvents:'none',display:'flex',alignItems:'center',gap:8 }}>

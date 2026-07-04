@@ -105,5 +105,13 @@ export function useAuth() {
     clearLocalData(); // évite la contamination cross-user sur appareil partagé
   };
 
-  return { authState, session, profile, logout, handleSession };
+  // Applique un profil fraîchement enregistré (page « Mon compte ») à l'état + au cache,
+  // sans re-fetch réseau : le nom/les initiales se mettent à jour immédiatement.
+  const applyProfile = (p) => {
+    if (!p) return;
+    setProfile(p);
+    writeCachedProfile(p);
+  };
+
+  return { authState, session, profile, logout, handleSession, applyProfile };
 }

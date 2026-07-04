@@ -108,6 +108,13 @@ export function enqueuePhotoUpload({ uploadId, projetNom, projetId, itemId, name
   });
 }
 
+// Poids approximatif des photos EN ATTENTE d'envoi (data URL en file), en octets.
+// Affichage Paramètres — ce cache ne doit JAMAIS être vidé par l'utilisateur (perte photos).
+export async function estimatePendingUploadBytes() {
+  const vals = (await idbReq(Q_STORE, 'readonly', s => s.getAll())) || [];
+  return vals.reduce((n, e) => n + (typeof e?.dataUrl === 'string' ? e.dataUrl.length : 0), 0);
+}
+
 // ── Lecture du résultat (utilisé par saveRemote) ─────────────────────────────────────
 // Retourne le chemin Storage si la photo a déjà été uploadée par la file, sinon null.
 export function getQueuedUploadPath(uploadId) {
