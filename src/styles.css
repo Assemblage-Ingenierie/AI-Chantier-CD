@@ -5,6 +5,11 @@ html, body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
+  /* Désactive le geste natif "glisser depuis le bord = retour navigateur" (Safari/Chrome).
+     L'app gère déjà son propre retour (bouton + bouton matériel Android via popstate) ;
+     laisser le geste système actif pouvait faire sauter plusieurs niveaux d'un coup dans
+     l'historique pushState interne et retomber sur un état antérieur à la connexion. */
+  overscroll-behavior-x: none;
 }
 #root { height: 100%; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }

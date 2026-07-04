@@ -289,7 +289,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                 background: visitMode ? 'rgba(4,120,87,0.25)' : 'transparent',
                 border: visitMode ? '1px solid rgba(16,185,129,0.6)' : 'none',
                 color: visitMode ? '#6EE7B7' : 'rgba(255,255,255,0.75)' }}>
-              <span style={{ fontSize:17, lineHeight:1 }}>{visitMode ? '📴' : '📶'}</span>
+              <Ic n={visitMode ? 'wifioff' : 'wifi'} s={19}/>
             </button>
           )}
           {onRefresh && (
@@ -526,9 +526,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   {onPinVisite && (
                     <button onClick={e => togglePin(e, v.id)}
                       disabled={pinningId === v.id}
-                      title={pinned ? 'Retirer du hors-ligne' : 'Préparer cette visite pour le hors-ligne (télécharger photos + plans)'}
-                      style={{ width:34, height:34, padding:0, background: pinned ? '#ECFDF5' : DA.grayXL, border:`1px solid ${pinned ? '#A7F3D0' : DA.border}`, color: pinned ? '#047857' : DA.grayL, cursor: pinningId === v.id ? 'default' : 'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, lineHeight:1 }}>
-                      {pinningId === v.id ? <Ic n="spn" s={14}/> : '📌'}
+                      title={pinned ? 'Annuler le téléchargement hors-ligne de cette visite' : 'Télécharger dès maintenant les photos et plans de cette visite pour pouvoir la consulter sans réseau'}
+                      aria-label={pinned ? 'Annuler le téléchargement hors-ligne' : 'Télécharger cette visite pour la consulter hors-ligne'}
+                      style={{ width:44, height:44, padding:0, background: pinned ? '#ECFDF5' : DA.grayXL, border:`1px solid ${pinned ? '#A7F3D0' : DA.border}`, color: pinned ? '#047857' : DA.grayL, cursor: pinningId === v.id ? 'default' : 'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {pinningId === v.id ? <Ic n="spn" s={15}/> : <Ic n="tack" s={15}/>}
                     </button>
                   )}
                   <button onClick={e => duplicateVisite(e, v.id)}

@@ -18,12 +18,12 @@ const STYLES = {
 };
 
 function Glyph({ state, size }) {
-  if (state === 'syncing') return <Ic n="spn" s={size} />;
-  if (state === 'stale')   return <Ic n="rld" s={size} />;
-  if (state === 'pending') return <span style={{ width:size, height:size, borderRadius:'50%', background:'#C2410C', display:'inline-block' }} />;
-  if (state === 'error')   return <span style={{ fontSize:size, lineHeight:1, fontWeight:900 }}>!</span>;
-  if (state === 'pinned')  return <span style={{ fontSize:size, lineHeight:1 }}>📌</span>;
-  if (state === 'notloaded') return <span style={{ fontSize:size + 1, lineHeight:1 }}>↓</span>;
+  if (state === 'syncing')   return <Ic n="spn" s={size} />;
+  if (state === 'stale')     return <Ic n="rld" s={size} />;
+  if (state === 'pending')   return <Ic n="tme" s={size} />;
+  if (state === 'error')     return <Ic n="alrt" s={size} />;
+  if (state === 'pinned')    return <Ic n="tack" s={size} />;
+  if (state === 'notloaded') return <Ic n="dl" s={size} />;
   return null;
 }
 

@@ -5,7 +5,8 @@ import {
   FileText, Archive, MoreVertical, MapPin, Map, Pencil, Table2, Eye, Download,
   Send, Undo2, PenLine, Lasso, Shapes, Palette, List, User, Phone, Mail,
   ClipboardCheck, LayoutGrid, Star, Mic, Loader2, GripVertical, Copy,
-  SlidersHorizontal, Eraser, RotateCw, Type, Sticker,
+  SlidersHorizontal, Eraser, RotateCw, Type, Sticker, Pin, Wifi, WifiOff,
+  Clock, AlertTriangle,
 } from 'lucide-react';
 
 // Inject spin keyframes once (utilisé par le spinner de chargement)
@@ -25,7 +26,7 @@ const ICONS = {
   pal: Palette, srt: List, usr: User, phn: Phone, ml: Mail, clk: ClipboardCheck,
   lib: LayoutGrid, spk: Star, mic: Mic, spn: Loader2, grp: GripVertical,
   cpy: Copy, sld: SlidersHorizontal, eras: Eraser, rotc: RotateCw, txt: Type,
-  sym: Sticker,
+  sym: Sticker, tack: Pin, wifi: Wifi, wifioff: WifiOff, tme: Clock, alrt: AlertTriangle,
 };
 
 export function Ic({ n, s = 18, color, style, className, strokeWidth = 2 }) {
