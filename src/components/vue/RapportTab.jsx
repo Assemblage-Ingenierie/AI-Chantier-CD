@@ -4,9 +4,9 @@ import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
-import JSZip from 'jszip';
 import Annotator from './Annotator.jsx';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { logEvent } from '../../lib/logger.js';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   const taRef = useRef();
@@ -286,8 +286,18 @@ export default function RapportTab({ projet, onUpdate }) {
     );
     if (allPhotos.length === 0) { alert('Aucune photo disponible.'); return; }
 
+    // Avertissement de volume (audit point 2) : chaque photo distante est re-téléchargée depuis
+    // Supabase Storage → egress. Au-delà d'un seuil, on informe avant de lancer un gros transfert.
+    const remoteCount = allPhotos.filter(ph => !ph.data.startsWith('data:')).length;
+    if (remoteCount > 40) {
+      const estMo = Math.round(remoteCount * 0.3); // ~0,3 Mo/photo compressée, ordre de grandeur
+      if (!window.confirm(`Ce téléchargement va récupérer ${remoteCount} photos depuis le serveur (~${estMo} Mo). Continuer ?`)) return;
+    }
+
     setZipping(true);
+    let zippedBytes = 0;
     try {
+      const { default: JSZip } = await import('jszip'); // chargé à la demande (code splitting)
       const zip = new JSZip();
       const sanitize = s => s.replace(/[^a-zA-Z0-9À-ÿ _-]/g, '_').trim().slice(0, 60);
       const counts = {};
@@ -306,10 +316,13 @@ export default function RapportTab({ projet, onUpdate }) {
             const resp = await fetch(ph.data);
             if (!resp.ok) continue;
             const blob = await resp.blob();
+            zippedBytes += blob.size || 0;
             zip.folder(folder).file(fname, blob);
           }
         } catch { /* skip photo en erreur */ }
       }
+      // Suivi du volume d'egress consommé par l'export ZIP (anticipation des pics — audit point 2).
+      logEvent('export.zipPhotos', { photos: allPhotos.length, remote: remoteCount, downloadedBytes: zippedBytes });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');

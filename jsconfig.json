@@ -1,0 +1,20 @@
+{
+  "// note": "Vérification de types CIBLÉE (éditeur uniquement, aucun impact build/CI). checkJs actif sur les fichiers de persistance critiques + les typedefs du modèle. Stratégie progressive : élargir `include` au fil des annotations JSDoc, sans migration TypeScript.",
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "jsx": "preserve"
+  },
+  "include": [
+    "src/lib/types.js",
+    "src/lib/logger.js",
+    "src/lib/planThumbCache.js",
+    "src/lib/backupVault.js"
+  ]
+}

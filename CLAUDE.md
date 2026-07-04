@@ -130,8 +130,10 @@ Ne jamais laisser des changements uniquement sur la branche feature.
 - Supabase pour la base de données et l'auth
 - Styles inline (pas de CSS modules), variables dans `src/lib/constants.js`
 - Icônes via `<Ic n="..." s={...}/>` dans `src/components/ui/Icons.jsx`
-- Proxy IA Vercel : `api/ai-proxy.js` (modèle actuel : `gemma-3-12b-it`)
-- Variables d'env Vercel requises : `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+- Proxy IA Vercel : `api/ai-proxy.js` (Anthropic/Claude, avec fallback modèle ; auth Bearer Supabase + rate limiting 20 req/min/IP)
+- Variables d'env Vercel requises : `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GOOGLE_SERVICE_ACCOUNT` (Drive)
+- Tests : `npm test` (Vitest) ; lint : `npm run lint` (ESLint) ; CI dans `.github/workflows/ci.yml` (test + build bloquants)
+- Monitoring : `src/lib/logger.js` → `api/log.js` (console + Vercel Runtime Logs) ; Vercel Analytics dans `App.jsx`
 
 ---
 
@@ -151,7 +153,7 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 |---|---|---|
 | `src/hooks/useProjets.js` | Tout l'état des projets | Très élevé — ne jamais dupliquer cette logique |
 | `src/lib/storage.js` | Lecture/écriture Supabase + localStorage | Très élevé — impact direct sur la persistance |
-| `src/lib/storage.js > mergeWithLocal` | Fusion local/remote au chargement | Critique — peut provoquer perte ou doublon de projets |
+| `src/hooks/useProjets.js > mergeWithLocal` | Fusion local/remote au chargement (exportée, testée dans `mergeWithLocal.test.js`) | Critique — peut provoquer perte ou doublon de projets |
 | `src/lib/storage.js > saveRemote` | Sync vers Supabase | Critique — contient la garde anti-mass-delete |
 | `src/lib/storage.js > deleteRemoteProjet` | Suppression immédiate depuis Supabase | Sensible — contourne intentionnellement la garde |
 

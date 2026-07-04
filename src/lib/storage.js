@@ -2,6 +2,8 @@ import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
+import { logEvent, logWarn } from './logger.js';
+import { getPlanHd, setPlanHd } from './planThumbCache.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -29,6 +31,11 @@ let _knownItemIdsByProject  = new Map(); // projectId → Set<itemId>
 // Une photo absente de cet ensemble (ajoutée en parallèle par un AUTRE appareil) n'est jamais
 // supprimée → corrige la perte de lignes photos en édition concurrente PC + téléphone.
 let _knownPhotoIdsByItem    = new Map();
+// projectId → updated_at DISTANT connu au dernier chargement/écriture réussie.
+// Sert à détecter dans saveRemote qu'un AUTRE appareil a écrit depuis notre chargement
+// (remote.updated_at avancé au-delà de cette valeur) avant qu'on n'écrase — pour LOGGER
+// le conflit au lieu de l'écraser silencieusement (last-write-wins tracé, cf. audit point 1).
+let _loadedUpdatedAtByProject = new Map();
 
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
@@ -277,6 +284,8 @@ async function loadRemote() {
     // les locs/items/visites ajoutés par un autre utilisateur après notre chargement.
     _knownVisitIdsByProject.set(c.id, new Set(visites.map(v => v.id)));
     _knownLocIdsByProject.set(c.id, new Set(allLocs.map(l => l.id)));
+    // updated_at distant à ce chargement — référence pour détecter un conflit d'écriture concurrent.
+    if (c.updated_at) _loadedUpdatedAtByProject.set(c.id, c.updated_at);
     const _allKnownItemIds = new Set();
     allLocs.forEach(l => { (itemsByLoc[l.id] ?? []).forEach(it => _allKnownItemIds.add(it.id)); });
     _knownItemIdsByProject.set(c.id, _allKnownItemIds);
@@ -634,6 +643,32 @@ async function uploadPhotoToStorage(sb, projectSlug, itemId, key, name, base64) 
   } catch (e) { console.warn('Storage upload error:', e); return null; }
 }
 
+// Compresse une image data URL via canvas (borne la plus grande dimension, sort en WebP).
+// Retourne une data URL WebP, ou null si échec (image illisible, canvas indisponible…) →
+// l'appelant retombe alors sur l'original, garantissant zéro perte de fonctionnalité.
+function compressImageDataUrl(dataUrl, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const longest = Math.max(img.width, img.height) || 1;
+          const scale = Math.min(1, maxDim / longest);
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const out = canvas.toDataURL('image/webp', quality);
+          resolve(out?.startsWith('data:image/webp') ? out : null);
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    } catch { resolve(null); }
+  });
+}
+
 // ── Images COLLÉES dans les commentaires (feature « comme Word ») ───────────────────────────
 // Stockées dans le bucket photos sous comments/<itemId>/<uuid>.<ext> (pas de base64 en base).
 // Le HTML du commentaire garde l'URL signée (src) + le chemin stable (data-cimg) pour re-signer.
@@ -641,9 +676,19 @@ export async function uploadCommentImage(dataUrl, itemId) {
   try {
     if (!dataUrl?.startsWith('data:')) return null;
     const sb = await getSupabase();
-    const m = /^data:image\/([a-z0-9.+-]+)/i.exec(dataUrl);
-    const ext = m ? (m[1] === 'jpeg' ? 'jpg' : m[1].replace(/[^a-z0-9]/gi, '') || 'png') : 'png';
-    const resp = await fetch(dataUrl);
+    // Compression avant upload : une capture d'écran collée (PNG plein écran) pèse plusieurs Mo.
+    // On la réduit (≤1600px, WebP 0.82) comme les photos d'items. SVG ou échec → original conservé.
+    let uploadUrl = dataUrl;
+    let ext;
+    if (!/^data:image\/svg/i.test(dataUrl)) {
+      const compressed = await compressImageDataUrl(dataUrl);
+      if (compressed) { uploadUrl = compressed; ext = 'webp'; }
+    }
+    if (!ext) {
+      const m = /^data:image\/([a-z0-9.+-]+)/i.exec(uploadUrl);
+      ext = m ? (m[1] === 'jpeg' ? 'jpg' : m[1].replace(/[^a-z0-9]/gi, '') || 'png') : 'png';
+    }
+    const resp = await fetch(uploadUrl);
     const blob = await resp.blob();
     const path = `comments/${itemId || 'misc'}/${crypto.randomUUID()}.${ext}`;
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: blob.type || `image/${ext}`, upsert: true, cacheControl: '31536000' });
@@ -715,10 +760,16 @@ const _hdCache = new Map(); // planId → dataUrl | Promise<dataUrl|null>
 
 // Récupère l'image HD d'un plan sous forme de data URL (évite le canvas "tainted" à l'export).
 // Lit le chemin Storage dans la colonne `data`, génère une signed URL, puis la convertit.
+// Cache à deux niveaux (audit point 2 — egress) : mémoire session, puis IndexedDB persistant
+// → une HD déjà téléchargée n'est plus re-fetchée à la session suivante (2-5 Mo économisés/plan).
 export async function fetchPlanHdDataUrl(planId) {
   if (_hdCache.has(planId)) return _hdCache.get(planId);
   const promise = (async () => {
     try {
+      // 1) IndexedDB : HD déjà téléchargée lors d'une session précédente → zéro egress.
+      const cached = await getPlanHd(planId);
+      if (cached) return cached;
+
       const sb = await getSupabase();
       const { data: row, error } = await sb.from('aichantier_chantier_plans')
         .select('data').eq('id', planId).single();
@@ -731,12 +782,15 @@ export async function fetchPlanHdDataUrl(planId) {
       if (!signed?.signedUrl) return null;
       const resp = await fetch(signed.signedUrl);
       const blob = await resp.blob();
-      return await new Promise((res, rej) => {
+      const dataUrl = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
         r.onerror = rej;
         r.readAsDataURL(blob);
       });
+      // 2) Persister pour les prochaines sessions (best-effort, ne bloque pas le retour).
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) setPlanHd(planId, dataUrl);
+      return dataUrl;
     } catch (e) { console.warn('fetchPlanHdDataUrl error:', e); return null; }
   })();
   _hdCache.set(planId, promise);
@@ -849,6 +903,9 @@ async function saveRemote(ps, dirtyIds = null) {
       // Avant, un `return errors` ici interrompait toute la sauvegarde et coinçait les éditions.
       // Les suppressions explicites utilisateur passent de toute façon par deleteRemoteProjet().
       console.error('saveRemote: skipping suspicious mass-delete of', toDelete.length, 'projets (cap=', safeCap, ') — upserts continue');
+      // Remontée serveur : cette garde était totalement silencieuse. Si elle se déclenche chez
+      // un utilisateur (corruption cache), on veut le savoir sans attendre un signalement.
+      logWarn('saveRemote.massDeleteBlocked', { attempted: toDelete.length, cap: safeCap, knownRemote: _lastRemoteIds.size });
     } else if (toDelete.length > 0) {
       const { error } = await sb.from('aichantier_chantiers').delete().in('id', toDelete);
       if (error) errors.push(error);
@@ -920,7 +977,7 @@ async function saveRemote(ps, dirtyIds = null) {
     // (évite le bug précédent : "merger ici ramenait les visites supprimées")
     let mergedVisitesMetadata = visitesMetadata;
     try {
-      const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites').eq('id', p.id).single();
+      const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites,updated_at').eq('id', p.id).single();
       if (dbMeta?.visites?.length) {
         const localVisitIdSet = new Set(visitesMetadata.map(v => v.id));
         const knownVisitIds   = _knownVisitIdsByProject.get(p.id);
@@ -928,6 +985,21 @@ async function saveRemote(ps, dirtyIds = null) {
           !localVisitIdSet.has(v.id) && knownVisitIds != null && !knownVisitIds.has(v.id)
         );
         if (dbOnlyVisits.length > 0) mergedVisitesMetadata = [...visitesMetadata, ...dbOnlyVisits];
+      }
+      // ── Détection de conflit de version (audit point 1) ──────────────────────────
+      // Si le remote a AVANCÉ depuis notre dernier chargement/écriture, un AUTRE appareil a
+      // écrit entre-temps. On ne PEUT PAS résoudre automatiquement sans risque (horloges
+      // désynchronisées entre appareils → cf. commentaire statut) et on ne veut PAS perdre
+      // l'édition active de l'utilisateur. On LOGGUE donc le conflit (last-write-wins tracé)
+      // au lieu de l'écraser en silence — c'est la donnée qui manquait pour diagnostiquer
+      // les pertes signalées. La restauration reste possible via la boîte noire.
+      const loadedAt = _loadedUpdatedAtByProject.get(p.id);
+      if (loadedAt && dbMeta?.updated_at && dbMeta.updated_at > loadedAt) {
+        logEvent('saveRemote.conflict', {
+          projet: p.id, nom: p.nom,
+          loadedAt, remoteAt: dbMeta.updated_at, localAt: p.updatedAt ?? null,
+          note: 'remote avancé depuis le chargement — écrasement LWW tracé',
+        });
       }
     } catch {}
     // Mettre à jour les IDs de visites connus après l'écriture (pour pouvoir supprimer une visite créée en session)
@@ -952,6 +1024,9 @@ async function saveRemote(ps, dirtyIds = null) {
       }
       errors.push(chantierRes.error); continue;
     }
+    // Notre écriture fait désormais foi : la référence de version devient `now` pour ne pas
+    // détecter un faux conflit à la prochaine sauvegarde de CE même appareil.
+    _loadedUpdatedAtByProject.set(p.id, now);
 
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
@@ -1220,7 +1295,9 @@ async function saveRemote(ps, dirtyIds = null) {
   }
 
   if (errors.length > 0) {
-    console.warn('saveRemote errors:', errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint })));
+    const summary = errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint }));
+    console.warn('saveRemote errors:', summary);
+    logWarn('saveRemote.errors', { count: errors.length, errors: summary });
   }
   return errors;
 }
@@ -1318,6 +1395,7 @@ export function clearLocalData() {
   _knownVisitIdsByProject = new Map();
   _knownLocIdsByProject   = new Map();
   _knownItemIdsByProject  = new Map();
+  _loadedUpdatedAtByProject = new Map();
 }
 
 // Récupère uniquement id + updated_at depuis Supabase — poll léger pour détecter les MàJ distantes

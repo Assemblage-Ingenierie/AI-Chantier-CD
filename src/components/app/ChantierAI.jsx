@@ -27,7 +27,8 @@ export default function ChantierAI({ profile, onLogout }) {
   const [ouvert, setOuvert] = useState(null);
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
-  const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery } = useProjets(setSyncStatus);
+  const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -488,6 +489,13 @@ export default function ChantierAI({ profile, onLogout }) {
             syncStatus={syncStatus}
             onRefresh={handleRefresh}
             refreshing={refreshing}
+            dirty={dirtyProjectIds.has(ouvert.id)}
+            stale={staleIds.has(ouvert.id)}
+            visitMode={syncPaused}
+            onToggleVisitMode={setVisitMode}
+            pinnedVisites={pinnedVisites}
+            onPinVisite={pinVisite}
+            onUnpinVisite={unpinVisite}
           />
         ) : (
           <div style={{ height:'100%',overflowY:'auto' }}>
@@ -495,6 +503,8 @@ export default function ChantierAI({ profile, onLogout }) {
               projets={projets}
               remoteLoaded={remoteLoaded}
               staleIds={staleIds}
+              dirtyIds={dirtyProjectIds}
+              syncStatus={syncStatus}
               onSelect={(p) => { setOuvert(p); setSelectedVisiteId(null); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); }}
               onNew={() => setShowNew(true)}
               onUpd={updateProjet}
