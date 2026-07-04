@@ -20,6 +20,7 @@ export default function ChantierAI({ profile, onLogout }) {
   const logoUrl = useBrandingLogo();
   const [syncStatus, setSyncStatus] = useState('ok');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [showNew, setShowNew] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
@@ -308,31 +309,69 @@ export default function ChantierAI({ profile, onLogout }) {
       <div onClick={onDebugTap} style={{ position:'fixed', top:0, left:0, width:44, height:44, zIndex:100000, background:'transparent' }} />
 
       {/* Header — caché sur mobile quand dans un projet */}
-      {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
+      {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',paddingTop:'max(8px, env(safe-area-inset-top, 0px))',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
           <img src={headerLogoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          {profile?.role === 'admin' && (
-            <button onClick={() => { setShowAdmin(true); setPendingCount(0); }} style={{ position:'relative',background:DA.redL,border:'none',color:DA.red,fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>
-              Admin
-              {pendingCount > 0 && (
-                <span style={{ position:'absolute',top:-6,right:-6,background:DA.red,color:'white',borderRadius:'50%',width:16,height:16,fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1 }}>{pendingCount}</span>
+          {syncStatus !== 'ok' && (
+            <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?DA.redL:'#FEF3C7' }}>
+              {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor }}/>}
+              <span style={{ color:syncStatus==='error'?DA.red:DA.urgAmb,fontSize:10,fontWeight:600 }}>{dotLabel}</span>
+            </div>
+          )}
+          {isMobile ? (
+            <div style={{ position:'relative' }}>
+              <button onClick={() => setHeaderMenuOpen(v => !v)} aria-label="Plus d'options" title="Plus d'options"
+                style={{ width:40,height:40,display:'flex',alignItems:'center',justifyContent:'center',background:'none',border:'none',color:DA.gray,cursor:'pointer',borderRadius:8,position:'relative' }}>
+                <Ic n="dts" s={19}/>
+                {pendingCount > 0 && (
+                  <span style={{ position:'absolute',top:2,right:2,background:DA.red,color:'white',borderRadius:'50%',width:14,height:14,fontSize:9,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1 }}>{pendingCount}</span>
+                )}
+              </button>
+              {headerMenuOpen && <div onClick={() => setHeaderMenuOpen(false)} style={{ position:'fixed',inset:0,zIndex:69 }}/>}
+              {headerMenuOpen && (
+                <div style={{ position:'absolute',top:'100%',right:0,marginTop:4,background:DA.white,borderRadius:10,boxShadow:'0 8px 28px rgba(0,0,0,0.18)',border:`1px solid ${DA.border}`,zIndex:70,minWidth:190,overflow:'hidden' }}>
+                  {profile?.role === 'admin' && (
+                    <button onClick={() => { setShowAdmin(true); setPendingCount(0); setHeaderMenuOpen(false); }}
+                      style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left' }}>
+                      Administration
+                      {pendingCount > 0 && <span style={{ background:DA.red,color:'white',borderRadius:10,fontSize:11,fontWeight:800,padding:'1px 7px' }}>{pendingCount}</span>}
+                    </button>
+                  )}
+                  <button onClick={() => { handleRefresh(); setHeaderMenuOpen(false); }} disabled={refreshing}
+                    style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:refreshing?'default':'pointer',textAlign:'left' }}>
+                    {refreshing ? <Ic n="spn" s={15}/> : <Ic n="rld" s={15}/>} Actualiser
+                  </button>
+                  {onLogout && (
+                    <button onClick={() => { setHeaderMenuOpen(false); onLogout(); }}
+                      style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                      Se déconnecter
+                    </button>
+                  )}
+                </div>
               )}
-            </button>
+            </div>
+          ) : (
+            <>
+              {profile?.role === 'admin' && (
+                <button onClick={() => { setShowAdmin(true); setPendingCount(0); }} style={{ position:'relative',background:DA.redL,border:'none',color:DA.red,fontSize:11,fontWeight:600,padding:'4px 8px',borderRadius:6,cursor:'pointer' }}>
+                  Admin
+                  {pendingCount > 0 && (
+                    <span style={{ position:'absolute',top:-6,right:-6,background:DA.red,color:'white',borderRadius:'50%',width:16,height:16,fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1 }}>{pendingCount}</span>
+                  )}
+                </button>
+              )}
+              {onLogout && (
+                <button onClick={onLogout} style={{ background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
+              )}
+              <button onClick={handleRefresh} disabled={refreshing} title="Actualiser depuis le serveur"
+                style={{ display:'flex',alignItems:'center',gap:4,background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:5,cursor:refreshing?'default':'pointer' }}>
+                {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
+                Actualiser
+              </button>
+            </>
           )}
-          {onLogout && (
-            <button onClick={onLogout} style={{ background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,padding:'3px 7px',borderRadius:5,cursor:'pointer' }}>Sortir</button>
-          )}
-          <button onClick={handleRefresh} disabled={refreshing} title="Actualiser depuis le serveur"
-            style={{ display:'flex',alignItems:'center',gap:4,background:'none',border:`1px solid ${DA.border}`,color:DA.gray,fontSize:10,fontWeight:600,padding:'3px 8px',borderRadius:5,cursor:refreshing?'default':'pointer' }}>
-            {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
-            Actualiser
-          </button>
-          <div style={{ display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:8,background:syncStatus==='error'?DA.redL:syncStatus==='saving'?'#FEF3C7':DA.grayXL,transition:'background 0.3s' }}>
-            {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6,height:6,borderRadius:'50%',background:dotColor,transition:'background 0.3s' }}/>}
-            <span style={{ color:syncStatus==='error'?DA.red:syncStatus==='saving'?DA.urgAmb:DA.grayL,fontSize:10,fontWeight:600,transition:'color 0.3s' }}>{dotLabel}</span>
-          </div>
         </div>
       </div>}
 

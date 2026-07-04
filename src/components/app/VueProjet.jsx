@@ -171,6 +171,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [visitLabelVal, setVisitLabelVal] = useState('');
   const [editingProjetNom, setEditingProjetNom] = useState(false);
   const [projetNomVal, setProjetNomVal] = useState('');
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!selectedVisiteId && visites.length > 0) setSelectedVisiteId(visites[0].id);
@@ -552,7 +553,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     onChange={e => setProjetNomVal(e.target.value)}
                     onBlur={() => { const t = projetNomVal.trim(); if (t) onUpdate({ nom: t }); setEditingProjetNom(false); }}
                     onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingProjetNom(false); }}
-                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:15, fontWeight:800, padding:'3px 7px', width: Math.max(120, projetNomVal.length * 9) + 'px' }}
+                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:16, fontWeight:800, padding:'3px 7px', width: Math.max(120, projetNomVal.length * 9) + 'px' }}
                   />
                 ) : (
                   <p onClick={() => { setEditingProjetNom(true); setProjetNomVal(projet.nom || ''); }}
@@ -583,7 +584,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     onChange={e => setVisitLabelVal(e.target.value)}
                     onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
                     onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
-                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px' }}
+                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:16, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px' }}
                   />
                 ) : (
                   <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
@@ -605,43 +606,47 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           </div>
         ) : (
           <>
-            <div style={{ padding:'8px 12px 0', display:'flex', alignItems:'center', gap:8 }}>
-              <button onClick={onBack}
-                style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
-                <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-                <span style={{ fontSize:12, fontWeight:600 }}>Visites</span>
+            <div style={{ padding:'4px 6px 0', display:'flex', alignItems:'center', gap:2 }}>
+              <button onClick={onBack} aria-label="Retour aux visites" title="Retour aux visites"
+                style={{ width:44, height:44, flexShrink:0, color:'rgba(255,255,255,0.75)', background:'transparent', border:'none', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={20}/></span>
               </button>
               <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
-                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
+                <p style={{ fontWeight:800, fontSize:16, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.nom}</p>
+                {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
-              {onRefresh && (
-                <button onClick={onRefresh} disabled={refreshing}
-                  style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:6, color:'rgba(255,255,255,0.65)', padding:'5px 8px', cursor:refreshing?'default':'pointer', display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
-                  {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
-                  <span style={{ fontSize:10, fontWeight:600 }}>Actu.</span>
+              <PendingPhotosBadge/>
+              {syncStatus !== 'ok' && (
+                <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8,
+                  background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : 'rgba(251,191,36,0.15)',
+                  border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':'rgba(251,191,36,0.4)'}`,
+                  flexShrink:0 }}>
+                  {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : null}
+                  <span style={{ fontSize:10, fontWeight:700, color: syncStatus==='error'?'#F87171':'#FCD34D', whiteSpace:'nowrap' }}>{syncStatus === 'saving' ? 'Sauvegarde…' : 'Erreur sync'}</span>
+                </div>
+              )}
+              {tab !== 'rapport' && (
+                <button onClick={() => setModal({ t:'niveaux' })} aria-label="Plans" title="Plans"
+                  style={{ width:44, height:44, flexShrink:0, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Ic n="bld" s={19}/>
                 </button>
               )}
-              <PendingPhotosBadge/>
-              {(() => {
-                const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
-                const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
-                return (
-                  <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8,
-                    background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : syncStatus==='saving' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)',
-                    border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':syncStatus==='saving'?'rgba(251,191,36,0.4)':'rgba(255,255,255,0.12)'}`,
-                    flexShrink:0 }}>
-                    {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6, height:6, borderRadius:'50%', background:dotColor, flexShrink:0 }}/>}
-                    <span style={{ fontSize:10, fontWeight:700, color: syncStatus==='error'?'#F87171':syncStatus==='saving'?'#FCD34D':'rgba(255,255,255,0.75)', whiteSpace:'nowrap' }}>{dotLabel}</span>
-                  </div>
-                );
-              })()}
-              {tab !== 'rapport' && (
-                <button onClick={() => setModal({ t:'niveaux' })}
-                  style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:8, padding:'5px 9px', color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
-                  <Ic n="bld" s={14}/>
-                  <span style={{ fontSize:11, fontWeight:700 }}>Plans</span>
-                </button>
+              {onRefresh && (
+                <div style={{ position:'relative', flexShrink:0 }}>
+                  <button onClick={() => setHeaderMenuOpen(v => !v)} aria-label="Plus d'options" title="Plus d'options"
+                    style={{ width:44, height:44, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <Ic n="dts" s={18}/>
+                  </button>
+                  {headerMenuOpen && <div onClick={() => setHeaderMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:69 }}/>}
+                  {headerMenuOpen && (
+                    <div style={{ position:'absolute', top:'100%', right:0, marginTop:2, background:'white', borderRadius:10, boxShadow:'0 8px 28px rgba(0,0,0,0.3)', zIndex:70, minWidth:180, overflow:'hidden' }}>
+                      <button onClick={() => { onRefresh(); setHeaderMenuOpen(false); }} disabled={refreshing}
+                        style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', fontSize:13, color:DA.gray, background:'none', border:'none', cursor:refreshing?'default':'pointer', textAlign:'left' }}>
+                        {refreshing ? <Ic n="spn" s={15}/> : <Ic n="rld" s={15}/>} Actualiser
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', marginTop:8 }}>

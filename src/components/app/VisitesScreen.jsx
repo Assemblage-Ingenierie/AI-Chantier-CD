@@ -14,6 +14,7 @@ const saveVSummaryCache = (o) => { try { localStorage.setItem(VSUMMARY_KEY, JSON
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [editingId, setEditingId] = useState(null); // visite en mode édition
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
 
@@ -232,36 +233,41 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
       {/* Header */}
-      <div style={{ background:DA.black, flexShrink:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'0 16px', minHeight:52 }}>
-          <button onClick={onBack}
-            style={{ color:'rgba(255,255,255,0.65)', background:'rgba(255,255,255,0.08)', border:'none', borderRadius:6, padding:'6px 10px', display:'flex', alignItems:'center', gap:3, cursor:'pointer', flexShrink:0 }}>
-            <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={13}/></span>
-            <span style={{ fontSize:12, fontWeight:600 }}>Retour</span>
+      <div style={{ background:DA.black, flexShrink:0, paddingTop:'env(safe-area-inset-top, 0px)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:2, padding:'0 6px', minHeight:52 }}>
+          <button onClick={onBack} aria-label="Retour au projet" title="Retour au projet"
+            style={{ width:44, height:44, flexShrink:0, color:'rgba(255,255,255,0.75)', background:'transparent', border:'none', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+            <span style={{ display:'inline-block', transform:'rotate(90deg)', lineHeight:0 }}><Ic n="chv" s={20}/></span>
           </button>
           <div style={{ flex:1, minWidth:0 }}>
-            <p style={{ fontWeight:800, fontSize:15, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2 }} spellCheck={false}>{projet.nom}</p>
-            {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
+            <p style={{ fontWeight:800, fontSize:16, color:'white', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.25 }} spellCheck={false}>{projet.nom}</p>
+            {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
           </div>
-          {onRefresh && (
-            <button onClick={onRefresh} disabled={refreshing}
-              style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:6, color:'rgba(255,255,255,0.65)', padding:'5px 8px', cursor:refreshing?'default':'pointer', display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
-              {refreshing ? <Ic n="spn" s={11}/> : <Ic n="rld" s={11}/>}
-              <span style={{ fontSize:10, fontWeight:600 }}>Actu.</span>
-            </button>
+          {syncStatus !== 'ok' && (
+            <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8, flexShrink:0,
+              background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : 'rgba(251,191,36,0.15)',
+              border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':'rgba(251,191,36,0.4)'}` }}>
+              {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : null}
+              <span style={{ fontSize:10, fontWeight:700, color: syncStatus==='error'?'#F87171':'#FCD34D', whiteSpace:'nowrap' }}>{syncStatus === 'saving' ? 'Sauvegarde…' : 'Erreur'}</span>
+            </div>
           )}
-          {(() => {
-            const dotColor = syncStatus === 'ok' ? '#4ADE80' : syncStatus === 'saving' ? '#FCD34D' : '#F87171';
-            const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur' : 'Sauvegardé';
-            return (
-              <div style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 9px', borderRadius:8, flexShrink:0,
-                background: syncStatus==='error' ? 'rgba(239,68,68,0.15)' : syncStatus==='saving' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)',
-                border: `1px solid ${syncStatus==='error'?'rgba(239,68,68,0.4)':syncStatus==='saving'?'rgba(251,191,36,0.4)':'rgba(255,255,255,0.12)'}` }}>
-                {syncStatus === 'saving' ? <Ic n="spn" s={10}/> : <div style={{ width:6, height:6, borderRadius:'50%', background:dotColor, flexShrink:0 }}/>}
-                <span style={{ fontSize:10, fontWeight:700, color: syncStatus==='error'?'#F87171':syncStatus==='saving'?'#FCD34D':'rgba(255,255,255,0.75)', whiteSpace:'nowrap' }}>{dotLabel}</span>
-              </div>
-            );
-          })()}
+          {onRefresh && (
+            <div style={{ position:'relative', flexShrink:0 }}>
+              <button onClick={() => setHeaderMenuOpen(v => !v)} aria-label="Plus d'options" title="Plus d'options"
+                style={{ width:44, height:44, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <Ic n="dts" s={18}/>
+              </button>
+              {headerMenuOpen && <div onClick={() => setHeaderMenuOpen(false)} style={{ position:'fixed', inset:0, zIndex:69 }}/>}
+              {headerMenuOpen && (
+                <div style={{ position:'absolute', top:'100%', right:0, marginTop:2, background:'white', borderRadius:10, boxShadow:'0 8px 28px rgba(0,0,0,0.3)', zIndex:70, minWidth:180, overflow:'hidden' }}>
+                  <button onClick={() => { onRefresh(); setHeaderMenuOpen(false); }} disabled={refreshing}
+                    style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', fontSize:13, color:DA.gray, background:'none', border:'none', cursor:refreshing?'default':'pointer', textAlign:'left' }}>
+                    {refreshing ? <Ic n="spn" s={15}/> : <Ic n="rld" s={15}/>} Actualiser
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -423,7 +429,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       value={v.label || ''}
                       onChange={e => patchVisite(v.id, { label: e.target.value })}
                       placeholder="Ex: Diagnostic structure"
-                      style={{ width:'100%', fontSize:15, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'9px 11px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:10 }}
+                      style={{ width:'100%', fontSize:16, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'9px 11px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:10 }}
                     />
                     {/* Date + Ingénieur côte à côte */}
                     <div style={{ display:'flex', gap:8, marginBottom:12 }}>
@@ -436,7 +442,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                           type="date"
                           value={v.dateVisite || ''}
                           onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
-                          style={{ fontSize:14, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
+                          style={{ fontSize:16, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
                         />
                       </div>
                       <div style={{ width:90, flexShrink:0 }}>
@@ -464,14 +470,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                 <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, padding:'12px 12px 12px 6px', borderLeft:`1px solid ${DA.grayXL}` }} onClick={e => e.stopPropagation()}>
                   <button onClick={() => setEditingId(isEditing ? null : v.id)}
                     title={isEditing ? 'Fermer' : 'Modifier'}
-                    style={{ width:34, height:34, padding:0, background: isEditing ? DA.redL : DA.grayXL, border: isEditing ? `1px solid #FCA5A5` : `1px solid ${DA.border}`, color: isEditing ? DA.red : DA.gray, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                    style={{ width:44, height:44, padding:0, background: isEditing ? DA.redL : DA.grayXL, border: isEditing ? `1px solid #FCA5A5` : `1px solid ${DA.border}`, color: isEditing ? DA.red : DA.gray, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
                     onMouseEnter={e => { if (!isEditing) { e.currentTarget.style.background = DA.redL; e.currentTarget.style.color = DA.red; e.currentTarget.style.borderColor = '#FCA5A5'; } }}
                     onMouseLeave={e => { if (!isEditing) { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.gray; e.currentTarget.style.borderColor = DA.border; } }}>
                     <Ic n="pen" s={15}/>
                   </button>
                   <button onClick={e => duplicateVisite(e, v.id)}
                     title="Dupliquer cette visite"
-                    style={{ width:34, height:34, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                    style={{ width:44, height:44, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#1D4ED8'; e.currentTarget.style.borderColor = '#93C5FD'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.grayL; e.currentTarget.style.borderColor = DA.border; }}>
                     <Ic n="cpy" s={15}/>
@@ -479,7 +485,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   {visites.length > 1 && (
                     <button onClick={e => deleteVisite(e, v.id)}
                       title="Supprimer"
-                      style={{ width:34, height:34, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
+                      style={{ width:44, height:44, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}
                       onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = DA.red; e.currentTarget.style.borderColor = '#FCA5A5'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.grayL; e.currentTarget.style.borderColor = DA.border; }}>
                       <Ic n="del" s={15}/>
