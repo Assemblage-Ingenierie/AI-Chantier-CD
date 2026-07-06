@@ -476,6 +476,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [textMode,      setTextMode]      = useState('plain');
   const [symCat,           setSymCat]           = useState('fissures');
   const [showPalette,      setShowPalette]      = useState(false);
+  const [showSizeSliders,  setShowSizeSliders]  = useState(false); // curseurs Texte/Formes/Symboles repliés par défaut (mobile)
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
@@ -1835,13 +1836,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
-      {/* ── Bandeau titre (ex: nom du plan) ── */}
-      {title && (
-        <div style={{ background:'#1a1a1a',padding:'6px 14px',borderBottom:'1px solid #2a2a2a',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-          <Ic n="map" s={13}/>
-          <span style={{ fontSize:12,color:'#bbb',fontWeight:600 }}>{title}</span>
-        </div>
-      )}
+      {/* Bandeau titre SUPPRIMÉ (demande Thomas : « le nom en haut tu peux jarter ») —
+          chaque pixel vertical va au plan. La prop title est conservée pour compat. */}
 
       {/* ── Toolbar (2 rangées fixes) ── */}
       <div style={{ background:DA.black,padding:'7px 12px 6px',display:'flex',flexDirection:'column',gap:6,flexShrink:0 }}>
@@ -1864,6 +1860,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   onClick={() => {
                     setTool(t.k);
                     if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
+                    setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
                     if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
                     if (t.k !== 'viewpoint') setActivePh(null);
                     if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
@@ -1878,7 +1875,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ))}
               {/* Palette — dans le groupe sur mobile */}
               {isMob && (
-                <button onClick={() => setShowPalette(v => !v)}
+                <button onClick={() => { setShowPalette(v => !v); setShowSyms(false); }}
                   style={{ padding:'9px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
                     color:showPalette?'white':color,transition:'all 0.15s',
                     display:'flex',alignItems:'center',justifyContent:'center',minWidth:44 }}
@@ -1967,28 +1964,33 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>}
       </div>
 
-      {/* ── Palette mobile ── */}
+      {/* ── Palette mobile (tiroir COMPACT : une ligne couleurs + épaisseur ; les curseurs de
+             taille sont repliés derrière « Tailles » — on ne les règle qu'occasionnellement).
+             Se replie automatiquement dès qu'on touche le plan. ── */}
       {isMob && showPalette && (
-        <div style={{ background:DA.black,padding:'8px 12px',display:'flex',flexDirection:'column',gap:8,flexShrink:0,borderBottom:'1px solid #333' }}>
-          <div style={{ display:'flex',gap:7,flexWrap:'wrap',alignItems:'center' }}>
+        <div style={{ background:DA.black,padding:'6px 12px 8px',display:'flex',flexDirection:'column',gap:7,flexShrink:0,borderBottom:'1px solid #333' }}>
+          <div style={{ display:'flex',gap:7,alignItems:'center',overflowX:'auto',scrollbarWidth:'none' }}>
             {ANNOT_COLORS.map(cl => (
               <button key={cl} onClick={() => recolorSelection(cl)}
-                style={{ width:30,height:30,borderRadius:'50%',background:cl,
+                style={{ width:28,height:28,borderRadius:'50%',background:cl,
                   border:`3px solid ${color===cl?'white':'transparent'}`,
                   boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',cursor:'pointer',flexShrink:0 }}/>
             ))}
-          </div>
-          <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-            <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>ÉPAISSEUR</span>
+            <div style={{ width:1,height:20,background:'#333',flexShrink:0,margin:'0 2px' }}/>
             {[1,3,6].map(sz => (
-              <button key={sz} onClick={() => resizeSelection(sz)}
-                style={{ width:sz*3+18,height:sz*3+18,borderRadius:'50%',
+              <button key={sz} onClick={() => resizeSelection(sz)} title="Épaisseur"
+                style={{ width:sz*3+16,height:sz*3+16,borderRadius:'50%',
                   background:size===sz?'white':'#555',border:`2px solid ${size===sz?'white':'#444'}`,
                   cursor:'pointer',flexShrink:0 }}/>
             ))}
+            <div style={{ width:1,height:20,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+            <button onClick={() => setShowSizeSliders(v => !v)}
+              style={{ padding:'6px 10px',borderRadius:7,fontSize:11,fontWeight:700,whiteSpace:'nowrap',flexShrink:0,
+                background:showSizeSliders?DA.red:'#333',color:showSizeSliders?'white':'#aaa',border:'none',cursor:'pointer' }}>
+              Tailles {showSizeSliders ? '▴' : '▾'}
+            </button>
           </div>
-          {/* Tailles Texte / Formes / Symboles (mobile) */}
-          {scaleCtls.map(s => (
+          {showSizeSliders && scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:8 }}>
               <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
@@ -2003,29 +2005,26 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Symbol picker — catégories ── */}
       {showSyms && tool === 'symbol' && (
         <div style={{ background:'#1a1a1a', flexShrink:0, borderBottom:'1px solid #333' }}>
-          {/* Onglets */}
+          {/* Onglets (compacts — le libellé complet du symbole passe en title/tooltip,
+              le bandeau dédié est supprimé pour rendre l'écran au plan) */}
           <div style={{ display:'flex', borderBottom:'1px solid #2a2a2a' }}>
             {SYMBOL_CATEGORIES.map(cat => (
               <button key={cat.id} onClick={() => setSymCat(cat.id)}
-                style={{ flex:1, padding:'6px 4px', fontSize:10, fontWeight:700, letterSpacing:0.5,
+                style={{ flex:1, padding:'5px 4px', fontSize:10, fontWeight:700, letterSpacing:0.5,
                   background:symCat===cat.id?DA.red:'transparent', color:symCat===cat.id?'white':'#777',
                   border:'none', cursor:'pointer', textTransform:'uppercase', transition:'all 0.15s' }}>
                 {cat.label}
               </button>
             ))}
           </div>
-          {/* Bandeau label complet */}
-          <div style={{ padding:'4px 12px', minHeight:22, display:'flex', alignItems:'center' }}>
-            <span style={{ fontSize:10, color:'#aaa', fontStyle:'italic' }}>{sym?.label || ''}</span>
-          </div>
-          {/* Grille de symboles */}
-          <div style={{ display:'flex', gap:6, padding:'4px 10px 8px', overflowX:'auto', alignItems:'flex-start' }}>
+          {/* Rangée de symboles (une ligne, défilement horizontal) */}
+          <div style={{ display:'flex', gap:6, padding:'5px 10px 7px', overflowX:'auto', alignItems:'flex-start' }}>
             {(SYMBOL_CATEGORIES.find(c => c.id === symCat)?.ids || []).map(id => {
               const sm = getAllSymbols().find(s => s.id === id);
               if (!sm) return null;
               const isActive = sym.id === sm.id;
               return (
-                <button key={sm.id} onClick={() => setSym(sm)}
+                <button key={sm.id} onClick={() => setSym(sm)} title={sm.label}
                   style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:3,
                     padding:'6px 8px', borderRadius:8, cursor:'pointer', border:'none',
                     background:isActive ? DA.red : '#2a2a2a' }}>
@@ -2233,8 +2232,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
               style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
-              onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
-              onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}
+              onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
+              onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
               onContextMenu={e => e.preventDefault()}/>
             {vt.z > 1.05 && (
               <button
