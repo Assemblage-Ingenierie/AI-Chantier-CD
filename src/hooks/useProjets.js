@@ -145,7 +145,12 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
         return {
           ...rv,
           // Préserver les champs locaux enrichis que le remote peut ne pas avoir encore
-          ingenieur: lv.ingenieur || rv.ingenieur || '',
+          // Chemin NON-DIRTY → le SERVEUR fait autorité sur l'ingénieur de la visite (?? et
+          // non || : une chaîne VIDE distante est respectée). L'ancien `lv || rv` faisait
+          // RESSUSCITER des initiales effacées : un appareil au cache périmé ré-affichait
+          // « TCM » après suppression (bug filtre « Mes projets », signalé par Thomas).
+          // Le local ne sert de repli que si le remote ne connaît pas encore le champ.
+          ingenieur: rv.ingenieur ?? lv.ingenieur ?? '',
           localisations: [
             ...(rv.localisations || []).map(loc => {
               const localLoc = lv.localisations?.find(l => l.id === loc.id);
