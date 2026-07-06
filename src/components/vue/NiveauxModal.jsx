@@ -1,12 +1,32 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage } from '../../lib/pdfUtils.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
+// Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
+const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
+
 export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
+  // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
+  // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
+  // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
+  const pdfGroups = useMemo(() => {
+    const map = new Map();
+    for (const pl of (planLibrary || [])) {
+      const m = String(pl.nom || '').match(PDF_PAGE_RE);
+      const base = m ? pl.nom.replace(PDF_PAGE_RE, '').trim() : (pl.nom || 'Document');
+      const page = m ? parseInt(m[1], 10) : 1;
+      if (!map.has(base)) map.set(base, []);
+      map.get(base).push({ ...pl, _page: page });
+    }
+    return [...map.entries()].map(([nom, pages]) => ({ nom, pages: pages.sort((a, b) => a._page - b._page) }));
+  }, [planLibrary]);
+  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
+  const [consultZoom, setConsultZoom] = useState(100);    // largeur des pages en % du viewport
+  const ZOOMS = [100, 150, 200, 300];
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
@@ -79,6 +99,46 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     />
   );
 
+  // ── Visionneuse « Consulter les plans » : toutes les pages du PDF à la suite ──
+  // Défilement vertical continu + zoom par paliers (largeur des pages en % du viewport,
+  // défilement horizontal quand > 100%). Fonctionne hors ligne (les bg sont en cache).
+  if (consultGroup) {
+    const zi = ZOOMS.indexOf(consultZoom);
+    return (
+      <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
+        <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
+          <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
+          <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+            {consultGroup.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {consultGroup.pages.length} page{consultGroup.pages.length > 1 ? 's' : ''}</span>
+          </p>
+          <button onClick={() => setConsultZoom(ZOOMS[Math.max(0, zi - 1)])} disabled={zi <= 0}
+            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:zi <= 0 ? 'rgba(255,255,255,0.3)' : 'white',fontSize:18,fontWeight:800,cursor:zi <= 0 ? 'default' : 'pointer',flexShrink:0 }}>−</button>
+          <span style={{ fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.7)',width:38,textAlign:'center',flexShrink:0 }}>{consultZoom}%</span>
+          <button onClick={() => setConsultZoom(ZOOMS[Math.min(ZOOMS.length - 1, zi + 1)])} disabled={zi >= ZOOMS.length - 1}
+            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:zi >= ZOOMS.length - 1 ? 'rgba(255,255,255,0.3)' : 'white',fontSize:18,fontWeight:800,cursor:zi >= ZOOMS.length - 1 ? 'default' : 'pointer',flexShrink:0 }}>+</button>
+          <button onClick={() => setConsultGroup(null)}
+            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:'white',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}>
+            <Ic n="x" s={16}/>
+          </button>
+        </div>
+        <div style={{ flex:1,overflow:'auto',WebkitOverflowScrolling:'touch' }}>
+          <div style={{ width:`${consultZoom}%`,minWidth:'100%' }}>
+            {consultGroup.pages.map(p => (
+              <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
+                {p.bg
+                  ? <img src={p.bg} alt="" style={{ width:'100%',display:'block',background:'white' }}/>
+                  : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
+                <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
+                  Page {p._page}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (previewBg) return (
     <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
       <img src={previewBg} alt="" style={{ maxWidth:'92vw',maxHeight:'92vh',objectFit:'contain',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,0.6)' }}/>
@@ -109,6 +169,29 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
         {/* Liste des niveaux */}
         <div style={{ flex:1,overflowY:'auto',padding:'12px 14px' }}>
+          {/* Consultation : un bouton par PDF importé → visionneuse de TOUTES ses pages */}
+          {pdfGroups.length > 0 && (
+            <div style={{ marginBottom:16 }}>
+              <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:'0 0 8px' }}>
+                Consulter les plans
+              </p>
+              <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                {pdfGroups.map(g => (
+                  <button key={g.nom} onClick={() => { setConsultGroup(g); setConsultZoom(100); }}
+                    style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,
+                      border:`1.5px solid ${DA.border}`,background:DA.grayXL,cursor:'pointer',textAlign:'left',width:'100%' }}>
+                    <span style={{ fontSize:16,flexShrink:0 }}>📄</span>
+                    <span style={{ flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{g.nom}</span>
+                    <span style={{ flexShrink:0,fontSize:11,fontWeight:700,color:DA.red,background:DA.redL,borderRadius:12,padding:'2px 8px' }}>
+                      {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
+                    </span>
+                    <span style={{ flexShrink:0,color:DA.grayL,fontSize:14 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Section bibliothèque */}
           <div style={{ marginBottom:16 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
