@@ -8,6 +8,8 @@ import { processDriveQueue } from '../../lib/driveUpload.js';
 import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import AccountModal, { isProfileIncomplete } from '../auth/AccountModal.jsx';
+import { projectMatchesInitials } from '../../lib/profile.js';
+import { isProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import SettingsModal from '../ui/SettingsModal.jsx';
 import ContactsManagerModal from '../vue/ContactsManagerModal.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
@@ -34,7 +36,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -54,6 +56,28 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   // File d'upload photos : reprend les envois en attente (photos prises sur site dont
   // l'upload a été interrompu) dès l'ouverture de l'app, puis au retour en ligne/premier plan.
   useEffect(() => { initPhotoUploadQueue(); }, []);
+
+  // ── Pré-téléchargement HORS-LIGNE automatique des projets de l'ingénieur ──
+  // Une fois les données chargées et les initiales connues : télécharge en arrière-plan
+  // (données + plans + photos) chaque projet ACTIF « à moi » dont le switch hors-ligne est
+  // activé (Paramètres). Séquentiel, best-effort, une seule passe par session. Objectif :
+  // arriver sur un chantier sans réseau avec TOUT son projet disponible.
+  const precacheRanRef = useRef(false);
+  useEffect(() => {
+    if (precacheRanRef.current) return;
+    if (!remoteLoaded || !navigator.onLine) return;
+    const initials = (profile?.initials || '').trim();
+    if (!initials) return;
+    const mine = projets.filter(p => p.statut !== 'archive'
+      && projectMatchesInitials(p, initials) && isProjectOfflineEnabled(p.id));
+    if (!mine.length) return;
+    precacheRanRef.current = true;
+    (async () => {
+      for (const p of mine) {
+        try { await precacheProjectOffline(p.id); } catch { /* best-effort */ }
+      }
+    })();
+  }, [remoteLoaded, projets, profile?.initials]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
   useEffect(() => {
@@ -290,7 +314,9 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';
 
-  const handleArchive = (id) => { updateProjet(id, { statut: 'archive' }); setOuvert(null); };
+  // Archiver = vider aussi le cache hors-ligne local du projet (photos IndexedDB) pour ne pas
+  // surcharger l'appareil. AUCUNE donnée serveur touchée : désarchiver re-télécharge si besoin.
+  const handleArchive = (id) => { updateProjet(id, { statut: 'archive' }); setOuvert(null); purgeProjectOffline(id); };
   const handleUnarchive = (id) => {
     updateProjet(id, { statut: 'en_cours' });
     hydratePhotos(id);
@@ -538,7 +564,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         <AccountModal profile={profile} session={session} forceComplete={isProfileIncomplete(profile)}
           onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>
       )}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)}/>}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} projets={projets} onPrecacheProject={precacheProjectOffline}/>}
       {showContacts && <ContactsManagerModal projets={projets} onClose={() => setShowContacts(false)}/>}
 
       {undoToast && (

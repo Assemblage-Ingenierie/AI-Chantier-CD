@@ -4,6 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import ProjectCard from './ProjectCard.jsx';
 import PhotoModal from './PhotoModal.jsx';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
+import { projectMatchesInitials } from '../../lib/profile.js';
 
 const STEPS = [
   { n:1, icon:'plus', t:'Créez un projet', d:'"Nouveau" en haut à droite' },
@@ -11,15 +12,6 @@ const STEPS = [
   { n:3, icon:'cam',  t:'Saisissez vos observations', d:'Avec photos, urgence et suivi' },
   { n:4, icon:'fil',  t:'Générez le rapport PDF', d:'Onglet Rapport → Exporter' },
 ];
-
-// Un projet est « à moi » si au moins une de ses visites porte mes initiales dans son champ
-// Ingénieur. Tolérant au multi-ingénieurs (« SV, TCM ») : on découpe sur tout séparateur.
-export function projectMatchesInitials(p, initials) {
-  const mine = (initials || '').trim().toUpperCase();
-  if (!mine) return false;
-  return (p.visites || []).some(v =>
-    String(v.ingenieur || '').toUpperCase().split(/[^A-Z0-9]+/).includes(mine));
-}
 
 // Bascule mémorisée pour la SESSION (sessionStorage) : naviguer dans l'app ne la perd pas,
 // mais chaque nouvelle ouverture de l'app revient sur « Mes projets ».

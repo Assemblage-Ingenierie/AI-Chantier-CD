@@ -13,6 +13,16 @@ export function suggestInitials({ first_name, last_name, email }) {
   return '';
 }
 
+// Un projet est « à moi » si au moins une de ses visites porte mes initiales dans son champ
+// Ingénieur. Tolérant au multi-ingénieurs (« SV, TCM ») : on découpe sur tout séparateur.
+// Partagé par le filtre « Mes projets » (Dashboard) et le pré-téléchargement hors-ligne.
+export function projectMatchesInitials(p, initials) {
+  const mine = (initials || '').trim().toUpperCase();
+  if (!mine) return false;
+  return (p.visites || []).some(v =>
+    String(v.ingenieur || '').toUpperCase().split(/[^A-Z0-9]+/).includes(mine));
+}
+
 // Nom affichable d'un profil : « Prénom Nom » sinon email.
 export function displayName(p) {
   if (!p) return '';

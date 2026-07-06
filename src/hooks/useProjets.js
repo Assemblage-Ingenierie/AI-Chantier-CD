@@ -4,6 +4,7 @@ import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
+import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
 
 const MAX_HISTORY = 20;
@@ -612,6 +613,72 @@ export function useProjets(onSyncStatus) {
     return projet;
   };
 
+  // REPLI HORS-LIGNE : réinjecte les octets photos depuis le cache IndexedDB (offlineCache)
+  // dans l'état React. Une photo substituée est marquée _offlineCached (slimLoc ne persiste
+  // pas son base64 en localStorage — re-remplissable d'ici). Un item n'est marqué
+  // _photosHydrated que si TOUTES ses photos ont des octets utilisables → sinon une
+  // hydratation réseau ultérieure pourra compléter.
+  const applyOfflineCacheToProject = async (projectId, visiteId = null) => {
+    const projet = projetsRef.current.find(p => p.id === projectId);
+    if (!projet) return;
+    const needsBytes = (ph) => !(typeof ph.data === 'string' && ph.data.startsWith('data:'));
+    const wantedIds = (projet.visites || [])
+      .filter(v => !visiteId || v.id === visiteId)
+      .flatMap(v => (v.localisations || []).flatMap(l => (l.items || []).flatMap(i =>
+        (i.photos || []).filter(ph => ph._id && needsBytes(ph)).map(ph => ph._id))));
+    if (!wantedIds.length) return;
+    const cached = await getCachedPhotoData(wantedIds);
+    if (!Object.keys(cached).length) return;
+    setProjets(ps => ps.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        visites: (p.visites || []).map(v => {
+          if (visiteId && v.id !== visiteId) return v;
+          return {
+            ...v,
+            localisations: (v.localisations || []).map(loc => ({
+              ...loc,
+              items: (loc.items || []).map(item => {
+                const photos = (item.photos || []).map(ph =>
+                  ph._id && needsBytes(ph) && cached[ph._id]
+                    ? { ...ph, data: cached[ph._id], _offlineCached: true }
+                    : ph);
+                const allUsable = photos.length > 0 && photos.every(ph => typeof ph.data === 'string' && ph.data.startsWith('data:'));
+                return { ...item, photos, ...(allUsable ? { _photosHydrated: true } : {}) };
+              }),
+            })),
+          };
+        }),
+      };
+    }));
+  };
+
+  // PRÉ-TÉLÉCHARGEMENT HORS-LIGNE d'un projet (« Mes projets ») : hydrate les métadonnées et
+  // les plans (persistés en IndexedDB par les flux existants), puis télécharge les octets de
+  // chaque photo pas encore en cache (par petits lots — ne bloque pas l'UI). Best-effort :
+  // toute erreur réseau est ignorée, le prochain passage reprendra où on en était.
+  const precacheProjectOffline = async (projectId) => {
+    try {
+      await hydratePhotos(projectId);
+      const lm = await hydratePlanLibrary(projectId);
+      await hydratePlans(projectId, lm);
+    } catch { /* hydratation best-effort */ }
+    const projet = projetsRef.current.find(p => p.id === projectId);
+    if (!projet) return;
+    const all = (projet.visites || []).flatMap(v => (v.localisations || []).flatMap(l =>
+      (l.items || []).flatMap(i => (i.photos || []).filter(ph => ph._id && ph.data))));
+    const alreadyCached = await getCachedPhotoIds(all.map(ph => ph._id));
+    const todo = all.filter(ph => !alreadyCached.has(ph._id));
+    const CHUNK = 3;
+    for (let i = 0; i < todo.length; i += CHUNK) {
+      await Promise.all(todo.slice(i, i + CHUNK).map(async (ph) => {
+        const dataUrl = ph.data.startsWith('data:') ? ph.data : await fetchAsDataUrl(ph.data);
+        if (dataUrl) await cachePhoto(ph._id, projectId, dataUrl);
+      }));
+    }
+  };
+
   // Charge les photos d'un projet. Si visiteId fourni, charge uniquement cette visite
   // et skip les items déjà hydratés — permet le lazy loading par visite.
   const hydratePhotos = async (projectId, visiteId = null) => {
@@ -629,8 +696,15 @@ export function useProjets(onSyncStatus) {
     );
     if (!itemIds.length) return; // Tout déjà hydraté
 
-    const photosMap = await loadProjectPhotos(itemIds);
-    if (photosMap === null) return;
+    let photosMap = null;
+    try { photosMap = await loadProjectPhotos(itemIds); } catch { photosMap = null; }
+    if (photosMap === null) {
+      // Réseau absent (mode hors-ligne) → REPLI : réinjecter les octets depuis le cache
+      // IndexedDB (offlineCache), rempli par le pré-téléchargement des projets de l'ingénieur.
+      // Les photos y sont indexées par _id (conservé dans le cache localStorage par slimLoc).
+      await applyOfflineCacheToProject(projectId, visiteId);
+      return;
+    }
 
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
@@ -1029,5 +1103,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline };
 }

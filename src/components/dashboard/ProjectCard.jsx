@@ -58,7 +58,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
       <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
-            <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
+            <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
             {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
           </div>
           {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}

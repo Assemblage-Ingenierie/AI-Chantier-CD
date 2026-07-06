@@ -5,6 +5,7 @@ import { getUiScale, setUiScale } from '../../lib/uiPrefs.js';
 import { estimatePlanCacheBytes, clearPlanCache } from '../../lib/planThumbCache.js';
 import { estimateSnapshotBytes } from '../../lib/backupVault.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
+import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -29,19 +30,42 @@ const SCALES = [
   { k: 'large',   label: 'Grand'   },
 ];
 
-export default function SettingsModal({ onClose }) {
+export default function SettingsModal({ onClose, projets = [], onPrecacheProject = null }) {
   const [scale, setScale] = useState(getUiScale);
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
+  const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: bytes }
+  const [offlinePrefs, setOfflinePrefs] = useState({}); // reflet local des switchs
+  const [busyProject, setBusyProject] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [navDebug, setNavDebug] = useState(() => { try { return localStorage.getItem('_navdebug') === '1'; } catch { return false; } });
 
   const refreshSizes = async () => {
-    const [plans, snapshots, pending] = await Promise.all([
+    const [plans, snapshots, pending, byProject] = await Promise.all([
       estimatePlanCacheBytes(), estimateSnapshotBytes(), estimatePendingUploadBytes(),
+      estimateOfflineBytesByProject(),
     ]);
     setSizes({ plans, snapshots, pending, local: localStorageBytes() });
+    setOfflineByProject(byProject);
+  };
+
+  // Switch hors-ligne d'un projet : OFF = purge son cache photos et l'exclut du
+  // pré-téléchargement automatique ; ON = réactive et relance le téléchargement.
+  const toggleProjectOffline = async (p) => {
+    const currentlyOn = offlinePrefs[p.id] ?? isProjectOfflineEnabled(p.id);
+    setBusyProject(p.id);
+    if (currentlyOn) {
+      setProjectOfflineEnabled(p.id, false);
+      setOfflinePrefs(o => ({ ...o, [p.id]: false }));
+      await purgeProjectOffline(p.id);
+    } else {
+      setProjectOfflineEnabled(p.id, true);
+      setOfflinePrefs(o => ({ ...o, [p.id]: true }));
+      try { await onPrecacheProject?.(p.id); } catch { /* best-effort */ }
+    }
+    await refreshSizes();
+    setBusyProject(null);
   };
 
   useEffect(() => { refreshSizes(); }, []);
@@ -103,6 +127,40 @@ export default function SettingsModal({ onClose }) {
             </div>
             <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
               S'applique aux listes et aux fiches. L'annotation de plans et l'aperçu du rapport gardent leur taille d'origine.
+            </p>
+          </div>
+
+          {/* ── Hors-ligne par projet ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Projets disponibles hors ligne</p>
+            <div style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'4px 12px' }}>
+              {projets.filter(p => p.statut !== 'archive').map((p, i) => {
+                const on = offlinePrefs[p.id] ?? isProjectOfflineEnabled(p.id);
+                const bytes = offlineByProject?.[p.id] || 0;
+                return (
+                  <div key={p.id} style={{ ...row, ...(i > 0 ? { borderTop:`1px solid ${DA.grayXL}` } : {}) }}>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <div style={{ fontSize:13, color:DA.black, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
+                      <div style={{ fontSize:11, color:DA.grayL, marginTop:1 }}>
+                        {offlineByProject == null ? '…' : on ? `${fmtBytes(bytes)} de photos en cache` : 'Hors-ligne désactivé'}
+                      </div>
+                    </div>
+                    <button onClick={() => toggleProjectOffline(p)} disabled={busyProject === p.id}
+                      title={on ? 'Désactiver le hors-ligne (supprime le cache local de ce projet)' : 'Activer le hors-ligne (re-télécharge le projet)'}
+                      style={{ flexShrink:0, width:46, height:26, borderRadius:20, border:'none', cursor: busyProject === p.id ? 'default' : 'pointer', position:'relative',
+                        background: on ? DA.urgGrn : DA.border, opacity: busyProject === p.id ? 0.6 : 1, transition:'background 0.15s' }}>
+                      <span style={{ position:'absolute', top:3, left: on ? 23 : 3, width:20, height:20, borderRadius:'50%', background:'white', transition:'left 0.15s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }}/>
+                    </button>
+                  </div>
+                );
+              })}
+              {projets.filter(p => p.statut !== 'archive').length === 0 && (
+                <div style={row}><span style={{ fontSize:12, color:DA.grayL }}>Aucun projet actif</span></div>
+              )}
+            </div>
+            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+              Les projets portant vos initiales se téléchargent automatiquement (données, plans, photos)
+              pour être consultables sans réseau. Désactiver un projet libère son espace immédiatement.
             </p>
           </div>
 
