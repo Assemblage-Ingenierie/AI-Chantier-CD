@@ -409,12 +409,12 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
                   style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
                   <Ic n="sld" s={16}/> Paramètres
                 </button>
-                {!isMobile && (
-                  <button onClick={() => { setShowContacts(true); setHeaderMenuOpen(false); }}
-                    style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
-                    <Ic n="usr" s={16}/> Carnet d'intervenants
-                  </button>
-                )}
+                {/* Disponible aussi sur téléphone (demande Thomas) — le tableau défile
+                    horizontalement sur petit écran. */}
+                <button onClick={() => { setShowContacts(true); setHeaderMenuOpen(false); }}
+                  style={{ width:'100%',display:'flex',alignItems:'center',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
+                  <Ic n="usr" s={16}/> Carnet d'intervenants
+                </button>
                 {profile?.role === 'admin' && (
                   <button onClick={() => { setShowAdmin(true); setPendingCount(0); setHeaderMenuOpen(false); }}
                     style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
