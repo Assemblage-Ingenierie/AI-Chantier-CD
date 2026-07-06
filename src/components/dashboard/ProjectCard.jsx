@@ -51,13 +51,20 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
         {/* Le bouton appareil photo a été retiré (la photo de couverture se change via
             le menu ⋯ → Modifier). PhotoModal reste disponible côté Dashboard. */}
         {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,padding:'3px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={10}/> Archivé</div>}
+        {/* PC uniquement (masqué en CSS sur mobile) : nom COMPLET de l'affaire en bandeau
+            dégradé sur la photo (2 lignes max) — choix Thomas, le titre quitte la zone du bas. */}
+        <div className="proj-card-name-overlay">
+          <p>{p.nom}</p>
+          {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
+        </div>
         <div style={{ position:'absolute',bottom:0,left:0,right:0,height:3,background:DA.red }}/>
       </div>
 
       {/* Infos */}
       <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
-          <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+          {/* Rangée titre : MOBILE uniquement (sur PC le nom est en bandeau sur la photo). */}
+          <div className="proj-card-titlerow" style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
             <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
             {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
           </div>
