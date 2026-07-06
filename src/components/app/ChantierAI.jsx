@@ -7,7 +7,7 @@ import { fetchRemoteTimestamps } from '../../lib/storage.js';
 import { processDriveQueue } from '../../lib/driveUpload.js';
 import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
-import AccountModal from '../auth/AccountModal.jsx';
+import AccountModal, { isProfileIncomplete } from '../auth/AccountModal.jsx';
 import SettingsModal from '../ui/SettingsModal.jsx';
 import ContactsManagerModal from '../vue/ContactsManagerModal.jsx';
 import Dashboard from '../dashboard/Dashboard.jsx';
@@ -511,6 +511,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
           <div style={{ height:'100%',overflowY:'auto' }}>
             <Dashboard
               projets={projets}
+              profile={profile}
               remoteLoaded={remoteLoaded}
               staleIds={staleIds}
               dirtyIds={dirtyProjectIds}
@@ -530,7 +531,13 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
       {showNew && <NewProjet onClose={() => setShowNew(false)} onSave={(f) => { addProjet(f); setShowNew(false); }}/>}
       {editTarget && <EditProjet projet={editTarget} onClose={() => setEditTarget(null)} onSave={(f) => { updateProjet(editTarget.id, f); setEditTarget(null); }}/>}
       {showAdmin && <AdminPanel currentUserId={profile?.id} onClose={() => setShowAdmin(false)} onPendingCountChange={setPendingCount}/>}
-      {showAccount && <AccountModal profile={profile} session={session} onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>}
+      {/* Première connexion depuis la MAJ : fiche incomplète (Prénom/Nom/Initiales) → le modal
+          s'ouvre automatiquement en mode bloquant. Les initiales alimentent le filtre
+          « Mes projets » et le pré-chargement hors-ligne. */}
+      {(showAccount || isProfileIncomplete(profile)) && (
+        <AccountModal profile={profile} session={session} forceComplete={isProfileIncomplete(profile)}
+          onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>
+      )}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)}/>}
       {showContacts && <ContactsManagerModal projets={projets} onClose={() => setShowContacts(false)}/>}
 

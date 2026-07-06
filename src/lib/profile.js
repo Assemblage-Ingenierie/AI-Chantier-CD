@@ -20,17 +20,31 @@ export function displayName(p) {
   return full || p.email || '';
 }
 
+// Vérifie si des initiales sont déjà prises par un AUTRE compte (fonction SECURITY DEFINER
+// côté Supabase : un non-admin ne voit que sa propre fiche, il ne peut pas vérifier lui-même).
+// DÉFENSIF : si la migration n'est pas encore appliquée (fonction absente) ou en cas d'erreur
+// réseau, renvoie false (on n'empêche pas la sauvegarde, l'unicité sera contrôlée plus tard).
+export async function checkInitialsTaken(initials) {
+  const v = (initials || '').trim();
+  if (!v) return false;
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('initials_taken', { p_initials: v });
+    if (error) return false;
+    return data === true;
+  } catch { return false; }
+}
+
 // Met à jour SA PROPRE fiche profil (RLS : auth.uid() = id). Rafraîchit le cache local
 // pour que le nom/initiales soient immédiatement disponibles sans recharger.
+// Ne patche QUE les champs réellement fournis : « Mon compte » n'édite plus Poste/Téléphone,
+// il ne doit pas les écraser à null (le Poste est géré par l'admin).
 export async function saveMyProfile(userId, fields) {
   const sb = await getSupabase();
-  const patch = {
-    first_name: fields.first_name?.trim() || null,
-    last_name:  fields.last_name?.trim()  || null,
-    job_title:  fields.job_title?.trim()  || null,
-    phone:      fields.phone?.trim()      || null,
-    initials:   fields.initials?.trim()   || null,
-  };
+  const patch = {};
+  for (const k of ['first_name', 'last_name', 'job_title', 'phone', 'initials']) {
+    if (k in fields) patch[k] = fields[k]?.trim() || null;
+  }
   const { data, error } = await sb
     .from('aichantier_profiles')
     .update(patch)
