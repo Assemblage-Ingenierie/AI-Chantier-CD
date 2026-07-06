@@ -38,6 +38,34 @@ function download(filename, text) {
 
 const EMPTY = { nom: '', poste: '', entreprise: '', email: '', tel: '', isAssemblage: false };
 
+// Cellule éditable EN PLACE : clic → input, Entrée/blur → enregistre, Échap → annule.
+// Permet de modifier tout le carnet directement depuis le tableau (demande Thomas).
+function EditableCell({ value, placeholder = '—', bold = false, onCommit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  useEffect(() => { if (!editing) setDraft(value || ''); }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    const v = draft.trim();
+    if (v !== (value || '')) onCommit(v);
+  };
+  if (!editing) {
+    return (
+      <div onClick={() => setEditing(true)} title="Cliquer pour modifier"
+        style={{ cursor:'text', minHeight:18, borderRadius:4, padding:'2px 4px', margin:'-2px -4px', fontWeight: bold ? 700 : 400 }}>
+        {value || <span style={{ color:DA.grayL }}>{placeholder}</span>}
+      </div>
+    );
+  }
+  return (
+    <input autoFocus value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value || ''); setEditing(false); } }}
+      style={{ width:'100%', minWidth:90, fontSize:13, border:`1.5px solid ${DA.red}`, borderRadius:6, padding:'4px 6px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
+  );
+}
+
 export default function ContactsManagerModal({ projets = [], onClose }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +84,15 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
     setLoading(false);
   };
   useEffect(() => { reload(); }, []);
+
+  // Édition en place d'un champ : mise à jour OPTIMISTE (le tableau réagit immédiatement),
+  // enregistrement Supabase derrière ; en cas d'échec on recharge (état serveur = vérité).
+  const patchContact = async (c, field, value) => {
+    const updated = { ...c, [field]: value };
+    setContacts(cs => cs.map(x => x.id === c.id ? updated : x));
+    try { await upsertContact(updated); }
+    catch (e) { setErr(e.message || 'Erreur d\'enregistrement'); reload(); }
+  };
 
   const tagged = useMemo(() => computeTagged(projets), [projets]);
   const projetsOf = (c) => {
@@ -175,15 +212,17 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
                     const projs = projetsOf(c);
                     return (
                       <tr key={c.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
-                        <td style={{ ...td, fontWeight:700 }}>{c.nom}</td>
-                        <td style={{ ...td, color:DA.gray }}>{c.poste || '—'}</td>
-                        <td style={{ ...td, color:DA.gray }}>{c.entreprise || '—'}</td>
-                        <td style={{ ...td, color:DA.gray }}>{c.email || '—'}</td>
-                        <td style={{ ...td, color:DA.gray, whiteSpace:'nowrap' }}>{c.tel || '—'}</td>
+                        <td style={{ ...td }}><EditableCell value={c.nom} bold placeholder="Nom" onCommit={v => { if (v) patchContact(c, 'nom', v); }}/></td>
+                        <td style={{ ...td, color:DA.gray }}><EditableCell value={c.poste} onCommit={v => patchContact(c, 'poste', v)}/></td>
+                        <td style={{ ...td, color:DA.gray }}><EditableCell value={c.entreprise} onCommit={v => patchContact(c, 'entreprise', v)}/></td>
+                        <td style={{ ...td, color:DA.gray }}><EditableCell value={c.email} onCommit={v => patchContact(c, 'email', v)}/></td>
+                        <td style={{ ...td, color:DA.gray, whiteSpace:'nowrap' }}><EditableCell value={c.tel} onCommit={v => patchContact(c, 'tel', v)}/></td>
                         <td style={td}>
-                          <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background: c.isAssemblage ? DA.redL : DA.grayXL, color: c.isAssemblage ? DA.red : DA.gray }}>
+                          <button onClick={() => patchContact(c, 'isAssemblage', !c.isAssemblage)}
+                            title="Cliquer pour basculer Assemblage / Externe"
+                            style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, border:'none', cursor:'pointer', background: c.isAssemblage ? DA.redL : DA.grayXL, color: c.isAssemblage ? DA.red : DA.gray }}>
                             {c.isAssemblage ? 'Assemblage' : 'Externe'}
-                          </span>
+                          </button>
                         </td>
                         <td style={td}>
                           {projs.length === 0
