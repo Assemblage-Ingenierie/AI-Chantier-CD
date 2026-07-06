@@ -443,12 +443,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                   <div onClick={() => onSelectVisite(v.id)}
                     style={{ flex:1, display:'flex', flexDirection:'column', justifyContent:'center', gap:10, padding:'16px 16px', cursor:'pointer', minWidth:0 }}>
 
-                    {/* Titre + badge de sync visite (V2) */}
+                    {/* Titre + badge de sync visite. Les états « À télécharger »/« Hors ligne prêt »
+                        ne s'affichent plus : le pré-téléchargement des projets de l'ingénieur est
+                        automatique (les badges d'erreur/sync restent). */}
                     <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
                       <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.3, flex:1, minWidth:0 }}>{v.label || `Visite ${visiteNum}`}</p>
                       {pinningId === v.id
                         ? <SyncBadge state="syncing" label="Téléchargement…" />
-                        : <SyncBadge state={vstate} />}
+                        : (vstate !== 'notloaded' && vstate !== 'pinned') && <SyncBadge state={vstate} />}
                     </div>
 
                     {/* Meta : date + ingénieur sur une ligne */}
@@ -569,15 +571,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     onMouseLeave={e => { if (!isEditing) { e.currentTarget.style.background = DA.grayXL; e.currentTarget.style.color = DA.gray; e.currentTarget.style.borderColor = DA.border; } }}>
                     <Ic n="pen" s={15}/>
                   </button>
-                  {onPinVisite && (
-                    <button onClick={e => togglePin(e, v.id)}
-                      disabled={pinningId === v.id}
-                      title={pinned ? 'Annuler le téléchargement hors-ligne de cette visite' : 'Télécharger dès maintenant les photos et plans de cette visite pour pouvoir la consulter sans réseau'}
-                      aria-label={pinned ? 'Annuler le téléchargement hors-ligne' : 'Télécharger cette visite pour la consulter hors-ligne'}
-                      style={{ width:44, height:44, padding:0, background: pinned ? '#ECFDF5' : DA.grayXL, border:`1px solid ${pinned ? '#A7F3D0' : DA.border}`, color: pinned ? '#047857' : DA.grayL, cursor: pinningId === v.id ? 'default' : 'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      {pinningId === v.id ? <Ic n="spn" s={15}/> : <Ic n="tack" s={15}/>}
-                    </button>
-                  )}
+                  {/* Bouton pin retiré : le hors-ligne des projets de l'ingénieur est désormais
+                      AUTOMATIQUE (et réglable par projet dans Paramètres). */}
                   <button onClick={e => duplicateVisite(e, v.id)}
                     title="Dupliquer cette visite"
                     style={{ width:44, height:44, padding:0, background:DA.grayXL, border:`1px solid ${DA.border}`, color:DA.grayL, cursor:'pointer', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}

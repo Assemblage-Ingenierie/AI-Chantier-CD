@@ -118,7 +118,14 @@ function slimLoc(l) {
       // à travers les rechargements de page. Sans lui, une sauvegarde avant ré-hydratation
       // attribuait un id aléatoire → ligne dupliquée en DB (visible depuis que la purge des
       // orphelins est conservatrice). ~36 octets par photo, négligeable.
-      photos: (item.photos || []).map(({ _legacy, ...ph }) => ph),
+      // Les octets substitués depuis le cache HORS-LIGNE (_offlineCached, data: base64) ne
+      // sont PAS persistés ici : ils feraient déborder le quota localStorage et sont
+      // re-remplissables depuis IndexedDB (offlineCache) au chargement. Les photos fraîches
+      // prises sur place (base64 sans _offlineCached) restent persistées comme avant.
+      photos: (item.photos || []).map(({ _legacy, ...ph }) =>
+        ph._offlineCached && typeof ph.data === 'string' && ph.data.startsWith('data:')
+          ? { ...ph, data: null }
+          : ph),
     })),
   };
 }
