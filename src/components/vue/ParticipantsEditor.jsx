@@ -159,6 +159,29 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
   const assemblageContacts = contacts.filter(c => c.isAssemblage);
   const externalContacts   = contacts.filter(c => !c.isAssemblage);
 
+  // AUTO-RÉPARATION : les participants d'une visite sont des COPIES figées au moment de
+  // l'ajout — un champ ajouté ensuite au carnet (ex : entreprise de Véronique) n'y figure
+  // pas et n'apparaît donc ni dans la liste ni sur la page de garde. Au chargement des
+  // contacts, on complète les participants existants (correspondance email, repli nom)
+  // avec les champs MANQUANTS uniquement (jamais d'écrasement d'une valeur déjà saisie).
+  useEffect(() => {
+    if (!contacts.length || !participants.length) return;
+    const byEmail = new Map(contacts.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
+    const byName  = new Map(contacts.map(c => [c.nom.trim().toLowerCase(), c]));
+    let changed = false;
+    const next = participants.map(p => {
+      const c = (p.email && byEmail.get(p.email.toLowerCase())) || byName.get((p.nom || '').trim().toLowerCase());
+      if (!c) return p;
+      const patch = {};
+      if (c.entreprise && !p.entreprise) patch.entreprise = c.entreprise;
+      if (c.poste && !p.poste) patch.poste = c.poste;
+      if (!Object.keys(patch).length) return p;
+      changed = true;
+      return { ...p, ...patch };
+    });
+    if (changed) onChange(next);
+  }, [contacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'present' }]);
   const remove = (id) => onChange(participants.filter(p => p.id !== id));
   const toggle = (id) => onChange(participants.map(p =>
@@ -391,8 +414,8 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
               </button>
             ) : (
               <InlineEditForm
-                contact={{ nom: form.nom, poste: form.poste, email: form.email, tel: form.tel, isAssemblage: false }}
-                onSave={c => { setForm({ nom: c.nom, poste: c.poste, email: c.email, tel: c.tel }); handleSaveContact({ ...c, isAssemblage: false }); }}
+                contact={{ nom: form.nom, poste: form.poste, entreprise: form.entreprise, email: form.email, tel: form.tel, isAssemblage: false }}
+                onSave={c => { setForm({ nom: c.nom, poste: c.poste, entreprise: c.entreprise, email: c.email, tel: c.tel }); handleSaveContact({ ...c, isAssemblage: false }); }}
                 onCancel={() => { setShowForm(false); setForm(EMPTY_FORM); }}
                 saving={saving}
               />
