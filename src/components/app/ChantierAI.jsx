@@ -324,8 +324,25 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
       doBack('popstate');
     };
     window.addEventListener('popstate', onPop);
+
+    // ── DERNIER REMPART : confirmation avant fermeture ─────────────────────────────
+    // Chrome consomme le « crédit d'interaction » à chaque retour annulé : en matraquant
+    // le bouton retour SANS re-toucher l'écran, toutes les protections s'épuisent et Chrome
+    // force la sortie (anti-piégeage volontairement infranchissable). Dans ce cas, si
+    // l'utilisateur est DANS un projet/une visite, on demande confirmation au lieu de
+    // fermer sec. À l'accueil : aucun dialogue (fermer depuis l'accueil = volontaire).
+    const onBeforeUnload = (e) => {
+      if (ouvertRef.current || selectedVisiteIdRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+
     return () => {
       window.removeEventListener('popstate', onPop);
+      window.removeEventListener('beforeunload', onBeforeUnload);
       if (onNavigate) window.navigation.removeEventListener('navigate', onNavigate);
     };
   }, [armBuffer, logNav]);
