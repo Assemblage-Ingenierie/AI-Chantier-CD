@@ -1865,21 +1865,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                     if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                     setSelAnnot(null); annotDragRef.current = null;
                   }}
-                  style={{ padding:isMob?'9px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                  style={{ padding:isMob?'8px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                     color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
-                    display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:isMob?44:52 }}>
-                  <Ic n={t.n} s={22}/>
-                  {!isMob && <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>}
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?54:52 }}>
+                  <Ic n={t.n} s={26}/>
+                  <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
                 </button>
               ))}
               {/* Palette — dans le groupe sur mobile */}
               {isMob && (
                 <button onClick={() => { setShowPalette(v => !v); setShowSyms(false); }}
-                  style={{ padding:'9px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
+                  style={{ padding:'8px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
                     color:showPalette?'white':color,transition:'all 0.15s',
-                    display:'flex',alignItems:'center',justifyContent:'center',minWidth:44 }}
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:54 }}
                   title="Couleurs et épaisseur">
-                  <Ic n="pal" s={22}/>
+                  <Ic n="pal" s={26}/>
+                  <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>Couleurs</span>
                 </button>
               )}
             </div>
@@ -1887,18 +1888,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           {/* Actions fixes — toujours visibles même si les outils débordent */}
           <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             <button onClick={onClose}
-              style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,minWidth:44,minHeight:44 }}
+              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Fermer">
-              <Ic n="x" s={22}/>
-              {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>}
+              <Ic n="x" s={26}/>
+              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>
             </button>
             <button onClick={() => setPaths(p => p.slice(0,-1))}
-              style={{ padding:isMob?'9px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,minWidth:44,minHeight:44 }}
+              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Annuler dernière action">
-              <Ic n="und" s={22}/>
-              {!isMob && <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>}
+              <Ic n="und" s={26}/>
+              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
             </button>
             <button onClick={() => {
               const cv = cvRef.current;
@@ -1920,10 +1921,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               onSave(scalePaths(paths, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
             }}
-              style={{ padding:isMob?'7px 10px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:4 }}>
-              <Ic n="chk" s={isMob?17:20}/>
-              <span style={{ fontSize:isMob?8:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
+              style={{ padding:isMob?'8px 12px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:3 }}>
+              <Ic n="chk" s={isMob?24:20}/>
+              <span style={{ fontSize:isMob?9:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
             </button>
           </div>
         </div>
