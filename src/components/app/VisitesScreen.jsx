@@ -21,6 +21,60 @@ function stripHtml(html) {
   return (html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Le champ Ingénieur d'une visite peut porter PLUSIEURS jeux d'initiales (« SV, TCM »).
+// Stockage rétro-compatible : simple chaîne jointe par ", " — les visites existantes à une
+// seule valeur restent valides telles quelles. Le filtre « Mes projets » découpe pareil.
+function splitInitials(s) {
+  return String(s || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+}
+
+// Éditeur multi-initiales : puces (tap = retirer) + champ d'ajout (Entrée / bouton +).
+function IngenieursEditor({ value, onChange }) {
+  const [draft, setDraft] = useState('');
+  const list = splitInitials(value);
+  const add = () => {
+    const v = draft.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    if (v.length < 2 || list.includes(v)) { setDraft(''); return; }
+    onChange([...list, v].join(', '));
+    setDraft('');
+  };
+  const remove = (ini) => onChange(list.filter(x => x !== ini).join(', '));
+  return (
+    <div>
+      {list.length > 0 && (
+        <div style={{ display:'flex', gap:5, flexWrap:'wrap', marginBottom:6 }}>
+          {list.map(ini => (
+            <button key={ini} onClick={() => remove(ini)} title={`Retirer ${ini}`}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, background:DA.redL, color:DA.red,
+                border:'1px solid rgba(185,28,28,0.2)', borderRadius:20, padding:'6px 10px', fontSize:13,
+                fontWeight:800, letterSpacing:1, cursor:'pointer' }}>
+              {ini} <Ic n="x" s={11}/>
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display:'flex', gap:6 }}>
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder={list.length ? 'Ajouter…' : 'TCM'}
+          maxLength={5}
+          style={{ flex:1, minWidth:0, fontSize:16, fontWeight:800, color:DA.black, border:`1.5px solid ${DA.border}`,
+            borderRadius:8, padding:'9px 10px', outline:'none', background:'white', boxSizing:'border-box',
+            textTransform:'uppercase', letterSpacing:3, textAlign:'center' }}
+        />
+        <button onClick={add} disabled={draft.length < 2} title="Ajouter cet ingénieur"
+          style={{ width:44, flexShrink:0, borderRadius:8, border:'none', cursor: draft.length < 2 ? 'default' : 'pointer',
+            background: draft.length < 2 ? DA.grayXL : DA.red, color: draft.length < 2 ? DA.grayL : 'white',
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <Ic n="plus" s={16}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const VSUMMARY_KEY = '_aivsummaries_v1';
 const loadVSummaryCache = () => { try { return JSON.parse(localStorage.getItem(VSUMMARY_KEY) || '{}'); } catch { return {}; } };
 const saveVSummaryCache = (o) => { try { localStorage.setItem(VSUMMARY_KEY, JSON.stringify(o)); } catch {}; };
@@ -409,8 +463,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                         <div style={{ display:'flex', alignItems:'center', gap:5 }}>
                           <span style={{ color:DA.border, fontSize:13 }}>·</span>
                           <Ic n="usr" s={12} style={{ color:DA.grayL }}/>
-                          <span style={{ fontSize:12, color:DA.grayL, fontWeight:600 }}>Ingénieur :</span>
-                          <span style={{ fontSize:13, color:DA.black, fontWeight:700, letterSpacing:0.5 }}>{v.ingenieur}</span>
+                          <span style={{ fontSize:12, color:DA.grayL, fontWeight:600 }}>
+                            Ingénieur{splitInitials(v.ingenieur).length > 1 ? 's' : ''} :
+                          </span>
+                          <span style={{ fontSize:13, color:DA.black, fontWeight:700, letterSpacing:0.5 }}>{splitInitials(v.ingenieur).join(', ') || v.ingenieur}</span>
                         </div>
                       )}
                     </div>
@@ -486,17 +542,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                           style={{ fontSize:16, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
                         />
                       </div>
-                      <div style={{ width:90, flexShrink:0 }}>
+                      <div style={{ width:150, flexShrink:0 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
                           <Ic n="usr" s={10} style={{ color:DA.grayL }}/>
-                          <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Ingénieur</span>
+                          <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Ingénieur(s)</span>
                         </div>
-                        <input
+                        <IngenieursEditor
                           value={v.ingenieur || ''}
-                          onChange={e => patchVisite(v.id, { ingenieur: e.target.value.toUpperCase().slice(0, 5) })}
-                          placeholder="TM"
-                          maxLength={5}
-                          style={{ fontSize:16, fontWeight:800, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', width:'100%', boxSizing:'border-box', textTransform:'uppercase', letterSpacing:3, textAlign:'center' }}
+                          onChange={val => patchVisite(v.id, { ingenieur: val })}
                         />
                       </div>
                     </div>
@@ -541,11 +594,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       <Ic n="del" s={15}/>
                     </button>
                   )}
-                  {!isEditing && (
-                    <span style={{ color:DA.grayL, display:'flex', alignItems:'center', justifyContent:'center', width:34, height:24, transform:'rotate(-90deg)' }}>
-                      <Ic n="chv" s={16}/>
-                    </span>
-                  )}
+                  {/* La petite flèche décorative a été retirée (demande Thomas : elle n'apportait rien). */}
                 </div>
               </div>
             );
