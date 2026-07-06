@@ -90,51 +90,42 @@ export default function EditProjet({ projet, onClose, onSave }) {
           <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL }}><Ic n="x" s={20}/></button>
         </div>
 
-        <div onClick={() => fileRef.current?.click()}
-          style={{ position:'relative', width:'100%', paddingTop:'56.25%', borderRadius:12,
+        {/* Zone photo : voile noir transparent (la photo reste visible) + 3 GROS boutons
+            d'action directement dessus — Galerie / Appareil photo / Recadrer (demande Thomas,
+            le petit « Changer » et la rangée de petits boutons sont supprimés). */}
+        <div style={{ position:'relative', width:'100%', paddingTop:'56.25%', borderRadius:12,
             border:`2px dashed ${f.photo ? 'transparent' : DA.border}`,
             overflow:'hidden', background: f.photo ? 'transparent' : DA.grayXL,
-            marginBottom:8, cursor:'pointer', boxSizing:'border-box' }}>
-          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            {f.photo ? (
-              <>
-                <img src={f.photo} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>
-                <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.28)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <span style={{ fontSize:11, color:'white', fontWeight:700, background:'rgba(0,0,0,0.45)', padding:'4px 10px', borderRadius:6 }}>Changer</span>
-                </div>
-              </>
-            ) : (
-              <div style={{ textAlign:'center', pointerEvents:'none' }}>
-                <Ic n="cam" s={28}/>
-                <p style={{ fontSize:11, color:DA.grayL, marginTop:6, marginBottom:0 }}>Appuyer pour ajouter une photo</p>
-              </div>
-            )}
+            marginBottom:16, boxSizing:'border-box' }}>
+          {f.photo && <img src={f.photo} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>}
+          <div style={{ position:'absolute', inset:0, background: f.photo ? 'rgba(0,0,0,0.34)' : 'transparent',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:12, flexWrap:'wrap', padding:10 }}>
+            {[
+              { icon:'img', label:'Galerie',        onClick:() => fileRef.current?.click() },
+              // Prise directe sur site : ouvre l'appareil photo (mobile). Sur PC, sélecteur de fichiers.
+              { icon:'cam', label:'Appareil photo', onClick:() => cameraRef.current?.click() },
+              ...(f.photo ? [{
+                icon:'crp', label:'Recadrer',
+                onClick: async () => {
+                  // Repartir de l'ORIGINAL : blob de la session, sinon original persisté (IndexedDB),
+                  // sinon (legacy, original inconnu) l'image croppée courante en dernier recours.
+                  const orig = originalSrcRef.current || await getCoverOriginal(projet.id) || f.photo;
+                  setCropSrc(orig); setCropStep('tuile');
+                },
+              }] : []),
+            ].map(btn => (
+              <button key={btn.label} onClick={btn.onClick}
+                style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:7,
+                  width:104, height:88, borderRadius:14, border:'none', cursor:'pointer',
+                  background: f.photo ? 'rgba(0,0,0,0.48)' : 'white',
+                  color: f.photo ? 'white' : DA.gray,
+                  boxShadow: f.photo ? 'none' : `inset 0 0 0 1px ${DA.border}`,
+                  fontSize:12, fontWeight:700 }}>
+                {btn.icon === 'crp' ? <span style={{ fontSize:24, lineHeight:1 }}>✂</span> : <Ic n={btn.icon} s={26}/>}
+                {btn.label}
+              </button>
+            ))}
           </div>
-        </div>
-
-        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
-          <button onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
-            style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:DA.gray }}>
-            <Ic n="img" s={11}/> Galerie
-          </button>
-          {/* Prise directe sur site : ouvre l'appareil photo (mobile) au lieu de la galerie.
-              Sur PC (pas de caméra "environment"), le navigateur retombe sur le sélecteur de fichiers. */}
-          <button onClick={e => { e.stopPropagation(); cameraRef.current?.click(); }}
-            style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:DA.gray }}>
-            <Ic n="cam" s={11}/> Appareil photo
-          </button>
-          {f.photo && (
-            <button onClick={async e => {
-                e.stopPropagation();
-                // Repartir de l'ORIGINAL : blob de la session, sinon original persisté (IndexedDB),
-                // sinon (legacy, original inconnu) l'image croppée courante en dernier recours.
-                const orig = originalSrcRef.current || await getCoverOriginal(projet.id) || f.photo;
-                setCropSrc(orig); setCropStep('tuile');
-              }}
-              style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', color:DA.gray }}>
-              ✂ Recadrer
-            </button>
-          )}
         </div>
 
         <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }}
