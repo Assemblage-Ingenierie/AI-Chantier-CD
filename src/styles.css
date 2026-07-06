@@ -71,8 +71,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   .proj-card-body { overflow:visible; }
   /* Sur PC le nom vit sur la photo → la rangée titre du bas disparaît. */
   .proj-card-titlerow { display:none; }
-  /* MO + adresse affichés EN ENTIER (retour Thomas) — retour à la ligne autorisé. */
-  .proj-card-sub { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
+  /* MO + adresse affichés EN ENTIER (retour à la ligne autorisé) dans une zone de hauteur
+     FIXE de 2 lignes → d'une tuile à l'autre, les MO s'alignent entre eux, les adresses
+     entre elles, et les badges obs entre eux (demande Thomas). Au-delà de 2 lignes : « … ». */
+  .proj-card-sub { white-space:normal; overflow:hidden; overflow-wrap:anywhere;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    line-height:1.3; min-height:2.6em; }
   .proj-card-name-overlay {
     display:flex; align-items:flex-end; gap:6;
     position:absolute; left:0; right:0; bottom:3px; /* au-dessus du liseré rouge */

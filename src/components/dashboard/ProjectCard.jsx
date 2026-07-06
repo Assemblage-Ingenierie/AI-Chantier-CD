@@ -72,8 +72,13 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
             <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
             {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
           </div>
-          {/* MO + adresse : tronqués sur mobile (carte compacte), EN ENTIER sur PC (classe). */}
-          {p.maitreOuvrage && <p className="proj-card-sub" style={{ fontSize:13,color:DA.red,margin:'4px 0 0',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
+          {/* MO + adresse : tronqués sur mobile (carte compacte), EN ENTIER sur PC. Sur PC chaque
+              zone réserve 2 lignes (hauteur FIXE) et la ligne MO est toujours rendue (« — » si
+              vide) → les rouges s'alignent avec les rouges, les gris avec les gris, et les
+              badges obs entre eux, d'une tuile à l'autre (demande Thomas). */}
+                      <p className="proj-card-sub" style={{ fontSize:13,color:DA.red,margin:'4px 0 0',fontWeight:600 }}>
+            {p.maitreOuvrage ? `MO : ${p.maitreOuvrage}` : ' '}
+            </p>
           <p className="proj-card-sub" style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0' }}>{p.adresse || '—'}</p>
           {(obs > 0 || urg > 0) && (
             <div style={{ display:'flex',gap:5,marginTop:8,flexWrap:'wrap' }}>
