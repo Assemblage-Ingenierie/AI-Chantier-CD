@@ -27,7 +27,7 @@ const ASSEMBLAGE_TEAM_SEED = [
   { nom: 'Axelle Besson',             poste: 'Gestion',                      email: 'gestion@assemblage.net',    tel: '07 65 62 30 87' },
 ];
 
-const EMPTY_FORM = { nom: '', poste: '', email: '', tel: '' };
+const EMPTY_FORM = { nom: '', poste: '', entreprise: '', email: '', tel: '' };
 const BADGE_W = 24;
 
 // ── Ligne participant ──────────────────────────────────────────────────────────
@@ -44,9 +44,9 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
       </div>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:11, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
-        {(p.poste || p.email) && (
+        {(p.poste || p.entreprise || p.email) && (
           <div style={{ fontSize:9, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {[p.poste, p.email].filter(Boolean).join(' · ')}
+            {[p.poste, p.entreprise, p.email].filter(Boolean).join(' · ')}
           </div>
         )}
       </div>
@@ -80,13 +80,13 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
 
 // ── Formulaire d'édition inline ────────────────────────────────────────────────
 function InlineEditForm({ contact, onSave, onCancel, saving }) {
-  const [form, setForm] = useState({ nom: contact.nom, poste: contact.poste || '', email: contact.email || '', tel: contact.tel || '' });
+  const [form, setForm] = useState({ nom: contact.nom, poste: contact.poste || '', entreprise: contact.entreprise || '', email: contact.email || '', tel: contact.tel || '' });
   return (
     <div style={{ padding:'8px 10px', background:'#FFFBEB', border:`1px solid #FCD34D`, borderRadius:8, display:'flex', flexDirection:'column', gap:4 }}>
       <div style={{ fontSize:9, fontWeight:800, color:'#92400E', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 }}>
         {contact.id ? 'Modifier le contact' : 'Nouveau contact'}
       </div>
-      {[['nom','Nom *'],['poste','Poste / Société'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
+      {[['nom','Nom *'],['poste','Poste (ex : Architecte)'],['entreprise','Entreprise'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
         <input key={k} value={form[k]}
           onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
           placeholder={lbl}

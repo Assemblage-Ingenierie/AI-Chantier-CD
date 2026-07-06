@@ -36,7 +36,7 @@ function download(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
-const EMPTY = { nom: '', poste: '', email: '', tel: '', isAssemblage: false };
+const EMPTY = { nom: '', poste: '', entreprise: '', email: '', tel: '', isAssemblage: false };
 
 export default function ContactsManagerModal({ projets = [], onClose }) {
   const [contacts, setContacts] = useState([]);
@@ -73,7 +73,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
       if (filter === 'externe' && c.isAssemblage) return false;
       if (filter === 'noemail' && c.email) return false;
       if (!q) return true;
-      return [c.nom, c.poste, c.email, c.tel].some(v => (v || '').toLowerCase().includes(q));
+      return [c.nom, c.poste, c.entreprise, c.email, c.tel].some(v => (v || '').toLowerCase().includes(q));
     });
   }, [contacts, search, filter]);
 
@@ -166,7 +166,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ background:DA.black }}>
-                    <th style={th}>Nom</th><th style={th}>Poste</th><th style={th}>E-mail</th>
+                    <th style={th}>Nom</th><th style={th}>Poste</th><th style={th}>Entreprise</th><th style={th}>E-mail</th>
                     <th style={th}>Tél.</th><th style={th}>Type</th><th style={th}>Projets</th><th style={{ ...th, textAlign:'right' }}></th>
                   </tr>
                 </thead>
@@ -177,6 +177,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
                       <tr key={c.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
                         <td style={{ ...td, fontWeight:700 }}>{c.nom}</td>
                         <td style={{ ...td, color:DA.gray }}>{c.poste || '—'}</td>
+                        <td style={{ ...td, color:DA.gray }}>{c.entreprise || '—'}</td>
                         <td style={{ ...td, color:DA.gray }}>{c.email || '—'}</td>
                         <td style={{ ...td, color:DA.gray, whiteSpace:'nowrap' }}>{c.tel || '—'}</td>
                         <td style={td}>
@@ -203,7 +204,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
                     );
                   })}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding:24, textAlign:'center', color:DA.grayL, fontSize:13 }}>Aucun intervenant.</td></tr>
+                    <tr><td colSpan={8} style={{ padding:24, textAlign:'center', color:DA.grayL, fontSize:13 }}>Aucun intervenant.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -219,7 +220,8 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
             <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:'0 0 14px' }}>{editing.id ? 'Modifier le contact' : 'Nouveau contact'}</p>
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               <input value={editing.nom} onChange={e => setEditing(x => ({ ...x, nom: e.target.value }))} placeholder="Nom *" style={inp}/>
-              <input value={editing.poste} onChange={e => setEditing(x => ({ ...x, poste: e.target.value }))} placeholder="Poste / Société" style={inp}/>
+              <input value={editing.poste} onChange={e => setEditing(x => ({ ...x, poste: e.target.value }))} placeholder="Poste (ex : Architecte)" style={inp}/>
+              <input value={editing.entreprise || ''} onChange={e => setEditing(x => ({ ...x, entreprise: e.target.value }))} placeholder="Entreprise" style={inp}/>
               <input value={editing.email} onChange={e => setEditing(x => ({ ...x, email: e.target.value }))} placeholder="E-mail" style={inp}/>
               <input value={editing.tel} onChange={e => setEditing(x => ({ ...x, tel: e.target.value }))} placeholder="Téléphone" style={inp}/>
               <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:DA.gray, cursor:'pointer' }}>

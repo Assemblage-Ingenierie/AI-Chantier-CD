@@ -5,6 +5,7 @@ import { estimatePlanCacheBytes, clearPlanCache } from '../../lib/planThumbCache
 import { estimateSnapshotBytes } from '../../lib/backupVault.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
+import { projectMatchesInitials } from '../../lib/profile.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -23,7 +24,7 @@ function localStorageBytes() {
   } catch { return 0; }
 }
 
-export default function SettingsModal({ onClose, projets = [], onPrecacheProject = null }) {
+export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null }) {
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
   const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: bytes }
   const [offlinePrefs, setOfflinePrefs] = useState({}); // reflet local des switchs
@@ -100,11 +101,25 @@ export default function SettingsModal({ onClose, projets = [], onPrecacheProject
 
         <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
 
-          {/* ── Hors-ligne par projet ── */}
+          {/* ── Hors-ligne par projet : UNIQUEMENT « mes projets » (initiales sur une visite) ── */}
+          {(() => {
+            const myInitials = (profile?.initials || '').trim();
+            const mine = projets.filter(p => p.statut !== 'archive' && projectMatchesInitials(p, myInitials));
+            return (
           <div style={{ marginBottom:22 }}>
-            <p style={sectionTitle}>Projets disponibles hors ligne</p>
+            <p style={sectionTitle}>Mes projets hors ligne</p>
+            {!myInitials ? (
+              <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>
+                Renseignez vos initiales dans « Mon compte » pour activer le téléchargement automatique de vos projets.
+              </p>
+            ) : mine.length === 0 ? (
+              <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>
+                Aucun projet ne porte vos initiales ({myInitials}) pour l'instant. Ajoutez « {myInitials} » dans le champ
+                Ingénieur d'une visite : le projet se téléchargera automatiquement pour le hors-ligne.
+              </p>
+            ) : (
             <div style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'4px 12px' }}>
-              {projets.filter(p => p.statut !== 'archive').map((p, i) => {
+              {mine.map((p, i) => {
                 const on = offlinePrefs[p.id] ?? isProjectOfflineEnabled(p.id);
                 const bytes = offlineByProject?.[p.id] || 0;
                 return (
@@ -124,15 +139,15 @@ export default function SettingsModal({ onClose, projets = [], onPrecacheProject
                   </div>
                 );
               })}
-              {projets.filter(p => p.statut !== 'archive').length === 0 && (
-                <div style={row}><span style={{ fontSize:12, color:DA.grayL }}>Aucun projet actif</span></div>
-              )}
             </div>
+            )}
             <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
-              Les projets portant vos initiales se téléchargent automatiquement (données, plans, photos)
-              pour être consultables sans réseau. Désactiver un projet libère son espace immédiatement.
+              Vos projets (initiales sur une visite) se téléchargent automatiquement — données, plans,
+              photos — pour être consultables sans réseau. Désactiver un projet libère son espace immédiatement.
             </p>
           </div>
+            );
+          })()}
 
           {/* ── Stockage ── */}
           <div style={{ marginBottom:22 }}>

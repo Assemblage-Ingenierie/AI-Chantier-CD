@@ -7,6 +7,7 @@ function toRow(c) {
   return {
     nom: c.nom,
     poste: c.poste || null,
+    entreprise: c.entreprise || null,
     email: c.email || null,
     tel: c.tel || null,
     is_assemblage: !!c.isAssemblage,
@@ -18,10 +19,17 @@ function fromRow(row) {
     id: row.id,
     nom: row.nom,
     poste: row.poste || '',
+    entreprise: row.entreprise || '',
     email: row.email || '',
     tel: row.tel || '',
     isAssemblage: row.is_assemblage,
   };
+}
+
+// Si la migration « entreprise » n'est pas encore appliquée, PostgREST rejette la colonne
+// inconnue → on retente sans elle (le reste du contact est sauvé, l'entreprise suivra).
+function isUnknownEntrepriseColumn(error) {
+  return /entreprise/i.test(error?.message || '') || error?.code === 'PGRST204';
 }
 
 export async function loadContacts() {
@@ -39,11 +47,19 @@ export async function upsertContact(contact) {
   const sb = await getSupabase();
   const row = toRow(contact);
   if (contact.id) {
-    const { error } = await sb.from('aichantier_contacts').update(row).eq('id', contact.id);
+    let { error } = await sb.from('aichantier_contacts').update(row).eq('id', contact.id);
+    if (error && isUnknownEntrepriseColumn(error)) {
+      const { entreprise, ...rest } = row;
+      ({ error } = await sb.from('aichantier_contacts').update(rest).eq('id', contact.id));
+    }
     if (error) throw error;
     return contact.id;
   } else {
-    const { data, error } = await sb.from('aichantier_contacts').insert(row).select('id').single();
+    let { data, error } = await sb.from('aichantier_contacts').insert(row).select('id').single();
+    if (error && isUnknownEntrepriseColumn(error)) {
+      const { entreprise, ...rest } = row;
+      ({ data, error } = await sb.from('aichantier_contacts').insert(rest).select('id').single());
+    }
     if (error) throw error;
     return data.id;
   }
@@ -71,7 +87,7 @@ export async function seedAssemblageContacts(team) {
 // ── Export / Import CSV ────────────────────────────────────────────────────────────
 // Format Excel-friendly : séparateur « ; » + BOM UTF-8 (accents corrects à l'ouverture).
 
-const CSV_HEADERS = ['Nom', 'Poste', 'Email', 'Téléphone', 'Type'];
+const CSV_HEADERS = ['Nom', 'Poste', 'Entreprise', 'Email', 'Téléphone', 'Type'];
 
 function csvEscape(v) {
   const s = String(v ?? '');
@@ -83,7 +99,7 @@ export function contactsToCsv(contacts) {
   const lines = [CSV_HEADERS.join(';')];
   for (const c of contacts) {
     lines.push([
-      csvEscape(c.nom), csvEscape(c.poste), csvEscape(c.email), csvEscape(c.tel),
+      csvEscape(c.nom), csvEscape(c.poste), csvEscape(c.entreprise), csvEscape(c.email), csvEscape(c.tel),
       c.isAssemblage ? 'Assemblage' : 'Externe',
     ].join(';'));
   }
@@ -106,8 +122,10 @@ function splitCsvLine(line, sep) {
   return out;
 }
 
-// CSV → contacts (format applicatif). Détecte le séparateur (; ou ,), ignore l'entête,
-// tolère un BOM. Ne renvoie que les lignes ayant au moins un nom.
+// CSV → contacts (format applicatif). Détecte le séparateur (; ou ,), tolère un BOM.
+// Avec entête : mapping PAR NOM DE COLONNE (accepte les anciens fichiers sans Entreprise
+// et tout ordre de colonnes). Sans entête : ordre positionnel du format d'export courant.
+// Ne renvoie que les lignes ayant au moins un nom.
 export function parseContactsCsv(text) {
   if (!text) return [];
   const clean = text.replace(/^﻿/, '');
@@ -115,16 +133,29 @@ export function parseContactsCsv(text) {
   if (!rows.length) return [];
   const sep = (rows[0].match(/;/g) || []).length >= (rows[0].match(/,/g) || []).length ? ';' : ',';
   const first = splitCsvLine(rows[0], sep).map(s => s.trim().toLowerCase());
-  const looksHeader = first.some(h => ['nom', 'name', 'poste', 'email', 'e-mail', 'téléphone', 'telephone', 'tel', 'type'].includes(h));
+  const known = { nom:'nom', name:'nom', poste:'poste', entreprise:'entreprise', 'société':'entreprise', societe:'entreprise', email:'email', 'e-mail':'email', 'téléphone':'tel', telephone:'tel', tel:'tel', type:'type' };
+  const looksHeader = first.some(h => known[h]);
+  // Index de chaque champ : depuis l'entête si présente, sinon ordre du format d'export.
+  const idx = { nom: 0, poste: 1, entreprise: 2, email: 3, tel: 4, type: 5 };
+  if (looksHeader) {
+    for (const k of Object.keys(idx)) idx[k] = -1;
+    first.forEach((h, i) => { const f = known[h]; if (f && idx[f] === -1) idx[f] = i; });
+    if (idx.nom === -1) idx.nom = 0;
+  }
   const dataRows = looksHeader ? rows.slice(1) : rows;
   const out = [];
+  const pick = (cols, i) => (i >= 0 && cols[i] != null ? cols[i] : '');
   for (const line of dataRows) {
     const cols = splitCsvLine(line, sep).map(s => s.trim());
-    const [nom, poste, email, tel, type] = cols;
+    const nom = pick(cols, idx.nom);
     if (!nom) continue;
     out.push({
-      nom, poste: poste || '', email: email || '', tel: tel || '',
-      isAssemblage: /assemblage/i.test(type || ''),
+      nom,
+      poste: pick(cols, idx.poste) || '',
+      entreprise: pick(cols, idx.entreprise) || '',
+      email: pick(cols, idx.email) || '',
+      tel: pick(cols, idx.tel) || '',
+      isAssemblage: /assemblage/i.test(pick(cols, idx.type) || ''),
     });
   }
   return out;
