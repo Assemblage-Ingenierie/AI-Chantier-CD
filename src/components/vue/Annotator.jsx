@@ -476,7 +476,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [textMode,      setTextMode]      = useState('plain');
   const [symCat,           setSymCat]           = useState('fissures');
   const [showPalette,      setShowPalette]      = useState(false);
-  const [showSizeSliders,  setShowSizeSliders]  = useState(false); // curseurs Texte/Formes/Symboles repliés par défaut (mobile)
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
@@ -1983,14 +1982,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   background:size===sz?'white':'#555',border:`2px solid ${size===sz?'white':'#444'}`,
                   cursor:'pointer',flexShrink:0 }}/>
             ))}
-            <div style={{ width:1,height:20,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-            <button onClick={() => setShowSizeSliders(v => !v)}
-              style={{ padding:'6px 10px',borderRadius:7,fontSize:11,fontWeight:700,whiteSpace:'nowrap',flexShrink:0,
-                background:showSizeSliders?DA.red:'#333',color:showSizeSliders?'white':'#aaa',border:'none',cursor:'pointer' }}>
-              Tailles {showSizeSliders ? '▴' : '▾'}
-            </button>
           </div>
-          {showSizeSliders && scaleCtls.map(s => (
+          {/* Curseurs Texte/Formes/Symboles TOUJOURS visibles dans la palette (retour Thomas :
+              le bouton « Tailles ▾ » les cachait trop). La palette entière se replie au toucher du plan. */}
+          {scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:8 }}>
               <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
