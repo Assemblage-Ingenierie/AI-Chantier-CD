@@ -255,6 +255,26 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
     };
   }, [armBuffer, logNav]);
 
+  // ── Contournement « History Manipulation Intervention » (Chrome Android) ──────
+  // Chrome SAUTE les entrées d'historique créées SANS interaction utilisateur (protection
+  // anti-piégeage) : tout le tampon armé au chargement est consommé en UN SEUL appui retour,
+  // et l'appui suivant FERME l'app (bug « retour 2x → ça quitte »). Correctif : pousser les
+  // sentinelles PENDANT les interactions réelles (pointerdown) — elles portent alors une
+  // activation utilisateur et sont consommées UNE PAR UNE par le bouton retour. Comme
+  // l'utilisateur interagit forcément avant d'appuyer retour, le tampon est toujours garni.
+  // Throttle 800ms → ≤ ~37 pushState/30s, sous le plafond Chrome (~100/30s).
+  useEffect(() => {
+    let last = 0;
+    const onDown = () => {
+      const now = Date.now();
+      if (now - last < 800) return;
+      last = now;
+      try { history.pushState({ pwaSentinel: true }, ''); } catch { /* throttle atteint — noop */ }
+    };
+    document.addEventListener('pointerdown', onDown, { capture: true, passive: true });
+    return () => document.removeEventListener('pointerdown', onDown, { capture: true });
+  }, []);
+
   useEffect(() => {
     let _lastNav = 0;
     const handler = () => {
