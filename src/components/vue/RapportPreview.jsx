@@ -1421,7 +1421,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
             <div style={{ display:'flex', alignItems:'center', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 0' }}>
               <div style={{ width:20, flexShrink:0 }}/>
               <div style={{ flex:1, display:'flex', minWidth:0 }}>
-                <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE</div>
+                <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE / ENTREPRISE</div>
                 <div style={{ flex:'0 0 22%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>TÉLÉPHONE</div>
                 <div style={{ flex:'0 0 28%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>EMAIL</div>
                 <div style={{ flex:'0 0 14%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textAlign:'right', paddingRight:6, letterSpacing:'0.06em' }}>PRÉSENCE</div>
@@ -1482,7 +1482,7 @@ function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
         <div style={{ display:'flex', alignItems:'center', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 0' }}>
           <div style={{ width:20, flexShrink:0 }}/>
           <div style={{ flex:1, display:'flex', minWidth:0 }}>
-            <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE</div>
+            <div style={{ flex:'0 0 36%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:8, letterSpacing:'0.06em' }}>NOM / POSTE / ENTREPRISE</div>
             <div style={{ flex:'0 0 22%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>TÉLÉPHONE</div>
             <div style={{ flex:'0 0 28%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, paddingRight:4, letterSpacing:'0.06em' }}>EMAIL</div>
             <div style={{ flex:'0 0 14%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textAlign:'right', paddingRight:6, letterSpacing:'0.06em' }}>PRÉSENCE</div>
