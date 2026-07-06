@@ -659,22 +659,40 @@ export function useProjets(onSyncStatus) {
   // chaque photo pas encore en cache (par petits lots — ne bloque pas l'UI). Best-effort :
   // toute erreur réseau est ignorée, le prochain passage reprendra où on en était.
   const precacheProjectOffline = async (projectId) => {
+    let freshMap = null;
     try {
-      await hydratePhotos(projectId);
+      freshMap = await hydratePhotos(projectId);
       const lm = await hydratePlanLibrary(projectId);
       await hydratePlans(projectId, lm);
     } catch { /* hydratation best-effort */ }
+    // Photos à télécharger = UNION de la carte fraîche renvoyée par hydratePhotos (l'état
+    // React n'est pas encore committé à cet instant) et des photos déjà dans l'état
+    // (items hydratés lors d'une session/navigation précédente).
+    const byId = new Map();
+    if (freshMap) {
+      for (const photos of Object.values(freshMap)) {
+        for (const ph of photos) if (ph.id && ph.data) byId.set(ph.id, ph.data);
+      }
+    }
     const projet = projetsRef.current.find(p => p.id === projectId);
-    if (!projet) return;
-    const all = (projet.visites || []).flatMap(v => (v.localisations || []).flatMap(l =>
-      (l.items || []).flatMap(i => (i.photos || []).filter(ph => ph._id && ph.data))));
-    const alreadyCached = await getCachedPhotoIds(all.map(ph => ph._id));
-    const todo = all.filter(ph => !alreadyCached.has(ph._id));
+    for (const v of (projet?.visites || [])) {
+      for (const l of (v.localisations || [])) {
+        for (const i of (l.items || [])) {
+          for (const ph of (i.photos || [])) {
+            if (ph._id && ph.data && !byId.has(ph._id)) byId.set(ph._id, ph.data);
+          }
+        }
+      }
+    }
+    const all = [...byId.entries()];
+    if (!all.length) return;
+    const alreadyCached = await getCachedPhotoIds(all.map(([id]) => id));
+    const todo = all.filter(([id]) => !alreadyCached.has(id));
     const CHUNK = 3;
     for (let i = 0; i < todo.length; i += CHUNK) {
-      await Promise.all(todo.slice(i, i + CHUNK).map(async (ph) => {
-        const dataUrl = ph.data.startsWith('data:') ? ph.data : await fetchAsDataUrl(ph.data);
-        if (dataUrl) await cachePhoto(ph._id, projectId, dataUrl);
+      await Promise.all(todo.slice(i, i + CHUNK).map(async ([id, data]) => {
+        const dataUrl = data.startsWith('data:') ? data : await fetchAsDataUrl(data);
+        if (dataUrl) await cachePhoto(id, projectId, dataUrl);
       }));
     }
   };
@@ -815,6 +833,11 @@ export function useProjets(onSyncStatus) {
         }));
       }).catch(e => console.warn('Background migration error:', e));
     }
+
+    // Renvoie la carte { itemId: photos } fraîchement chargée : le pré-téléchargement
+    // hors-ligne s'en sert DIRECTEMENT (l'état React n'est pas encore committé ici —
+    // le lire tout de suite après renverrait les anciennes photos sans data).
+    return photosMap;
   };
 
   const hydratePlans = async (projectId, libraryMap, { force = false } = {}) => {

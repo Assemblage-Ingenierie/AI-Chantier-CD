@@ -3,10 +3,10 @@ import { contactsToCsv, parseContactsCsv, previewImport } from './contacts.js';
 
 describe('contacts CSV', () => {
   it('exporte avec BOM, entête et séparateur ;', () => {
-    const csv = contactsToCsv([{ nom: 'Dupont', poste: 'MOA', email: 'a@b.fr', tel: '06', isAssemblage: false }]);
+    const csv = contactsToCsv([{ nom: 'Dupont', poste: 'MOA', entreprise: 'SCI Louvre', email: 'a@b.fr', tel: '06', isAssemblage: false }]);
     expect(csv.charCodeAt(0)).toBe(0xFEFF); // BOM
-    expect(csv).toContain('Nom;Poste;Email;Téléphone;Type');
-    expect(csv).toContain('Dupont;MOA;a@b.fr;06;Externe');
+    expect(csv).toContain('Nom;Poste;Entreprise;Email;Téléphone;Type');
+    expect(csv).toContain('Dupont;MOA;SCI Louvre;a@b.fr;06;Externe');
   });
 
   it('échappe les valeurs contenant le séparateur ou des guillemets', () => {

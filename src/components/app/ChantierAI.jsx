@@ -564,7 +564,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         <AccountModal profile={profile} session={session} forceComplete={isProfileIncomplete(profile)}
           onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>
       )}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} projets={projets} onPrecacheProject={precacheProjectOffline}/>}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} projets={projets} profile={profile} onPrecacheProject={precacheProjectOffline}/>}
       {showContacts && <ContactsManagerModal projets={projets} onClose={() => setShowContacts(false)}/>}
 
       {undoToast && (

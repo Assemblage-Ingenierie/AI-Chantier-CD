@@ -27,10 +27,15 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   align-items: stretch;
 }
 @media (min-width: 480px) {
-  /* auto-fill + minmax : cartes toujours ≥ 200px de large, jamais écrasées comme
-     avec un nombre de colonnes fixe sur les grands écrans (5-6 colonnes à 1280px
-     rendait le titre du projet illisible, tronqué à quelques lettres). */
-  .proj-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  /* auto-fill + minmax : cartes toujours ≥ 220px de large, jamais écrasées comme
+     avec un nombre de colonnes fixe sur les grands écrans. */
+  .proj-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+}
+@media (min-width: 1024px) {
+  /* PC : tuiles GRANDES et bornées (280-340px). Avant, auto-fill découpait la largeur en
+     pistes de ~215px : avec peu de projets, deux petites cartes perdues à gauche d'un
+     grand vide (retour Thomas « l'écran d'accueil fait vraiment vide, trop petit »). */
+  .proj-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 340px)); gap: 18px; }
 }
 
 /* ── Largeur de page desktop — évite les stats/cartes étirées sur toute la largeur ── */
