@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import CropTool from '../ui/CropTool.jsx';
+import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
 
 const FIELDS = [
   { k: 'nom',          l: 'Nom du projet *',  ph: 'Ex: Résidence Les Acacias'     },
@@ -17,6 +18,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
   const [cropSrc,  setCropSrc] = useState(null);
   const [cropStep, setCropStep] = useState(null); // 'tuile' | 'garde'
   const fileRef = useRef();
+  const cameraRef = useRef(); // prise directe à l'appareil photo (capture="environment"), pour le terrain
   const originalSrcRef = useRef(null); // blob URL of original full-res photo, kept for recrop
 
   useEffect(() => () => { if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current); }, []);
@@ -27,6 +29,9 @@ export default function EditProjet({ projet, onClose, onSave }) {
     if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current);
     const blob = URL.createObjectURL(file);
     originalSrcRef.current = blob;
+    // Conserver l'ORIGINAL (compressé) en local : « Recadrer » repartira toujours de
+    // l'image source, même dans une prochaine session → on peut « dé-recadrer ».
+    fileToCompressedDataUrl(file).then(dataUrl => { if (dataUrl) setCoverOriginal(projet.id, dataUrl); });
     setCropSrc(blob);
     setCropStep('tuile');
   };
@@ -107,13 +112,25 @@ export default function EditProjet({ projet, onClose, onSave }) {
           </div>
         </div>
 
-        <div style={{ display:'flex', gap:6, marginBottom:16 }}>
+        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
           <button onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
             style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:DA.gray }}>
             <Ic n="img" s={11}/> Galerie
           </button>
+          {/* Prise directe sur site : ouvre l'appareil photo (mobile) au lieu de la galerie.
+              Sur PC (pas de caméra "environment"), le navigateur retombe sur le sélecteur de fichiers. */}
+          <button onClick={e => { e.stopPropagation(); cameraRef.current?.click(); }}
+            style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:DA.gray }}>
+            <Ic n="cam" s={11}/> Appareil photo
+          </button>
           {f.photo && (
-            <button onClick={e => { e.stopPropagation(); setCropSrc(originalSrcRef.current || f.photo); setCropStep('tuile'); }}
+            <button onClick={async e => {
+                e.stopPropagation();
+                // Repartir de l'ORIGINAL : blob de la session, sinon original persisté (IndexedDB),
+                // sinon (legacy, original inconnu) l'image croppée courante en dernier recours.
+                const orig = originalSrcRef.current || await getCoverOriginal(projet.id) || f.photo;
+                setCropSrc(orig); setCropStep('tuile');
+              }}
               style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', color:DA.gray }}>
               ✂ Recadrer
             </button>
@@ -121,6 +138,8 @@ export default function EditProjet({ projet, onClose, onSave }) {
         </div>
 
         <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }}
+          onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
           onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
 
         {FIELDS.map(({ k, l, ph }) => (
