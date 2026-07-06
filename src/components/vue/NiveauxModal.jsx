@@ -8,6 +8,125 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
+// ── Visionneuse tactile « Consulter les plans » ────────────────────────────────
+// Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
+// pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour, molette = défiler,
+// Ctrl+molette (ou pincement trackpad) = zoom sur PC. Transform translate+scale maison car le
+// zoom navigateur est désactivé dans la PWA (user-scalable=no).
+function ConsultViewer({ group, onClose }) {
+  const [t, setT] = useState({ z: 1, x: 0, y: 0 });
+  const boxRef   = useRef(null);   // conteneur visible (viewport)
+  const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
+  const ptrs     = useRef(new Map());  // pointerId → {x,y}
+  const gestRef  = useRef(null);       // instantané du geste { t, pts:[{x,y}…] }
+  const tRef     = useRef(t); tRef.current = t;
+  const lastTap  = useRef({ ts: 0, x: 0, y: 0 });
+
+  const clampT = (nt) => {
+    const box = boxRef.current, inner = innerRef.current;
+    if (!box || !inner) return nt;
+    const vw = box.clientWidth, vh = box.clientHeight;
+    const cw = vw * nt.z;                       // largeur du contenu à l'échelle
+    const ch = inner.offsetHeight * nt.z;       // hauteur naturelle × zoom
+    const minX = Math.min(0, vw - cw), minY = Math.min(0, vh - ch);
+    return { z: nt.z, x: Math.max(minX, Math.min(0, nt.x)), y: Math.max(minY, Math.min(0, nt.y)) };
+  };
+
+  const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
+
+  const onDown = (e) => {
+    boxRef.current?.setPointerCapture?.(e.pointerId);
+    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    snapshot();
+  };
+  const onMove = (e) => {
+    if (!ptrs.current.has(e.pointerId)) return;
+    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gestRef.current;
+    if (!g) return;
+    const pts = [...ptrs.current.values()];
+    if (pts.length >= 2 && g.pts.length >= 2) {
+      // Pincement : zoom autour du point médian (le point du plan sous les doigts reste sous les doigts)
+      const d0 = Math.hypot(g.pts[1].x - g.pts[0].x, g.pts[1].y - g.pts[0].y) || 1;
+      const d1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const z  = Math.max(1, Math.min(6, g.t.z * (d1 / d0)));
+      const m0 = { x: (g.pts[0].x + g.pts[1].x) / 2, y: (g.pts[0].y + g.pts[1].y) / 2 };
+      const m1 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      const cx = (m0.x - g.t.x) / g.t.z, cy = (m0.y - g.t.y) / g.t.z;
+      setT(clampT({ z, x: m1.x - cx * z, y: m1.y - cy * z }));
+    } else if (pts.length === 1 && g.pts.length >= 1) {
+      // Un doigt : déplacement libre (vertical pour feuilleter, horizontal quand zoomé)
+      setT(clampT({ z: g.t.z, x: g.t.x + (pts[0].x - g.pts[0].x), y: g.t.y + (pts[0].y - g.pts[0].y) }));
+    }
+  };
+  const onUp = (e) => {
+    const p = ptrs.current.get(e.pointerId);
+    ptrs.current.delete(e.pointerId);
+    // Double-tap : zoom ×2.5 centré sur le tap, ou retour à 100 %
+    if (p && ptrs.current.size === 0 && gestRef.current?.pts.length === 1) {
+      const moved = Math.hypot(e.clientX - gestRef.current.pts[0].x, e.clientY - gestRef.current.pts[0].y);
+      const now = Date.now();
+      if (moved < 12) {
+        if (now - lastTap.current.ts < 320 && Math.hypot(e.clientX - lastTap.current.x, e.clientY - lastTap.current.y) < 40) {
+          const cur = tRef.current;
+          if (cur.z > 1.05) setT(clampT({ z: 1, x: 0, y: cur.y / cur.z }));
+          else {
+            const z = 2.5;
+            const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
+            setT(clampT({ z, x: e.clientX - cx * z, y: e.clientY - cy * z }));
+          }
+          lastTap.current = { ts: 0, x: 0, y: 0 };
+        } else lastTap.current = { ts: now, x: e.clientX, y: e.clientY };
+      }
+    }
+    snapshot(); // re-cale le geste sur les doigts restants (2 → 1 doigt sans saut)
+  };
+  const onWheel = (e) => {
+    e.preventDefault();
+    const cur = tRef.current;
+    if (e.ctrlKey || e.metaKey) {
+      const z = Math.max(1, Math.min(6, cur.z * (e.deltaY < 0 ? 1.15 : 0.87)));
+      const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
+      setT(clampT({ z, x: e.clientX - cx * z, y: e.clientY - cy * z }));
+    } else {
+      setT(clampT({ ...cur, x: cur.x - e.deltaX, y: cur.y - e.deltaY }));
+    }
+  };
+
+  return (
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
+      <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
+        <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
+        <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+          {group.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {group.pages.length} page{group.pages.length > 1 ? 's' : ''}</span>
+        </p>
+        <button onClick={onClose}
+          style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:'white',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}>
+          <Ic n="x" s={16}/>
+        </button>
+      </div>
+      <div ref={boxRef}
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        onWheel={onWheel}
+        style={{ flex:1,overflow:'hidden',position:'relative',touchAction:'none',cursor:'grab' }}>
+        <div ref={innerRef}
+          style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0' }}>
+          {group.pages.map(p => (
+            <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
+              {p.bg
+                ? <img src={p.bg} alt="" draggable={false} style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
+                : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
+              <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
+                Page {p._page}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
@@ -25,8 +144,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     return [...map.entries()].map(([nom, pages]) => ({ nom, pages: pages.sort((a, b) => a._page - b._page) }));
   }, [planLibrary]);
   const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
-  const [consultZoom, setConsultZoom] = useState(100);    // largeur des pages en % du viewport
-  const ZOOMS = [100, 150, 200, 300];
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
@@ -99,45 +216,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     />
   );
 
-  // ── Visionneuse « Consulter les plans » : toutes les pages du PDF à la suite ──
-  // Défilement vertical continu + zoom par paliers (largeur des pages en % du viewport,
-  // défilement horizontal quand > 100%). Fonctionne hors ligne (les bg sont en cache).
-  if (consultGroup) {
-    const zi = ZOOMS.indexOf(consultZoom);
-    return (
-      <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
-        <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
-          <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
-          <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-            {consultGroup.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {consultGroup.pages.length} page{consultGroup.pages.length > 1 ? 's' : ''}</span>
-          </p>
-          <button onClick={() => setConsultZoom(ZOOMS[Math.max(0, zi - 1)])} disabled={zi <= 0}
-            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:zi <= 0 ? 'rgba(255,255,255,0.3)' : 'white',fontSize:18,fontWeight:800,cursor:zi <= 0 ? 'default' : 'pointer',flexShrink:0 }}>−</button>
-          <span style={{ fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.7)',width:38,textAlign:'center',flexShrink:0 }}>{consultZoom}%</span>
-          <button onClick={() => setConsultZoom(ZOOMS[Math.min(ZOOMS.length - 1, zi + 1)])} disabled={zi >= ZOOMS.length - 1}
-            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:zi >= ZOOMS.length - 1 ? 'rgba(255,255,255,0.3)' : 'white',fontSize:18,fontWeight:800,cursor:zi >= ZOOMS.length - 1 ? 'default' : 'pointer',flexShrink:0 }}>+</button>
-          <button onClick={() => setConsultGroup(null)}
-            style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:'white',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}>
-            <Ic n="x" s={16}/>
-          </button>
-        </div>
-        <div style={{ flex:1,overflow:'auto',WebkitOverflowScrolling:'touch' }}>
-          <div style={{ width:`${consultZoom}%`,minWidth:'100%' }}>
-            {consultGroup.pages.map(p => (
-              <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
-                {p.bg
-                  ? <img src={p.bg} alt="" style={{ width:'100%',display:'block',background:'white' }}/>
-                  : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
-                <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
-                  Page {p._page}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Visionneuse tactile (pincement / déplacement / double-tap) — composant ConsultViewer.
+  if (consultGroup) return <ConsultViewer group={consultGroup} onClose={() => setConsultGroup(null)}/>;
 
   if (previewBg) return (
     <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
@@ -177,7 +257,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               </p>
               <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
                 {pdfGroups.map(g => (
-                  <button key={g.nom} onClick={() => { setConsultGroup(g); setConsultZoom(100); }}
+                  <button key={g.nom} onClick={() => setConsultGroup(g)}
                     style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,
                       border:`1.5px solid ${DA.border}`,background:DA.grayXL,cursor:'pointer',textAlign:'left',width:'100%' }}>
                     <span style={{ fontSize:16,flexShrink:0 }}>📄</span>
