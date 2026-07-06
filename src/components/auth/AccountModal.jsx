@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { saveMyProfile, suggestInitials, checkInitialsTaken } from '../../lib/profile.js';
+import { saveMyProfile, suggestInitials } from '../../lib/profile.js';
 
 // Fiche incomplète = première connexion depuis la MAJ → le modal s'ouvre automatiquement
 // et bloque tant que Prénom / Nom / Initiales ne sont pas remplis (mode forceComplete).
@@ -38,12 +38,9 @@ export default function AccountModal({ profile, session, onClose, onSaved, force
     if (!/^[A-Z0-9]{2,5}$/.test(shownInitials)) { setErr('Initiales : 2 à 5 lettres (ex : TCM).'); return; }
     setSaving(true); setErr('');
     try {
-      // Unicité : les initiales identifient l'ingénieur (filtre « Mes projets ») — jamais deux
-      // comptes avec les mêmes. Contrôle serveur (RPC) ; sauté si migration pas encore appliquée.
-      if (shownInitials !== (profile?.initials || '').toUpperCase()) {
-        const taken = await checkInitialsTaken(shownInitials);
-        if (taken) { setErr(`Les initiales « ${shownInitials} » sont déjà utilisées par un autre compte.`); setSaving(false); return; }
-      }
+      // Les initiales ne sont volontairement PAS uniques : une même personne peut avoir
+      // plusieurs comptes (pro + perso) partageant les mêmes initiales — ils voient alors
+      // les mêmes « Mes projets », ce qui est le comportement voulu (demande Thomas).
       const saved = await saveMyProfile(uid, { first_name: f.first_name, last_name: f.last_name, initials: shownInitials });
       setSavedOk(true);
       onSaved?.(saved);
@@ -94,7 +91,7 @@ export default function AccountModal({ profile, session, onClose, onSaved, force
         </div>
 
         <div style={{ marginBottom:12 }}>
-          <label style={label}>Initiales * <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>(2 à 5 lettres, ex : TCM — uniques dans l'agence)</span></label>
+          <label style={label}>Initiales * <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>(2 à 5 lettres, ex : TCM)</span></label>
           <input value={f.initials} onChange={e => set('initials', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
             placeholder={autoInitials} maxLength={5}
             style={{ ...input, textAlign:'center', letterSpacing:3, fontWeight:800, textTransform:'uppercase', fontSize:18 }}/>

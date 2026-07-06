@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from './Icons.jsx';
-import { getUiScale, setUiScale } from '../../lib/uiPrefs.js';
 import { estimatePlanCacheBytes, clearPlanCache } from '../../lib/planThumbCache.js';
 import { estimateSnapshotBytes } from '../../lib/backupVault.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
@@ -24,14 +23,7 @@ function localStorageBytes() {
   } catch { return 0; }
 }
 
-const SCALES = [
-  { k: 'compact', label: 'Compact' },
-  { k: 'normal',  label: 'Normal'  },
-  { k: 'large',   label: 'Grand'   },
-];
-
 export default function SettingsModal({ onClose, projets = [], onPrecacheProject = null }) {
-  const [scale, setScale] = useState(getUiScale);
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
   const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: bytes }
   const [offlinePrefs, setOfflinePrefs] = useState({}); // reflet local des switchs
@@ -71,8 +63,6 @@ export default function SettingsModal({ onClose, projets = [], onPrecacheProject
   useEffect(() => { refreshSizes(); }, []);
   useEffect(() => subscribePendingUploads(setPendingCount), []);
 
-  const applyScale = (k) => { setScale(k); setUiScale(k); };
-
   const handleClearPlans = async () => {
     setClearing(true);
     await clearPlanCache();
@@ -109,26 +99,6 @@ export default function SettingsModal({ onClose, projets = [], onPrecacheProject
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
-
-          {/* ── Taille de l'interface ── */}
-          <div style={{ marginBottom:22 }}>
-            <p style={sectionTitle}>Taille de l'interface</p>
-            <div style={{ display:'flex', gap:6 }}>
-              {SCALES.map(s => (
-                <button key={s.k} onClick={() => applyScale(s.k)}
-                  style={{ flex:1, padding:'10px 0', borderRadius:9, cursor:'pointer', fontWeight:700,
-                    fontSize: s.k === 'compact' ? 12 : s.k === 'large' ? 16 : 14,
-                    border: `1.5px solid ${scale === s.k ? DA.red : DA.border}`,
-                    background: scale === s.k ? DA.redL : 'white',
-                    color: scale === s.k ? DA.red : DA.gray }}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
-              S'applique aux listes et aux fiches. L'annotation de plans et l'aperçu du rapport gardent leur taille d'origine.
-            </p>
-          </div>
 
           {/* ── Hors-ligne par projet ── */}
           <div style={{ marginBottom:22 }}>
