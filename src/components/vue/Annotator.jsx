@@ -474,7 +474,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
   const [textMode,      setTextMode]      = useState('plain');
-  const [symCat,           setSymCat]           = useState('fissures');
+  const [symCat,           setSymCat]           = useState('fissures'); // (conservé — plus d'onglets, rangée unifiée)
+  const [symInfo,          setSymInfo]          = useState(null); // carte flottante : explication du symbole tapé
   const [showPalette,      setShowPalette]      = useState(false);
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
@@ -1998,50 +1999,49 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
-      {/* ── Symbol picker — catégories ── */}
+      {/* ── Symbol picker — rangée UNIFIÉE (demande Thomas : plus d'onglets, une seule ligne
+             défilante avec séparateurs de catégories, et le NOM COMPLET sous chaque picto —
+             sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
       {showSyms && tool === 'symbol' && (
         <div style={{ background:'#1a1a1a', flexShrink:0, borderBottom:'1px solid #333' }}>
-          {/* Onglets (compacts — le libellé complet du symbole passe en title/tooltip,
-              le bandeau dédié est supprimé pour rendre l'écran au plan) */}
-          <div style={{ display:'flex', borderBottom:'1px solid #2a2a2a' }}>
-            {SYMBOL_CATEGORIES.map(cat => (
-              <button key={cat.id} onClick={() => setSymCat(cat.id)}
-                style={{ flex:1, padding:'5px 4px', fontSize:10, fontWeight:700, letterSpacing:0.5,
-                  background:symCat===cat.id?DA.red:'transparent', color:symCat===cat.id?'white':'#777',
-                  border:'none', cursor:'pointer', textTransform:'uppercase', transition:'all 0.15s' }}>
-                {cat.label}
-              </button>
-            ))}
-          </div>
-          {/* Rangée de symboles (une ligne, défilement horizontal) */}
-          <div style={{ display:'flex', gap:6, padding:'5px 10px 7px', overflowX:'auto', alignItems:'flex-start' }}>
-            {(SYMBOL_CATEGORIES.find(c => c.id === symCat)?.ids || []).map(id => {
-              const sm = getAllSymbols().find(s => s.id === id);
-              if (!sm) return null;
-              const isActive = sym.id === sm.id;
-              return (
-                <button key={sm.id} onClick={() => setSym(sm)} title={sm.label}
-                  style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:3,
-                    padding:'6px 8px', borderRadius:8, cursor:'pointer', border:'none',
-                    background:isActive ? DA.red : '#2a2a2a' }}>
-                  <SymMiniCanvas sm={sm} color={color} />
-                  <span style={{ fontSize:9, fontWeight:700, color:isActive?'white':'#999', letterSpacing:0.3, whiteSpace:'nowrap' }}>
-                    {sm.short}
-                  </span>
-                </button>
-              );
-            })}
-            {/* Symboles custom dans "Divers" */}
-            {symCat === 'divers' && getCustomSymbolDefs().map(sm => {
+          <div style={{ display:'flex', gap:6, padding:'6px 10px 7px', overflowX:'auto', alignItems:'stretch' }}>
+            {SYMBOL_CATEGORIES.flatMap(cat => ([
+              // Séparateur de catégorie : étiquette verticale discrète
+              <div key={`cat-${cat.id}`} style={{ flexShrink:0, display:'flex', alignItems:'center', padding:'0 3px' }}>
+                <span style={{ fontSize:8.5, fontWeight:800, color:'#666', letterSpacing:1.2, textTransform:'uppercase',
+                  writingMode:'vertical-rl', transform:'rotate(180deg)', lineHeight:1 }}>{cat.label}</span>
+              </div>,
+              ...cat.ids.map(id => {
+                const sm = getAllSymbols().find(s => s.id === id);
+                if (!sm) return null;
+                const isActive = sym.id === sm.id;
+                return (
+                  <button key={sm.id} onClick={() => { setSym(sm); setSymInfo(sm); }} title={sm.label}
+                    style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                      padding:'5px 6px', borderRadius:8, cursor:'pointer', border:'none', width:98,
+                      background:isActive ? DA.red : '#2a2a2a' }}>
+                    <SymMiniCanvas sm={sm} color={color} />
+                    {/* NOM COMPLET (2 lignes max) — le code court reste sur le plan uniquement */}
+                    <span style={{ fontSize:8.5, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.25, textAlign:'center',
+                      display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                      {sm.label}
+                    </span>
+                  </button>
+                );
+              }),
+            ]))}
+            {/* Symboles custom (fin de rangée, section Divers) */}
+            {getCustomSymbolDefs().map(sm => {
               const isActive = sym.id === sm.id;
               return (
                 <div key={sm.id} style={{ position:'relative', flexShrink:0 }}>
-                  <button onClick={() => setSym(sm)}
-                    style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3,
-                      padding:'6px 8px', borderRadius:8, cursor:'pointer', border:'none',
+                  <button onClick={() => { setSym(sm); setSymInfo(sm); }}
+                    style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                      padding:'5px 6px', borderRadius:8, cursor:'pointer', border:'none', width:98,
                       background:isActive ? DA.red : '#2a2a2a' }}>
                     <SymMiniCanvas sm={sm} color={color} />
-                    <span style={{ fontSize:9, fontWeight:700, color:isActive?'white':'#999', letterSpacing:0.3 }}>{sm.short}</span>
+                    <span style={{ fontSize:8.5, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.25, textAlign:'center',
+                      display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{sm.label}</span>
                   </button>
                   <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
                     style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>×</button>
@@ -2049,7 +2049,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               );
             })}
             {/* Créer custom */}
-            {symCat === 'divers' && (!showNewSym
+            {(!showNewSym
               ? <button onClick={() => setShowNewSym(true)}
                   style={{ flexShrink:0,padding:'6px 10px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF',alignSelf:'center' }}>
                   + Créer
@@ -2228,9 +2228,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
               style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
-              onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
-              onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
+              onMouseDown={e => { if (showPalette) setShowPalette(false); if (symInfo) setSymInfo(null); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
+              onTouchStart={e => { if (showPalette) setShowPalette(false); if (symInfo) setSymInfo(null); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
               onContextMenu={e => e.preventDefault()}/>
+            {/* Carte flottante : EXPLICATION du symbole sélectionné (demande Thomas : « FL, L.,
+                FO, ça veut dire quoi ? »). Superposée au plan (ne pousse pas la mise en page),
+                se ferme au toucher du plan ou via ×. */}
+            {symInfo && tool === 'symbol' && (
+              <div style={{ position:'absolute', top:10, left:'50%', transform:'translateX(-50%)', zIndex:6,
+                display:'flex', alignItems:'center', gap:10, maxWidth:'92%',
+                background:'rgba(0,0,0,0.88)', border:'1px solid #444', borderRadius:12, padding:'8px 12px',
+                boxShadow:'0 4px 24px rgba(0,0,0,0.5)' }}>
+                <div style={{ flexShrink:0, background:'#2a2a2a', borderRadius:8, padding:3 }}>
+                  <SymMiniCanvas sm={symInfo} color={color}/>
+                </div>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:11, fontWeight:800, color:'white', letterSpacing:0.5 }}>{symInfo.short}</div>
+                  <div style={{ fontSize:11, color:'#ccc', lineHeight:1.35 }}>{symInfo.label}</div>
+                </div>
+                <button onClick={() => setSymInfo(null)}
+                  style={{ flexShrink:0, width:26, height:26, borderRadius:'50%', border:'none', background:'rgba(255,255,255,0.14)', color:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Ic n="x" s={12}/>
+                </button>
+              </div>
+            )}
             {vt.z > 1.05 && (
               <button
                 onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}
