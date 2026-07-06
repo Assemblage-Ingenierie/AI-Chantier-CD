@@ -230,8 +230,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   }, [logNav]);
 
   useEffect(() => {
+    // Un premier tampon est déjà armé au chargement du module (main.jsx) — on complète
+    // seulement (25 + 10 = 35 pushState au démarrage, loin du throttle Chrome ~100/30s).
     try { history.replaceState({ pwaSentinel: true }, ''); } catch { /* noop */ }
-    const p = armBuffer(20);
+    const p = armBuffer(10);
     logNav(`mount armed=${p}`);
 
     // Android peut vider l'historique lors d'une mise en arrière-plan (BFCache / freeze).

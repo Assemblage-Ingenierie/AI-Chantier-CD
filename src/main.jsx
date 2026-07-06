@@ -8,6 +8,18 @@ import { installGlobalErrorHandlers } from './lib/logger.js';
 // l'ErrorBoundary ne voit pas → remontée serveur via /api/log.
 installGlobalErrorHandlers();
 
+// ── Anti-fermeture par le bouton retour (Android) / geste retour (iOS) ──────────
+// Le tampon de sentinelles d'historique de ChantierAI ne s'arme qu'au MONTAGE React :
+// pendant le splash/chargement (ou après un gel Android qui a vidé l'historique),
+// l'historique n'a qu'une entrée → un appui retour SORT de l'app (« retour 2x très
+// vite → ça ferme l'appli »). On arme donc un premier tampon IMMÉDIATEMENT, avant
+// React : le popstate de ChantierAI prendra le relais dès son montage. Un retour
+// avant React ne fait alors que consommer une sentinelle (aucune navigation).
+try {
+  history.replaceState({ pwaSentinel: true }, '');
+  for (let i = 0; i < 25; i++) history.pushState({ pwaSentinel: true }, '');
+} catch { /* Safari privé / throttle — le tampon de ChantierAI reprendra au montage */ }
+
 // ── Service worker — mise à jour SILENCIEUSE (jamais de reload pendant l'usage) ──
 // Un reload forcé sur 'controllerchange' réinitialisait l'historique en plein usage
 // → le bouton retour fermait l'app ("ça reset le truc"). On laisse donc le SW se
