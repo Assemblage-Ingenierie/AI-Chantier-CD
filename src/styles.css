@@ -54,8 +54,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   .proj-card { flex-direction:column; height:auto; }
   .proj-card-img { width:100%; min-height:0; padding-top:100%; height:0; }
   .proj-card-body { overflow:visible; }
-  .proj-card-title { white-space:normal !important; overflow:visible !important; text-overflow:clip !important;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  /* Titre sur 2 lignes max. overflow:hidden est REQUIS par -webkit-line-clamp (sinon coupe
+     nette sans « … »), et overflow-wrap:anywhere permet aux codes projet insécables
+     (ex. A592_AEPSAINTBERNARD) de passer à la ligne au lieu de déborder de la carte. */
+  .proj-card-title { white-space:normal !important; overflow:hidden !important;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow-wrap:anywhere; word-break:break-word; }
 }
 
 /* ── Stats responsive ── */

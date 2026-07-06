@@ -48,9 +48,8 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
           ? <img src={p.photo} alt={p.nom}/>
           : <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
         }
-        <button onClick={(e) => { e.stopPropagation(); setPhotoTgt(p); }} style={{ position:'absolute',bottom:6,right:6,background:'rgba(0,0,0,0.55)',border:'none',borderRadius:8,padding:10,cursor:'pointer',color:'white',display:'flex' }}>
-          <Ic n="cam" s={15}/>
-        </button>
+        {/* Le bouton appareil photo a été retiré (la photo de couverture se change via
+            le menu ⋯ → Modifier). PhotoModal reste disponible côté Dashboard. */}
         {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,padding:'3px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={10}/> Archivé</div>}
         <div style={{ position:'absolute',bottom:0,left:0,right:0,height:3,background:DA.red }}/>
       </div>
