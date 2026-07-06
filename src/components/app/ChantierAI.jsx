@@ -281,15 +281,13 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
 
   useEffect(() => {
     let _lastNav = 0;
-    const handler = () => {
-      logNav(`popstate ouv=${!!ouvertRef.current} vis=${!!selectedVisiteIdRef.current} child=${!!childBackHandler.current}`);
-      // Réarme le buffer (consomme 1, repousse 4 → solde +3 si pushState fonctionne).
-      armBuffer(4);
+    // Navigation arrière DANS l'app : modal → visite → projet → accueil (jamais de sortie).
+    const doBack = (src) => {
+      logNav(`${src} ouv=${!!ouvertRef.current} vis=${!!selectedVisiteIdRef.current} child=${!!childBackHandler.current}`);
       // Debounce : deux appuis très rapprochés (< 350ms) ne reculent que d'un niveau.
       const now = Date.now();
       if (now - _lastNav < 350) { logNav('debounced'); return; }
       _lastNav = now;
-
       if (childBackHandler.current?.()) {
         logNav('child handled');
       } else if (selectedVisiteIdRef.current) {
@@ -300,8 +298,36 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         logNav('rien à dépiler (racine)');
       }
     };
-    window.addEventListener('popstate', handler);
-    return () => window.removeEventListener('popstate', handler);
+
+    // ── Voie PRINCIPALE (Chrome/Edge Android ≥ 108) : Navigation API ──────────────
+    // navigate('traverse') se déclenche AVANT que le bouton retour n'agisse ; preventDefault()
+    // ANNULE la traversée → l'app ne peut PAS être fermée, quel que soit l'état de l'historique.
+    // C'est l'API officielle pour ce cas — contrairement aux sentinelles pushState, elle n'est
+    // pas soumise à la History Manipulation Intervention (qui ne crédite qu'UNE entrée par
+    // interaction et sautait nos rafales → journal Thomas : « mount » après chaque 2e retour).
+    let onNavigate = null;
+    if (typeof window !== 'undefined' && window.navigation) {
+      onNavigate = (e) => {
+        if (e.navigationType !== 'traverse') return;
+        if (!e.cancelable) { logNav('traverse non-annulable'); return; } // popstate prendra le relais
+        e.preventDefault();
+        doBack('nav-intercept');
+      };
+      window.navigation.addEventListener('navigate', onNavigate);
+    }
+
+    // ── Voie de SECOURS (iOS Safari, navigateurs sans Navigation API) : popstate ──
+    // Si la traversée n'a pas été annulée (pas d'API, ou non-annulable), on navigue dans
+    // l'app et on réarme le tampon de sentinelles.
+    const onPop = () => {
+      armBuffer(4);
+      doBack('popstate');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (onNavigate) window.navigation.removeEventListener('navigate', onNavigate);
+    };
   }, [armBuffer, logNav]);
 
   useEffect(() => {
