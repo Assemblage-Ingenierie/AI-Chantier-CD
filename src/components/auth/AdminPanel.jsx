@@ -151,8 +151,8 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                 <thead>
                   <tr style={{ background:DA.black }}>
-                    {['Prénom', 'Nom', 'Poste', 'E-mail', 'Statut', ''].map((h, i) => (
-                      <th key={i} style={{ textAlign: i >= 4 ? 'right' : 'left', padding:'11px 14px', color:'white', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' }}>{h}</th>
+                    {['Prénom', 'Nom', 'Initiales', 'Poste', 'E-mail', 'Statut', ''].map((h, i) => (
+                      <th key={i} style={{ textAlign: i >= 5 ? 'right' : 'left', padding:'11px 14px', color:'white', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -161,6 +161,11 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
                     <tr key={p.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
                       <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.first_name || '—'}</td>
                       <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.last_name || ''}</td>
+                      <td style={{ padding:'11px 14px' }}>
+                        {p.initials
+                          ? <span style={{ display:'inline-block', background:DA.redL, color:DA.red, fontWeight:800, letterSpacing:1, fontSize:12, borderRadius:6, padding:'3px 8px' }}>{p.initials}</span>
+                          : <span style={{ color:DA.grayL }}>—</span>}
+                      </td>
                       <td style={{ padding:'11px 14px', color:DA.red }}>{p.job_title || '—'}</td>
                       <td style={{ padding:'11px 14px', color:DA.gray }}>{p.email}</td>
                       <td style={{ padding:'11px 14px', textAlign:'right', whiteSpace:'nowrap' }}>

@@ -40,8 +40,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
    `zoom` scale texte + boutons + espacements ensemble : pas de casse de layout.
    Volontairement NON appliqué à l'Annotator ni à l'aperçu Rapport (rendus hors
    de ces conteneurs). Amplitude modérée pour rester lisible et imprimable. */
-.ui-scale-compact { zoom: 0.9; }
-.ui-scale-large   { zoom: 1.12; }
+/* Échelle UNIQUE (les modes Compact/Grand sont supprimés) : un cran plus grand que
+   l'ancien « Normal », sous le 1.12 du « Grand » qui faisait déborder les cases. */
+.ui-scale-app     { zoom: 1.08; }
+/* Anciennes classes conservées inertes (si un cache sert un ancien bundle un court instant) */
+.ui-scale-compact { zoom: 1.08; }
+.ui-scale-large   { zoom: 1.08; }
 
 
 /* ── Card projet : horizontal mobile → vertical desktop ── */
