@@ -12,16 +12,39 @@ const STEPS = [
   { n:4, icon:'fil',  t:'Générez le rapport PDF', d:'Onglet Rapport → Exporter' },
 ];
 
-export default function Dashboard({ projets, remoteLoaded, staleIds = new Set(), dirtyIds = new Set(), syncStatus = 'ok', onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
+// Un projet est « à moi » si au moins une de ses visites porte mes initiales dans son champ
+// Ingénieur. Tolérant au multi-ingénieurs (« SV, TCM ») : on découpe sur tout séparateur.
+export function projectMatchesInitials(p, initials) {
+  const mine = (initials || '').trim().toUpperCase();
+  if (!mine) return false;
+  return (p.visites || []).some(v =>
+    String(v.ingenieur || '').toUpperCase().split(/[^A-Z0-9]+/).includes(mine));
+}
+
+// Bascule mémorisée pour la SESSION (sessionStorage) : naviguer dans l'app ne la perd pas,
+// mais chaque nouvelle ouverture de l'app revient sur « Mes projets ».
+const SCOPE_KEY = '_ai_dash_scope';
+
+export default function Dashboard({ projets, profile = null, remoteLoaded, staleIds = new Set(), dirtyIds = new Set(), syncStatus = 'ok', onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
+  const [scope, setScopeState] = useState(() => {
+    try { return sessionStorage.getItem(SCOPE_KEY) === 'all' ? 'all' : 'mine'; } catch { return 'mine'; }
+  });
+  const setScope = (s) => { setScopeState(s); try { sessionStorage.setItem(SCOPE_KEY, s); } catch {} };
   const uiScale = useUiScale();
 
   const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base', numeric: true });
-  const actifs   = projets.filter(p => p.statut !== 'archive').sort(byName);
-  const archives = projets.filter(p => p.statut === 'archive').sort(byName);
+  const actifsAll = projets.filter(p => p.statut !== 'archive').sort(byName);
+  const archives  = projets.filter(p => p.statut === 'archive').sort(byName);
+  const myInitials = (profile?.initials || '').trim().toUpperCase();
+  const miens = myInitials ? actifsAll.filter(p => projectMatchesInitials(p, myInitials)) : [];
+  // Sans initiales (profil pas encore complété) ou aucun projet à soi → on montre tout,
+  // jamais un tableau de bord vide par erreur de filtre.
+  const filterUsable = myInitials !== '' && miens.length > 0;
+  const actifs = (scope === 'mine' && filterUsable) ? miens : actifsAll;
   const stats = [
-    { l:'Projets actifs', v:actifs.length },
+    { l:'Projets actifs', v:actifsAll.length },
     { l:'Archivés',       v:archives.length },
   ];
 
@@ -55,9 +78,24 @@ export default function Dashboard({ projets, remoteLoaded, staleIds = new Set(),
 
       {/* Projets actifs */}
       <div>
-        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10 }}>
-          <h2 style={{ fontSize:15,fontWeight:800,color:DA.black,margin:0 }}>Projets en cours</h2>
-          <span style={{ fontSize:13,background:DA.redL,color:DA.red,padding:'3px 9px',borderRadius:10,fontWeight:700 }}>{actifs.length}</span>
+        <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,gap:8 }}>
+          {filterUsable ? (
+            /* Bascule « Mes projets » (défaut) / « Projets d'Assemblage » (tous) */
+            <div style={{ display:'flex', gap:4, background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:10, padding:3 }}>
+              {[{ k:'mine', l:'Mes projets' }, { k:'all', l:"Projets d'Assemblage" }].map(t => (
+                <button key={t.k} onClick={() => setScope(t.k)}
+                  style={{ border:'none', borderRadius:8, padding:'7px 12px', fontSize:13, fontWeight:700, cursor:'pointer',
+                    background: scope === t.k ? 'white' : 'transparent',
+                    color: scope === t.k ? DA.red : DA.gray,
+                    boxShadow: scope === t.k ? '0 1px 4px rgba(0,0,0,0.10)' : 'none' }}>
+                  {t.l}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <h2 style={{ fontSize:15,fontWeight:800,color:DA.black,margin:0 }}>Projets en cours</h2>
+          )}
+          <span style={{ fontSize:13,background:DA.redL,color:DA.red,padding:'3px 9px',borderRadius:10,fontWeight:700,flexShrink:0 }}>{actifs.length}</span>
         </div>
 
         {actifs.length === 0 && !remoteLoaded ? (
