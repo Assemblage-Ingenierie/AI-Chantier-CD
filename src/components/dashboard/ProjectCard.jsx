@@ -54,7 +54,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
         {/* PC uniquement (masqué en CSS sur mobile) : nom COMPLET de l'affaire en bandeau
             dégradé sur la photo (2 lignes max) — choix Thomas, le titre quitte la zone du bas. */}
         <div className="proj-card-name-overlay">
-          <p>{p.nom}</p>
+          {/* UNE seule ligne (le saut de ligne « c'est moche » — Thomas) : la taille de police
+              s'adapte à la longueur du nom pour qu'il tienne en entier. */}
+          <p style={{ fontSize: p.nom?.length > 34 ? 10.5 : p.nom?.length > 26 ? 11.5 : p.nom?.length > 19 ? 13 : 14.5 }}>{p.nom}</p>
           {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
         </div>
         <div style={{ position:'absolute',bottom:0,left:0,right:0,height:3,background:DA.red }}/>
@@ -63,13 +65,16 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
       {/* Infos */}
       <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
-          {/* Rangée titre : MOBILE uniquement (sur PC le nom est en bandeau sur la photo). */}
-          <div className="proj-card-titlerow" style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+          {/* Rangée titre : MOBILE uniquement (sur PC le nom est en bandeau sur la photo).
+              PAS de display inline : il écraserait le display:none du CSS desktop (le nom
+              apparaissait en double). */}
+          <div className="proj-card-titlerow">
             <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
             {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
           </div>
-          {p.maitreOuvrage && <p style={{ fontSize:13,color:DA.red,margin:'4px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
-          <p style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{p.adresse || '—'}</p>
+          {/* MO + adresse : tronqués sur mobile (carte compacte), EN ENTIER sur PC (classe). */}
+          {p.maitreOuvrage && <p className="proj-card-sub" style={{ fontSize:13,color:DA.red,margin:'4px 0 0',fontWeight:600 }}>MO : {p.maitreOuvrage}</p>}
+          <p className="proj-card-sub" style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0' }}>{p.adresse || '—'}</p>
           {(obs > 0 || urg > 0) && (
             <div style={{ display:'flex',gap:5,marginTop:8,flexWrap:'wrap' }}>
               {obs > 0 && (
