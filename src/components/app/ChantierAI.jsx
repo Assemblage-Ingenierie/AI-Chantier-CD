@@ -284,9 +284,13 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
     // Navigation arrière DANS l'app : modal → visite → projet → accueil (jamais de sortie).
     const doBack = (src) => {
       logNav(`${src} ouv=${!!ouvertRef.current} vis=${!!selectedVisiteIdRef.current} child=${!!childBackHandler.current}`);
-      // Debounce : deux appuis très rapprochés (< 350ms) ne reculent que d'un niveau.
+      // Debounce COURT (100ms) : filtre uniquement les doublons d'événements. L'ancien 350ms
+      // « avalait » les appuis rapides : Chrome consommait quand même ses crédits anti-retour
+      // sans que l'app ne navigue → 3 appuis vite = 1 seul écran reculé PUIS fermeture. Avec
+      // 100ms, chaque appui recule d'un écran : quand les crédits s'épuisent, on est déjà à
+      // l'accueil, où le retour qui ferme est le comportement Android standard.
       const now = Date.now();
-      if (now - _lastNav < 350) { logNav('debounced'); return; }
+      if (now - _lastNav < 100) { logNav('debounced'); return; }
       _lastNav = now;
       if (childBackHandler.current?.()) {
         logNav('child handled');
