@@ -761,6 +761,52 @@ export async function resolveCommentHtml(html) {
 
 // Upload de l'image HD d'un plan (WebP haute résolution) dans le bucket `photos`.
 // Retourne le chemin relatif (stocké dans la colonne `data` du plan) ou null.
+// Nom de fichier sûr pour un nom de base de PDF (chemin Storage déterministe → pas de
+// colonne DB nécessaire : on retrouve le PDF par (chantierId, base)).
+function slugPlanBase(base) {
+  return String(base || 'doc').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'doc';
+}
+
+// Stocke le PDF SOURCE d'un plan dans Storage (chemin déterministe). C'est LUI qui permet
+// la loupe vectorielle « telle que le PDF » sur TOUS les appareils/sessions — l'image HD
+// seule pixelise au zoom fort (retour Thomas). Upsert idempotent → un seul PDF par base.
+export async function uploadPlanPdf(chantierId, base, pdfDataUrl) {
+  if (!chantierId || typeof pdfDataUrl !== 'string' || !pdfDataUrl.startsWith('data:application/pdf')) return false;
+  try {
+    const sb = await getSupabase();
+    const path = `plans/${chantierId}/pdf/${slugPlanBase(base)}.pdf`;
+    const resp = await fetch(pdfDataUrl);
+    const blob = await resp.blob();
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'application/pdf', upsert: true, cacheControl: '31536000' });
+    return !error;
+  } catch { return false; }
+}
+
+const _planPdfCache = new Map(); // `${chantierId}|${base}` → dataURL | null | Promise
+// Récupère le PDF source (data URL) par (chantierId, base). Cache session + IndexedDB
+// (offlineCache-like via planThumbCache HD store réutilisé ? non : simple cache mémoire ;
+// le navigateur cache le blob 1 an). Renvoie null si aucun PDF stocké (plans legacy).
+export async function fetchPlanPdfByBase(chantierId, base) {
+  if (!chantierId || !base) return null;
+  const key = `${chantierId}|${base}`;
+  if (_planPdfCache.has(key)) return _planPdfCache.get(key);
+  const promise = (async () => {
+    try {
+      const sb = await getSupabase();
+      const path = `plans/${chantierId}/pdf/${slugPlanBase(base)}.pdf`;
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
+      if (!signed?.signedUrl) return null;
+      const resp = await fetch(signed.signedUrl);
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
+    } catch { return null; }
+  })();
+  _planPdfCache.set(key, promise);
+  return promise;
+}
+
 async function uploadPlanHd(sb, chantierId, planId, base64) {
   const path = `plans/${chantierId}/${planId}.webp`;
   // Une tentative + un retry : l'upload HD est la source de qualité du rapport ; un échec
@@ -1184,6 +1230,19 @@ async function saveRemote(ps, dirtyIds = null) {
         if (dataRows.length) {
           await sb.from('aichantier_chantier_plans').upsert(dataRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); });
         }
+      }
+      // PDF SOURCE → Storage (chemin déterministe par base) : permet la loupe vectorielle
+      // « telle que le PDF » sur tous les appareils. Un seul upload par base (dédupliqué).
+      const PDF_RE = /\s*—\s*Page\s*\d+\s*$/i;
+      const pdfByBase = new Map();
+      for (const pl of (p.planLibrary || [])) {
+        if (typeof pl.data === 'string' && pl.data.startsWith('data:application/pdf')) {
+          const base = String(pl.nom || '').replace(PDF_RE, '').trim() || (pl.nom || 'doc');
+          if (!pdfByBase.has(base)) pdfByBase.set(base, pl.data);
+        }
+      }
+      for (const [base, pdf] of pdfByBase) {
+        try { await uploadPlanPdf(p.id, base, pdf); } catch { /* best-effort */ }
       }
     })();
 
