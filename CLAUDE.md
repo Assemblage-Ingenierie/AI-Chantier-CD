@@ -186,6 +186,7 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 - Toujours vérifier que `remoteLoaded` est correctement géré si on touche au chargement
 - En cas de conflit Git, toujours prendre la version la plus complète (ne jamais retirer des features)
 - Préférer `Edit` (modification chirurgicale) à `Write` (réécriture complète) sur les fichiers existants
+- **TDZ / ordre de déclaration** : dans le corps d'un composant, ne JAMAIS référencer directement (hors callback) une `const`/`useMemo` déclarée plus bas — crash runtime « Cannot access before initialization » que ni le build ni les tests n'attrapent. Après tout ajout de code dans un gros composant, vérifier avec : `npx eslint <fichier> --rule '{"no-use-before-define": ["error", {"functions": false, "variables": true}]}'` (les hits dans des callbacks/handlers sont OK, les hits au niveau du corps sont des bombes)
 
 ---
 
@@ -214,3 +215,4 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 | 2026-05-13 | Suppression massive accidentelle de projets | Corruption cache local → diff supprimait tout | Garde anti-mass-delete dans `saveRemote` (cap 50%) |
 | 2026-05-21 | Projets supprimés réapparaissent sur autre appareil | Garde anti-mass-delete bloquait les suppressions légitimes >50% | `deleteRemoteProjet()` : suppression immédiate sur Supabase |
 | 2026-05-21 | Plans très lents à charger | `hydratePlanLibrary` chargeait aussi les PDF bruts | Requête réduite à `id,bg` uniquement |
+| 2026-07-07 | App plantée en PROD à l'ouverture du panneau Plans (« Cannot access 'M' before initialization ») | `unassignedGroups` référençait `pdfGroups` (useMemo) déclaré 130 lignes plus bas dans `NiveauxModal` — TDZ au rendu, invisible au build et aux tests | Hotfix #182 : useMemo remonté avant ses usages + règle TDZ ajoutée aux Règles de développement ci-dessus |
