@@ -55,7 +55,8 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .proj-card-img { position:relative; width:96px; flex-shrink:0; background:#F9F9F9; cursor:pointer; }
 .proj-card-img img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
 .proj-card-img-placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
-.proj-card-body { flex:1; min-width:0; overflow:hidden; }
+/* Mobile (carte horizontale 96px) : contenu centré verticalement à côté de la photo. */
+.proj-card-body { flex:1; min-width:0; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 /* Titre : UNE ligne, coupure PROPRE avec « … » (format compact d'origine — demande Thomas).
    L'ancien bug (texte coupé net / débordant) venait d'un line-clamp combiné à
    overflow:visible : ici ellipsis + overflow:hidden garantissent que tout rentre. */
@@ -68,7 +69,10 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 @media (min-width: 480px) {
   .proj-card { flex-direction:column; height:auto; }
   .proj-card-img { width:100%; min-height:0; padding-top:100%; height:0; }
-  .proj-card-body { overflow:visible; }
+  /* PC : la grille étire les cartes à la hauteur de la plus haute rangée → le contenu doit
+     s'ALIGNER EN HAUT (pas centré) pour que les MO/adresses/badges s'alignent d'une tuile
+     à l'autre — sinon une carte sans badges voyait son texte descendre (demande Thomas). */
+  .proj-card-body { overflow:visible; align-items:flex-start; }
   /* Sur PC le nom vit sur la photo → la rangée titre du bas disparaît. */
   .proj-card-titlerow { display:none; }
   /* MO + adresse affichés EN ENTIER (retour à la ligne autorisé) dans une zone de hauteur
