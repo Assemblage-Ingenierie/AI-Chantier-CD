@@ -168,8 +168,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     return () => setBackHandler(null);
   }, [setBackHandler]);
 
-  const [editingVisiteLabel, setEditingVisiteLabel] = useState(null);
-  const [visitLabelVal, setVisitLabelVal] = useState('');
   const [editingProjetNom, setEditingProjetNom] = useState(false);
   const [projetNomVal, setProjetNomVal] = useState('');
   const uiScale = useUiScale();
@@ -409,9 +407,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const annotatorRef = useRef(null);
   const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
-  const formatDate = (d) => d
-    ? new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
-    : null;
 
   if (modal?.t === 'photoAnnot') {
     const { item, locId, photoIdx } = modal;
@@ -588,24 +583,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                   {refreshing ? <Ic n="spn" s={17}/> : <Ic n="rld" s={17}/>}
                 </button>
               )}
-              {(() => {
-                const v = visites.find(vv => vv.id === selectedVisiteId);
-                if (!v) return null;
-                return editingVisiteLabel === v.id ? (
-                  <input autoFocus value={visitLabelVal}
-                    onChange={e => setVisitLabelVal(e.target.value)}
-                    onBlur={() => { const t = visitLabelVal.trim(); if (t) updateVisite(v.id, { label: t }); setEditingVisiteLabel(null); }}
-                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingVisiteLabel(null); }}
-                    style={{ background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', outline:'none', borderRadius:6, color:'white', fontSize:16, fontWeight:700, padding:'4px 8px', width: Math.max(70, visitLabelVal.length * 7) + 'px' }}
-                  />
-                ) : (
-                  <button onClick={() => { setEditingVisiteLabel(v.id); setVisitLabelVal(v.label ?? ''); }}
-                    style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:6, padding:'4px 9px', color:'rgba(255,255,255,0.75)', fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4, maxWidth:220, overflow:'hidden' }}>
-                    <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v.label ?? 'Visite'}</span>
-                    {v.dateVisite && <span style={{ opacity:0.5, fontWeight:500, flexShrink:0 }}>· {formatDate(v.dateVisite)}</span>}
-                  </button>
-                );
-              })()}
+              {/* Le badge « Visite … · date » a été retiré (demande Thomas : il ne renomme
+                  jamais ici — le renommage se fait dans l'onglet Visites — et il encombrait
+                  la barre, surtout sur téléphone). */}
               {tab !== 'rapport' && (
                 <button onClick={() => setModal({ t:'niveaux' })}
                   style={{ background:'white', border:'none', borderRadius:8, padding:'6px 13px', color:DA.black, cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontWeight:800 }}>

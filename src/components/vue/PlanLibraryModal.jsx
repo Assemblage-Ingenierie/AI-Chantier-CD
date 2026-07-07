@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPages } from '../../lib/pdfUtils.js';
-import { listDrivePlans, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
+import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '' }) {
@@ -21,24 +21,40 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [repairingId, setRepairingId] = useState(null);
   const fileRef = useRef();
   const repairFileRef = useRef();
-  // ── Import direct depuis le Drive de l'affaire (dossier retrouvé par le n° d'affaire) ──
+  // ── Drive de l'affaire : NAVIGATION niveau par niveau, comme dans le Drive
+  //    (1_GESTION, 2_DOCUMENTS_RECUS…) — demande Thomas. drivePath = fil d'Ariane. ──
   const [driveOpen, setDriveOpen] = useState(false);
   const [driveLoading, setDriveLoading] = useState(false);
-  const [driveFolder, setDriveFolder] = useState(null);
-  const [driveFiles, setDriveFiles] = useState(null); // null = pas encore chargé
+  const [drivePath, setDrivePath] = useState([]); // [{ id, name }] — racine = dossier affaire
+  const [driveContent, setDriveContent] = useState(null); // { folders, files } du niveau courant
   const [driveErr, setDriveErr] = useState(null);
   const [driveDl, setDriveDl] = useState(null); // { id, pct } — téléchargement en cours
+  const driveIdRef = useRef(null);
+
+  const browseTo = async (path) => {
+    setDriveLoading(true); setDriveErr(null);
+    try {
+      const content = await browseDriveFolder(path[path.length - 1].id, driveIdRef.current);
+      setDrivePath(path);
+      setDriveContent(content);
+    } catch (e) { setDriveErr(e.message); }
+    setDriveLoading(false);
+  };
 
   const openDrive = async () => {
     setDriveOpen(true);
-    if (driveFiles != null) return; // déjà chargé
+    if (driveContent != null) return; // déjà chargé
     setDriveLoading(true); setDriveErr(null);
     try {
-      const { folderName, files } = await listDrivePlans(projetNom);
-      setDriveFolder(folderName);
-      setDriveFiles(files);
-    } catch (e) { setDriveErr(e.message); }
-    setDriveLoading(false);
+      const { folderId, folderName, driveId } = await resolveDriveFolder(projetNom);
+      if (!folderId) {
+        setDriveErr(`Dossier introuvable dans le Drive pour « ${projetNom} » — le nom du projet doit contenir le numéro d'affaire.`);
+        setDriveLoading(false);
+        return;
+      }
+      driveIdRef.current = driveId || null;
+      await browseTo([{ id: folderId, name: folderName }]);
+    } catch (e) { setDriveErr(e.message); setDriveLoading(false); }
   };
 
   const pickDriveFile = async (f) => {
@@ -259,38 +275,73 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
               <span style={{ fontSize:17, flexShrink:0 }}>📁</span>
               <span style={{ flex:1, minWidth:0 }}>
                 <span style={{ display:'block', fontSize:13, fontWeight:800, color:DA.black }}>Drive de l'affaire</span>
-                <span style={{ display:'block', fontSize:11, color:DA.grayL }}>
-                  {driveFolder ? `Dossier : ${driveFolder}` : 'Choisir un PDF directement dans le dossier du projet'}
+                <span style={{ display:'block', fontSize:11, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {drivePath.length ? `Dossier : ${drivePath[0].name}` : 'Se balader dans le dossier du projet, comme dans le Drive'}
                 </span>
               </span>
               <span style={{ flexShrink:0, fontSize:11, color:DA.grayL }}>{driveOpen ? '▴' : '▾'}</span>
             </button>
             {driveOpen && (
-              <div style={{ border:`1px solid ${DA.border}`, borderTop:'none', borderRadius:'0 0 12px 12px', margin:'0 6px', background:'#FAFBFC', maxHeight:300, overflowY:'auto' }}>
+              <div style={{ border:`1px solid ${DA.border}`, borderTop:'none', borderRadius:'0 0 12px 12px', margin:'0 6px', background:'#FAFBFC', maxHeight:340, overflowY:'auto' }}>
+                {/* Fil d'Ariane : ‹ remonte d'un niveau, le chemin est cliquable */}
+                {drivePath.length > 0 && (
+                  <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 10px', borderBottom:`1px solid ${DA.grayXL}`, position:'sticky', top:0, background:'#FAFBFC', zIndex:1 }}>
+                    {drivePath.length > 1 && (
+                      <button onClick={() => browseTo(drivePath.slice(0, -1))} disabled={driveLoading}
+                        title="Remonter d'un niveau"
+                        style={{ flexShrink:0, width:30, height:30, borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:800 }}>
+                        ‹
+                      </button>
+                    )}
+                    <div style={{ flex:1, minWidth:0, fontSize:11, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', direction:'rtl', textAlign:'left' }}>
+                      <span style={{ direction:'ltr', unicodeBidi:'embed' }}>
+                        {drivePath.map((p, i) => (
+                          <span key={p.id}>
+                            {i > 0 && ' / '}
+                            <button onClick={() => i < drivePath.length - 1 && browseTo(drivePath.slice(0, i + 1))}
+                              style={{ background:'none', border:'none', padding:0, cursor: i < drivePath.length - 1 ? 'pointer' : 'default',
+                                fontSize:11, fontWeight: i === drivePath.length - 1 ? 800 : 600,
+                                color: i === drivePath.length - 1 ? DA.black : DA.grayL }}>
+                              {p.name}
+                            </button>
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {driveLoading && (
                   <p style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:DA.gray, margin:0, padding:'12px 14px' }}>
-                    <Ic n="spn" s={13}/> Recherche du dossier de l'affaire…
+                    <Ic n="spn" s={13}/> {drivePath.length ? 'Ouverture du dossier…' : 'Recherche du dossier de l\'affaire…'}
                   </p>
                 )}
                 {driveErr && <p style={{ fontSize:12, color:'#B91C1C', margin:0, padding:'12px 14px' }}>⚠️ {driveErr}</p>}
-                {!driveLoading && !driveErr && driveFiles != null && driveFiles.length === 0 && (
-                  <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'12px 14px' }}>
-                    {driveFolder ? 'Aucun PDF dans ce dossier.' : `Dossier introuvable dans le Drive pour « ${projetNom} » — vérifiez que le nom du projet contient le numéro d'affaire (ex : A696).`}
-                  </p>
+                {!driveLoading && !driveErr && driveContent != null && driveContent.folders.length === 0 && driveContent.files.length === 0 && (
+                  <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'12px 14px' }}>Dossier vide (aucun sous-dossier ni PDF).</p>
                 )}
-                {!driveLoading && (driveFiles || []).map((f, i) => {
+                {/* Sous-dossiers d'abord (comme dans le Drive), puis les PDF du niveau courant */}
+                {!driveLoading && (driveContent?.folders || []).map(f => (
+                  <button key={f.id} onClick={() => browseTo([...drivePath, f])} disabled={!!driveDl}
+                    style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'10px 14px', background:'none',
+                      border:'none', borderTop:`1px solid ${DA.grayXL}`, cursor: driveDl ? 'default' : 'pointer', textAlign:'left' }}>
+                    <span style={{ fontSize:15, flexShrink:0 }}>📁</span>
+                    <span style={{ flex:1, minWidth:0, fontSize:12.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</span>
+                    <span style={{ flexShrink:0, color:DA.grayL, fontSize:14 }}>›</span>
+                  </button>
+                ))}
+                {!driveLoading && (driveContent?.files || []).map(f => {
                   const dl = driveDl?.id === f.id;
                   const tooBig = f.size > 60 * 1024 * 1024;
                   return (
                     <button key={f.id} onClick={() => !tooBig && pickDriveFile(f)} disabled={!!driveDl || tooBig}
                       style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'9px 14px', background:'none',
-                        border:'none', borderTop: i > 0 ? `1px solid ${DA.grayXL}` : 'none', cursor: (driveDl || tooBig) ? 'default' : 'pointer',
+                        border:'none', borderTop:`1px solid ${DA.grayXL}`, cursor: (driveDl || tooBig) ? 'default' : 'pointer',
                         textAlign:'left', opacity: tooBig ? 0.45 : driveDl && !dl ? 0.5 : 1 }}>
                       <span style={{ fontSize:13, flexShrink:0 }}>📄</span>
                       <span style={{ flex:1, minWidth:0 }}>
                         <span style={{ display:'block', fontSize:12, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</span>
-                        <span style={{ display:'block', fontSize:10.5, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                          {[f.path, fmtDriveSize(f.size), tooBig ? 'trop volumineux (max 60 Mo)' : null].filter(Boolean).join(' · ')}
+                        <span style={{ display:'block', fontSize:10.5, color:DA.grayL }}>
+                          {[fmtDriveSize(f.size), tooBig ? 'trop volumineux (max 60 Mo)' : null].filter(Boolean).join(' · ')}
                         </span>
                       </span>
                       {dl && <span style={{ flexShrink:0, fontSize:11, fontWeight:800, color:DA.red, display:'flex', alignItems:'center', gap:5 }}><Ic n="spn" s={12}/> {driveDl.pct} %</span>}

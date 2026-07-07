@@ -18,9 +18,15 @@ async function call(body) {
   return data;
 }
 
-// → { folderName, files:[{ id, name, path, size, modifiedTime }] }
-export function listDrivePlans(projetNom) {
-  return call({ action: 'list', projetNom });
+// Retrouve le dossier racine de l'affaire → { folderId, folderName, driveId } (folderId
+// null si introuvable).
+export function resolveDriveFolder(projetNom) {
+  return call({ action: 'resolve', projetNom });
+}
+
+// Contenu d'UN niveau → { folders:[{id,name}], files:[{id,name,size,modifiedTime}] }.
+export function browseDriveFolder(folderId, driveId = null) {
+  return call({ action: 'browse', folderId, driveId });
 }
 
 // Télécharge un PDF complet → data URL. onProgress(octetsReçus, total).
