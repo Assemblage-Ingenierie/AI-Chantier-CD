@@ -1034,6 +1034,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
       {modal?.t === 'planLib' && (
         <PlanLibraryModal
+          projetNom={projet.nom || ''}
           planLibrary={projet.planLibrary || []}
           onAdd={plans => {
             const arr = Array.isArray(plans) ? plans : [plans];

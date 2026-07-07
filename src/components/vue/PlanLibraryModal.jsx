@@ -2,9 +2,10 @@ import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPages } from '../../lib/pdfUtils.js';
+import { listDrivePlans, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '' }) {
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
@@ -20,6 +21,42 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [repairingId, setRepairingId] = useState(null);
   const fileRef = useRef();
   const repairFileRef = useRef();
+  // ── Import direct depuis le Drive de l'affaire (dossier retrouvé par le n° d'affaire) ──
+  const [driveOpen, setDriveOpen] = useState(false);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveFolder, setDriveFolder] = useState(null);
+  const [driveFiles, setDriveFiles] = useState(null); // null = pas encore chargé
+  const [driveErr, setDriveErr] = useState(null);
+  const [driveDl, setDriveDl] = useState(null); // { id, pct } — téléchargement en cours
+
+  const openDrive = async () => {
+    setDriveOpen(true);
+    if (driveFiles != null) return; // déjà chargé
+    setDriveLoading(true); setDriveErr(null);
+    try {
+      const { folderName, files } = await listDrivePlans(projetNom);
+      setDriveFolder(folderName);
+      setDriveFiles(files);
+    } catch (e) { setDriveErr(e.message); }
+    setDriveLoading(false);
+  };
+
+  const pickDriveFile = async (f) => {
+    if (driveDl) return;
+    setDriveErr(null);
+    setDriveDl({ id: f.id, pct: 0 });
+    try {
+      const dataUrl = await downloadDrivePlan(f.id, (got, total) => setDriveDl({ id: f.id, pct: total ? Math.round(got / total * 100) : 0 }));
+      setDriveDl(null);
+      setDriveOpen(false);
+      // Rejoint le flux d'import existant : sélecteur de pages puis rendu.
+      setPdfList([{ pdf: dataUrl, nom: f.name.replace(/\.[^.]+$/, '') }]);
+      setShowPicker(true);
+    } catch (e) {
+      setDriveDl(null);
+      setDriveErr(`Téléchargement impossible : ${e.message}`);
+    }
+  };
 
   // Traite une liste de fichiers (input OU glisser-déposer) : images ajoutées directement,
   // PDF regroupés dans UN seul sélecteur de pages (tous les PDF d'un import à la fois).
@@ -213,6 +250,56 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
           </div>
           <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple style={{ display:'none' }} onChange={handleFile}/>
           <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
+
+          {/* ── Drive de l'affaire : les PDF du dossier de l'affaire, sans chercher dans le Drive ── */}
+          <div style={{ marginBottom:14 }}>
+            <button onClick={() => driveOpen ? setDriveOpen(false) : openDrive()}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'12px 14px', borderRadius:12,
+                border:`1.5px solid ${driveOpen ? DA.red : DA.border}`, background:'white', cursor:'pointer', textAlign:'left' }}>
+              <span style={{ fontSize:17, flexShrink:0 }}>📁</span>
+              <span style={{ flex:1, minWidth:0 }}>
+                <span style={{ display:'block', fontSize:13, fontWeight:800, color:DA.black }}>Drive de l'affaire</span>
+                <span style={{ display:'block', fontSize:11, color:DA.grayL }}>
+                  {driveFolder ? `Dossier : ${driveFolder}` : 'Choisir un PDF directement dans le dossier du projet'}
+                </span>
+              </span>
+              <span style={{ flexShrink:0, fontSize:11, color:DA.grayL }}>{driveOpen ? '▴' : '▾'}</span>
+            </button>
+            {driveOpen && (
+              <div style={{ border:`1px solid ${DA.border}`, borderTop:'none', borderRadius:'0 0 12px 12px', margin:'0 6px', background:'#FAFBFC', maxHeight:300, overflowY:'auto' }}>
+                {driveLoading && (
+                  <p style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:DA.gray, margin:0, padding:'12px 14px' }}>
+                    <Ic n="spn" s={13}/> Recherche du dossier de l'affaire…
+                  </p>
+                )}
+                {driveErr && <p style={{ fontSize:12, color:'#B91C1C', margin:0, padding:'12px 14px' }}>⚠️ {driveErr}</p>}
+                {!driveLoading && !driveErr && driveFiles != null && driveFiles.length === 0 && (
+                  <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'12px 14px' }}>
+                    {driveFolder ? 'Aucun PDF dans ce dossier.' : `Dossier introuvable dans le Drive pour « ${projetNom} » — vérifiez que le nom du projet contient le numéro d'affaire (ex : A696).`}
+                  </p>
+                )}
+                {!driveLoading && (driveFiles || []).map((f, i) => {
+                  const dl = driveDl?.id === f.id;
+                  const tooBig = f.size > 60 * 1024 * 1024;
+                  return (
+                    <button key={f.id} onClick={() => !tooBig && pickDriveFile(f)} disabled={!!driveDl || tooBig}
+                      style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'9px 14px', background:'none',
+                        border:'none', borderTop: i > 0 ? `1px solid ${DA.grayXL}` : 'none', cursor: (driveDl || tooBig) ? 'default' : 'pointer',
+                        textAlign:'left', opacity: tooBig ? 0.45 : driveDl && !dl ? 0.5 : 1 }}>
+                      <span style={{ fontSize:13, flexShrink:0 }}>📄</span>
+                      <span style={{ flex:1, minWidth:0 }}>
+                        <span style={{ display:'block', fontSize:12, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</span>
+                        <span style={{ display:'block', fontSize:10.5, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {[f.path, fmtDriveSize(f.size), tooBig ? 'trop volumineux (max 60 Mo)' : null].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                      {dl && <span style={{ flexShrink:0, fontSize:11, fontWeight:800, color:DA.red, display:'flex', alignItems:'center', gap:5 }}><Ic n="spn" s={12}/> {driveDl.pct} %</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {renderErr && (
             <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:12,color:'#B91C1C' }}>
