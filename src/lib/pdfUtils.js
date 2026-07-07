@@ -164,3 +164,17 @@ export async function renderPdfPages(pdfData, pageNums, {
 export function renderPdfPageHQ(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 8.0, 4500, 0.85);
 }
+
+// Convertit la 1re page d'un FICHIER PDF en image (data URL) — utilisé pour la photo de
+// couverture de projet (importer directement la page de garde d'un DCE, demande Thomas).
+// Renvoie null en cas d'échec (PDF illisible, CDN indisponible…).
+export function pdfFileToImageDataUrl(file, pageNum = 1) {
+  return new Promise((resolve) => {
+    try {
+      const rd = new FileReader();
+      rd.onload  = () => renderPdfPage(rd.result, pageNum).then(resolve).catch(() => resolve(null));
+      rd.onerror = () => resolve(null);
+      rd.readAsDataURL(file);
+    } catch { resolve(null); }
+  });
+}
