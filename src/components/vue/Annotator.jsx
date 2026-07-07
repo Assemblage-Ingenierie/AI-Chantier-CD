@@ -476,6 +476,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [textMode,      setTextMode]      = useState('plain');
   const [symCat,           setSymCat]           = useState('fissures'); // (conservé — plus d'onglets, rangée unifiée)
   const [showPalette,      setShowPalette]      = useState(false);
+  const [sizeOpen,         setSizeOpen]         = useState(false); // curseur « Taille » contextuel (tuile épinglée des menus outil)
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
@@ -1803,6 +1804,33 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         ? { ...p, size: sz } : p));
   };
 
+  // ── Tuile « Taille » ÉPINGLÉE (ne défile pas) + curseur contextuel par outil ──
+  // Demande Thomas : dans chaque menu (Symboles/Formes/Texte), une petite case fixe à gauche
+  // qui ouvre d'un tap LE curseur correspondant, sans occuper d'espace en permanence.
+  const sizeCtlByTool = { symbol: 'Symboles', shape: 'Formes', text: 'Texte' };
+  const renderSizePin = () => (
+    <button onClick={() => setSizeOpen(v => !v)} title="Régler la taille"
+      style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
+        margin:'6px 0 7px 10px', padding:'6px 4px', borderRadius:8, cursor:'pointer', width:54, boxSizing:'border-box',
+        border:`2px solid ${sizeOpen ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
+      <Ic n="sld" s={20}/>
+      <span style={{ fontSize:8.5, fontWeight:600, color:sizeOpen?'white':'#aaa' }}>Taille</span>
+    </button>
+  );
+  const renderSizeSlider = () => {
+    const ctl = scaleCtls.find(c => c.lbl === sizeCtlByTool[tool]);
+    if (!ctl) return null;
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 12px 8px' }}>
+        <span style={{ fontSize:9, color:'#888', fontWeight:600, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {ctl.lbl.toUpperCase()}</span>
+        <input type="range" min="0.3" max="5" step="0.1" value={ctl.val}
+          onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); localStorage.setItem(ctl.key, String(v)); }}
+          style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
+        <span style={{ color:'#bbb', fontSize:11, fontWeight:700, minWidth:28, textAlign:'right' }}>{ctl.val.toFixed(1)}×</span>
+      </div>
+    );
+  };
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column',
       paddingTop:'env(safe-area-inset-top, 0px)',paddingBottom:'env(safe-area-inset-bottom, 0px)',
@@ -1860,6 +1888,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                     setTool(t.k);
                     if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
                     setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
+                    setSizeOpen(false);
                     if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
                     if (t.k !== 'viewpoint') setActivePh(null);
                     if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
@@ -2003,7 +2032,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
              sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
       {showSyms && tool === 'symbol' && (
         <div style={{ background:'#1a1a1a', flexShrink:0, borderBottom:'1px solid #333' }}>
-          <div style={{ display:'flex', gap:6, padding:'6px 10px 7px', overflowX:'auto', alignItems:'stretch' }}>
+          <div style={{ display:'flex', alignItems:'stretch' }}>
+          {renderSizePin()}
+          <div style={{ flex:1, minWidth:0, display:'flex', gap:6, padding:'6px 10px 7px', overflowX:'auto', alignItems:'stretch' }}>
             {SYMBOL_CATEGORIES.flatMap(cat => ([
               // Séparateur de catégorie : étiquette verticale discrète
               <div key={`cat-${cat.id}`} style={{ flexShrink:0, display:'flex', alignItems:'center', padding:'0 3px' }}>
@@ -2068,12 +2099,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 </div>
             )}
           </div>
+          </div>
+          {sizeOpen && renderSizeSlider()}
         </div>
       )}
 
       {/* ── Shape sub-panel ── */}
       {shapePanelVisible && (
-        <div style={{ background:'#1a1a1a',padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,borderBottom:'1px solid #333',alignItems:'center',flexWrap:'wrap' }}>
+        <div style={{ background:'#1a1a1a',flexShrink:0,borderBottom:'1px solid #333' }}>
+          <div style={{ display:'flex', alignItems:'stretch' }}>
+          {sizeCtlByTool[tool] && renderSizePin()}
+          {/* UNE seule ligne défilante (Zone libre avec Rectangle & co — demande Thomas) */}
+          <div style={{ flex:1,minWidth:0,padding:'7px 12px',display:'flex',gap:6,overflowX:'auto',alignItems:'center' }}>
           {tool === 'shape' && (
             <>
               {/* Tuiles tactiles, même style que les symboles (glyphe + libellé, liseré rouge
@@ -2123,12 +2160,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
             </span>
           )}
+          </div>
+          </div>
+          {sizeOpen && renderSizeSlider()}
         </div>
       )}
 
       {/* ── Sélecteur de mode texte ── */}
       {tool === 'text' && !selText && (
-        <div style={{ background:'#1a1a1a',padding:'6px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap' }}>
+        <div style={{ background:'#1a1a1a',borderBottom:'1px solid #333',flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'stretch' }}>
+          {renderSizePin()}
+          <div style={{ flex:1,minWidth:0,padding:'6px 12px',display:'flex',alignItems:'center',gap:6,overflowX:'auto' }}>
           {/* Tuiles tactiles, même style que symboles/formes (demande Thomas). */}
           {[
             { k:'plain', g:'T',  lbl:'Libre'   },
@@ -2146,6 +2189,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>
             {textMode === 'arrow' ? '① Appuyez là où pointe la flèche  ② Glissez jusqu\'au texte' : 'Tapez pour écrire — tapez sur un texte existant pour le modifier directement'}
           </span>
+          </div>
+          </div>
+          {sizeOpen && renderSizeSlider()}
         </div>
       )}
 
