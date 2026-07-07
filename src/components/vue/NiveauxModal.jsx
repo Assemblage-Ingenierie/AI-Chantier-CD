@@ -749,7 +749,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     const tile = el?.closest?.('[data-base]');
     const folder = el?.closest?.('[data-folder]');
     let over = null;
-    if (tile && tile.getAttribute('data-base') !== s.base) {
+    if (el?.closest?.('[data-sortir]')) {
+      over = { kind: 'sortir' }; // barre « sortir de la case » prioritaire
+    } else if (tile && tile.getAttribute('data-base') !== s.base) {
       const r = tile.getBoundingClientRect();
       const fr = (e.clientX - r.left) / Math.max(1, r.width);
       over = { kind: 'tile', base: tile.getAttribute('data-base'), zone: fr < 0.3 ? 'before' : fr > 0.7 ? 'after' : 'group' };
@@ -773,6 +775,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     if (o?.kind === 'tile') { o.zone === 'group' ? groupBases(s.base, o.base) : reorderBases(s.base, o.base, o.zone === 'after'); }
     else if (o?.kind === 'folder') moveBase(s.base, o.id);
     else if (o?.kind === 'unfiled') moveBase(s.base, null);
+    else if (o?.kind === 'sortir') moveBase(s.base, null);
     setTouchDrag(null);
   };
 
@@ -845,15 +848,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             border:`1px solid ${movePdf === g.nom ? DA.red : DA.border}`, zIndex:1 }}>
           <Ic n="grp" s={15}/>
         </div>
-        {/* Zone cliquable : nom COMPLET (jamais tronqué — demande Thomas), sigle Ai en
-            filigrane léger derrière le texte. → ouvre la visionneuse */}
-        <div onClick={() => openGroupPdf(g)} style={{ cursor:'pointer', textAlign:'center', position:'relative', padding:'14px 10px 10px', flex:1 }}>
+        {/* Zone cliquable : titre en MAJUSCULES, centré H+V, sigle Ai en filigrane derrière.
+            → ouvre la visionneuse (demande Thomas). */}
+        <div onClick={() => openGroupPdf(g)} style={{ cursor:'pointer', position:'relative', padding:'14px 10px', flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
           <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
-          {/* Titre EN GRAND et TOUJOURS entier — pas de compteur de pages (demande Thomas). */}
-          <p style={{ position:'relative', fontSize:15.5, fontWeight:800, color:DA.black, margin:0, lineHeight:1.25,
-            whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word', minHeight:'2.5em' }}>
+          {/* Titre EN GRAND, MAJUSCULES, toujours entier — pas de compteur de pages. */}
+          <p style={{ position:'relative', fontSize:14.5, fontWeight:800, color:DA.black, margin:0, lineHeight:1.25, textAlign:'center',
+            textTransform:'uppercase', letterSpacing:0.2, whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word' }}>
             {g.nom}
           </p>
         </div>
@@ -1026,9 +1029,28 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   Consulter les plans
                 </p>
                 {(dragBase || touchDrag) && (
-                  <span style={{ fontSize:10.5,color:DA.grayL }}>milieu = regrouper · bord = ordonner · fond = sortir d'une case</span>
+                  <span style={{ fontSize:10.5,color:DA.grayL }}>milieu = regrouper · glisser sur une tuile = ordonner</span>
                 )}
               </div>
+
+              {/* Barre « SORTIR DE LA CASE » : visible uniquement pendant qu'on déplace une
+                  tuile RANGÉE dans une case. Cible fiable (PC + tactile) pour la sortir —
+                  demande Thomas : « je n'arrive pas à sortir un plan d'une grande case ». */}
+              {(() => {
+                const b = dragBase || touchDrag?.base;
+                const inFolder = b && folders.some(f => (f.bases || []).includes(b));
+                if (!inFolder) return null;
+                const hot = touchDrag?.over?.kind === 'sortir';
+                return (
+                  <div data-sortir
+                    onDragOver={e => { if (dragBase) e.preventDefault(); }}
+                    onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
+                    style={{ marginBottom:10, padding:'12px', borderRadius:12, textAlign:'center', fontSize:12.5, fontWeight:800,
+                      border:`2px dashed ${hot ? DA.red : '#FCA5A5'}`, background: hot ? DA.redL : '#FFF7F7', color:DA.red }}>
+                    ⬇ Déposez ici pour SORTIR de la case
+                  </div>
+                );
+              })()}
 
               {/* FLUX CONTINU (demande Thomas : pas de saut de ligne) : les cases entourent
                   simplement leurs tuiles et tout s'enchaîne sur la même rangée. Les cases se
