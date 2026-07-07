@@ -231,6 +231,15 @@ async function loadRemote() {
   if (r3.error) throw r3.error;
   if (r4.error) throw r4.error;
 
+  // Cases de rangement des plans (« bulles », colonne plan_folders — migration 20260707).
+  // Lecture DÉFENSIVE séparée : si la migration n'est pas appliquée, la requête échoue en
+  // silence et les projets chargent sans cases (aucun impact sur le reste du chargement).
+  let _foldersById = {};
+  try {
+    const rf = await sb.from('aichantier_chantiers').select('id,plan_folders');
+    if (!rf.error) for (const row of (rf.data ?? [])) _foldersById[row.id] = row.plan_folders ?? [];
+  } catch { /* colonne absente — ignoré */ }
+
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
 
@@ -305,6 +314,7 @@ async function loadRemote() {
       maitreOuvrage: c.maitre_ouvrage ?? '',
       photo:         null, // chargé depuis le cache local (non sélectionné pour éviter HTTP 500)
       updatedAt:     c.updated_at,
+      planFolders:   _foldersById[c.id] ?? [],
       planLibrary:   (plansByChantier[c.id] ?? []).map(pl => ({
         id: pl.id, nom: pl.nom ?? '', bg: null, data: null, // bg/data chargés lazily
       })),
@@ -1031,6 +1041,10 @@ async function saveRemote(ps, dirtyIds = null) {
       }
       errors.push(chantierRes.error); continue;
     }
+    // Cases de rangement des plans — écriture DÉFENSIVE séparée (colonne plan_folders,
+    // migration 20260707) : un échec (migration non appliquée) n'affecte JAMAIS la sauvegarde.
+    try { await sb.from('aichantier_chantiers').update({ plan_folders: p.planFolders ?? [] }).eq('id', p.id); } catch { /* ignoré */ }
+
     // Notre écriture fait désormais foi : la référence de version devient `now` pour ne pas
     // détecter un faux conflit à la prochaine sauvegarde de CE même appareil.
     _loadedUpdatedAtByProject.set(p.id, now);

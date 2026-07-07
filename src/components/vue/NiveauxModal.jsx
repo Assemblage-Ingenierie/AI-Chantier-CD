@@ -154,9 +154,102 @@ function ConsultViewer({ group, onClose }) {
   );
 }
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg, planFolders = [], onUpdateFolders = null }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [showImported, setShowImported] = useState(false); // liste des plans importés repliée par défaut (demande Thomas)
+  // ── Cases de rangement (« bulles ») des PDF — demande Thomas : organiser ses plans
+  // (DCE, Coffrage, Ferraillage…) pour les retrouver instantanément sur site. Stockées au
+  // niveau projet (plan_folders, synchronisé entre appareils). bases = noms de base des PDF.
+  const [editingFolderId, setEditingFolderId] = useState(null);
+  const [editingFolderNom, setEditingFolderNom] = useState('');
+  const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
+  const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
+  const folders = planFolders || [];
+  const setFolders = (next) => { if (onUpdateFolders) onUpdateFolders(next); };
+  const assignedBases = new Set(folders.flatMap(f => f.bases || []));
+  const unassignedGroups = pdfGroups.filter(g => !assignedBases.has(g.nom));
+  const groupsByBase = new Map(pdfGroups.map(g => [g.nom, g]));
+  const addFolder = () => setFolders([...folders, { id: crypto.randomUUID(), nom: '', bases: [] }]);
+  const deleteFolder = (fid) => setFolders(folders.filter(f => f.id !== fid)); // ses PDF redeviennent « non rangés »
+  const renameFolder = (fid, nom) => setFolders(folders.map(f => f.id === fid ? { ...f, nom } : f));
+  const moveBase = (base, fid) => {
+    setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== base).concat(f.id === fid ? [base] : []) })));
+    setMovePdf(null);
+  };
+  // Renomme le PDF ENTIER : toutes ses pages (« base — Page N » → « nouveau — Page N »)
+  // + met à jour les références dans les cases.
+  const renameWholePdf = (base, newBaseRaw) => {
+    const newBase = (newBaseRaw || '').trim();
+    const g = groupsByBase.get(base);
+    if (!g || !newBase || newBase === base) { setRenamePdf(null); return; }
+    for (const pg of g.pages) {
+      const m = String(pg.nom || '').match(PDF_PAGE_RE);
+      if (onRenamePlan) onRenamePlan(pg.id, m ? `${newBase} — Page ${pg._page}` : newBase);
+    }
+    setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).map(b => b === base ? newBase : b) })));
+    setRenamePdf(null);
+  };
+  // Ligne PDF réutilisable (dans une case ou « non rangés ») : consulter + renommer + ranger.
+  const renderPdfRow = (g) => (
+    <div key={g.nom} style={{ display:'flex', flexDirection:'column', gap:4 }}>
+      <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
+        <button onClick={() => setConsultGroup(g)}
+          style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:9,
+            border:`1.5px solid ${DA.border}`, background:'white', cursor:'pointer', textAlign:'left' }}>
+          <span style={{ fontSize:16, flexShrink:0 }}>📄</span>
+          <span style={{ flex:1, minWidth:0, fontSize:12.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.nom}</span>
+          <span style={{ flexShrink:0, fontSize:11, fontWeight:700, color:DA.red, background:DA.redL, borderRadius:12, padding:'2px 8px' }}>
+            {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
+          </span>
+          <span style={{ flexShrink:0, color:DA.grayL, fontSize:14 }}>›</span>
+        </button>
+        {onRenamePlan && (
+          <button onClick={() => { setMovePdf(null); setRenamePdf(renamePdf?.base === g.nom ? null : { base: g.nom, val: g.nom }); }}
+            title="Renommer le PDF entier (toutes ses pages)"
+            style={{ flexShrink:0, width:38, borderRadius:9, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <Ic n="edt" s={14}/>
+          </button>
+        )}
+        {onUpdateFolders && (
+          <button onClick={() => { setRenamePdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+            title="Ranger ce PDF dans une case"
+            style={{ flexShrink:0, width:38, borderRadius:9, border:`1px solid ${movePdf === g.nom ? DA.red : DA.border}`, background:'white', color:movePdf === g.nom ? DA.red : DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>
+            🗂
+          </button>
+        )}
+      </div>
+      {renamePdf?.base === g.nom && (
+        <div style={{ display:'flex', gap:6 }}>
+          <input autoFocus value={renamePdf.val}
+            onChange={e => setRenamePdf({ base: g.nom, val: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter') renameWholePdf(g.nom, renamePdf.val); if (e.key === 'Escape') setRenamePdf(null); }}
+            placeholder="Nouveau nom du PDF"
+            style={{ flex:1, minWidth:0, fontSize:16, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'7px 10px', outline:'none', boxSizing:'border-box' }}/>
+          <button onClick={() => renameWholePdf(g.nom, renamePdf.val)}
+            style={{ flexShrink:0, padding:'0 14px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>OK</button>
+        </div>
+      )}
+      {movePdf === g.nom && (
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+          <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4 }}>Ranger dans :</span>
+          {folders.map(f => {
+            const active = (f.bases || []).includes(g.nom);
+            return (
+              <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
+                style={{ padding:'5px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
+                  border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
+                {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
+              </button>
+            );
+          })}
+          <button onClick={() => { const id = crypto.randomUUID(); setFolders([...folders, { id, nom: '', bases: [g.nom] }].map(f => f.id === id ? f : { ...f, bases: (f.bases || []).filter(b => b !== g.nom) })); setMovePdf(null); setEditingFolderId(id); setEditingFolderNom(''); }}
+            style={{ padding:'5px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer', border:`1.5px dashed ${DA.red}`, background:'white', color:DA.red }}>
+            + Nouvelle case
+          </button>
+        </div>
+      )}
+    </div>
+  );
   // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
   // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
   // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
@@ -277,25 +370,65 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
         {/* Liste des niveaux */}
         <div style={{ flex:1,overflowY:'auto',padding:'12px 14px' }}>
-          {/* Consultation : un bouton par PDF importé → visionneuse de TOUTES ses pages */}
-          {pdfGroups.length > 0 && (
+          {/* Consultation ORGANISÉE en « cases » (bulles) : DCE, Coffrage, Ferraillage… —
+              renommables, PDF rangés à sa sauce, tout synchronisé entre appareils. */}
+          {(pdfGroups.length > 0 || folders.length > 0) && (
             <div style={{ marginBottom:16 }}>
-              <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:'0 0 8px' }}>
-                Consulter les plans
-              </p>
-              <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-                {pdfGroups.map(g => (
-                  <button key={g.nom} onClick={() => setConsultGroup(g)}
-                    style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:9,
-                      border:`1.5px solid ${DA.border}`,background:DA.grayXL,cursor:'pointer',textAlign:'left',width:'100%' }}>
-                    <span style={{ fontSize:16,flexShrink:0 }}>📄</span>
-                    <span style={{ flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{g.nom}</span>
-                    <span style={{ flexShrink:0,fontSize:11,fontWeight:700,color:DA.red,background:DA.redL,borderRadius:12,padding:'2px 8px' }}>
-                      {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
-                    </span>
-                    <span style={{ flexShrink:0,color:DA.grayL,fontSize:14 }}>›</span>
+              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+                <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
+                  Consulter les plans
+                </p>
+                {onUpdateFolders && (
+                  <button onClick={() => { addFolder(); }}
+                    style={{ fontSize:11,fontWeight:700,color:DA.red,background:'white',border:`1.5px dashed ${DA.red}`,borderRadius:8,padding:'5px 10px',cursor:'pointer' }}>
+                    + Nouvelle case
                   </button>
+                )}
+              </div>
+
+              {/* Bulles */}
+              <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
+                {folders.map(f => (
+                  <div key={f.id} style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'8px 10px 10px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:(f.bases||[]).length ? 8 : 0 }}>
+                      {editingFolderId === f.id ? (
+                        <input autoFocus value={editingFolderNom}
+                          onChange={e => setEditingFolderNom(e.target.value)}
+                          onBlur={() => { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); } if (e.key === 'Escape') setEditingFolderId(null); }}
+                          placeholder="Nom de la case (facultatif)"
+                          style={{ flex:1,minWidth:0,fontSize:16,fontWeight:700,border:`1.5px solid ${DA.red}`,borderRadius:8,padding:'5px 9px',outline:'none',boxSizing:'border-box' }}/>
+                      ) : (
+                        <p onClick={() => { setEditingFolderId(f.id); setEditingFolderNom(f.nom || ''); }}
+                          title="Renommer la case"
+                          style={{ flex:1,minWidth:0,fontSize:13.5,fontWeight:800,color:f.nom ? DA.black : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+                          🗂 {f.nom || 'Sans nom'}
+                        </p>
+                      )}
+                      <span style={{ flexShrink:0,fontSize:10.5,color:DA.grayL }}>{(f.bases||[]).length} PDF</span>
+                      <button onClick={() => deleteFolder(f.id)} title="Supprimer la case (les PDF restent)"
+                        style={{ flexShrink:0,width:28,height:28,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                        <Ic n="x" s={13}/>
+                      </button>
+                    </div>
+                    <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                      {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfRow(g))}
+                      {(f.bases || []).length === 0 && (
+                        <p style={{ fontSize:11,color:DA.grayL,margin:0,fontStyle:'italic' }}>Case vide — utilisez 🗂 sur un PDF pour l'y ranger.</p>
+                      )}
+                    </div>
+                  </div>
                 ))}
+
+                {/* PDF non rangés */}
+                {unassignedGroups.length > 0 && (
+                  <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                    {folders.length > 0 && (
+                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 0' }}>Non rangés</p>
+                    )}
+                    {unassignedGroups.map(g => renderPdfRow(g))}
+                  </div>
+                )}
               </div>
             </div>
           )}
