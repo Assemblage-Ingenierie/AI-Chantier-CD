@@ -1079,14 +1079,21 @@ async function saveRemote(ps, dirtyIds = null) {
     _knownVisitIdsByProject.set(p.id, _knownVisitSet);
 
     // ── Upsert chantier avec visites fusionnées ────────────────────────────────
-    const chantierRes = await sb.from('aichantier_chantiers').upsert({
+    // ⚠️ GARDE ANTI-PERTE DE COUVERTURE : `photo` n'est PAS chargé par loadRemote (il vaut
+    // null) et n'est restauré qu'à partir du cache local. Sur un appareil au cache froid,
+    // p.photo était donc null → cette sauvegarde ÉCRASAIT la couverture en DB (disparition
+    // sur TOUS les appareils — cas « Pavillon sous bois »). On n'inclut désormais `photo`
+    // dans l'upsert QUE si on a réellement une valeur ; sinon on préserve celle en DB.
+    const chantierRow = {
       id: p.id, nom: p.nom ?? '', statut: p.statut ?? 'en_cours',
       adresse: p.adresse ?? '', maitre_ouvrage: p.maitreOuvrage ?? '',
-      photo: coverPhotoUrl, date_visite: firstVisit?.dateVisite ?? null,
+      date_visite: firstVisit?.dateVisite ?? null,
       photos_par_ligne: firstVisit?.photosParLigne ?? 2,
       participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
       visites: mergedVisitesMetadata, updated_at: now,
-    }, { onConflict: 'id' });
+    };
+    if (coverPhotoUrl) chantierRow.photo = coverPhotoUrl;
+    const chantierRes = await sb.from('aichantier_chantiers').upsert(chantierRow, { onConflict: 'id' });
     if (chantierRes.error) {
       // Si le projet n'existe plus en DB (FK ou 404), ne pas essayer de sauvegarder ses locs
       if (chantierRes.error.code === '23503' || chantierRes.error.code === 'PGRST116') {
