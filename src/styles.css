@@ -99,7 +99,8 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 /* ── Tuiles de plans (panneau « Gérer les niveaux ») ──
    Mobile : 2 pleines colonnes (toute la largeur). PC : CARRÉS fixes (retour Thomas :
    les tuiles fluides devenaient « beaucoup trop grosses » quand la ligne était creuse). */
-.plan-tile { width: calc(50% - 4px); }
+/* Tuiles CARRÉES (retour Thomas) : 2 par ligne sur téléphone, carrés fixes sur PC. */
+.plan-tile { width: calc(50% - 4px); aspect-ratio: 1 / 1; }
 @media (min-width: 480px) { .plan-tile { width: 168px; } }
 /* Case (« grande bulle ») : pleine largeur sur téléphone → ses tuiles internes s'affichent
    en 2 colonnes lisibles (retour Thomas : « tout petit alors qu'on a dit 2 par ligne »).

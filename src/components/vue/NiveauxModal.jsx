@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from 're
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
 import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
@@ -103,7 +103,7 @@ function ConsultViewer({ group, projetId = null, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} getPdf={getGroupPdf} onClose={onClose}/>
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
     : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
 }
 
@@ -247,7 +247,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -267,10 +267,6 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
   // ── LOUPE VECTORIELLE : au zoom fort, la RÉGION visible est re-rendue depuis le
   //    PDF source → netteté « telle que le PDF » quel que soit le zoom (et l'iPhone
   //    dont le canvas est limité n'a plus besoin d'images géantes). ────────────────
-  const [ultra, setUltra] = useState(null); // { pageId, fx, fy, fw, fh, src }
-  const [noPdf, setNoPdf] = useState(false); // zoomé mais aucun PDF source dispo (réimport requis)
-  const ultraSeq = useRef(0);
-  const ultraTimer = useRef(null);
 
   // ── FLUIDITÉ (retour Thomas : « ça lag de zinzin au zoom ») ────────────────────
   // La HD (6500 px) n'est affichée QUE pour les pages proches du viewport (±1 écran) ;
@@ -345,7 +341,6 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
   };
   // Bascule rotation manuelle : re-cadrage après le changement de repère.
   useEffect(() => {
-    setUltra(null);
     fitApplied.current = false;
     const id = requestAnimationFrame(() => { if (arRef.current) applyFit(arRef.current); });
     return () => cancelAnimationFrame(id);
@@ -369,60 +364,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
     tRef.current = v;
     if (innerRef.current) innerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.z})`;
     scheduleVis();
-    if (commit) { setT(v); scheduleUltra(); }
-  };
-
-  // Re-rendu vectoriel de la RÉGION visible (page la plus visible), déclenché en fin de
-  // geste quand la résolution affichée devient insuffisante. Une seule loupe à la fois.
-  const scheduleUltra = () => {
-    if (!getPdf) return;
-    clearTimeout(ultraTimer.current);
-    ultraTimer.current = setTimeout(async () => {
-      const box = boxRef.current;
-      if (!box) return;
-      const { z, x, y } = tRef.current;
-      const vw = box.clientWidth, vh = box.clientHeight;
-      // Rect visible en coordonnées contenu (largeur contenu = vw à z=1)
-      const cx0 = -x / z, cy0 = -y / z, cw = vw / z, ch = vh / z;
-      // Page la plus visible + son <img>
-      let best = null;
-      for (const [id, el] of pageEls.current) {
-        if (!el) continue;
-        const inter = Math.min(el.offsetTop + el.offsetHeight, cy0 + ch) - Math.max(el.offsetTop, cy0);
-        if (inter > 0 && (!best || inter > best.inter)) best = { id, el, inter };
-      }
-      if (!best) return;
-      const img = best.el.querySelector('img');
-      const natural = img?.naturalWidth || 0;
-      const dpr = Math.min(3, window.devicePixelRatio || 1);
-      const page = pageById.current.get(best.id);
-      if (!page) return;
-      const pdf = await getPdf();
-      // Zoomé sans PDF source dispo → on ne peut pas faire mieux que l'image : le signaler
-      // (« réimportez pour la HD ») pour lever le doute plutôt que de laisser flou en silence.
-      if (!pdf) { setNoPdf(z > 1.4); return; }
-      setNoPdf(false);
-      // Densité affichée suffisante ? (px source affichés par px écran ≥ densité écran).
-      if (natural && natural / vw >= z * dpr) return;
-      const pw = vw, ph = best.el.offsetHeight;
-      const margin = 0.12; // petite marge pour paner un peu sans re-rendre à chaque pixel
-      const fx = Math.max(0, (cx0 - margin * cw) / pw);
-      const fx2 = Math.min(1, (cx0 + cw * (1 + margin)) / pw);
-      const fy = Math.max(0, (cy0 - best.el.offsetTop - margin * ch) / ph);
-      const fy2 = Math.min(1, (cy0 - best.el.offsetTop + ch * (1 + margin)) / ph);
-      if (fx2 <= fx || fy2 <= fy) return;
-      const seq = ++ultraSeq.current;
-      // Résolution cible = densité écran PLEINE sur la zone visible (×2 pour marge de netteté),
-      // rapportée à la région rendue (visible + marges). Cap élevé (garde-fou canvas côté lib).
-      const visibleDevicePx = vw * dpr * 2;
-      const src = await renderPdfRegion(pdf, page._page || 1, {
-        fx, fy, fw: fx2 - fx, fh: fy2 - fy,
-        outWidth: Math.min(6000, Math.round(visibleDevicePx * (fx2 - fx) / (cw / pw))),
-      });
-      if (src && seq === ultraSeq.current) {
-        setUltra({ pageId: best.id, fx, fy, fw: fx2 - fx, fh: fy2 - fy, src });
-      }
-    }, 220);
+    if (commit) setT(v);
   };
 
   const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
@@ -504,14 +446,6 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
         <Ic n="x" s={22}/>
       </button>
-      {/* Zoomé mais pas de PDF source → l'image ne peut pas être plus nette : le dire. */}
-      {noPdf && (
-        <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 14px)', left:'50%', transform:'translateX(-50%)',
-          background:'rgba(180,30,30,0.92)', color:'white', fontSize:11, fontWeight:700, borderRadius:10, padding:'6px 12px',
-          zIndex:5, maxWidth:'70vw', textAlign:'center', lineHeight:1.35 }}>
-          Qualité limitée — réimportez ce plan (Drive) pour la HD
-        </div>
-      )}
       {/* Rotation manuelle 90° — pour les téléphones dont la rotation auto est bloquée */}
       <button onClick={() => setRot(v => !v)} aria-label="Pivoter le plan" title="Pivoter le plan"
         style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:68,
@@ -541,12 +475,6 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
                     onLoad={i === 0 ? (e) => { applyFit(e.target.naturalWidth / e.target.naturalHeight); scheduleVis(); } : scheduleVis}
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
-              {/* LOUPE VECTORIELLE : région re-rendue depuis le PDF, posée par-dessus la page */}
-              {ultra?.pageId === p.id && (
-                <img src={ultra.src} alt="" draggable={false} decoding="async"
-                  style={{ position:'absolute', left:`${ultra.fx * 100}%`, top:`${ultra.fy * 100}%`,
-                    width:`${ultra.fw * 100}%`, display:'block', pointerEvents:'none', userSelect:'none' }}/>
-              )}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
@@ -772,7 +700,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
   // ── Déplacement TACTILE : appui sur la poignée puis on suit le doigt (pointer capture) ──
   const touchStartRef = useRef(null); // { base, x0, y0, moved }
+  const lastGripTouch = useRef(false); // dernier appui poignée = tactile ? (neutralise le onClick)
   const onGripTouchStart = (e, base) => {
+    lastGripTouch.current = e.pointerType === 'touch';
     if (e.pointerType !== 'touch') return;   // souris → glisser-déposer HTML5 classique
     touchStartRef.current = { base, x0: e.clientX, y0: e.clientY, moved: false, pid: e.pointerId };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ok */ }
@@ -869,7 +799,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             fait glisser la tuile, pas défiler la page. */}
         <div
           onMouseDown={() => setDragArmBase(g.nom)}
-          onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+          onClick={() => { if (lastGripTouch.current) { lastGripTouch.current = false; return; } setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
           onPointerDown={e => onGripTouchStart(e, g.nom)}
           onPointerMove={onGripTouchMove}
           onPointerUp={onGripTouchEnd}
