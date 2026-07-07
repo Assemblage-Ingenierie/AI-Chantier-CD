@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
@@ -55,27 +55,45 @@ function ConsultViewer({ group, onClose }) {
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
+// Interface MINIMALE (demande Thomas) : croix flottante + pilule de zoom, rien d'autre.
 function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
+  const anchorRef = useRef(null); // point focal à préserver pendant le changement de zoom
 
-  // Zoom en conservant le point focal (position sous le curseur si fournie).
+  // Zoom en conservant le point focal. La correction de défilement est appliquée dans un
+  // useLayoutEffect (APRÈS la mise en page, AVANT l'affichage) : l'ancien requestAnimationFrame
+  // corrigeait une frame trop tard → « la page saute de partout » (retour Thomas).
   const setZoom = (nzRaw, fx = null, fy = null) => {
     const el = scrollRef.current;
-    const nz = Math.max(0.3, Math.min(6, nzRaw));
-    if (el) {
+    const nz = Math.max(0.3, Math.min(8, nzRaw));
+    if (el && nz !== zRef.current) {
       const rect = el.getBoundingClientRect();
-      const px = fx != null ? fx - rect.left : rect.width / 2;
-      const py = fy != null ? fy - rect.top : rect.height / 2;
-      const ratio = nz / zRef.current;
-      const sl = (el.scrollLeft + px) * ratio - px;
-      const st = (el.scrollTop + py) * ratio - py;
-      setZ(nz);
-      requestAnimationFrame(() => { el.scrollLeft = sl; el.scrollTop = st; });
-    } else setZ(nz);
+      anchorRef.current = {
+        px: fx != null ? fx - rect.left : rect.width / 2,
+        py: fy != null ? fy - rect.top : rect.height / 2,
+        sl: el.scrollLeft, st: el.scrollTop, oldZ: zRef.current, nz,
+      };
+    }
+    setZ(nz);
   };
+  useLayoutEffect(() => {
+    const a = anchorRef.current, el = scrollRef.current;
+    if (!a || !el) return;
+    anchorRef.current = null;
+    const ratio = a.nz / a.oldZ;
+    el.scrollLeft = (a.sl + a.px) * ratio - a.px;
+    el.scrollTop  = (a.st + a.py) * ratio - a.py;
+  }, [z]);
+
+  // Échap ferme le plan.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const onWheel = (e) => {
     if (e.ctrlKey || e.metaKey) {
@@ -104,29 +122,28 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
   };
   const onPointerUp = () => { dragRef.current = null; };
 
-  const zBtn = { width:34, height:34, borderRadius:8, border:'none', background:'rgba(255,255,255,0.12)',
-    color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
-    flexShrink:0, fontSize:17, fontWeight:800, lineHeight:1 };
+  const zBtn = { width:38, height:38, borderRadius:9, border:'none', background:'transparent',
+    color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+    flexShrink:0, fontSize:19, fontWeight:800, lineHeight:1 };
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
-      <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
-        <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
-        <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-          {group.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {group.pages.length} page{group.pages.length > 1 ? 's' : ''}</span>
-        </p>
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80 }}>
+      {/* Croix flottante — plus GRANDE mais discrète (demande Thomas), aucune autre info */}
+      <button onClick={onClose} aria-label="Fermer" title="Fermer (Échap)"
+        style={{ position:'absolute', top:12, right:14, width:48, height:48, borderRadius:14, border:'none',
+          background:'rgba(20,20,20,0.55)', color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center',
+          justifyContent:'center', cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
+        <Ic n="x" s={22}/>
+      </button>
+      {/* Pilule de zoom flottante — le % remet à la largeur */}
+      <div style={{ position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', display:'flex',
+        alignItems:'center', gap:2, background:'rgba(20,20,20,0.55)', borderRadius:12, padding:3, zIndex:5, backdropFilter:'blur(2px)' }}>
         <button onClick={() => setZoom(zRef.current / 1.25)} title="Zoom arrière" style={zBtn}>−</button>
         <button onClick={() => setZoom(1)} title="Adapter à la largeur"
-          style={{ ...zBtn, width:'auto', padding:'0 10px', fontSize:12, fontWeight:700 }}>
+          style={{ ...zBtn, width:'auto', padding:'0 10px', fontSize:12.5, fontWeight:700 }}>
           {Math.round(z * 100)} %
         </button>
         <button onClick={() => setZoom(zRef.current * 1.25)} title="Zoom avant" style={zBtn}>+</button>
-        <span style={{ flexShrink:0,fontSize:10,color:'rgba(255,255,255,0.45)',whiteSpace:'nowrap',marginLeft:4 }}>
-          Ctrl + molette : zoom · glisser : déplacer
-        </span>
-        <button onClick={onClose} style={{ ...zBtn, marginLeft:4 }}>
-          <Ic n="x" s={16}/>
-        </button>
       </div>
       <div ref={scrollRef}
         onWheel={onWheel}
@@ -259,19 +276,15 @@ function ConsultViewerTouch({ group, hdById = {}, onClose }) {
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
-      <div style={{ display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
-        <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
-        <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-          {group.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {group.pages.length} page{group.pages.length > 1 ? 's' : ''}</span>
-        </p>
-        {typeof window !== 'undefined' && window.innerWidth >= 900 && (
-          <span style={{ flexShrink:0,fontSize:10,color:'rgba(255,255,255,0.45)',whiteSpace:'nowrap' }}>Ctrl + molette : zoom</span>
-        )}
-        <button onClick={onClose}
-          style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:'white',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}>
-          <Ic n="x" s={16}/>
-        </button>
-      </div>
+      {/* Interface MINIMALE : uniquement la croix flottante — grande mais discrète
+          (demande Thomas : « le reste des infos, pas besoin de les voir »). */}
+      <button onClick={onClose} aria-label="Fermer"
+        style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
+          width:48, height:48, borderRadius:14, border:'none', background:'rgba(20,20,20,0.55)',
+          color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
+        <Ic n="x" s={22}/>
+      </button>
       <div ref={boxRef}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         onWheel={onWheel}
