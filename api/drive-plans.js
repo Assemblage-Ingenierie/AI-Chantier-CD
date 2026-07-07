@@ -103,32 +103,27 @@ async function findProjetFolder(token, driveId, projetNom) {
   return null;
 }
 
-// Tous les PDF du dossier de l'affaire (sous-dossiers compris, profondeur ≤ 4).
-async function listPdfs(token, driveId, rootFolder) {
-  const out = [];
-  const queue = [{ id: rootFolder.id, path: '', depth: 0 }];
-  let requests = 0;
-  while (queue.length && requests < 40 && out.length < 400) {
-    const { id, path, depth } = queue.shift();
-    const params = new URLSearchParams({
-      q: `'${id}' in parents and trashed = false`,
-      fields: 'files(id,name,mimeType,size,modifiedTime)',
-      supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
-      driveId, corpora: 'drive', pageSize: '200',
-    });
-    requests++;
-    const res = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    for (const f of (data.files || [])) {
-      if (f.mimeType === FOLDER_MIME) {
-        if (depth < 4) queue.push({ id: f.id, path: path ? `${path} / ${f.name}` : f.name, depth: depth + 1 });
-      } else if (f.mimeType === 'application/pdf') {
-        out.push({ id: f.id, name: f.name, path, size: parseInt(f.size || '0', 10), modifiedTime: f.modifiedTime || null });
-      }
-    }
+// Contenu d'UN niveau de dossier — navigation « comme dans le Drive » (demande Thomas :
+// on se balade dans 1_GESTION, 2_DOCUMENTS_RECUS… au lieu d'une liste à plat).
+async function listChildren(token, driveId, folderId) {
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: 'files(id,name,mimeType,size,modifiedTime)',
+    supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+    driveId, corpora: 'drive', pageSize: '200',
+  });
+  const res = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+  if (data.error) throw new Error(`Drive API error: ${JSON.stringify(data.error)}`);
+  const folders = [], files = [];
+  for (const f of (data.files || [])) {
+    if (f.mimeType === FOLDER_MIME) folders.push({ id: f.id, name: f.name });
+    else if (f.mimeType === 'application/pdf') files.push({ id: f.id, name: f.name, size: parseInt(f.size || '0', 10), modifiedTime: f.modifiedTime || null });
   }
-  out.sort((a, b) => (a.path || '').localeCompare(b.path || '') || a.name.localeCompare(b.name));
-  return out;
+  // Tri « numérique » : 1_GESTION avant 2_DOCUMENTS avant 10_RENDUS.
+  const byName = (a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true, sensitivity: 'base' });
+  folders.sort(byName); files.sort(byName);
+  return { folders, files };
 }
 
 export default async function handler(req, res) {
@@ -155,12 +150,20 @@ export default async function handler(req, res) {
     const token = await getAccessToken(sa);
     const { action, projetNom, fileId, offset = 0 } = req.body || {};
 
-    if (action === 'list') {
+    if (action === 'resolve') {
+      // Retrouve le dossier racine de l'affaire (par numéro, sinon premier mot du nom).
       const { driveId } = await findAffairesFolder(token);
       const folder = await findProjetFolder(token, driveId, projetNom);
-      if (!folder) return res.status(200).json({ folderName: null, files: [] });
-      const files = await listPdfs(token, driveId, folder);
-      return res.status(200).json({ folderName: folder.name, files });
+      if (!folder) return res.status(200).json({ folderId: null, folderName: null });
+      return res.status(200).json({ folderId: folder.id, folderName: folder.name, driveId });
+    }
+
+    if (action === 'browse') {
+      const { folderId: fid, driveId: did } = req.body || {};
+      if (!fid) return res.status(400).json({ error: 'folderId manquant' });
+      const driveId = did || (await findAffairesFolder(token)).driveId;
+      const content = await listChildren(token, driveId, fid);
+      return res.status(200).json(content);
     }
 
     if (action === 'download') {
