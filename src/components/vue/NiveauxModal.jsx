@@ -586,6 +586,11 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [folderDropHint, setFolderDropHint] = useState(null); // { id, after }
   // Groupes de « Plans importés » dépliés (TOUT est replié par défaut — demande Thomas).
   const [openImported, setOpenImported] = useState(() => new Set());
+  // ── Déplacement TACTILE des tuiles (le glisser-déposer HTML5 ne marche pas au doigt —
+  //    demande répétée de Thomas). Appui long sur la poignée → on suit le doigt, dépôt sur
+  //    une autre tuile (milieu = regrouper, bord = réordonner), une case, ou « non rangés ».
+  const [touchDrag, setTouchDrag] = useState(null); // { base, x, y, over }
+  const touchDragRef = useRef(null); touchDragRef.current = touchDrag;
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
   // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
   const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
@@ -765,15 +770,63 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     }
   };
 
+  // ── Déplacement TACTILE : appui sur la poignée puis on suit le doigt (pointer capture) ──
+  const touchStartRef = useRef(null); // { base, x0, y0, moved }
+  const onGripTouchStart = (e, base) => {
+    if (e.pointerType !== 'touch') return;   // souris → glisser-déposer HTML5 classique
+    touchStartRef.current = { base, x0: e.clientX, y0: e.clientY, moved: false, pid: e.pointerId };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ok */ }
+  };
+  const onGripTouchMove = (e) => {
+    const s = touchStartRef.current;
+    if (!s || e.pointerType !== 'touch') return;
+    const dist = Math.hypot(e.clientX - s.x0, e.clientY - s.y0);
+    if (!s.moved && dist < 8) return;
+    s.moved = true;
+    e.preventDefault();
+    // Cible sous le doigt : tuile (milieu/bord), case, ou zone « non rangés ».
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const tile = el?.closest?.('[data-base]');
+    const folder = el?.closest?.('[data-folder]');
+    let over = null;
+    if (tile && tile.getAttribute('data-base') !== s.base) {
+      const r = tile.getBoundingClientRect();
+      const fr = (e.clientX - r.left) / Math.max(1, r.width);
+      over = { kind: 'tile', base: tile.getAttribute('data-base'), zone: fr < 0.3 ? 'before' : fr > 0.7 ? 'after' : 'group' };
+    } else if (folder) {
+      over = { kind: 'folder', id: folder.getAttribute('data-folder') };
+    } else if (el?.closest?.('[data-unfiled]')) {
+      over = { kind: 'unfiled' };
+    }
+    setTouchDrag({ base: s.base, x: e.clientX, y: e.clientY, over });
+  };
+  const onGripTouchEnd = (e) => {
+    const s = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!s || e.pointerType !== 'touch') return;
+    if (!s.moved) { // simple tap → ouvrir le menu
+      setRenamePdf(null); setConfirmDelPdf(null);
+      setMovePdf(movePdf === s.base ? null : s.base);
+      return;
+    }
+    const o = touchDragRef.current?.over;
+    if (o?.kind === 'tile') { o.zone === 'group' ? groupBases(s.base, o.base) : reorderBases(s.base, o.base, o.zone === 'after'); }
+    else if (o?.kind === 'folder') moveBase(s.base, o.id);
+    else if (o?.kind === 'unfiled') moveBase(s.base, null);
+    setTouchDrag(null);
+  };
+
   // TUILE d'un PDF (taille UNIFORME partout, dans une case ou non — demande Thomas) :
-  // sigle Ai + titre lisible (pas de miniature), clic = consulter. Icône « déplacer » en haut
-  // à droite : glisser sur une autre tuile = regrouper (PC) ; tap = menu « Ranger dans… »
-  // (mobile, où le glisser-déposer HTML5 n'existe pas). Actions : ✎ renommer, 🗑 supprimer.
+  // sigle Ai + titre lisible. Poignée 6 points : glisser (souris OU doigt) pour déplacer/
+  // regrouper/réordonner, tap pour le menu (renommer / ranger / supprimer). Clic = consulter.
   const renderPdfTile = (g) => {
     // Zone de dépôt : MILIEU = regrouper dans une case, BORD gauche/droit = réordonner.
     const hintZone = (dropHint?.base === g.nom && dragBase && dragBase !== g.nom) ? dropHint.zone : null;
+    // Surbrillance de dépôt en mode TACTILE (le doigt survole cette tuile).
+    const tHint = (touchDrag?.over?.kind === 'tile' && touchDrag.over.base === g.nom && touchDrag.base !== g.nom) ? touchDrag.over.zone : null;
+    const zoneHint = hintZone || tHint;
     return (
-      <div key={g.nom}
+      <div key={g.nom} data-base={g.nom}
         draggable={dragArmBase === g.nom}
         // GARDE : sans armement par la poignée, on TUE le dragstart (e.preventDefault) —
         // sinon la sélection de texte dans l'input de renommage déclenche le drag natif de
@@ -806,19 +859,23 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         // CARRÉS fixes 168px sur PC (retour Thomas : le flex fluide devenait trop gros).
         className="plan-tile"
         style={{ position:'relative', boxSizing:'border-box',
-          border:`1.5px solid ${hintZone === 'group' ? DA.red : DA.border}`, borderRadius:12,
-          background: hintZone === 'group' ? DA.redL : 'white', overflow:'hidden',
+          border:`1.5px solid ${zoneHint === 'group' ? DA.red : DA.border}`, borderRadius:12,
+          background: zoneHint === 'group' ? DA.redL : 'white', overflow:'hidden',
           display:'flex', flexDirection:'column',
-          boxShadow: hintZone === 'before' ? `inset 4px 0 0 ${DA.red}` : hintZone === 'after' ? `inset -4px 0 0 ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
-          opacity: dragBase === g.nom ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
-        {/* Poignée 6 points : glisser (PC) pour réorganiser/regrouper — ou TAP pour ouvrir le
-            menu (renommer / ranger / supprimer). Les boutons ✎/🗑 permanents sont retirés
-            (demande Thomas : tout passe par ce menu). */}
+          boxShadow: zoneHint === 'before' ? `inset 4px 0 0 ${DA.red}` : zoneHint === 'after' ? `inset -4px 0 0 ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
+          opacity: (dragBase === g.nom || touchDrag?.base === g.nom) ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
+        {/* Poignée 6 points : glisser (souris OU doigt) pour déplacer/regrouper/réordonner —
+            ou TAP pour le menu (renommer / ranger / supprimer). touchAction:none = le doigt
+            fait glisser la tuile, pas défiler la page. */}
         <div
           onMouseDown={() => setDragArmBase(g.nom)}
           onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+          onPointerDown={e => onGripTouchStart(e, g.nom)}
+          onPointerMove={onGripTouchMove}
+          onPointerUp={onGripTouchEnd}
+          onPointerCancel={() => { touchStartRef.current = null; setTouchDrag(null); }}
           title="Glisser pour déplacer — ou appuyer pour les options"
-          style={{ position:'absolute', top:5, right:5, width:32, height:32, borderRadius:8, cursor:'grab',
+          style={{ position:'absolute', top:5, right:5, width:34, height:34, borderRadius:8, cursor:'grab', touchAction:'none',
             display:'flex', alignItems:'center', justifyContent:'center', color: movePdf === g.nom ? DA.red : DA.grayL, background:'white',
             border:`1px solid ${movePdf === g.nom ? DA.red : DA.border}`, zIndex:1 }}>
           <Ic n="grp" s={15}/>
@@ -974,6 +1031,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
   return (
     <div className="modal-overlay" style={{ zIndex:60 }}>
+      {/* Fantôme qui suit le doigt pendant un déplacement tactile de tuile */}
+      {touchDrag && (
+        <div style={{ position:'fixed', left:touchDrag.x, top:touchDrag.y, transform:'translate(-50%, -50%)',
+          zIndex:9999, pointerEvents:'none', background:DA.red, color:'white', fontSize:12, fontWeight:800,
+          borderRadius:10, padding:'8px 12px', boxShadow:'0 6px 20px rgba(0,0,0,0.35)', maxWidth:180,
+          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {touchDrag.base}
+        </div>
+      )}
       <div className="modal-sheet-flex">
         {/* Header */}
         <div style={{ padding:'16px 18px 12px',borderBottom:`1px solid ${DA.border}`,flexShrink:0 }}>
@@ -1001,7 +1067,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
                   Consulter les plans
                 </p>
-                {dragBase && (
+                {(dragBase || touchDrag) && (
                   <span style={{ fontSize:10.5,color:DA.grayL }}>milieu = regrouper · bord = ordonner · fond = sortir d'une case</span>
                 )}
               </div>
@@ -1010,12 +1076,12 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   simplement leurs tuiles et tout s'enchaîne sur la même rangée. Les cases se
                   créent par fusion (glisser une tuile au MILIEU d'une autre) — pas de bouton.
                   Déposer sur le FOND (hors tuile/case) sort le PDF de sa case. */}
-              <div
+              <div data-unfiled
                 onDragOver={e => { if (dragBase) e.preventDefault(); }}
                 onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
                 style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
                 {folders.map(f => (
-                  <div key={f.id}
+                  <div key={f.id} data-folder={f.id}
                     draggable={dragArmFolder === f.id}
                     onDragStart={e => {
                       if (dragArmFolder !== f.id) { e.preventDefault(); return; }
