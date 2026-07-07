@@ -7,20 +7,21 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 
 // Rendu HD en ARRIÈRE-PLAN, au niveau module : l'import n'attend plus le 6500 px
 // (« à importer c'est hyper long » — Thomas) et la file survit à la fermeture du modal.
-// Chaque HD prête est attachée au plan via `attach(id, hd)` → sauvegarde auto (Storage).
-async function renderHdInBackground(docs, attach) {
+// Chaque HD prête est (1) attachée au plan (affichage local) ET (2) ENVOYÉE IMMÉDIATEMENT
+// au serveur (uploadNow) → nette sur TOUS les appareils, même si la session se ferme.
+async function renderHdInBackground(docs, attach, uploadNow) {
   for (const d of docs) {
     for (const [num, id] of d.idByNum) {
       try {
         const hd = await renderPdfPageHQ(d.pdf, num);
-        if (hd) attach(id, hd);
+        if (hd) { attach(id, hd); try { await uploadNow?.(id, hd); } catch { /* best-effort */ } }
       } catch { /* le plan reste en aperçu 1600px */ }
       await new Promise(r => setTimeout(r, 60)); // laisse respirer l'UI entre deux pages
     }
   }
 }
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', onAttachHd = null }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', onAttachHd = null, onUploadHd = null }) {
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
@@ -190,7 +191,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     if (allResults.length > 0) {
       onAdd(allResults);
       // HD (6500 px) rendue en ARRIÈRE-PLAN — sans bloquer l'import ni le modal.
-      if (onAttachHd) renderHdInBackground(hdDocs, onAttachHd);
+      if (onAttachHd) renderHdInBackground(hdDocs, onAttachHd, onUploadHd);
     }
     else if (!renderErr) setRenderErr("Aucune page n'a pu être rendue.");
     setPdfList([]);

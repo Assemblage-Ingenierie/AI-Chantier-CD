@@ -1619,6 +1619,19 @@ export async function savePlanBgNow(chantierId, plans) {
   } catch (e) { console.warn('savePlanBgNow:', e); }
 }
 
+// Envoi IMMÉDIAT de l'image HD (6500 px) d'UNE page dès qu'elle est rendue — sans attendre
+// la sauvegarde différée qui pouvait être interrompue (session fermée) → laissait le plan
+// flou sur les autres appareils (retour Thomas). Uploade la HD dans Storage + écrit le
+// chemin dans la colonne `data` du plan. Best-effort, ne rejette jamais.
+export async function savePlanHdNow(chantierId, planId, hdDataUrl) {
+  if (!chantierId || !planId || typeof hdDataUrl !== 'string' || !hdDataUrl.startsWith('data:')) return;
+  try {
+    const sb = await getSupabase();
+    const path = await uploadPlanHd(sb, chantierId, planId, hdDataUrl);
+    if (path) await sb.from('aichantier_chantier_plans').update({ data: path }).eq('id', planId);
+  } catch (e) { console.warn('savePlanHdNow:', e); }
+}
+
 
 // Hors-ligne, un échec de sync est ATTENDU : statut 'offline' (silencieux, le bandeau
 // hors-ligne global informe déjà) au lieu de 'error' + toast rouge anxiogène.

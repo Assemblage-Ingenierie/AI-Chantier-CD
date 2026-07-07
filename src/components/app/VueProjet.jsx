@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { savePlanBgNow } from '../../lib/storage.js';
+import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -1017,6 +1017,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         <PlanLibraryModal
           projetNom={projet.nom || ''}
           onAttachHd={(id, hd) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, hd } : p) }))}
+          onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
           planLibrary={projet.planLibrary || []}
           onAdd={plans => {
             const arr = Array.isArray(plans) ? plans : [plans];
