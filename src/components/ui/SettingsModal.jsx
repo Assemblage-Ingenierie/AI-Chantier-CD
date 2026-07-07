@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from './Icons.jsx';
-import { estimatePlanCacheBytes, clearPlanCache } from '../../lib/planThumbCache.js';
+import { estimatePlanCacheBytes, estimatePlanBytesByIds, clearPlanCache } from '../../lib/planThumbCache.js';
 import { estimateSnapshotBytes } from '../../lib/backupVault.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
@@ -11,6 +11,18 @@ function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} Ko`;
   return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+// Poids des DONNÉES d'un projet (textes, observations, annotations…) ≈ sa part du cache
+// local. Les gros blobs base64 (images de plans, photos, couvertures) sont exclus : ils
+// sont comptés à part (cache photos hors-ligne + cache plans).
+function projectDataBytes(p) {
+  try {
+    return JSON.stringify(p, (k, v) =>
+      (k === 'bg' || k === 'data' || k === 'hd' || k === 'photo' || k === 'photoCouverture') && typeof v === 'string' && v.length > 500
+        ? undefined : v
+    ).length * 2;
+  } catch { return 0; }
 }
 
 function localStorageBytes() {
@@ -26,13 +38,13 @@ function localStorageBytes() {
 
 export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null }) {
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
-  const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: bytes }
+  const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: octets PHOTOS }
+  const [detailByProject, setDetailByProject] = useState({}); // { projectId: { plans, donnees } }
   const [offlinePrefs, setOfflinePrefs] = useState({}); // reflet local des switchs
   const [busyProject, setBusyProject] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
-  const [navDebug, setNavDebug] = useState(() => { try { return localStorage.getItem('_navdebug') === '1'; } catch { return false; } });
 
   const refreshSizes = async () => {
     const [plans, snapshots, pending, byProject] = await Promise.all([
@@ -41,6 +53,17 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
     ]);
     setSizes({ plans, snapshots, pending, local: localStorageBytes() });
     setOfflineByProject(byProject);
+    // Détail par projet : plans en cache (IndexedDB) + données (texte/observations) —
+    // « je veux voir TOUT le projet dans le cache, pas que les photos » (Thomas).
+    const detail = {};
+    for (const p of projets) {
+      if (p.statut === 'archive') continue;
+      detail[p.id] = {
+        plans: await estimatePlanBytesByIds((p.planLibrary || []).map(pl => pl.id)),
+        donnees: projectDataBytes(p),
+      };
+    }
+    setDetailByProject(detail);
   };
 
   // Switch hors-ligne d'un projet : OFF = purge son cache photos et l'exclut du
@@ -71,14 +94,6 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
     setClearing(false);
     setCleared(true);
     setTimeout(() => setCleared(false), 2500);
-  };
-
-  const toggleNavDebug = () => {
-    setNavDebug(v => {
-      const next = !v;
-      try { next ? localStorage.setItem('_navdebug', '1') : localStorage.removeItem('_navdebug'); } catch {}
-      return next;
-    });
   };
 
   const sectionTitle = { fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 10px' };
@@ -121,13 +136,18 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
             <div style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'4px 12px' }}>
               {mine.map((p, i) => {
                 const on = offlinePrefs[p.id] ?? isProjectOfflineEnabled(p.id);
-                const bytes = offlineByProject?.[p.id] || 0;
+                const photosB = offlineByProject?.[p.id] || 0;
+                const plansB  = detailByProject[p.id]?.plans || 0;
+                const dataB   = detailByProject[p.id]?.donnees || 0;
+                const total   = photosB + plansB + dataB;
                 return (
                   <div key={p.id} style={{ ...row, ...(i > 0 ? { borderTop:`1px solid ${DA.grayXL}` } : {}) }}>
                     <div style={{ minWidth:0, flex:1 }}>
                       <div style={{ fontSize:13, color:DA.black, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom}</div>
-                      <div style={{ fontSize:11, color:DA.grayL, marginTop:1 }}>
-                        {offlineByProject == null ? '…' : on ? `${fmtBytes(bytes)} de photos en cache` : 'Hors-ligne désactivé'}
+                      <div style={{ fontSize:11, color:DA.grayL, marginTop:1, lineHeight:1.5 }}>
+                        {offlineByProject == null ? '…' : on
+                          ? <><strong style={{ color:DA.gray }}>{fmtBytes(total)} en cache</strong> · plans {fmtBytes(plansB)} · photos {fmtBytes(photosB)} · données {fmtBytes(dataB)}</>
+                          : 'Hors-ligne désactivé'}
                       </div>
                     </div>
                     <button onClick={() => toggleProjectOffline(p)} disabled={busyProject === p.id}
@@ -189,23 +209,10 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
             </p>
           </div>
 
-          {/* ── Diagnostic ── */}
-          <div style={{ marginBottom:22 }}>
-            <p style={sectionTitle}>Diagnostic</p>
-            <div style={{ ...row, border:`1px solid ${DA.border}`, borderRadius:10, padding:'10px 12px' }}>
-              <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:13, color:DA.black, fontWeight:600 }}>Journal de navigation</div>
-                <div style={{ fontSize:11, color:DA.grayL, marginTop:2 }}>Affiche un journal technique en bas d'écran (support).</div>
-              </div>
-              <button onClick={toggleNavDebug}
-                style={{ flexShrink:0, width:46, height:26, borderRadius:20, border:'none', cursor:'pointer', position:'relative',
-                  background: navDebug ? DA.urgGrn : DA.border, transition:'background 0.15s' }}>
-                <span style={{ position:'absolute', top:3, left: navDebug ? 23 : 3, width:20, height:20, borderRadius:'50%', background:'white', transition:'left 0.15s', boxShadow:'0 1px 3px rgba(0,0,0,0.3)' }}/>
-              </button>
-            </div>
-          </div>
-
           {/* ── À propos ── */}
+          {/* Le « Journal de navigation » (outil de diagnostic du bouton retour Android,
+              juillet 2026) a été retiré : le problème est résolu et le réglage semait la
+              confusion. Réactivable au besoin via localStorage._navdebug = '1'. */}
           <div>
             <p style={sectionTitle}>À propos</p>
             <p style={{ fontSize:12, color:DA.gray, margin:0, lineHeight:1.6 }}>
