@@ -22,33 +22,46 @@ function ConsultViewer({ group, onClose }) {
   // HD en mémoire (import frais) → Storage/IndexedDB (fetchPlanHdDataUrl) → rendu HQ
   // depuis le PDF brut s'il est présent. Le bg reste affiché en attendant (swap sans saut).
   const [hdById, setHdById] = useState({});
+  const hdRef = useRef({}); hdRef.current = hdById;
+  const pendingHd = useRef(new Set());
+  // Chargement HD À LA DEMANDE d'une page — chaque viewer décide QUAND.
+  const loadHd = async (p) => {
+    if (!p?.id || hdRef.current[p.id] || pendingHd.current.has(p.id)) return;
+    pendingHd.current.add(p.id);
+    try {
+      let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
+      if (!hd) hd = await fetchPlanHdDataUrl(p.id);
+      if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
+        hd = await renderPdfPageHQ(p.data, p._page || 1);
+      }
+      // PC uniquement (mémoire) : si aucune HD stockée, tenter le PDF BRUT en base
+      // (plans legacy) et rendre en très haute résolution — « tel que le PDF ».
+      if (!hd && !coarse) {
+        const fd = await fetchPlanData(p.id);
+        if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) {
+          hd = await renderPdfPageHQ(fd.data, p._page || 1);
+        }
+      }
+      if (hd) setHdById(h => ({ ...h, [p.id]: hd }));
+    } catch { /* le bg reste affiché */ }
+  };
+  // PC (défilement natif, pas de transform) : toutes les HD en séquence.
+  // MOBILE : c'est le viewer tactile qui demande la HD des seules pages PROCHES du
+  // viewport — charger et composer 15+ images de 6500 px dans un transform faisait
+  // « lagger de zinzin » le pincement (retour Thomas).
   useEffect(() => {
+    if (coarse) return;
     let cancelled = false;
     (async () => {
       for (const p of (group.pages || [])) {
         if (cancelled) return;
-        try {
-          let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
-          if (!hd && p.id) hd = await fetchPlanHdDataUrl(p.id);
-          if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
-            hd = await renderPdfPageHQ(p.data, p._page || 1);
-          }
-          // PC uniquement (mémoire) : si aucune HD stockée, tenter le PDF BRUT en base
-          // (plans legacy) et rendre en très haute résolution — « tel que le PDF ».
-          if (!hd && !coarse && p.id) {
-            const fd = await fetchPlanData(p.id);
-            if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) {
-              hd = await renderPdfPageHQ(fd.data, p._page || 1);
-            }
-          }
-          if (!cancelled && hd) setHdById(h => ({ ...h, [p.id]: hd }));
-        } catch { /* le bg reste affiché */ }
+        await loadHd(p);
       }
     })();
     return () => { cancelled = true; };
-  }, [group]);
+  }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} onClose={onClose}/>
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
     : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
 }
 
@@ -172,7 +185,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -180,6 +193,57 @@ function ConsultViewerTouch({ group, hdById = {}, onClose }) {
   const gestRef  = useRef(null);       // instantané du geste { t, pts:[{x,y}…] }
   const tRef     = useRef(t); tRef.current = t;
   const lastTap  = useRef({ ts: 0, x: 0, y: 0 });
+
+  // ── FLUIDITÉ (retour Thomas : « ça lag de zinzin au zoom ») ────────────────────
+  // La HD (6500 px) n'est affichée QUE pour les pages proches du viewport (±1 écran) ;
+  // les autres restent sur l'aperçu léger. La HD ne se télécharge aussi qu'à l'approche.
+  const [visIds, setVisIds] = useState(() => new Set());
+  const visRef = useRef(visIds); visRef.current = visIds;
+  const pageEls = useRef(new Map()); // pageId → élément DOM (offsetTop/offsetHeight)
+  const pageById = useRef(new Map());
+  useEffect(() => { pageById.current = new Map((group.pages || []).map(p => [p.id, p])); }, [group]);
+  const visRaf = useRef(0);
+  const scheduleVis = () => {
+    if (visRaf.current) return;
+    visRaf.current = requestAnimationFrame(() => {
+      visRaf.current = 0;
+      const box = boxRef.current;
+      if (!box) return;
+      const { z, y } = tRef.current;
+      const vh = box.clientHeight;
+      const margin = vh / z;                       // ±1 écran (en coordonnées contenu)
+      const top = (-y) / z - margin, bot = (vh - y) / z + margin;
+      const next = new Set();
+      for (const [id, el] of pageEls.current) {
+        if (el && el.offsetTop < bot && el.offsetTop + el.offsetHeight > top) next.add(id);
+      }
+      const prev = visRef.current;
+      if (next.size !== prev.size || [...next].some(id => !prev.has(id))) {
+        setVisIds(next);
+        if (loadHd) for (const id of next) { if (!prev.has(id)) loadHd(pageById.current.get(id)); }
+      }
+    });
+  };
+  useEffect(() => { scheduleVis(); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── ROTATION (demande Thomas : « quand je tourne mon tel, ça doit tourner le PDF ») ──
+  // Le manifest verrouille l'app en portrait ; pendant la consultation d'un plan on
+  // AUTORISE toutes les orientations, puis on rend la main au manifest à la fermeture.
+  // (iOS ne supporte pas lock() mais n'applique pas non plus le verrou manifest → no-op.)
+  const arRef = useRef(null);
+  useEffect(() => {
+    try { screen.orientation?.lock?.('any').catch(() => {}); } catch { /* non supporté */ }
+    const onResize = () => {
+      fitApplied.current = false;
+      if (arRef.current) applyFit(arRef.current);
+      scheduleVis();
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      try { screen.orientation?.unlock?.(); } catch { /* non supporté */ }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Zoom minimal = « page ENTIÈRE visible » (fix PC : la vue s'ouvrait calée sur la largeur →
   // impression de zoom, et impossible de dézoomer sous 100 %). Calculé au chargement de la
   // première page, appliqué comme vue initiale (centrée).
@@ -191,6 +255,7 @@ function ConsultViewerTouch({ group, hdById = {}, onClose }) {
     const box = boxRef.current;
     if (!box || !ar) return;
     fitApplied.current = true;
+    arRef.current = ar; // mémorisé pour re-cadrer à la rotation de l'écran
     const vw = box.clientWidth, vh = box.clientHeight;
     const pageH = vw / ar;                       // hauteur affichée de la page à z=1 (largeur = vw)
     const fz = Math.min(1, vh / pageH);          // z pour voir la page en entier
@@ -290,19 +355,24 @@ function ConsultViewerTouch({ group, hdById = {}, onClose }) {
         onWheel={onWheel}
         style={{ flex:1,overflow:'hidden',position:'relative',touchAction:'none',cursor:'grab' }}>
         <div ref={innerRef}
-          style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0' }}>
-          {group.pages.map((p, i) => (
-            <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
-              {(hdById[p.id] || p.bg)
-                ? <img src={hdById[p.id] || p.bg} alt="" draggable={false}
-                    onLoad={i === 0 ? (e) => applyFit(e.target.naturalWidth / e.target.naturalHeight) : undefined}
+          style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0',willChange:'transform' }}>
+          {group.pages.map((p, i) => {
+            const vis = visIds.has(p.id);
+            const src = (vis && hdById[p.id]) || p.bg || (vis ? hdById[p.id] : null);
+            return (
+            <div key={p.id} ref={el => { if (el) pageEls.current.set(p.id, el); else pageEls.current.delete(p.id); }}
+              style={{ position:'relative',marginBottom:6 }}>
+              {src
+                ? <img src={src} alt="" draggable={false} decoding="async"
+                    onLoad={i === 0 ? (e) => { applyFit(e.target.naturalWidth / e.target.naturalHeight); scheduleVis(); } : scheduleVis}
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -550,7 +620,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           setDragBase(null); setDragArmBase(null); setDropHint(null);
         }}
         onMouseUp={() => setDragArmBase(null)}
-        style={{ position:'relative', width:150, flexShrink:0, boxSizing:'border-box',
+        // Largeur FLUIDE : les tuiles se partagent toute la ligne (2 pleines colonnes sur
+        // téléphone, plus sur PC) au lieu d'une largeur figée qui laissait un trou à droite.
+        style={{ position:'relative', flex:'1 1 150px', minWidth:150, maxWidth:320, boxSizing:'border-box',
           border:`1.5px solid ${hintZone === 'group' ? DA.red : DA.border}`, borderRadius:12,
           background: hintZone === 'group' ? DA.redL : 'white', overflow:'hidden',
           display:'flex', flexDirection:'column',
@@ -793,7 +865,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
                         : '0 1px 3px rgba(0,0,0,0.04)',
                       opacity: dragFolder === f.id ? 0.45 : 1,
-                      maxWidth:'100%',boxSizing:'border-box' }}>
+                      // La case GRANDIT avec son contenu : 3-4 tuiles s'étalent sur PC,
+                      // se replient en 2 colonnes pleines sur téléphone.
+                      flex:'1 1 auto', maxWidth:'100%',boxSizing:'border-box' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
                       {/* Poignée de réorganisation des cases (symétrique du ✕ → titre centré) */}
                       {editingFolderId !== f.id && (
