@@ -236,6 +236,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const [zoneDragIdx, setZoneDragIdx] = useState(null);
   const [zoneOverIdx, setZoneOverIdx] = useState(null);
+  // Le drag PC n'est ARMÉ que depuis la poignée ⋮⋮ (mousedown) : une tuile draggable en
+  // permanence empêchait de sélectionner le texte du titre en édition — le navigateur
+  // déplaçait la tuile au lieu de sélectionner (demande Thomas).
+  const [zoneDragArm, setZoneDragArm] = useState(null);
   const zoneDragDidMove = useRef(false);
 
   const moveZone = useCallback((fromIdx, toIdx) => {
@@ -702,10 +706,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     return (
                       <div key={loc.id}
                         ref={el => { if (el) zoneNodesRef.current.set(locIdx, el); else zoneNodesRef.current.delete(locIdx); }}
-                        draggable
+                        draggable={zoneDragArm === locIdx}
                         onDragStart={() => { setZoneDragIdx(locIdx); zoneDragDidMove.current = false; }}
-                        onDragEnter={() => { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; }}
-                        onDragEnd={onZoneDragEnd}
+                        onDragEnter={() => { if (zoneDragIdx !== null) { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; } }}
+                        onDragEnd={() => { onZoneDragEnd(); setZoneDragArm(null); }}
+                        onMouseUp={() => setZoneDragArm(null)}
                         onDragOver={e => e.preventDefault()}
                         style={{
                           background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : 'white',
@@ -719,6 +724,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                         <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
                           <div onClick={e => e.stopPropagation()}
                             onTouchStart={e => startZoneTouch(e, locIdx)}
+                            onMouseDown={() => setZoneDragArm(locIdx)}
+                            title="Glisser pour réorganiser"
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
@@ -1044,6 +1051,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         />
       )}
 
+      {/* onDeletePlan/onRenamePlan : formes FONCTIONNELLES (prev => …) obligatoires — le
+          renommage/suppression d'un PDF ENTIER boucle sur ses pages ; avec un patch objet figé
+          sur `projet` du rendu, chaque appel écrasait le précédent (bug « pSFIGNG » : une seule
+          page renommée, détachée de son groupe). Ne pas revenir en arrière. */}
       {modal?.t === 'niveaux' && (
         <NiveauxModal
           localisations={visitProjet.localisations}
@@ -1052,9 +1063,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
           onPickPlan={(locId) => setModal({ t:'plan', locId, returnToNiveaux: true })}
-          onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => p.id !== id) }))}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
-          onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+          onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
+          planFolders={projet.planFolders || []}
+          onUpdateFolders={folders => onUpdate({ planFolders: folders })}
           onRepairBg={(id, newBg) => {
             const pl = (projet.planLibrary || []).find(p => p.id === id);
             onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) });

@@ -482,9 +482,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       placeholder="Ex: Diagnostic structure"
                       style={{ width:'100%', fontSize:16, fontWeight:700, color:DA.black, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'9px 11px', outline:'none', background:'white', boxSizing:'border-box', marginBottom:10 }}
                     />
-                    {/* Date + Ingénieur côte à côte */}
+                    {/* Date (compacte) + Ingénieurs (toute la place restante — plus de défilement
+                        des puces, demande Thomas). */}
                     <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-                      <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ width:148, flexShrink:0 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
                           <span style={{ fontSize:12 }}>📅</span>
                           <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Date</span>
@@ -493,10 +494,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                           type="date"
                           value={v.dateVisite || ''}
                           onChange={e => patchVisite(v.id, { dateVisite: e.target.value || null })}
-                          style={{ fontSize:16, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 10px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
+                          style={{ fontSize:13.5, color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'9px 8px', outline:'none', background:'white', cursor:'pointer', width:'100%', boxSizing:'border-box' }}
                         />
                       </div>
-                      <div style={{ width:150, flexShrink:0 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
                           <Ic n="usr" s={10} style={{ color:DA.grayL }}/>
                           <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.8 }}>Ingénieur(s)</span>
