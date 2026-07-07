@@ -750,22 +750,29 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     if (!s.moved && dist < 8) return;
     s.moved = true;
     e.preventDefault();
-    // Cible sous le doigt : tuile (milieu/bord), case, ou zone « non rangés ».
+    // Cible sous le doigt. PRIORITÉ au BORD d'une case : sur son tiers gauche/droit on place
+    // AVANT/APRÈS (hors case), même si le doigt survole une tuile intérieure — c'était le
+    // point bloquant (« je ne peux pas mettre une tuile avant une case », Thomas).
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const tile = el?.closest?.('[data-base]');
     const folder = el?.closest?.('[data-folder]');
     let over = null;
     if (el?.closest?.('[data-sortir]')) {
-      over = { kind: 'sortir' }; // barre « sortir de la case » prioritaire
+      over = { kind: 'sortir' };
+    } else if (folder) {
+      const r = folder.getBoundingClientRect();
+      const fr = (e.clientX - r.left) / Math.max(1, r.width);
+      if (fr < 0.33) over = { kind: 'folder', id: folder.getAttribute('data-folder'), zone: 'before' };
+      else if (fr > 0.67) over = { kind: 'folder', id: folder.getAttribute('data-folder'), zone: 'after' };
+      else if (tile && tile.getAttribute('data-base') !== s.base) {
+        const tr = tile.getBoundingClientRect();
+        const tfr = (e.clientX - tr.left) / Math.max(1, tr.width);
+        over = { kind: 'tile', base: tile.getAttribute('data-base'), zone: tfr < 0.3 ? 'before' : tfr > 0.7 ? 'after' : 'group' };
+      } else over = { kind: 'folder', id: folder.getAttribute('data-folder'), zone: 'in' };
     } else if (tile && tile.getAttribute('data-base') !== s.base) {
       const r = tile.getBoundingClientRect();
       const fr = (e.clientX - r.left) / Math.max(1, r.width);
       over = { kind: 'tile', base: tile.getAttribute('data-base'), zone: fr < 0.3 ? 'before' : fr > 0.7 ? 'after' : 'group' };
-    } else if (folder) {
-      // Bord de la case = placer avant/après (hors case) ; milieu = ranger dedans.
-      const r = folder.getBoundingClientRect();
-      const fr = (e.clientX - r.left) / Math.max(1, r.width);
-      over = { kind: 'folder', id: folder.getAttribute('data-folder'), zone: fr < 0.25 ? 'before' : fr > 0.75 ? 'after' : 'in' };
     } else if (el?.closest?.('[data-unfiled]')) {
       over = { kind: 'unfiled' };
     }
@@ -975,7 +982,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         const r = e.currentTarget.getBoundingClientRect();
         const x = (e.clientX - r.left) / r.width;
         // Tuile : bord = avant/après la case, milieu = dans la case. Case : avant/après.
-        const zone = dragBase ? (x < 0.25 ? 'before' : x > 0.75 ? 'after' : 'in') : (x > 0.5 ? 'after' : 'before');
+        const zone = dragBase ? (x < 0.33 ? 'before' : x > 0.67 ? 'after' : 'in') : (x > 0.5 ? 'after' : 'before');
         setFolderDropHint({ id: f.id, zone, after: zone === 'after' });
       }}
       onDragLeave={() => { if (folderDropHint?.id === f.id) setFolderDropHint(null); }}
@@ -993,10 +1000,14 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       }}
       onMouseUp={() => setDragArmFolder(null)}
       className="plan-folder"
-      style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
-        boxShadow: folderDropHint?.id === f.id
-          ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
-          : '0 1px 3px rgba(0,0,0,0.04)',
+      style={{ border:`1.5px solid ${((folderDropHint?.id === f.id && folderDropHint.zone === 'in') || (touchDrag?.over?.kind === 'folder' && touchDrag.over.id === f.id && touchDrag.over.zone === 'in')) ? DA.red : DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
+        boxShadow: (() => {
+          const th = touchDrag?.over?.kind === 'folder' && touchDrag.over.id === f.id ? touchDrag.over.zone : null;
+          const z = th || (folderDropHint?.id === f.id ? folderDropHint.zone : null);
+          if (z === 'before') return `inset 5px 0 0 ${DA.red}`;
+          if (z === 'after') return `inset -5px 0 0 ${DA.red}`;
+          return '0 1px 3px rgba(0,0,0,0.04)';
+        })(),
         opacity: dragFolder === f.id ? 0.45 : 1,
         boxSizing:'border-box' }}>
       <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
