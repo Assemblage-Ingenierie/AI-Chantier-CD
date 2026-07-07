@@ -275,6 +275,13 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
   const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
   const [confirmDelPdf, setConfirmDelPdf] = useState(null); // base du PDF dont la suppression attend confirmation
+  // Drag & drop des tuiles PDF (PC) : armé depuis l'icône « déplacer » de la tuile.
+  // Déposer une tuile SUR une autre = regrouper les deux dans une case (demande Thomas).
+  const [dragBase, setDragBase] = useState(null);       // base du PDF en cours de drag
+  const [dragArmBase, setDragArmBase] = useState(null); // tuile armée (mousedown sur l'icône)
+  const [dropHint, setDropHint] = useState(null);       // cible survolée (surbrillance)
+  // Groupes de « Plans importés » dépliés (TOUT est replié par défaut — demande Thomas).
+  const [openImported, setOpenImported] = useState(() => new Set());
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
   // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
   const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
@@ -383,45 +390,86 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     setConfirmDelPdf(null);
   };
 
-  // TUILE d'un PDF (dans une case ou « non rangés ») : grande, cliquable, avec miniature —
-  // demande Thomas : les petites lignes étaient « super petites » à viser sur site.
-  // Actions : consulter (tap sur la tuile), ✎ renommer le PDF entier, 🗂 ranger, 🗑 supprimer.
+  // Regroupe deux PDF : tuile DÉPOSÉE sur une autre tuile (demande Thomas).
+  // Cible déjà dans une case → la tuile déplacée la rejoint. Sinon → nouvelle case
+  // contenant les deux, ouverte en renommage direct.
+  const groupBases = (draggedBase, targetBase) => {
+    if (!onUpdateFolders || !draggedBase || draggedBase === targetBase) return;
+    const targetFolder = folders.find(f => (f.bases || []).includes(targetBase));
+    if (targetFolder) {
+      setFolders(folders.map(f => ({
+        ...f,
+        bases: f.id === targetFolder.id
+          ? [...(f.bases || []).filter(b => b !== draggedBase), draggedBase]
+          : (f.bases || []).filter(b => b !== draggedBase),
+      })));
+    } else {
+      const id = crypto.randomUUID();
+      setFolders([
+        ...folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== draggedBase && b !== targetBase) })),
+        { id, nom: '', bases: [targetBase, draggedBase] },
+      ]);
+      setEditingFolderId(id); setEditingFolderNom('');
+    }
+  };
+
+  // TUILE d'un PDF (taille UNIFORME partout, dans une case ou non — demande Thomas) :
+  // sigle Ai + titre lisible (pas de miniature), clic = consulter. Icône « déplacer » en haut
+  // à droite : glisser sur une autre tuile = regrouper (PC) ; tap = menu « Ranger dans… »
+  // (mobile, où le glisser-déposer HTML5 n'existe pas). Actions : ✎ renommer, 🗑 supprimer.
   const renderPdfTile = (g) => {
-    const thumb = g.pages.find(p => p.bg)?.bg || null;
+    const isDropTarget = dropHint === g.nom && dragBase && dragBase !== g.nom;
     const actBtn = (active = false) => ({ flex:1, height:34, borderRadius:8, border:`1px solid ${active ? DA.red : DA.border}`,
       background:'white', color: active ? DA.red : DA.gray, cursor:'pointer',
       display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 });
     return (
-      <div key={g.nom} style={{ border:`1.5px solid ${DA.border}`, borderRadius:12, background:'white', overflow:'hidden',
-        display:'flex', flexDirection:'column', boxShadow:'0 1px 4px rgba(0,0,0,0.05)' }}>
-        {/* Zone cliquable : miniature + nom → ouvre la visionneuse */}
-        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer' }}>
-          <div style={{ position:'relative', height:86, background:DA.grayXL }}>
-            {thumb
-              ? <img src={thumb} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
-              : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:30 }}>📄</div>}
-            <span style={{ position:'absolute', bottom:6, right:6, fontSize:10.5, fontWeight:800, color:'white',
-              background:'rgba(0,0,0,0.62)', borderRadius:10, padding:'2px 8px' }}>
-              {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
-            </span>
+      <div key={g.nom}
+        draggable={dragArmBase === g.nom}
+        onDragStart={e => { setDragBase(g.nom); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ } }}
+        onDragEnd={() => { setDragBase(null); setDragArmBase(null); setDropHint(null); }}
+        onDragOver={e => { if (dragBase && dragBase !== g.nom) { e.preventDefault(); e.stopPropagation(); } }}
+        onDragEnter={() => { if (dragBase && dragBase !== g.nom) setDropHint(g.nom); }}
+        onDragLeave={() => { if (dropHint === g.nom) setDropHint(null); }}
+        onDrop={e => { e.preventDefault(); e.stopPropagation(); groupBases(dragBase, g.nom); setDragBase(null); setDragArmBase(null); setDropHint(null); }}
+        onMouseUp={() => setDragArmBase(null)}
+        style={{ position:'relative', border:`1.5px solid ${isDropTarget ? DA.red : DA.border}`, borderRadius:12,
+          background: isDropTarget ? DA.redL : 'white', overflow:'hidden',
+          display:'flex', flexDirection:'column',
+          boxShadow:'0 1px 4px rgba(0,0,0,0.05)',
+          opacity: dragBase === g.nom ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
+        {/* Icône déplacer (drag PC / menu tactile) */}
+        {onUpdateFolders && (
+          <div
+            onMouseDown={() => setDragArmBase(g.nom)}
+            onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+            title="Glisser sur une autre tuile pour regrouper — ou appuyer pour choisir une case"
+            style={{ position:'absolute', top:5, right:5, width:30, height:30, borderRadius:8, cursor:'grab',
+              display:'flex', alignItems:'center', justifyContent:'center', color:DA.grayL, background:'white',
+              border:`1px solid ${movePdf === g.nom ? DA.red : 'transparent'}`, zIndex:1 }}>
+            <Ic n="grp" s={14}/>
           </div>
-          <p style={{ fontSize:12, fontWeight:700, color:DA.black, margin:'7px 9px 6px', lineHeight:1.3,
+        )}
+        {/* Zone cliquable : sigle Ai + nom → ouvre la visionneuse */}
+        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', textAlign:'center', padding:'13px 10px 4px' }}>
+          <div style={{ width:38, height:38, borderRadius:10, background:DA.red, color:'white', fontWeight:900,
+            fontSize:16, letterSpacing:-0.5, display:'flex', alignItems:'center', justifyContent:'center',
+            margin:'0 auto 7px', boxShadow:'0 2px 6px rgba(227,5,19,0.3)' }}>
+            Ai
+          </div>
+          <p style={{ fontSize:12, fontWeight:700, color:DA.black, margin:'0 0 3px', lineHeight:1.3,
             display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', minHeight:'2.6em' }}>
             {g.nom}
           </p>
+          <p style={{ fontSize:10.5, fontWeight:700, color:DA.grayL, margin:'0 0 6px' }}>
+            {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
+          </p>
         </div>
         {/* Actions */}
-        <div style={{ display:'flex', gap:5, padding:'0 8px 8px' }}>
+        <div style={{ display:'flex', gap:5, padding:'0 8px 8px', marginTop:'auto' }}>
           {onRenamePlan && (
             <button onClick={() => { setMovePdf(null); setConfirmDelPdf(null); setRenamePdf(renamePdf?.base === g.nom ? null : { base: g.nom, val: g.nom }); }}
               title="Renommer le PDF entier (toutes ses pages)" style={actBtn(renamePdf?.base === g.nom)}>
               <Ic n="edt" s={14}/>
-            </button>
-          )}
-          {onUpdateFolders && (
-            <button onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
-              title="Ranger ce PDF dans une case" style={actBtn(movePdf === g.nom)}>
-              🗂
             </button>
           )}
           {onDeletePlan && (
@@ -592,7 +640,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               {/* Bulles */}
               <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
                 {folders.map(f => (
-                  <div key={f.id} style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'8px 10px 10px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <div key={f.id}
+                    onDragOver={e => { if (dragBase) e.preventDefault(); }}
+                    onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, f.id); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
+                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'8px 10px 10px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:(f.bases||[]).length ? 8 : 0 }}>
                       {editingFolderId === f.id ? (
                         <input autoFocus value={editingFolderNom}
@@ -624,11 +675,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   </div>
                 ))}
 
-                {/* PDF non rangés */}
-                {unassignedGroups.length > 0 && (
-                  <div>
+                {/* PDF non rangés — y déposer une tuile la SORT de sa case */}
+                {(unassignedGroups.length > 0 || (dragBase && folders.some(f => (f.bases || []).includes(dragBase)))) && (
+                  <div
+                    onDragOver={e => { if (dragBase) e.preventDefault(); }}
+                    onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}>
                     {folders.length > 0 && (
-                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 6px' }}>Non rangés</p>
+                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 6px' }}>
+                        Non rangés{dragBase ? ' — déposez ici pour sortir d’une case' : ''}
+                      </p>
                     )}
                     <div style={tileGrid}>{unassignedGroups.map(g => renderPdfTile(g))}</div>
                   </div>
@@ -686,20 +741,32 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               {repairErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,padding:'6px 10px',marginBottom:6,fontSize:11,color:'#B91C1C' }}>⚠️ {repairErr}</div>}
               <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
               <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
-                {/* BULLES AUTOMATIQUES par PDF d'origine (demande Thomas : la liste plate de
-                    toutes les pages était le bazar). Le regroupement se calcule à partir des
-                    NOMS (« base — Page N ») → renommer le PDF entier ou une page met tout à
-                    jour automatiquement, sans état supplémentaire. Plans isolés : ligne simple. */}
-                {pdfGroups.map(g => g.pages.length > 1 ? (
-                  <div key={g.nom} style={{ border:`1.5px solid ${DA.border}`,borderRadius:12,background:'#FAFBFC',padding:'7px 8px 8px' }}>
-                    <p style={{ fontSize:11.5,fontWeight:800,color:DA.black,margin:'0 2px 6px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-                      📄 {g.nom} <span style={{ color:DA.grayL,fontWeight:600 }}>· {g.pages.length} pages</span>
-                    </p>
-                    <div style={{ display:'flex',flexDirection:'column',gap:5 }}>
-                      {g.pages.map(pl => renderImportedRow(pl))}
+                {/* BULLES AUTOMATIQUES par PDF d'origine, TOUTES repliables et REPLIÉES par
+                    défaut — y compris les PDF d'une seule page (demande Thomas : les lignes
+                    isolées faisaient brouillon et la liste dépliée prenait trop de place).
+                    Le regroupement se calcule à partir des NOMS (« base — Page N ») →
+                    renommer le PDF entier ou une page met tout à jour automatiquement. */}
+                {pdfGroups.map(g => {
+                  const open = openImported.has(g.nom);
+                  return (
+                    <div key={g.nom} style={{ border:`1.5px solid ${DA.border}`,borderRadius:12,background:'#FAFBFC',padding:open ? '0 8px 8px' : 0,overflow:'hidden' }}>
+                      <button onClick={() => setOpenImported(s => { const n = new Set(s); if (n.has(g.nom)) n.delete(g.nom); else n.add(g.nom); return n; })}
+                        style={{ width:'100%',display:'flex',alignItems:'center',gap:7,padding:'10px 10px',margin:open ? '0 -8px' : 0,
+                          background:'none',border:'none',cursor:'pointer',textAlign:'left',boxSizing:'content-box' }}>
+                        <span style={{ fontSize:13,flexShrink:0 }}>📄</span>
+                        <span style={{ flex:1,minWidth:0,fontSize:11.5,fontWeight:800,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+                          {g.nom} <span style={{ color:DA.grayL,fontWeight:600 }}>· {g.pages.length} page{g.pages.length > 1 ? 's' : ''}</span>
+                        </span>
+                        <span style={{ flexShrink:0,fontSize:10,color:DA.grayL }}>{open ? '▴ masquer' : '▾ afficher'}</span>
+                      </button>
+                      {open && (
+                        <div style={{ display:'flex',flexDirection:'column',gap:5 }}>
+                          {g.pages.map(pl => renderImportedRow(pl))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ) : renderImportedRow(g.pages[0]))}
+                  );
+                })}
               </div>
               </>
             )}
