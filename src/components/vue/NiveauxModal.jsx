@@ -25,6 +25,26 @@ function ConsultViewer({ group, onClose }) {
   const [hdById, setHdById] = useState({});
   const hdRef = useRef({}); hdRef.current = hdById;
   const pendingHd = useRef(new Set());
+  // PDF source PARTAGÉ par tout le groupe : récupéré UNE seule fois. Avant, chaque PAGE
+  // re-téléchargeait le document COMPLET depuis la base (le même PDF de 30-40 Mo, 18 fois
+  // pour 18 pages) → « charger le moindre PDF prend beaucoup trop de temps » (Thomas).
+  const groupPdfRef = useRef({ key: null, promise: null });
+  const getGroupPdf = () => {
+    const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
+    if (inMem) return Promise.resolve(inMem.data);
+    if (groupPdfRef.current.key !== group.nom) groupPdfRef.current = { key: group.nom, promise: null };
+    if (!groupPdfRef.current.promise) {
+      groupPdfRef.current.promise = (async () => {
+        // Les pages d'un même import stockent toutes le MÊME PDF : une seule requête suffit.
+        try {
+          const fd = await fetchPlanData((group.pages || [])[0]?.id);
+          if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) return fd.data;
+        } catch { /* pas de PDF en base */ }
+        return null;
+      })();
+    }
+    return groupPdfRef.current.promise;
+  };
   // Chargement HD À LA DEMANDE d'une page — chaque viewer décide QUAND.
   const loadHd = async (p) => {
     if (!p?.id || hdRef.current[p.id] || pendingHd.current.has(p.id)) return;
@@ -33,18 +53,12 @@ function ConsultViewer({ group, onClose }) {
       let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
       if (!hd) hd = await fetchPlanHdDataUrl(p.id);
       let rendered = false;
-      if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
-        hd = await renderPdfPageHQ(p.data, p._page || 1);
-        rendered = !!hd;
-      }
-      // Si aucune HD stockée : tenter le PDF BRUT en base (plans legacy, colonne data) et
-      // rendre en très haute résolution — « tel que le PDF ». Sur MOBILE aussi : une page
-      // à la fois, à la demande — le réserver au PC laissait le téléphone bloqué sur
-      // l'aperçu 1600 px « horrible » (retour Thomas).
+      // Si aucune HD stockée : rendre depuis le PDF source (mémoire ou base — récupéré une
+      // seule fois pour tout le groupe) — « tel que le PDF ». Mobile compris, page par page.
       if (!hd) {
-        const fd = await fetchPlanData(p.id);
-        if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) {
-          hd = await renderPdfPageHQ(fd.data, p._page || 1);
+        const pdf = await getGroupPdf();
+        if (pdf) {
+          hd = await renderPdfPageHQ(pdf, p._page || 1);
           rendered = !!hd;
         }
       }
@@ -57,19 +71,28 @@ function ConsultViewer({ group, onClose }) {
     } catch { /* le bg reste affiché */ }
   };
   // PC (défilement natif, pas de transform) : toutes les HD en séquence.
-  // MOBILE : c'est le viewer tactile qui demande la HD des seules pages PROCHES du
-  // viewport — charger et composer 15+ images de 6500 px dans un transform faisait
-  // « lagger de zinzin » le pincement (retour Thomas).
+  // MOBILE : le viewer tactile demande la HD des pages PROCHES du viewport (fluidité) ;
+  // en parallèle, après 1,5 s, on PRÉ-remplit doucement le cache HD des autres pages
+  // (téléchargement seul, sans affichage) pour que le feuilletage soit ensuite instantané.
   useEffect(() => {
-    if (coarse) return;
     let cancelled = false;
-    (async () => {
-      for (const p of (group.pages || [])) {
-        if (cancelled) return;
-        await loadHd(p);
-      }
-    })();
-    return () => { cancelled = true; };
+    let timer = null;
+    if (!coarse) {
+      (async () => {
+        for (const p of (group.pages || [])) {
+          if (cancelled) return;
+          await loadHd(p);
+        }
+      })();
+    } else {
+      timer = setTimeout(async () => {
+        for (const p of (group.pages || [])) {
+          if (cancelled) return;
+          try { await fetchPlanHdDataUrl(p.id); } catch { /* best-effort */ }
+        }
+      }, 1500);
+    }
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
     ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
