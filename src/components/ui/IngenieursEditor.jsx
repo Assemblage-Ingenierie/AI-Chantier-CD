@@ -44,7 +44,8 @@ export default function IngenieursEditor({ value, onChange }) {
         onChange={e => setDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
         onBlur={add}
-        placeholder={list.length ? '+' : 'TCM'}
+        // Pas de « + » en placeholder : avec le bouton + à côté, on voyait DEUX plus (Thomas).
+        placeholder={list.length ? '' : 'TCM'}
         maxLength={5}
         style={{ flex:1, minWidth:56, width:56, fontSize:15, fontWeight:800, color:DA.black,
           border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'7px 6px', outline:'none',

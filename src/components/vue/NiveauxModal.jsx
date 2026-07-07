@@ -8,12 +8,122 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
-// ── Visionneuse tactile « Consulter les plans » ────────────────────────────────
-// Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
-// pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour, molette = défiler,
-// Ctrl+molette (ou pincement trackpad) = zoom sur PC. Transform translate+scale maison car le
-// zoom navigateur est désactivé dans la PWA (user-scalable=no).
+// ── Visionneuse « Consulter les plans » ────────────────────────────────────────
+// Deux modes (demande Thomas : sur PC le transform maison n'était « pas du tout pratique ») :
+//  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
+//  - PC                          → lecteur PDF CLASSIQUE : défilement natif (molette,
+//    scrollbars), barre de zoom − / % / +, Ctrl+molette = zoom, cliquer-glisser = déplacer.
 function ConsultViewer({ group, onClose }) {
+  const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+  return coarse
+    ? <ConsultViewerTouch group={group} onClose={onClose}/>
+    : <ConsultViewerDesktop group={group} onClose={onClose}/>;
+}
+
+// Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
+// Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
+// scrollbars et molette tout seul, comme un vrai viewer PDF.
+function ConsultViewerDesktop({ group, onClose }) {
+  const [z, setZ] = useState(1); // 1 = adapté à la largeur
+  const zRef = useRef(z); zRef.current = z;
+  const scrollRef = useRef(null);
+  const dragRef = useRef(null);
+
+  // Zoom en conservant le point focal (position sous le curseur si fournie).
+  const setZoom = (nzRaw, fx = null, fy = null) => {
+    const el = scrollRef.current;
+    const nz = Math.max(0.3, Math.min(6, nzRaw));
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const px = fx != null ? fx - rect.left : rect.width / 2;
+      const py = fy != null ? fy - rect.top : rect.height / 2;
+      const ratio = nz / zRef.current;
+      const sl = (el.scrollLeft + px) * ratio - px;
+      const st = (el.scrollTop + py) * ratio - py;
+      setZ(nz);
+      requestAnimationFrame(() => { el.scrollLeft = sl; el.scrollTop = st; });
+    } else setZ(nz);
+  };
+
+  const onWheel = (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setZoom(zRef.current * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX, e.clientY);
+    }
+    // Sans Ctrl : défilement natif du conteneur (ne rien faire).
+  };
+
+  // Cliquer-glisser pour se déplacer (en plus des scrollbars/molette).
+  const onPointerDown = (e) => {
+    if (e.button !== 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    // Ne pas capturer un clic sur les scrollbars natives (elles gèrent leur propre drag).
+    const r = el.getBoundingClientRect();
+    if (e.clientX - r.left > el.clientWidth || e.clientY - r.top > el.clientHeight) return;
+    dragRef.current = { x: e.clientX, y: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+    try { el.setPointerCapture(e.pointerId); } catch { /* iOS anciens */ }
+  };
+  const onPointerMove = (e) => {
+    const d = dragRef.current, el = scrollRef.current;
+    if (!d || !el) return;
+    el.scrollLeft = d.sl - (e.clientX - d.x);
+    el.scrollTop  = d.st - (e.clientY - d.y);
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const zBtn = { width:34, height:34, borderRadius:8, border:'none', background:'rgba(255,255,255,0.12)',
+    color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+    flexShrink:0, fontSize:17, fontWeight:800, lineHeight:1 };
+
+  return (
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
+      <div style={{ display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'#1a1a1a',borderBottom:'1px solid #2a2a2a',flexShrink:0 }}>
+        <span style={{ fontSize:15,flexShrink:0 }}>📄</span>
+        <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+          {group.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {group.pages.length} page{group.pages.length > 1 ? 's' : ''}</span>
+        </p>
+        <button onClick={() => setZoom(zRef.current / 1.25)} title="Zoom arrière" style={zBtn}>−</button>
+        <button onClick={() => setZoom(1)} title="Adapter à la largeur"
+          style={{ ...zBtn, width:'auto', padding:'0 10px', fontSize:12, fontWeight:700 }}>
+          {Math.round(z * 100)} %
+        </button>
+        <button onClick={() => setZoom(zRef.current * 1.25)} title="Zoom avant" style={zBtn}>+</button>
+        <span style={{ flexShrink:0,fontSize:10,color:'rgba(255,255,255,0.45)',whiteSpace:'nowrap',marginLeft:4 }}>
+          Ctrl + molette : zoom · glisser : déplacer
+        </span>
+        <button onClick={onClose} style={{ ...zBtn, marginLeft:4 }}>
+          <Ic n="x" s={16}/>
+        </button>
+      </div>
+      <div ref={scrollRef}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ flex:1, overflow:'auto', cursor: dragRef.current ? 'grabbing' : 'grab' }}>
+        <div style={{ width:`${z * 100}%`, margin:'0 auto', padding:'10px 0' }}>
+          {group.pages.map(p => (
+            <div key={p.id} style={{ position:'relative', marginBottom:8 }}>
+              {p.bg
+                ? <img src={p.bg} alt="" draggable={false}
+                    style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
+                : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
+              <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
+                Page {p._page}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Visionneuse TACTILE (mobile/tablette) ──────────────────────────────────────
+// Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
+// pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
+// translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
+function ConsultViewerTouch({ group, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -164,6 +274,20 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [editingFolderNom, setEditingFolderNom] = useState('');
   const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
   const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
+  const [confirmDelPdf, setConfirmDelPdf] = useState(null); // base du PDF dont la suppression attend confirmation
+  // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
+  // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
+  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
+  const [confirmDelAll, setConfirmDelAll] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState(null);
+  const [editingPlanNom, setEditingPlanNom] = useState('');
+  const [previewBg, setPreviewBg] = useState(null);
+  const [repairTargetId, setRepairTargetId] = useState(null);
+  const [repairPdfData, setRepairPdfData] = useState(null);
+  const [showRepairPicker, setShowRepairPicker] = useState(false);
+  const [repairingId, setRepairingId] = useState(null);
+  const [repairErr, setRepairErr] = useState(null);
+  const repairFileRef = useRef();
   // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
   // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
   // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
@@ -250,79 +374,111 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     </div>
   );
 
-  // Ligne PDF réutilisable (dans une case ou « non rangés ») : consulter + renommer + ranger.
-  const renderPdfRow = (g) => (
-    <div key={g.nom} style={{ display:'flex', flexDirection:'column', gap:4 }}>
-      <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
-        <button onClick={() => setConsultGroup(g)}
-          style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:9,
-            border:`1.5px solid ${DA.border}`, background:'white', cursor:'pointer', textAlign:'left' }}>
-          <span style={{ fontSize:16, flexShrink:0 }}>📄</span>
-          <span style={{ flex:1, minWidth:0, fontSize:12.5, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{g.nom}</span>
-          <span style={{ flexShrink:0, fontSize:11, fontWeight:700, color:DA.red, background:DA.redL, borderRadius:12, padding:'2px 8px' }}>
-            {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
-          </span>
-          <span style={{ flexShrink:0, color:DA.grayL, fontSize:14 }}>›</span>
-        </button>
-        {onRenamePlan && (
-          <button onClick={() => { setMovePdf(null); setRenamePdf(renamePdf?.base === g.nom ? null : { base: g.nom, val: g.nom }); }}
-            title="Renommer le PDF entier (toutes ses pages)"
-            style={{ flexShrink:0, width:38, borderRadius:9, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <Ic n="edt" s={14}/>
-          </button>
+  // Supprime le PDF ENTIER (toutes ses pages) + nettoie les références dans les cases.
+  const deleteWholePdf = (g) => {
+    if (onDeletePlan) g.pages.forEach(pg => onDeletePlan(pg.id));
+    if (folders.some(f => (f.bases || []).includes(g.nom))) {
+      setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== g.nom) })));
+    }
+    setConfirmDelPdf(null);
+  };
+
+  // TUILE d'un PDF (dans une case ou « non rangés ») : grande, cliquable, avec miniature —
+  // demande Thomas : les petites lignes étaient « super petites » à viser sur site.
+  // Actions : consulter (tap sur la tuile), ✎ renommer le PDF entier, 🗂 ranger, 🗑 supprimer.
+  const renderPdfTile = (g) => {
+    const thumb = g.pages.find(p => p.bg)?.bg || null;
+    const actBtn = (active = false) => ({ flex:1, height:34, borderRadius:8, border:`1px solid ${active ? DA.red : DA.border}`,
+      background:'white', color: active ? DA.red : DA.gray, cursor:'pointer',
+      display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 });
+    return (
+      <div key={g.nom} style={{ border:`1.5px solid ${DA.border}`, borderRadius:12, background:'white', overflow:'hidden',
+        display:'flex', flexDirection:'column', boxShadow:'0 1px 4px rgba(0,0,0,0.05)' }}>
+        {/* Zone cliquable : miniature + nom → ouvre la visionneuse */}
+        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer' }}>
+          <div style={{ position:'relative', height:86, background:DA.grayXL }}>
+            {thumb
+              ? <img src={thumb} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}/>
+              : <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:30 }}>📄</div>}
+            <span style={{ position:'absolute', bottom:6, right:6, fontSize:10.5, fontWeight:800, color:'white',
+              background:'rgba(0,0,0,0.62)', borderRadius:10, padding:'2px 8px' }}>
+              {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <p style={{ fontSize:12, fontWeight:700, color:DA.black, margin:'7px 9px 6px', lineHeight:1.3,
+            display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', minHeight:'2.6em' }}>
+            {g.nom}
+          </p>
+        </div>
+        {/* Actions */}
+        <div style={{ display:'flex', gap:5, padding:'0 8px 8px' }}>
+          {onRenamePlan && (
+            <button onClick={() => { setMovePdf(null); setConfirmDelPdf(null); setRenamePdf(renamePdf?.base === g.nom ? null : { base: g.nom, val: g.nom }); }}
+              title="Renommer le PDF entier (toutes ses pages)" style={actBtn(renamePdf?.base === g.nom)}>
+              <Ic n="edt" s={14}/>
+            </button>
+          )}
+          {onUpdateFolders && (
+            <button onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+              title="Ranger ce PDF dans une case" style={actBtn(movePdf === g.nom)}>
+              🗂
+            </button>
+          )}
+          {onDeletePlan && (
+            <button onClick={() => { setRenamePdf(null); setMovePdf(null); setConfirmDelPdf(confirmDelPdf === g.nom ? null : g.nom); }}
+              title="Supprimer ce PDF (toutes ses pages)" style={actBtn(confirmDelPdf === g.nom)}>
+              <Ic n="del" s={14}/>
+            </button>
+          )}
+        </div>
+        {renamePdf?.base === g.nom && (
+          <div style={{ display:'flex', gap:5, padding:'0 8px 8px' }}>
+            <input autoFocus value={renamePdf.val}
+              onChange={e => setRenamePdf({ base: g.nom, val: e.target.value })}
+              onKeyDown={e => { if (e.key === 'Enter') renameWholePdf(g.nom, renamePdf.val); if (e.key === 'Escape') setRenamePdf(null); }}
+              placeholder="Nouveau nom du PDF"
+              style={{ flex:1, minWidth:0, fontSize:16, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'7px 8px', outline:'none', boxSizing:'border-box' }}/>
+            <button onClick={() => renameWholePdf(g.nom, renamePdf.val)}
+              style={{ flexShrink:0, padding:'0 12px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>OK</button>
+          </div>
         )}
-        {onUpdateFolders && (
-          <button onClick={() => { setRenamePdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
-            title="Ranger ce PDF dans une case"
-            style={{ flexShrink:0, width:38, borderRadius:9, border:`1px solid ${movePdf === g.nom ? DA.red : DA.border}`, background:'white', color:movePdf === g.nom ? DA.red : DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>
-            🗂
-          </button>
+        {movePdf === g.nom && (
+          <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', padding:'0 8px 8px' }}>
+            <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, width:'100%' }}>Ranger dans :</span>
+            {folders.map(f => {
+              const active = (f.bases || []).includes(g.nom);
+              return (
+                <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
+                  style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
+                    border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
+                  {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
+                </button>
+              );
+            })}
+            <button onClick={() => { const id = crypto.randomUUID(); setFolders([...folders, { id, nom: '', bases: [g.nom] }].map(f => f.id === id ? f : { ...f, bases: (f.bases || []).filter(b => b !== g.nom) })); setMovePdf(null); setEditingFolderId(id); setEditingFolderNom(''); }}
+              style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer', border:`1.5px dashed ${DA.red}`, background:'white', color:DA.red }}>
+              + Nouvelle case
+            </button>
+          </div>
+        )}
+        {confirmDelPdf === g.nom && (
+          <div style={{ display:'flex', gap:5, alignItems:'center', padding:'0 8px 8px' }}>
+            <button onClick={() => deleteWholePdf(g)}
+              style={{ flex:1, padding:'7px 0', borderRadius:8, border:'none', background:'#B91C1C', color:'white', fontSize:11.5, fontWeight:800, cursor:'pointer' }}>
+              Supprimer ({g.pages.length} p.)
+            </button>
+            <button onClick={() => setConfirmDelPdf(null)}
+              style={{ flex:1, padding:'7px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#555', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
+              Annuler
+            </button>
+          </div>
         )}
       </div>
-      {renamePdf?.base === g.nom && (
-        <div style={{ display:'flex', gap:6 }}>
-          <input autoFocus value={renamePdf.val}
-            onChange={e => setRenamePdf({ base: g.nom, val: e.target.value })}
-            onKeyDown={e => { if (e.key === 'Enter') renameWholePdf(g.nom, renamePdf.val); if (e.key === 'Escape') setRenamePdf(null); }}
-            placeholder="Nouveau nom du PDF"
-            style={{ flex:1, minWidth:0, fontSize:16, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'7px 10px', outline:'none', boxSizing:'border-box' }}/>
-          <button onClick={() => renameWholePdf(g.nom, renamePdf.val)}
-            style={{ flexShrink:0, padding:'0 14px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>OK</button>
-        </div>
-      )}
-      {movePdf === g.nom && (
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-          <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4 }}>Ranger dans :</span>
-          {folders.map(f => {
-            const active = (f.bases || []).includes(g.nom);
-            return (
-              <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
-                style={{ padding:'5px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
-                  border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
-                {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
-              </button>
-            );
-          })}
-          <button onClick={() => { const id = crypto.randomUUID(); setFolders([...folders, { id, nom: '', bases: [g.nom] }].map(f => f.id === id ? f : { ...f, bases: (f.bases || []).filter(b => b !== g.nom) })); setMovePdf(null); setEditingFolderId(id); setEditingFolderNom(''); }}
-            style={{ padding:'5px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer', border:`1.5px dashed ${DA.red}`, background:'white', color:DA.red }}>
-            + Nouvelle case
-          </button>
-        </div>
-      )}
-    </div>
-  );
-  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
-  const [confirmDelAll, setConfirmDelAll] = useState(false);
-  const [editingPlanId, setEditingPlanId] = useState(null);
-  const [editingPlanNom, setEditingPlanNom] = useState('');
-  const [previewBg, setPreviewBg] = useState(null);
-  const [repairTargetId, setRepairTargetId] = useState(null);
-  const [repairPdfData, setRepairPdfData] = useState(null);
-  const [showRepairPicker, setShowRepairPicker] = useState(false);
-  const [repairingId, setRepairingId] = useState(null);
-  const [repairErr, setRepairErr] = useState(null);
-  const repairFileRef = useRef();
+    );
+  };
 
+  // Grille de tuiles PDF.
+  const tileGrid = { display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(148px, 1fr))', gap:8 };
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
     onChange([...localisations, newLoc]);
@@ -458,22 +614,23 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         <Ic n="x" s={13}/>
                       </button>
                     </div>
-                    <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-                      {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfRow(g))}
-                      {(f.bases || []).length === 0 && (
-                        <p style={{ fontSize:11,color:DA.grayL,margin:0,fontStyle:'italic' }}>Case vide — utilisez 🗂 sur un PDF pour l'y ranger.</p>
-                      )}
-                    </div>
+                    {(f.bases || []).length > 0 ? (
+                      <div style={tileGrid}>
+                        {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfTile(g))}
+                      </div>
+                    ) : (
+                      <p style={{ fontSize:11,color:DA.grayL,margin:0,fontStyle:'italic' }}>Case vide — utilisez 🗂 sur un PDF pour l'y ranger.</p>
+                    )}
                   </div>
                 ))}
 
                 {/* PDF non rangés */}
                 {unassignedGroups.length > 0 && (
-                  <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                  <div>
                     {folders.length > 0 && (
-                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 0' }}>Non rangés</p>
+                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 6px' }}>Non rangés</p>
                     )}
-                    {unassignedGroups.map(g => renderPdfRow(g))}
+                    <div style={tileGrid}>{unassignedGroups.map(g => renderPdfTile(g))}</div>
                   </div>
                 )}
               </div>

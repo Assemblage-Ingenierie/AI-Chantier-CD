@@ -26,6 +26,11 @@ export default function EditTitle({ value, onSave, style = {}, inputStyle = {} }
         if (e.key === 'Escape') { setV(value); setEd(false); }
       }}
       onClick={e => e.stopPropagation()}
+      // Sélectionner le texte à la souris/au doigt déclenchait le DRAG natif de la sélection,
+      // qui remonte à la carte/tuile draggable parente (zones, visites…) → « déplacer » au
+      // lieu de sélectionner-supprimer. On tue le drag à la source (demande Thomas).
+      draggable={false}
+      onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
       style={{ flex:1, border:'none', outline:'none', background:'transparent', borderBottom:'2px solid #E30513', padding:'0 0 1px', ...inputStyle }}
     />
   );
