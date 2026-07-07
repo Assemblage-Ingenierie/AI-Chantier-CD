@@ -129,6 +129,7 @@ function ConsultViewer({ group, onClose }) {
 
 export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
+  const [showImported, setShowImported] = useState(false); // liste des plans importés repliée par défaut (demande Thomas)
   // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
   // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
   // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
@@ -275,11 +276,17 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           {/* Section bibliothèque */}
           <div style={{ marginBottom:16 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
-              <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
-                Plans importés ({planLibrary.length})
-              </p>
+              {/* En-tête cliquable : la liste des plans un à un est REPLIÉE par défaut
+                  (demande Thomas : sur site elle encombre — on la déplie pour renommer/réparer). */}
+              <button onClick={() => setShowImported(v => !v)}
+                style={{ display:'flex',alignItems:'center',gap:6,background:'none',border:'none',cursor:'pointer',padding:'4px 0',margin:0 }}>
+                <span style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>
+                  Plans importés ({planLibrary.length})
+                </span>
+                <span style={{ fontSize:10,color:DA.grayL }}>{showImported ? '▴ masquer' : '▾ afficher'}</span>
+              </button>
               <div style={{ display:'flex',gap:6,alignItems:'center' }}>
-                {onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
+                {showImported && onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
                   <>
                     <button onClick={() => { if (onDeleteAllPlans) onDeleteAllPlans(); else planLibrary.forEach(pl => onDeletePlan(pl.id)); setConfirmDelAll(false); }}
                       style={{ fontSize:11,fontWeight:700,padding:'4px 9px',background:'#B91C1C',color:'white',border:'none',borderRadius:7,cursor:'pointer' }}>
@@ -310,7 +317,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <Ic n="map" s={18}/>
                 <p style={{ fontSize:12,color:'#92400E',margin:0,flex:1 }}>Aucun plan — appuyez sur <strong>+ Importer</strong> pour commencer.</p>
               </div>
-            ) : (
+            ) : !showImported ? null : (
               <>
               {repairErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,padding:'6px 10px',marginBottom:6,fontSize:11,color:'#B91C1C' }}>⚠️ {repairErr}</div>}
               <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
@@ -401,13 +408,31 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     <span style={{ fontSize:11,color:DA.grayL,flexShrink:0 }}>
                       {(loc.items || []).length} obs.
                     </span>
+                    {/* Actions PAR NIVEAU dans l'en-tête (demande Thomas : les petits liens en
+                        bas n'étaient pas pratiques, surtout au doigt) : + = ajouter/modifier
+                        les plans du niveau, corbeille = tout retirer. */}
+                    <button onClick={() => {
+                        if (planLibrary.length === 0 && onOpenPlanLib) { onClose(); onOpenPlanLib(); return; }
+                        if (onPickPlan) onPickPlan(loc.id);
+                      }}
+                      title="Ajouter / modifier les plans de ce niveau"
+                      style={{ flexShrink:0,width:38,height:38,borderRadius:9,border:`1.5px solid ${DA.red}`,background:'white',color:DA.red,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                      <Ic n="plus" s={16}/>
+                    </button>
+                    {hasPlan && (
+                      <button onClick={() => removePlan(loc.id)}
+                        title="Retirer tous les plans de ce niveau"
+                        style={{ flexShrink:0,width:38,height:38,borderRadius:9,border:`1px solid ${DA.border}`,background:'white',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                        <Ic n="del" s={15}/>
+                      </button>
+                    )}
                   </div>
 
                   {/* Zone plan */}
                   <div style={{ borderTop:`1px solid ${DA.border}` }}>
                     {hasPlan ? (
                       <>
-                        <div style={{ display:'flex', flexWrap:'wrap', gap:6, padding:'10px 12px 6px' }}>
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:6, padding:'10px 12px' }}>
                           {allPlanThumbs.map((pt, i) => (
                             <div key={i} style={{ position:'relative', cursor:'zoom-in' }} onClick={() => pt.bg && setPreviewBg(pt.bg)}>
                               {pt.bg
@@ -418,17 +443,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                             </div>
                           ))}
                         </div>
-                        <div style={{ display:'flex', gap:8, padding:'0 12px 10px' }}>
-                          <button onClick={() => onPickPlan && onPickPlan(loc.id)}
-                            style={{ fontSize:11, color:DA.red, background:'none', border:'none', cursor:'pointer', padding:0, fontWeight:700 }}>
-                            <Ic n="pen" s={10}/> Modifier les plans
-                          </button>
-                          <span style={{ color:DA.grayL, fontSize:11 }}>·</span>
-                          <button onClick={() => removePlan(loc.id)}
-                            style={{ fontSize:11, color:DA.grayL, background:'none', border:'none', cursor:'pointer', padding:0 }}>
-                            Tout retirer
-                          </button>
-                        </div>
+                        {/* Les liens « Modifier les plans · Tout retirer » sont remplacés par
+                            les icônes + / corbeille de l'en-tête du niveau (demande Thomas). */}
                       </>
                     ) : (
                       <button
