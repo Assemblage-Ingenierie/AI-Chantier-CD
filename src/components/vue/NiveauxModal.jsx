@@ -10,6 +10,32 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
+// Ouvre le PDF SOURCE dans la visionneuse native (moteur PDF de l'OS/navigateur) : qualité
+// VECTORIELLE parfaite à n'importe quel zoom, tous formats (A0/A1…), sans limite de pixels
+// — la seule façon de lire nettement un très grand plan zoomé (demande Thomas). Le PDF est
+// converti en blob (les data URL volumineuses sont parfois bloquées par window.open).
+async function openPdfNative(getPdf, setBusy) {
+  try {
+    setBusy?.(true);
+    const pdf = await getPdf?.();
+    if (!pdf || !pdf.startsWith('data:application/pdf')) {
+      alert('PDF source indisponible pour ce plan — réimportez-le via « Drive de l’affaire » pour la qualité maximale.');
+      return;
+    }
+    const resp = await fetch(pdf);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) { // pop-up bloquée → navigation directe
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch {
+    alert('Impossible d’ouvrir le PDF.');
+  } finally { setBusy?.(false); }
+}
+
 // ── Visionneuse « Consulter les plans » ────────────────────────────────────────
 // Deux modes (demande Thomas : sur PC le transform maison n'était « pas du tout pratique ») :
 //  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
@@ -103,16 +129,17 @@ function ConsultViewer({ group, projetId = null, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
-    : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} getPdf={getGroupPdf} onClose={onClose}/>
+    : <ConsultViewerDesktop group={group} hdById={hdById} getPdf={getGroupPdf} onClose={onClose}/>;
 }
 
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
 // Interface MINIMALE (demande Thomas) : croix flottante + pilule de zoom, rien d'autre.
-function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
+function ConsultViewerDesktop({ group, hdById = {}, getPdf = null, onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
+  const [pdfBusy, setPdfBusy] = useState(false);
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
@@ -213,6 +240,15 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
         </button>
         <button onClick={() => setZoom(zRef.current * 1.25)} title="Zoom avant" style={zBtn}>+</button>
       </div>
+      {/* Qualité MAXIMALE : ouvre le vrai PDF (vectoriel, tous formats, net à tout zoom) */}
+      {getPdf && (
+        <button onClick={() => openPdfNative(getPdf, setPdfBusy)} disabled={pdfBusy} title="Ouvrir en très haute qualité (PDF)"
+          style={{ position:'absolute', top:12, left:14, display:'flex', alignItems:'center', gap:7, padding:'10px 16px',
+            borderRadius:22, border:'none', background:'rgba(227,5,19,0.92)', color:'white', fontSize:13, fontWeight:800,
+            cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)', boxShadow:'0 4px 14px rgba(0,0,0,0.35)' }}>
+          {pdfBusy ? <Ic n="spn" s={14}/> : <Ic n="eye" s={14}/>} Haute qualité (PDF)
+        </button>
+      )}
       {/* position:absolute inset:0 → hauteur GARANTIE (le flex:1 sans parent flex, introduit
           en retirant la barre du haut, laissait le conteneur sans hauteur → ni molette ni
           cliquer-glisser possibles). La molette est gérée par le listener natif ci-dessus. */}
@@ -247,7 +283,8 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, onClose }) {
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -454,6 +491,16 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)', fontSize:20 }}>
         ⟳
       </button>
+      {/* Qualité MAXIMALE : ouvre le vrai PDF (vectoriel, tous formats, net à tout zoom) */}
+      {getPdf && (
+        <button onClick={() => openPdfNative(getPdf, setPdfBusy)} disabled={pdfBusy} title="Ouvrir en très haute qualité (PDF)"
+          style={{ position:'absolute', bottom:'calc(env(safe-area-inset-bottom, 0px) + 14px)', left:'50%', transform:'translateX(-50%)',
+            display:'flex', alignItems:'center', gap:7, padding:'10px 16px', borderRadius:22, border:'none',
+            background:'rgba(227,5,19,0.92)', color:'white', fontSize:13, fontWeight:800, cursor:'pointer',
+            zIndex:5, backdropFilter:'blur(2px)', boxShadow:'0 4px 14px rgba(0,0,0,0.35)' }}>
+          {pdfBusy ? <Ic n="spn" s={14}/> : <Ic n="eye" s={14}/>} Haute qualité (PDF)
+        </button>
+      )}
       <div ref={boxRef}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         onWheel={onWheel}
