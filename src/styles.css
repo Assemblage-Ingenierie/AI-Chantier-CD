@@ -96,6 +96,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   }
 }
 
+/* ── Tuiles de plans (panneau « Gérer les niveaux ») ──
+   Mobile : 2 pleines colonnes (toute la largeur). PC : CARRÉS fixes (retour Thomas :
+   les tuiles fluides devenaient « beaucoup trop grosses » quand la ligne était creuse). */
+.plan-tile { width: calc(50% - 4px); }
+@media (min-width: 480px) { .plan-tile { width: 168px; } }
+
 /* ── Stats responsive ── */
 .stats-grid {
   display: grid;

@@ -767,9 +767,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           setDragBase(null); setDragArmBase(null); setDropHint(null);
         }}
         onMouseUp={() => setDragArmBase(null)}
-        // Largeur FLUIDE : les tuiles se partagent toute la ligne (2 pleines colonnes sur
-        // téléphone, plus sur PC) au lieu d'une largeur figée qui laissait un trou à droite.
-        style={{ position:'relative', flex:'1 1 150px', minWidth:150, maxWidth:320, boxSizing:'border-box',
+        // Largeur gérée par .plan-tile (CSS) : 2 pleines colonnes sur téléphone,
+        // CARRÉS fixes 168px sur PC (retour Thomas : le flex fluide devenait trop gros).
+        className="plan-tile"
+        style={{ position:'relative', boxSizing:'border-box',
           border:`1.5px solid ${hintZone === 'group' ? DA.red : DA.border}`, borderRadius:12,
           background: hintZone === 'group' ? DA.redL : 'white', overflow:'hidden',
           display:'flex', flexDirection:'column',
@@ -1012,9 +1013,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                         ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
                         : '0 1px 3px rgba(0,0,0,0.04)',
                       opacity: dragFolder === f.id ? 0.45 : 1,
-                      // La case GRANDIT avec son contenu : 3-4 tuiles s'étalent sur PC,
-                      // se replient en 2 colonnes pleines sur téléphone.
-                      flex:'1 1 auto', maxWidth:'100%',boxSizing:'border-box' }}>
+                      // La case ÉPOUSE son contenu (3-4 tuiles en ligne sur PC,
+                      // repli en 2 colonnes pleines sur téléphone).
+                      flex:'0 1 auto', maxWidth:'100%',boxSizing:'border-box' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
                       {/* Poignée de réorganisation des cases (symétrique du ✕ → titre centré) */}
                       {editingFolderId !== f.id && (
