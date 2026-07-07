@@ -1,8 +1,9 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-import { renderPdfPage } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { fetchPlanHdDataUrl } from '../../lib/storage.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
@@ -15,15 +16,38 @@ const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 //    scrollbars), barre de zoom − / % / +, Ctrl+molette = zoom, cliquer-glisser = déplacer.
 function ConsultViewer({ group, onClose }) {
   const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+  // QUALITÉ (demande Thomas : « les plans importés sont d'une super mauvaise qualité ») :
+  // l'aperçu standard (bg, 1600 px) est illisible une fois zoomé. Chaque page est upgradée
+  // vers son image HD dès que possible — même chaîne de repli que l'annotateur :
+  // HD en mémoire (import frais) → Storage/IndexedDB (fetchPlanHdDataUrl) → rendu HQ
+  // depuis le PDF brut s'il est présent. Le bg reste affiché en attendant (swap sans saut).
+  const [hdById, setHdById] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const p of (group.pages || [])) {
+        if (cancelled) return;
+        try {
+          let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
+          if (!hd && p.id) hd = await fetchPlanHdDataUrl(p.id);
+          if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
+            hd = await renderPdfPageHQ(p.data, p._page || 1);
+          }
+          if (!cancelled && hd) setHdById(h => ({ ...h, [p.id]: hd }));
+        } catch { /* le bg reste affiché */ }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [group]);
   return coarse
-    ? <ConsultViewerTouch group={group} onClose={onClose}/>
-    : <ConsultViewerDesktop group={group} onClose={onClose}/>;
+    ? <ConsultViewerTouch group={group} hdById={hdById} onClose={onClose}/>
+    : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
 }
 
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
-function ConsultViewerDesktop({ group, onClose }) {
+function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
@@ -104,8 +128,8 @@ function ConsultViewerDesktop({ group, onClose }) {
         <div style={{ width:`${z * 100}%`, margin:'0 auto', padding:'10px 0' }}>
           {group.pages.map(p => (
             <div key={p.id} style={{ position:'relative', marginBottom:8 }}>
-              {p.bg
-                ? <img src={p.bg} alt="" draggable={false}
+              {(hdById[p.id] || p.bg)
+                ? <img src={hdById[p.id] || p.bg} alt="" draggable={false}
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
@@ -123,7 +147,7 @@ function ConsultViewerDesktop({ group, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -248,8 +272,8 @@ function ConsultViewerTouch({ group, onClose }) {
           style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0' }}>
           {group.pages.map((p, i) => (
             <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
-              {p.bg
-                ? <img src={p.bg} alt="" draggable={false}
+              {(hdById[p.id] || p.bg)
+                ? <img src={hdById[p.id] || p.bg} alt="" draggable={false}
                     onLoad={i === 0 ? (e) => applyFit(e.target.naturalWidth / e.target.naturalHeight) : undefined}
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
@@ -514,12 +538,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
-          <p style={{ position:'relative', fontSize:12, fontWeight:700, color:DA.black, margin:'0 0 3px', lineHeight:1.35,
-            overflowWrap:'anywhere', minHeight:'2.7em' }}>
+          {/* Titre EN GRAND et TOUJOURS entier — pas de compteur de pages (demande Thomas). */}
+          <p style={{ position:'relative', fontSize:13.5, fontWeight:800, color:DA.black, margin:'0 0 8px', lineHeight:1.3,
+            whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word', minHeight:'2.6em' }}>
             {g.nom}
-          </p>
-          <p style={{ position:'relative', fontSize:10.5, fontWeight:700, color:DA.grayL, margin:'0 0 6px' }}>
-            {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
           </p>
         </div>
         {/* Actions */}
@@ -709,6 +731,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                     onDrop={e => { e.preventDefault(); e.stopPropagation(); if (dragBase) { moveBase(dragBase, f.id); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
                     style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)',maxWidth:'100%',boxSizing:'border-box' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
+                      {/* Espaceur symétrique du bouton ✕ pour que le titre soit VRAIMENT centré */}
+                      {editingFolderId !== f.id && <span style={{ width:26, flexShrink:0 }}/>}
                       {editingFolderId === f.id ? (
                         <input autoFocus value={editingFolderNom}
                           onChange={e => setEditingFolderNom(e.target.value)}
@@ -721,8 +745,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                       ) : (
                         <p onClick={() => { setEditingFolderId(f.id); setEditingFolderNom(f.nom || ''); }}
                           title="Renommer la case"
-                          style={{ flex:1,minWidth:0,fontSize:12.5,fontWeight:800,color:f.nom ? DA.black : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
-                          🗂 {f.nom || 'Sans nom'}
+                          style={{ flex:1,minWidth:0,fontSize:13,fontWeight:800,textAlign:'center',color:f.nom ? DA.red : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.4 }}>
+                          {f.nom || 'Sans nom'}
                         </p>
                       )}
                       <button onClick={() => deleteFolder(f.id)} title="Dissoudre la case (les PDF restent)"
