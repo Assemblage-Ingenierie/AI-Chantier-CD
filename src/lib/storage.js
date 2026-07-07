@@ -231,14 +231,19 @@ async function loadRemote() {
   if (r3.error) throw r3.error;
   if (r4.error) throw r4.error;
 
-  // Cases de rangement des plans (« bulles », colonne plan_folders — migration 20260707).
-  // Lecture DÉFENSIVE séparée : si la migration n'est pas appliquée, la requête échoue en
-  // silence et les projets chargent sans cases (aucun impact sur le reste du chargement).
+  // Colonnes récentes (plan_folders — migration 20260707, ingenieurs — 20260707b).
+  // Lecture DÉFENSIVE séparée : si une migration n'est pas appliquée, on retente sans la
+  // colonne manquante, puis on abandonne en silence (aucun impact sur le reste du chargement).
   let _foldersById = {};
+  let _ingsById = {};
   try {
-    const rf = await sb.from('aichantier_chantiers').select('id,plan_folders');
-    if (!rf.error) for (const row of (rf.data ?? [])) _foldersById[row.id] = row.plan_folders ?? [];
-  } catch { /* colonne absente — ignoré */ }
+    let rf = await sb.from('aichantier_chantiers').select('id,plan_folders,ingenieurs');
+    if (rf.error) rf = await sb.from('aichantier_chantiers').select('id,plan_folders');
+    if (!rf.error) for (const row of (rf.data ?? [])) {
+      _foldersById[row.id] = row.plan_folders ?? [];
+      if (row.ingenieurs != null) _ingsById[row.id] = row.ingenieurs;
+    }
+  } catch { /* colonnes absentes — ignoré */ }
 
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
@@ -312,6 +317,9 @@ async function loadRemote() {
       statut:        c.statut ?? 'en_cours',
       adresse:       c.adresse ?? '',
       maitreOuvrage: c.maitre_ouvrage ?? '',
+      // null (et non '') tant que la colonne n'existe pas côté DB : le merge non-dirty
+      // (mergeWithLocal) retombe alors sur la valeur locale au lieu de l'effacer.
+      ingenieurs:    _ingsById[c.id] ?? null,
       photo:         null, // chargé depuis le cache local (non sélectionné pour éviter HTTP 500)
       updatedAt:     c.updated_at,
       planFolders:   _foldersById[c.id] ?? [],
@@ -1041,9 +1049,15 @@ async function saveRemote(ps, dirtyIds = null) {
       }
       errors.push(chantierRes.error); continue;
     }
-    // Cases de rangement des plans — écriture DÉFENSIVE séparée (colonne plan_folders,
-    // migration 20260707) : un échec (migration non appliquée) n'affecte JAMAIS la sauvegarde.
-    try { await sb.from('aichantier_chantiers').update({ plan_folders: p.planFolders ?? [] }).eq('id', p.id); } catch { /* ignoré */ }
+    // Colonnes récentes (plan_folders + ingenieurs) — écriture DÉFENSIVE séparée : un échec
+    // (migration non appliquée) n'affecte JAMAIS la sauvegarde. Si la colonne ingenieurs
+    // manque, on retente avec plan_folders seul.
+    try {
+      const upd = await sb.from('aichantier_chantiers')
+        .update({ plan_folders: p.planFolders ?? [], ingenieurs: p.ingenieurs ?? '' }).eq('id', p.id);
+      if (upd.error) await sb.from('aichantier_chantiers')
+        .update({ plan_folders: p.planFolders ?? [] }).eq('id', p.id);
+    } catch { /* ignoré */ }
 
     // Notre écriture fait désormais foi : la référence de version devient `now` pour ne pas
     // détecter un faux conflit à la prochaine sauvegarde de CE même appareil.

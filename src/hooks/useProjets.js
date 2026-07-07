@@ -111,7 +111,11 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
 
     if (!lp) return rp;
     const photo = lp.photo ?? rp.photo ?? null;
-    if (rp.statut === 'archive') return { ...rp, photo, visites: lp.visites ?? rp.visites };
+    // Ingénieurs au niveau PROJET : même règle que v.ingenieur plus bas — le serveur fait
+    // autorité (une chaîne vide distante est respectée), le local ne sert de repli que si
+    // la colonne n'existe pas encore côté DB (loadRemote renvoie alors null, pas '').
+    const ingenieurs = rp.ingenieurs ?? lp.ingenieurs ?? '';
+    if (rp.statut === 'archive') return { ...rp, photo, ingenieurs, visites: lp.visites ?? rp.visites };
 
     // Non-dirty path → le serveur fait autorité sur la MEMBERSHIP de la bibliothèque de plans
     // (cet appareil n'a aucune modif en attente et n'est pas plus récent que le remote).
@@ -127,6 +131,7 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
     return {
       ...rp,
       photo,
+      ingenieurs,
       planLibrary: (rp.planLibrary || []).map(rpl => {
         const lpl = localPlanById.get(rpl.id);
         if (!lpl) return rpl;
@@ -597,6 +602,9 @@ export function useProjets(onSyncStatus) {
       nom: data.nom,
       adresse: data.adresse ?? '',
       maitreOuvrage: data.maitreOuvrage ?? '',
+      // Ingénieurs au niveau projet (initiales « SV, TCM ») : le projet arrive directement
+      // dans « Mes projets » dès la création, indépendamment des ingénieurs de visite.
+      ingenieurs: data.ingenieurs ?? '',
       photo: data.photo ?? null,
       statut: 'en_cours',
       planLibrary: [],

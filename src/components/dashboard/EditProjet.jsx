@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import CropTool from '../ui/CropTool.jsx';
+import IngenieursEditor from '../ui/IngenieursEditor.jsx';
+import { pdfFileToImageDataUrl } from '../../lib/pdfUtils.js';
 import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
 
 const FIELDS = [
@@ -14,27 +16,55 @@ const RATIO_TUILE = 16 / 9;
 const RATIO_GARDE = 210 / 85;
 
 export default function EditProjet({ projet, onClose, onSave }) {
-  const [f,        setF]       = useState({ nom: projet.nom || '', adresse: projet.adresse || '', photo: projet.photo || null, photoCouverture: projet.photoCouverture || null, maitreOuvrage: projet.maitreOuvrage || '' });
+  const [f,        setF]       = useState({ nom: projet.nom || '', adresse: projet.adresse || '', photo: projet.photo || null, photoCouverture: projet.photoCouverture || null, maitreOuvrage: projet.maitreOuvrage || '', ingenieurs: projet.ingenieurs || '' });
   const [cropSrc,  setCropSrc] = useState(null);
   const [cropStep, setCropStep] = useState(null); // 'tuile' | 'garde'
+  const [pdfBusy,  setPdfBusy]  = useState(false); // rendu PDF → image en cours
   const fileRef = useRef();
   const cameraRef = useRef(); // prise directe à l'appareil photo (capture="environment"), pour le terrain
   const originalSrcRef = useRef(null); // blob URL of original full-res photo, kept for recrop
 
-  useEffect(() => () => { if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current); }, []);
+  const releaseOriginal = () => {
+    // data URL (PDF rendu) : rien à libérer — seuls les blob: URLs se révoquent.
+    if (originalSrcRef.current?.startsWith('blob:')) URL.revokeObjectURL(originalSrcRef.current);
+    originalSrcRef.current = null;
+  };
+  useEffect(() => releaseOriginal, []);
 
-  const handleFile = (file) => {
+  const handleFile = async (file) => {
     if (!file) return;
-    if (file.size > 25 * 1024 * 1024) { alert('Image trop grande (max 25 Mo)'); return; }
-    if (originalSrcRef.current) URL.revokeObjectURL(originalSrcRef.current);
-    const blob = URL.createObjectURL(file);
-    originalSrcRef.current = blob;
-    // Conserver l'ORIGINAL (compressé) en local : « Recadrer » repartira toujours de
-    // l'image source, même dans une prochaine session → on peut « dé-recadrer ».
-    fileToCompressedDataUrl(file).then(dataUrl => { if (dataUrl) setCoverOriginal(projet.id, dataUrl); });
-    setCropSrc(blob);
+    if (file.size > 25 * 1024 * 1024) { alert('Fichier trop grand (max 25 Mo)'); return; }
+    let src;
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
+      // PDF accepté comme source de couverture : on rend la 1re page en image.
+      setPdfBusy(true);
+      src = await pdfFileToImageDataUrl(file).finally(() => setPdfBusy(false));
+      if (!src) { alert('Impossible de lire ce PDF'); return; }
+      // L'image rendue EST l'original conservé pour « dé-recadrer » plus tard.
+      setCoverOriginal(projet.id, src);
+    } else {
+      src = URL.createObjectURL(file);
+      // Conserver l'ORIGINAL (compressé) en local : « Recadrer » repartira toujours de
+      // l'image source, même dans une prochaine session → on peut « dé-recadrer ».
+      fileToCompressedDataUrl(file).then(dataUrl => { if (dataUrl) setCoverOriginal(projet.id, dataUrl); });
+    }
+    releaseOriginal();
+    originalSrcRef.current = src;
+    setCropSrc(src);
     setCropStep('tuile');
   };
+
+  // Coller (Ctrl+V) une capture d'écran — ou un PDF — directement dans la fenêtre (PC).
+  useEffect(() => {
+    const onPaste = (e) => {
+      const item = Array.from(e.clipboardData?.items || [])
+        .find(i => i.type.startsWith('image/') || i.type === 'application/pdf');
+      const file = item?.getAsFile();
+      if (file) { e.preventDefault(); handleFile(file); }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTuileDone = (dataUrl) => {
     setF(p => ({ ...p, photo: dataUrl }));
@@ -128,10 +158,15 @@ export default function EditProjet({ projet, onClose, onSave }) {
           </div>
         </div>
 
-        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }}
+        <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }}
           onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
           onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
+        {pdfBusy && (
+          <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 10px', display:'flex', alignItems:'center', gap:6 }}>
+            <Ic n="spn" s={12}/> Lecture du PDF…
+          </p>
+        )}
 
         {FIELDS.map(({ k, l, ph }) => (
           <div key={k} style={{ marginBottom:12 }}>
@@ -142,6 +177,16 @@ export default function EditProjet({ projet, onClose, onSave }) {
               onBlur={e  => e.target.style.borderColor = DA.border}/>
           </div>
         ))}
+
+        {/* Ingénieurs au niveau du projet : le projet apparaît dans « Mes projets » de ces
+            initiales, indépendamment des ingénieurs de chaque visite. */}
+        <div style={{ marginBottom:12 }}>
+          <label style={{ display:'block', fontSize:11, fontWeight:700, color:DA.gray, marginBottom:5, textTransform:'uppercase', letterSpacing:0.5 }}>
+            Ingénieur(s) du projet
+          </label>
+          <IngenieursEditor value={f.ingenieurs} onChange={val => setF(x => ({ ...x, ingenieurs: val }))}/>
+          <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0' }}>Le projet apparaîtra dans « Mes projets » de ces initiales.</p>
+        </div>
 
         <button onClick={() => { onSave(f); onClose(); }} disabled={!f.nom}
           style={{ width:'100%', background: f.nom ? DA.red : '#ccc', color:'white', border:'none', borderRadius:12, padding:13, fontSize:14, fontWeight:800, cursor: f.nom ? 'pointer' : 'not-allowed', marginTop:4, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
