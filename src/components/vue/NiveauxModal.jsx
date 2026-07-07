@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl, fetchPlanData } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -15,7 +15,7 @@ const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 //  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
 //  - PC                          → lecteur PDF CLASSIQUE : défilement natif (molette,
 //    scrollbars), barre de zoom − / % / +, Ctrl+molette = zoom, cliquer-glisser = déplacer.
-function ConsultViewer({ group, onClose }) {
+function ConsultViewer({ group, projetId = null, onClose }) {
   const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
   // QUALITÉ (demande Thomas : « les plans importés sont d'une super mauvaise qualité ») :
   // l'aperçu standard (bg, 1600 px) est illisible une fois zoomé. Chaque page est upgradée
@@ -35,7 +35,15 @@ function ConsultViewer({ group, onClose }) {
     if (groupPdfRef.current.key !== group.nom) groupPdfRef.current = { key: group.nom, promise: null };
     if (!groupPdfRef.current.promise) {
       groupPdfRef.current.promise = (async () => {
-        // Les pages d'un même import stockent toutes le MÊME PDF : une seule requête suffit.
+        // 1) PDF source stocké dans Storage (chemin déterministe par base) — c'est LUI qui
+        //    donne la loupe vectorielle nette sur tous les appareils/sessions.
+        try {
+          if (projetId) {
+            const pdf = await fetchPlanPdfByBase(projetId, group.nom);
+            if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) return pdf;
+          }
+        } catch { /* pas de PDF stocké */ }
+        // 2) Repli legacy : colonne data (rarement un PDF ; en général un chemin image).
         try {
           const fd = await fetchPlanData((group.pages || [])[0]?.id);
           if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) return fd.data;
@@ -385,15 +393,17 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
       if (!best) return;
       const img = best.el.querySelector('img');
       const natural = img?.naturalWidth || 0;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      // Densité affichée suffisante ? (px source par px écran ≥ ~0.95)
-      if (!natural || natural / vw >= z * dpr * 0.95) { return; }
-      const page = pageById.current.get(best.id);
-      if (!page) return;
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
       const pdf = await getPdf();
-      if (!pdf) return;
+      // Densité affichée suffisante ? (px source par px écran ≥ densité écran).
+      // Si un PDF source est dispo, on est plus exigeant (on peut toujours faire mieux) ;
+      // sinon on ne déclenche que si l'image courante est vraiment sous-échantillonnée.
+      const need = z * dpr * (pdf ? 1.0 : 0.85);
+      if (!natural || natural / vw >= need) { return; }
+      const page = pageById.current.get(best.id);
+      if (!page || !pdf) return;
       const pw = vw, ph = best.el.offsetHeight;
-      const margin = 0.25; // marge autour du visible pour pouvoir paner un peu
+      const margin = 0.1; // marge réduite → résolution concentrée sur le visible
       const fx = Math.max(0, (cx0 - margin * cw) / pw);
       const fx2 = Math.min(1, (cx0 + cw * (1 + margin)) / pw);
       const fy = Math.max(0, (cy0 - best.el.offsetTop - margin * ch) / ph);
@@ -402,7 +412,8 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
       const seq = ++ultraSeq.current;
       const src = await renderPdfRegion(pdf, page._page || 1, {
         fx, fy, fw: fx2 - fx, fh: fy2 - fy,
-        outWidth: Math.min(2600, Math.round(vw * dpr * 1.3)),
+        // Résolution PLEINE densité écran (×2) : lire exactement ce qui est écrit au zoom fort.
+        outWidth: Math.min(4200, Math.round(vw * dpr * 2)),
       });
       if (src && seq === ultraSeq.current) {
         setUltra({ pageId: best.id, fx, fy, fw: fx2 - fx, fh: fy2 - fy, src });
@@ -541,7 +552,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
   );
 }
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg, planFolders = [], onUpdateFolders = null, onReorderPlans = null }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg, planFolders = [], onUpdateFolders = null, onReorderPlans = null, projetId = null }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [showImported, setShowImported] = useState(false); // liste des plans importés repliée par défaut (demande Thomas)
   // ── Cases de rangement (« bulles ») des PDF — demande Thomas : organiser ses plans
@@ -943,7 +954,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   );
 
   // Visionneuse tactile (pincement / déplacement / double-tap) — composant ConsultViewer.
-  if (consultGroup) return <ConsultViewer group={consultGroup} onClose={() => setConsultGroup(null)}/>;
+  if (consultGroup) return <ConsultViewer group={consultGroup} projetId={projetId} onClose={() => setConsultGroup(null)}/>;
 
   if (previewBg) return (
     <div onClick={() => setPreviewBg(null)} style={{ position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:80,display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out' }}>
@@ -1023,14 +1034,13 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                       setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null);
                     }}
                     onMouseUp={() => setDragArmFolder(null)}
+                    className="plan-folder"
                     style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
                       boxShadow: folderDropHint?.id === f.id && dragFolder
                         ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
                         : '0 1px 3px rgba(0,0,0,0.04)',
                       opacity: dragFolder === f.id ? 0.45 : 1,
-                      // La case ÉPOUSE son contenu (3-4 tuiles en ligne sur PC,
-                      // repli en 2 colonnes pleines sur téléphone).
-                      flex:'0 1 auto', maxWidth:'100%',boxSizing:'border-box' }}>
+                      boxSizing:'border-box' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
                       {/* Poignée de réorganisation des cases (symétrique du ✕ → titre centré) */}
                       {editingFolderId !== f.id && (

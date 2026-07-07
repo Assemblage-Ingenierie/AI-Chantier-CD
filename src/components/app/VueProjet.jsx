@@ -1049,6 +1049,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => p.id !== id) }))}
           onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
           onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
+          projetId={projet.id}
           planFolders={projet.planFolders || []}
           onUpdateFolders={folders => onUpdate({ planFolders: folders })}
           onReorderPlans={fn => onUpdate(prev => ({ planLibrary: fn(prev.planLibrary || []) }))}

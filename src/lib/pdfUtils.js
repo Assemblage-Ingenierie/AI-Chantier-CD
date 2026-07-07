@@ -192,12 +192,20 @@ export async function renderPdfRegion(pdfData, pageNum, { fx, fy, fw, fh, outWid
     const pdf = await getPdfDoc(pdfData);
     const pg = await pdf.getPage(pageNum);
     const vp1 = pg.getViewport({ scale: 1 });
-    const scale = outWidth / (vp1.width * fw);
+    let scale = outWidth / (vp1.width * fw);
+    let cw = Math.round(outWidth);
+    let ch = Math.round(vp1.height * fh * scale);
+    // Garde-fou aire canvas (iOS 16 Mpx) : réduit l'échelle si la région dépasse, plutôt
+    // que d'abandonner → on rend toujours quelque chose de plus net que l'aperçu.
+    if (cw * ch > MAX_CANVAS_AREA) {
+      const k = Math.sqrt(MAX_CANVAS_AREA / (cw * ch));
+      scale *= k; cw = Math.round(cw * k); ch = Math.round(ch * k);
+    }
     const vp = pg.getViewport({ scale });
     const cv = document.createElement('canvas');
-    cv.width = Math.round(outWidth);
-    cv.height = Math.round(vp1.height * fh * scale);
-    if (!cv.width || !cv.height || cv.width * cv.height > MAX_CANVAS_AREA) return null;
+    cv.width = cw;
+    cv.height = ch;
+    if (!cv.width || !cv.height) return null;
     await pg.render({
       canvasContext: cv.getContext('2d'), viewport: vp,
       // Décalage en px « device » : cadre la région (même mécanique que le rendu HiDPI).
