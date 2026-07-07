@@ -917,6 +917,107 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     );
   };
 
+  // Bases d'une case ordonnées selon la bibliothèque (pour placer une tuile juste avant/après).
+  const orderedFolderBases = (f) => {
+    const idx = new Map(pdfGroups.map((g, i) => [g.nom, i]));
+    return (f.bases || []).filter(b => idx.has(b)).sort((a, b) => idx.get(a) - idx.get(b));
+  };
+
+  // Rendu d'une CASE (extrait pour pouvoir l'INTERCLASSER avec les tuiles libres — demande
+  // Thomas : pouvoir placer une tuile avant une case). Glisser une tuile sur le BORD de la
+  // case la place avant/après (hors case) ; au MILIEU, elle entre dans la case.
+  const renderFolder = (f) => (
+    <div key={f.id} data-folder={f.id}
+      draggable={dragArmFolder === f.id}
+      onDragStart={e => {
+        if (dragArmFolder !== f.id) { e.preventDefault(); return; }
+        setDragFolder(f.id); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ }
+      }}
+      onDragEnd={() => { setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null); }}
+      onDragOver={e => {
+        if (!dragBase && !(dragFolder && dragFolder !== f.id)) return;
+        e.preventDefault(); e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width;
+        // Tuile : bord = avant/après la case, milieu = dans la case. Case : avant/après.
+        const zone = dragBase ? (x < 0.25 ? 'before' : x > 0.75 ? 'after' : 'in') : (x > 0.5 ? 'after' : 'before');
+        setFolderDropHint({ id: f.id, zone, after: zone === 'after' });
+      }}
+      onDragLeave={() => { if (folderDropHint?.id === f.id) setFolderDropHint(null); }}
+      onDrop={e => {
+        e.preventDefault(); e.stopPropagation();
+        const zone = folderDropHint?.id === f.id ? folderDropHint.zone : (dragBase ? 'in' : 'before');
+        if (dragBase) {
+          if (zone === 'in') moveBase(dragBase, f.id);
+          else { const bs = orderedFolderBases(f); const anchor = zone === 'after' ? bs[bs.length - 1] : bs[0]; if (anchor) reorderBases(dragBase, anchor, zone === 'after'); else moveBase(dragBase, null); }
+        } else if (dragFolder && dragFolder !== f.id) {
+          reorderFolders(dragFolder, f.id, zone === 'after');
+        }
+        setDragBase(null); setDragArmBase(null); setDropHint(null);
+        setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null);
+      }}
+      onMouseUp={() => setDragArmFolder(null)}
+      className="plan-folder"
+      style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
+        boxShadow: folderDropHint?.id === f.id
+          ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
+          : '0 1px 3px rgba(0,0,0,0.04)',
+        opacity: dragFolder === f.id ? 0.45 : 1,
+        boxSizing:'border-box' }}>
+      <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
+        {editingFolderId !== f.id && (
+          <span onMouseDown={() => setDragArmFolder(f.id)} onPointerDown={() => setDragArmFolder(f.id)}
+            title="Glisser pour réorganiser les cases"
+            style={{ width:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:DA.grayL, cursor:'grab' }}>
+            <Ic n="grp" s={13}/>
+          </span>
+        )}
+        {editingFolderId === f.id ? (
+          <input autoFocus value={editingFolderNom}
+            onChange={e => setEditingFolderNom(e.target.value)}
+            onBlur={() => { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); } if (e.key === 'Escape') setEditingFolderId(null); }}
+            placeholder="Nom de la case"
+            draggable={false}
+            onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+            style={{ flex:1,minWidth:0,fontSize:16,fontWeight:700,border:`1.5px solid ${DA.red}`,borderRadius:8,padding:'5px 9px',outline:'none',boxSizing:'border-box' }}/>
+        ) : (
+          <p onClick={() => { setEditingFolderId(f.id); setEditingFolderNom(f.nom || ''); }}
+            title="Renommer la case"
+            style={{ flex:1,minWidth:0,fontSize:13,fontWeight:800,textAlign:'center',color:f.nom ? DA.red : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.4 }}>
+            {f.nom || 'Sans nom'}
+          </p>
+        )}
+        <button onClick={() => deleteFolder(f.id)} title="Dissoudre la case (les PDF restent)"
+          style={{ flexShrink:0,width:26,height:26,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <Ic n="x" s={13}/>
+        </button>
+      </div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+        {orderedFolderBases(f).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfTile(g))}
+        {(f.bases || []).length === 0 && (
+          <p style={{ fontSize:11,color:DA.grayL,margin:'0 2px 4px',fontStyle:'italic' }}>Case vide — déposez un plan ici.</p>
+        )}
+      </div>
+    </div>
+  );
+
+  // Liste UNIFIÉE interclassée : cases et tuiles libres dans l'ordre de la bibliothèque
+  // (une case se place à la position de son premier plan) → on peut mettre une tuile avant
+  // une case (demande Thomas).
+  const unifiedItems = (() => {
+    const byBase = new Map();
+    folders.forEach(f => (f.bases || []).forEach(b => byBase.set(b, f)));
+    const out = [], emitted = new Set();
+    for (const g of pdfGroups) {
+      const f = byBase.get(g.nom);
+      if (f) { if (!emitted.has(f.id)) { emitted.add(f.id); out.push({ type: 'folder', f }); } }
+      else out.push({ type: 'tile', g });
+    }
+    folders.forEach(f => { if (!emitted.has(f.id)) out.push({ type: 'folder', f }); }); // cases vides
+    return out;
+  })();
+
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
     onChange([...localisations, newLoc]);
@@ -1060,79 +1161,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 onDragOver={e => { if (dragBase) e.preventDefault(); }}
                 onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
                 style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
-                {folders.map(f => (
-                  <div key={f.id} data-folder={f.id}
-                    draggable={dragArmFolder === f.id}
-                    onDragStart={e => {
-                      if (dragArmFolder !== f.id) { e.preventDefault(); return; }
-                      setDragFolder(f.id); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ }
-                    }}
-                    onDragEnd={() => { setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null); }}
-                    onDragOver={e => {
-                      if (dragBase) { e.preventDefault(); e.stopPropagation(); return; }
-                      if (dragFolder && dragFolder !== f.id) {
-                        e.preventDefault(); e.stopPropagation();
-                        const r = e.currentTarget.getBoundingClientRect();
-                        setFolderDropHint({ id: f.id, after: (e.clientX - r.left) > r.width / 2 });
-                      }
-                    }}
-                    onDragLeave={() => { if (folderDropHint?.id === f.id) setFolderDropHint(null); }}
-                    onDrop={e => {
-                      e.preventDefault(); e.stopPropagation();
-                      if (dragBase) { moveBase(dragBase, f.id); }
-                      else if (dragFolder && dragFolder !== f.id) {
-                        reorderFolders(dragFolder, f.id, folderDropHint?.id === f.id ? folderDropHint.after : true);
-                      }
-                      setDragBase(null); setDragArmBase(null); setDropHint(null);
-                      setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null);
-                    }}
-                    onMouseUp={() => setDragArmFolder(null)}
-                    className="plan-folder"
-                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
-                      boxShadow: folderDropHint?.id === f.id && dragFolder
-                        ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
-                        : '0 1px 3px rgba(0,0,0,0.04)',
-                      opacity: dragFolder === f.id ? 0.45 : 1,
-                      boxSizing:'border-box' }}>
-                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
-                      {/* Poignée de réorganisation des cases (symétrique du ✕ → titre centré) */}
-                      {editingFolderId !== f.id && (
-                        <span onMouseDown={() => setDragArmFolder(f.id)}
-                          title="Glisser pour réorganiser les cases"
-                          style={{ width:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:DA.grayL, cursor:'grab' }}>
-                          <Ic n="grp" s={13}/>
-                        </span>
-                      )}
-                      {editingFolderId === f.id ? (
-                        <input autoFocus value={editingFolderNom}
-                          onChange={e => setEditingFolderNom(e.target.value)}
-                          onBlur={() => { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); } if (e.key === 'Escape') setEditingFolderId(null); }}
-                          placeholder="Nom de la case"
-                          draggable={false}
-                          onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
-                          style={{ flex:1,minWidth:0,fontSize:16,fontWeight:700,border:`1.5px solid ${DA.red}`,borderRadius:8,padding:'5px 9px',outline:'none',boxSizing:'border-box' }}/>
-                      ) : (
-                        <p onClick={() => { setEditingFolderId(f.id); setEditingFolderNom(f.nom || ''); }}
-                          title="Renommer la case"
-                          style={{ flex:1,minWidth:0,fontSize:13,fontWeight:800,textAlign:'center',color:f.nom ? DA.red : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:0.4 }}>
-                          {f.nom || 'Sans nom'}
-                        </p>
-                      )}
-                      <button onClick={() => deleteFolder(f.id)} title="Dissoudre la case (les PDF restent)"
-                        style={{ flexShrink:0,width:26,height:26,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                        <Ic n="x" s={13}/>
-                      </button>
-                    </div>
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                      {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfTile(g))}
-                      {(f.bases || []).length === 0 && (
-                        <p style={{ fontSize:11,color:DA.grayL,margin:'0 2px 4px',fontStyle:'italic' }}>Case vide — déposez un plan ici.</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {unassignedGroups.map(g => renderPdfTile(g))}
+                {unifiedItems.map(it => it.type === 'folder' ? renderFolder(it.f) : renderPdfTile(it.g))}
               </div>
             </div>
           )}
