@@ -169,6 +169,46 @@ export function renderPdfPageHQ(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 10.0, 6500, 0.85);
 }
 
+// Cache des documents PDF.js parsés (clé = data URL) — parser un gros PDF coûte plusieurs
+// secondes ; la loupe vectorielle le réutilise à chaque re-rendu de région.
+const _docCache = new Map();
+async function getPdfDoc(pdfData) {
+  if (_docCache.has(pdfData)) return _docCache.get(pdfData);
+  const promise = (async () => {
+    await ensurePdfJs();
+    const buf = pdfDataToBuffer(pdfData);
+    return window.pdfjsLib.getDocument({ data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+  })();
+  if (_docCache.size >= 2) { const k = _docCache.keys().next().value; _docCache.delete(k); } // borne mémoire
+  _docCache.set(pdfData, promise);
+  return promise;
+}
+
+// LOUPE VECTORIELLE : rendu d'une RÉGION de page (fx/fy/fw/fh en fractions 0..1 de la page,
+// outWidth en px). Le canvas ne couvre que la zone visible → rapide, sous toutes les limites
+// canvas (iPhone compris), et net « tel que le PDF » à n'importe quel niveau de zoom.
+export async function renderPdfRegion(pdfData, pageNum, { fx, fy, fw, fh, outWidth = 2048 }) {
+  try {
+    const pdf = await getPdfDoc(pdfData);
+    const pg = await pdf.getPage(pageNum);
+    const vp1 = pg.getViewport({ scale: 1 });
+    const scale = outWidth / (vp1.width * fw);
+    const vp = pg.getViewport({ scale });
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(outWidth);
+    cv.height = Math.round(vp1.height * fh * scale);
+    if (!cv.width || !cv.height || cv.width * cv.height > MAX_CANVAS_AREA) return null;
+    await pg.render({
+      canvasContext: cv.getContext('2d'), viewport: vp,
+      // Décalage en px « device » : cadre la région (même mécanique que le rendu HiDPI).
+      transform: [1, 0, 0, 1, -vp1.width * fx * scale, -vp1.height * fy * scale],
+    }).promise;
+    const out = cv.toDataURL('image/webp', 0.9);
+    cv.width = 0; cv.height = 0;
+    return out;
+  } catch (e) { console.warn('renderPdfRegion:', e); return null; }
+}
+
 // Convertit la 1re page d'un FICHIER PDF en image (data URL) — utilisé pour la photo de
 // couverture de projet (importer directement la page de garde d'un DCE, demande Thomas).
 // Renvoie null en cas d'échec (PDF illisible, CDN indisponible…).

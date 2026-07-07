@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from 're
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
 import { fetchPlanHdDataUrl, fetchPlanData } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
@@ -95,7 +95,7 @@ function ConsultViewer({ group, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} getPdf={getGroupPdf} onClose={onClose}/>
     : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
 }
 
@@ -115,7 +115,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
   // corrigeait une frame trop tard → « la page saute de partout » (retour Thomas).
   const setZoom = (nzRaw, fx = null, fy = null) => {
     const el = scrollRef.current;
-    const nz = Math.max(0.3, Math.min(8, nzRaw));
+    const nz = Math.max(0.3, Math.min(16, nzRaw));
     if (el && nz !== zRef.current) {
       const rect = el.getBoundingClientRect();
       anchorRef.current = {
@@ -224,7 +224,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -232,6 +232,21 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
   const gestRef  = useRef(null);       // instantané du geste { t, pts:[{x,y}…] }
   const tRef     = useRef(t); tRef.current = t;
   const lastTap  = useRef({ ts: 0, x: 0, y: 0 });
+  const MAX_Z = 16; // « je ne peux pas zoomer assez » — la loupe vectorielle garde ça net
+
+  // ── ROTATION MANUELLE (le téléphone peut bloquer la rotation auto) ─────────────
+  // Bouton ↻ : la visionneuse entière pivote de 90° (astuce 100vh×100vw centrée).
+  // Les coordonnées des doigts sont re-projetées dans le repère pivoté.
+  const [rot, setRot] = useState(false);
+  const rotRef = useRef(rot); rotRef.current = rot;
+  const pt = (cx, cy) => rotRef.current ? { x: cy, y: window.innerWidth - cx } : { x: cx, y: cy };
+
+  // ── LOUPE VECTORIELLE : au zoom fort, la RÉGION visible est re-rendue depuis le
+  //    PDF source → netteté « telle que le PDF » quel que soit le zoom (et l'iPhone
+  //    dont le canvas est limité n'a plus besoin d'images géantes). ────────────────
+  const [ultra, setUltra] = useState(null); // { pageId, fx, fy, fw, fh, src }
+  const ultraSeq = useRef(0);
+  const ultraTimer = useRef(null);
 
   // ── FLUIDITÉ (retour Thomas : « ça lag de zinzin au zoom ») ────────────────────
   // La HD (6500 px) n'est affichée QUE pour les pages proches du viewport (±1 écran) ;
@@ -299,8 +314,18 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
     const pageH = vw / ar;                       // hauteur affichée de la page à z=1 (largeur = vw)
     const fz = Math.min(1, vh / pageH);          // z pour voir la page en entier
     setMinZ(fz);
-    setT({ z: fz, x: (vw - vw * fz) / 2, y: 0 }); // centrée horizontalement
+    const nt = { z: fz, x: (vw - vw * fz) / 2, y: 0 }; // centrée horizontalement
+    tRef.current = nt;
+    if (innerRef.current) innerRef.current.style.transform = `translate(${nt.x}px, ${nt.y}px) scale(${nt.z})`;
+    setT(nt);
   };
+  // Bascule rotation manuelle : re-cadrage après le changement de repère.
+  useEffect(() => {
+    setUltra(null);
+    fitApplied.current = false;
+    const id = requestAnimationFrame(() => { if (arRef.current) applyFit(arRef.current); });
+    return () => cancelAnimationFrame(id);
+  }, [rot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
@@ -313,16 +338,74 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
     return { z: nt.z, x: Math.max(xMin, Math.min(xMax, nt.x)), y: Math.max(yMin, Math.min(yMax, nt.y)) };
   };
 
+  // ── FLUIDITÉ : pendant le geste, le transform est écrit DIRECTEMENT dans le DOM
+  //    (zéro re-render React par frame). React n'est committé qu'en fin de geste. ──
+  const applyT = (nt, commit = false) => {
+    const v = clampT(nt);
+    tRef.current = v;
+    if (innerRef.current) innerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.z})`;
+    scheduleVis();
+    if (commit) { setT(v); scheduleUltra(); }
+  };
+
+  // Re-rendu vectoriel de la RÉGION visible (page la plus visible), déclenché en fin de
+  // geste quand la résolution affichée devient insuffisante. Une seule loupe à la fois.
+  const scheduleUltra = () => {
+    if (!getPdf) return;
+    clearTimeout(ultraTimer.current);
+    ultraTimer.current = setTimeout(async () => {
+      const box = boxRef.current;
+      if (!box) return;
+      const { z, x, y } = tRef.current;
+      const vw = box.clientWidth, vh = box.clientHeight;
+      // Rect visible en coordonnées contenu (largeur contenu = vw à z=1)
+      const cx0 = -x / z, cy0 = -y / z, cw = vw / z, ch = vh / z;
+      // Page la plus visible + son <img>
+      let best = null;
+      for (const [id, el] of pageEls.current) {
+        if (!el) continue;
+        const inter = Math.min(el.offsetTop + el.offsetHeight, cy0 + ch) - Math.max(el.offsetTop, cy0);
+        if (inter > 0 && (!best || inter > best.inter)) best = { id, el, inter };
+      }
+      if (!best) return;
+      const img = best.el.querySelector('img');
+      const natural = img?.naturalWidth || 0;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // Densité affichée suffisante ? (px source par px écran ≥ ~0.95)
+      if (!natural || natural / vw >= z * dpr * 0.95) { return; }
+      const page = pageById.current.get(best.id);
+      if (!page) return;
+      const pdf = await getPdf();
+      if (!pdf) return;
+      const pw = vw, ph = best.el.offsetHeight;
+      const margin = 0.25; // marge autour du visible pour pouvoir paner un peu
+      const fx = Math.max(0, (cx0 - margin * cw) / pw);
+      const fx2 = Math.min(1, (cx0 + cw * (1 + margin)) / pw);
+      const fy = Math.max(0, (cy0 - best.el.offsetTop - margin * ch) / ph);
+      const fy2 = Math.min(1, (cy0 - best.el.offsetTop + ch * (1 + margin)) / ph);
+      if (fx2 <= fx || fy2 <= fy) return;
+      const seq = ++ultraSeq.current;
+      const src = await renderPdfRegion(pdf, page._page || 1, {
+        fx, fy, fw: fx2 - fx, fh: fy2 - fy,
+        outWidth: Math.min(2600, Math.round(vw * dpr * 1.3)),
+      });
+      if (src && seq === ultraSeq.current) {
+        setUltra({ pageId: best.id, fx, fy, fw: fx2 - fx, fh: fy2 - fy, src });
+      }
+    }, 220);
+  };
+
   const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
 
   const onDown = (e) => {
     boxRef.current?.setPointerCapture?.(e.pointerId);
-    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const c = pt(e.clientX, e.clientY);
+    ptrs.current.set(e.pointerId, c);
     snapshot();
   };
   const onMove = (e) => {
     if (!ptrs.current.has(e.pointerId)) return;
-    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    ptrs.current.set(e.pointerId, pt(e.clientX, e.clientY));
     const g = gestRef.current;
     if (!g) return;
     const pts = [...ptrs.current.values()];
@@ -330,58 +413,60 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
       // Pincement : zoom autour du point médian (le point du plan sous les doigts reste sous les doigts)
       const d0 = Math.hypot(g.pts[1].x - g.pts[0].x, g.pts[1].y - g.pts[0].y) || 1;
       const d1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      const z  = Math.max(minZRef.current, Math.min(6, g.t.z * (d1 / d0)));
+      const z  = Math.max(minZRef.current, Math.min(MAX_Z, g.t.z * (d1 / d0)));
       const m0 = { x: (g.pts[0].x + g.pts[1].x) / 2, y: (g.pts[0].y + g.pts[1].y) / 2 };
       const m1 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       const cx = (m0.x - g.t.x) / g.t.z, cy = (m0.y - g.t.y) / g.t.z;
-      setT(clampT({ z, x: m1.x - cx * z, y: m1.y - cy * z }));
+      applyT({ z, x: m1.x - cx * z, y: m1.y - cy * z });
     } else if (pts.length === 1 && g.pts.length >= 1) {
       // Un doigt : déplacement libre (vertical pour feuilleter, horizontal quand zoomé)
-      setT(clampT({ z: g.t.z, x: g.t.x + (pts[0].x - g.pts[0].x), y: g.t.y + (pts[0].y - g.pts[0].y) }));
+      applyT({ z: g.t.z, x: g.t.x + (pts[0].x - g.pts[0].x), y: g.t.y + (pts[0].y - g.pts[0].y) });
     }
   };
   const onUp = (e) => {
     const p = ptrs.current.get(e.pointerId);
     ptrs.current.delete(e.pointerId);
+    const c = pt(e.clientX, e.clientY);
     // Double-tap : zoom ×2.5 centré sur le tap, ou retour à 100 %
     if (p && ptrs.current.size === 0 && gestRef.current?.pts.length === 1) {
-      const moved = Math.hypot(e.clientX - gestRef.current.pts[0].x, e.clientY - gestRef.current.pts[0].y);
+      const moved = Math.hypot(c.x - gestRef.current.pts[0].x, c.y - gestRef.current.pts[0].y);
       const now = Date.now();
       if (moved < 12) {
-        if (now - lastTap.current.ts < 320 && Math.hypot(e.clientX - lastTap.current.x, e.clientY - lastTap.current.y) < 40) {
+        if (now - lastTap.current.ts < 320 && Math.hypot(c.x - lastTap.current.x, c.y - lastTap.current.y) < 40) {
           const cur = tRef.current;
           if (cur.z > minZRef.current * 1.05) {
             const box = boxRef.current;
             const vw = box ? box.clientWidth : 0;
-            setT(clampT({ z: minZRef.current, x: (vw - vw * minZRef.current) / 2, y: cur.y * (minZRef.current / cur.z) }));
+            applyT({ z: minZRef.current, x: (vw - vw * minZRef.current) / 2, y: cur.y * (minZRef.current / cur.z) }, true);
           }
           else {
             const z = 2.5;
-            const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
-            setT(clampT({ z, x: e.clientX - cx * z, y: e.clientY - cy * z }));
+            const cx = (c.x - cur.x) / cur.z, cy = (c.y - cur.y) / cur.z;
+            applyT({ z, x: c.x - cx * z, y: c.y - cy * z }, true);
           }
           lastTap.current = { ts: 0, x: 0, y: 0 };
-        } else lastTap.current = { ts: now, x: e.clientX, y: e.clientY };
+        } else lastTap.current = { ts: now, x: c.x, y: c.y };
       }
     }
+    if (ptrs.current.size === 0) applyT(tRef.current, true); // fin de geste → commit React + loupe
     snapshot(); // re-cale le geste sur les doigts restants (2 → 1 doigt sans saut)
   };
   const onWheel = (e) => {
     e.preventDefault();
     const cur = tRef.current;
+    const c = pt(e.clientX, e.clientY);
     if (e.ctrlKey || e.metaKey) {
-      const z = Math.max(minZRef.current, Math.min(6, cur.z * (e.deltaY < 0 ? 1.15 : 0.87)));
-      const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
-      setT(clampT({ z, x: e.clientX - cx * z, y: e.clientY - cy * z }));
+      const z = Math.max(minZRef.current, Math.min(MAX_Z, cur.z * (e.deltaY < 0 ? 1.15 : 0.87)));
+      const cx = (c.x - cur.x) / cur.z, cy = (c.y - cur.y) / cur.z;
+      applyT({ z, x: c.x - cx * z, y: c.y - cy * z }, true);
     } else {
-      setT(clampT({ ...cur, x: cur.x - e.deltaX, y: cur.y - e.deltaY }));
+      applyT({ ...cur, x: cur.x - e.deltaX, y: cur.y - e.deltaY }, true);
     }
   };
 
   return (
-    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,display:'flex',flexDirection:'column' }}>
-      {/* Interface MINIMALE : uniquement la croix flottante — grande mais discrète
-          (demande Thomas : « le reste des infos, pas besoin de les voir »). */}
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
+      {/* Interface MINIMALE : croix + rotation flottantes, rien d'autre. */}
       <button onClick={onClose} aria-label="Fermer"
         style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
           width:48, height:48, borderRadius:14, border:'none', background:'rgba(20,20,20,0.55)',
@@ -389,12 +474,24 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
         <Ic n="x" s={22}/>
       </button>
+      {/* Rotation manuelle 90° — pour les téléphones dont la rotation auto est bloquée */}
+      <button onClick={() => setRot(v => !v)} aria-label="Pivoter le plan" title="Pivoter le plan"
+        style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:68,
+          width:48, height:48, borderRadius:14, border:'none', background:'rgba(20,20,20,0.55)',
+          color: rot ? '#FCA5A5' : 'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)', fontSize:20 }}>
+        ⟳
+      </button>
       <div ref={boxRef}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         onWheel={onWheel}
-        style={{ flex:1,overflow:'hidden',position:'relative',touchAction:'none',cursor:'grab' }}>
+        style={rot
+          ? { position:'fixed', top:'50%', left:'50%', width:'100vh', height:'100vw',
+              transform:'translate(-50%, -50%) rotate(90deg)',
+              overflow:'hidden', touchAction:'none', cursor:'grab' }
+          : { position:'absolute', inset:0, overflow:'hidden', touchAction:'none', cursor:'grab' }}>
         <div ref={innerRef}
-          style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0',willChange:'transform' }}>
+          style={{ width:'100%',transform:`translate(${tRef.current.x}px, ${tRef.current.y}px) scale(${tRef.current.z})`,transformOrigin:'0 0',willChange:'transform' }}>
           {group.pages.map((p, i) => {
             const vis = visIds.has(p.id);
             const src = (vis && hdById[p.id]) || p.bg || (vis ? hdById[p.id] : null);
@@ -406,6 +503,12 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
                     onLoad={i === 0 ? (e) => { applyFit(e.target.naturalWidth / e.target.naturalHeight); scheduleVis(); } : scheduleVis}
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
+              {/* LOUPE VECTORIELLE : région re-rendue depuis le PDF, posée par-dessus la page */}
+              {ultra?.pageId === p.id && (
+                <img src={ultra.src} alt="" draggable={false} decoding="async"
+                  style={{ position:'absolute', left:`${ultra.fx * 100}%`, top:`${ultra.fy * 100}%`,
+                    width:`${ultra.fw * 100}%`, display:'block', pointerEvents:'none', userSelect:'none' }}/>
+              )}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
