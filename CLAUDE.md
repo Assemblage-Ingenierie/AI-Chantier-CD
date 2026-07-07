@@ -187,6 +187,7 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 - En cas de conflit Git, toujours prendre la version la plus complète (ne jamais retirer des features)
 - Préférer `Edit` (modification chirurgicale) à `Write` (réécriture complète) sur les fichiers existants
 - **TDZ / ordre de déclaration** : dans le corps d'un composant, ne JAMAIS référencer directement (hors callback) une `const`/`useMemo` déclarée plus bas — crash runtime « Cannot access before initialization » que ni le build ni les tests n'attrapent. Après tout ajout de code dans un gros composant, vérifier avec : `npx eslint <fichier> --rule '{"no-use-before-define": ["error", {"functions": false, "variables": true}]}'` (les hits dans des callbacks/handlers sont OK, les hits au niveau du corps sont des bombes)
+- **Drag & drop vs sélection de texte** (bug récurrent, signalé 3× par Thomas) : sélectionner du texte dans un input déclenche le DRAG NATIF de la sélection, qui remonte aux conteneurs. Tout conteneur réordonnable doit : (1) n'être `draggable` que quand sa poignée l'ARME (mousedown), (2) avoir un `onDragStart` gardé qui fait `e.preventDefault()` si non armé, (3) garder ses `onDragEnter/OnDragOver` par « un drag est réellement en cours » (state). Tout input DANS un tel conteneur : `draggable={false}` + `onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}`
 
 ---
 

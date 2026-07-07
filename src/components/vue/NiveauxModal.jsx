@@ -264,7 +264,7 @@ function ConsultViewerTouch({ group, onClose }) {
   );
 }
 
-export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg, planFolders = [], onUpdateFolders = null }) {
+export default function NiveauxModal({ localisations, planLibrary, onChange, onClose, onOpenPlanLib, onPickPlan, onDeletePlan, onDeleteAllPlans, onRenamePlan, onRepairBg, planFolders = [], onUpdateFolders = null, onReorderPlans = null }) {
   const [confirmDelPlanId, setConfirmDelPlanId] = useState(null);
   const [showImported, setShowImported] = useState(false); // liste des plans importés repliée par défaut (demande Thomas)
   // ── Cases de rangement (« bulles ») des PDF — demande Thomas : organiser ses plans
@@ -316,7 +316,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const assignedBases = new Set(folders.flatMap(f => f.bases || []));
   const unassignedGroups = pdfGroups.filter(g => !assignedBases.has(g.nom));
   const groupsByBase = new Map(pdfGroups.map(g => [g.nom, g]));
-  const addFolder = () => setFolders([...folders, { id: crypto.randomUUID(), nom: '', bases: [] }]);
+  // (Les cases se créent uniquement par FUSION de deux tuiles — plus de bouton dédié.)
   const deleteFolder = (fid) => setFolders(folders.filter(f => f.id !== fid)); // ses PDF redeviennent « non rangés »
   const renameFolder = (fid, nom) => setFolders(folders.map(f => f.id === fid ? { ...f, nom } : f));
   const moveBase = (base, fid) => {
@@ -390,7 +390,45 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     setConfirmDelPdf(null);
   };
 
-  // Regroupe deux PDF : tuile DÉPOSÉE sur une autre tuile (demande Thomas).
+  // Nom de base d'une entrée de bibliothèque (même logique que pdfGroups).
+  const baseOfPl = (pl) => {
+    const m = String(pl.nom || '').match(PDF_PAGE_RE);
+    return m ? pl.nom.replace(PDF_PAGE_RE, '').trim() : (pl.nom || 'Document');
+  };
+
+  // RÉORDONNE : tuile déposée sur le BORD (gauche/droite) d'une autre — sans fusion
+  // (demande Thomas : « j'ai voulu réorganiser, ça les a fusionnés »).
+  // Cible dans une case → insertion dans la case à cette position (et sortie de l'ancienne).
+  // Cible hors case → sortie de case éventuelle + réordonnancement de la bibliothèque
+  // (l'ordre des plans est persisté via sort_order côté Supabase).
+  const reorderBases = (draggedBase, targetBase, after) => {
+    if (!draggedBase || draggedBase === targetBase) return;
+    const targetFolder = folders.find(f => (f.bases || []).includes(targetBase));
+    if (targetFolder) {
+      setFolders(folders.map(f => {
+        let bases = (f.bases || []).filter(b => b !== draggedBase);
+        if (f.id === targetFolder.id) {
+          const idx = bases.indexOf(targetBase) + (after ? 1 : 0);
+          bases = [...bases.slice(0, idx), draggedBase, ...bases.slice(idx)];
+        }
+        return { ...f, bases };
+      }));
+    } else {
+      if (folders.some(f => (f.bases || []).includes(draggedBase))) {
+        setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== draggedBase) })));
+      }
+      onReorderPlans?.(lib => {
+        const dragged = lib.filter(pl => baseOfPl(pl) === draggedBase);
+        const rest = lib.filter(pl => baseOfPl(pl) !== draggedBase);
+        const idxs = rest.map((pl, i) => (baseOfPl(pl) === targetBase ? i : -1)).filter(i => i >= 0);
+        if (!dragged.length || !idxs.length) return lib;
+        const idx = after ? idxs[idxs.length - 1] + 1 : idxs[0];
+        return [...rest.slice(0, idx), ...dragged, ...rest.slice(idx)];
+      });
+    }
+  };
+
+  // Regroupe deux PDF : tuile DÉPOSÉE au MILIEU d'une autre tuile (demande Thomas).
   // Cible déjà dans une case → la tuile déplacée la rejoint. Sinon → nouvelle case
   // contenant les deux, ouverte en renommage direct.
   const groupBases = (draggedBase, targetBase) => {
@@ -418,24 +456,45 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // à droite : glisser sur une autre tuile = regrouper (PC) ; tap = menu « Ranger dans… »
   // (mobile, où le glisser-déposer HTML5 n'existe pas). Actions : ✎ renommer, 🗑 supprimer.
   const renderPdfTile = (g) => {
-    const isDropTarget = dropHint === g.nom && dragBase && dragBase !== g.nom;
+    // Zone de dépôt : MILIEU = regrouper dans une case, BORD gauche/droit = réordonner.
+    const hintZone = (dropHint?.base === g.nom && dragBase && dragBase !== g.nom) ? dropHint.zone : null;
     const actBtn = (active = false) => ({ flex:1, height:34, borderRadius:8, border:`1px solid ${active ? DA.red : DA.border}`,
       background:'white', color: active ? DA.red : DA.gray, cursor:'pointer',
       display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 });
     return (
       <div key={g.nom}
         draggable={dragArmBase === g.nom}
-        onDragStart={e => { setDragBase(g.nom); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ } }}
+        // GARDE : sans armement par la poignée, on TUE le dragstart (e.preventDefault) —
+        // sinon la sélection de texte dans l'input de renommage déclenche le drag natif de
+        // la sélection, qui remonte ici et « déplace la tuile » (bug récurrent, Thomas).
+        onDragStart={e => {
+          if (dragArmBase !== g.nom) { e.preventDefault(); e.stopPropagation(); return; }
+          setDragBase(g.nom); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ }
+        }}
         onDragEnd={() => { setDragBase(null); setDragArmBase(null); setDropHint(null); }}
-        onDragOver={e => { if (dragBase && dragBase !== g.nom) { e.preventDefault(); e.stopPropagation(); } }}
-        onDragEnter={() => { if (dragBase && dragBase !== g.nom) setDropHint(g.nom); }}
-        onDragLeave={() => { if (dropHint === g.nom) setDropHint(null); }}
-        onDrop={e => { e.preventDefault(); e.stopPropagation(); groupBases(dragBase, g.nom); setDragBase(null); setDragArmBase(null); setDropHint(null); }}
+        onDragOver={e => {
+          if (!dragBase || dragBase === g.nom) return;
+          e.preventDefault(); e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - r.left) / Math.max(1, r.width);
+          setDropHint({ base: g.nom, zone: x < 0.3 ? 'before' : x > 0.7 ? 'after' : 'group' });
+        }}
+        onDragLeave={() => { if (dropHint?.base === g.nom) setDropHint(null); }}
+        onDrop={e => {
+          e.preventDefault(); e.stopPropagation();
+          if (dragBase && dragBase !== g.nom) {
+            const zone = dropHint?.base === g.nom ? dropHint.zone : 'group';
+            if (zone === 'group') groupBases(dragBase, g.nom);
+            else reorderBases(dragBase, g.nom, zone === 'after');
+          }
+          setDragBase(null); setDragArmBase(null); setDropHint(null);
+        }}
         onMouseUp={() => setDragArmBase(null)}
-        style={{ position:'relative', border:`1.5px solid ${isDropTarget ? DA.red : DA.border}`, borderRadius:12,
-          background: isDropTarget ? DA.redL : 'white', overflow:'hidden',
+        style={{ position:'relative', width:150, flexShrink:0, boxSizing:'border-box',
+          border:`1.5px solid ${hintZone === 'group' ? DA.red : DA.border}`, borderRadius:12,
+          background: hintZone === 'group' ? DA.redL : 'white', overflow:'hidden',
           display:'flex', flexDirection:'column',
-          boxShadow:'0 1px 4px rgba(0,0,0,0.05)',
+          boxShadow: hintZone === 'before' ? `inset 4px 0 0 ${DA.red}` : hintZone === 'after' ? `inset -4px 0 0 ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
           opacity: dragBase === g.nom ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
         {/* Icône déplacer (drag PC / menu tactile) */}
         {onUpdateFolders && (
@@ -449,18 +508,17 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             <Ic n="grp" s={14}/>
           </div>
         )}
-        {/* Zone cliquable : sigle Ai + nom → ouvre la visionneuse */}
-        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', textAlign:'center', padding:'13px 10px 4px' }}>
-          <div style={{ width:38, height:38, borderRadius:10, background:DA.red, color:'white', fontWeight:900,
-            fontSize:16, letterSpacing:-0.5, display:'flex', alignItems:'center', justifyContent:'center',
-            margin:'0 auto 7px', boxShadow:'0 2px 6px rgba(227,5,19,0.3)' }}>
-            Ai
+        {/* Zone cliquable : nom COMPLET (jamais tronqué — demande Thomas), sigle Ai en
+            filigrane léger derrière le texte. → ouvre la visionneuse */}
+        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', textAlign:'center', position:'relative', padding:'14px 10px 4px' }}>
+          <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+            <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
-          <p style={{ fontSize:12, fontWeight:700, color:DA.black, margin:'0 0 3px', lineHeight:1.3,
-            display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', minHeight:'2.6em' }}>
+          <p style={{ position:'relative', fontSize:12, fontWeight:700, color:DA.black, margin:'0 0 3px', lineHeight:1.35,
+            overflowWrap:'anywhere', minHeight:'2.7em' }}>
             {g.nom}
           </p>
-          <p style={{ fontSize:10.5, fontWeight:700, color:DA.grayL, margin:'0 0 6px' }}>
+          <p style={{ position:'relative', fontSize:10.5, fontWeight:700, color:DA.grayL, margin:'0 0 6px' }}>
             {g.pages.length} page{g.pages.length > 1 ? 's' : ''}
           </p>
         </div>
@@ -480,14 +538,19 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           )}
         </div>
         {renamePdf?.base === g.nom && (
-          <div style={{ display:'flex', gap:5, padding:'0 8px 8px' }}>
-            <input autoFocus value={renamePdf.val}
-              onChange={e => setRenamePdf({ base: g.nom, val: e.target.value })}
-              onKeyDown={e => { if (e.key === 'Enter') renameWholePdf(g.nom, renamePdf.val); if (e.key === 'Escape') setRenamePdf(null); }}
+          <div style={{ display:'flex', flexDirection:'column', gap:5, padding:'0 8px 8px' }}>
+            {/* Grand champ pleine largeur, même corps que le titre (l'ancien mini-champ
+                coincé à côté du OK était illisible — demande Thomas). */}
+            <textarea autoFocus value={renamePdf.val} rows={3}
+              onChange={e => setRenamePdf({ base: g.nom, val: e.target.value.replace(/\n/g, ' ') })}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); renameWholePdf(g.nom, renamePdf.val); } if (e.key === 'Escape') setRenamePdf(null); }}
+              draggable={false}
+              onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
               placeholder="Nouveau nom du PDF"
-              style={{ flex:1, minWidth:0, fontSize:16, border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'7px 8px', outline:'none', boxSizing:'border-box' }}/>
+              style={{ width:'100%', fontSize:14, fontWeight:600, lineHeight:1.35, fontFamily:'inherit', resize:'none',
+                border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'8px 9px', outline:'none', boxSizing:'border-box' }}/>
             <button onClick={() => renameWholePdf(g.nom, renamePdf.val)}
-              style={{ flexShrink:0, padding:'0 12px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>OK</button>
+              style={{ width:'100%', padding:'9px 0', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>OK</button>
           </div>
         )}
         {movePdf === g.nom && (
@@ -525,8 +588,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     );
   };
 
-  // Grille de tuiles PDF.
-  const tileGrid = { display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(148px, 1fr))', gap:8 };
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
     onChange([...localisations, newLoc]);
@@ -629,65 +690,55 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
                   Consulter les plans
                 </p>
-                {onUpdateFolders && (
-                  <button onClick={() => { addFolder(); }}
-                    style={{ fontSize:11,fontWeight:700,color:DA.red,background:'white',border:`1.5px dashed ${DA.red}`,borderRadius:8,padding:'5px 10px',cursor:'pointer' }}>
-                    + Nouvelle case
-                  </button>
+                {dragBase && (
+                  <span style={{ fontSize:10.5,color:DA.grayL }}>milieu = regrouper · bord = ordonner · fond = sortir d'une case</span>
                 )}
               </div>
 
-              {/* Bulles */}
-              <div style={{ display:'flex',flexDirection:'column',gap:10 }}>
+              {/* FLUX CONTINU (demande Thomas : pas de saut de ligne) : les cases entourent
+                  simplement leurs tuiles et tout s'enchaîne sur la même rangée. Les cases se
+                  créent par fusion (glisser une tuile au MILIEU d'une autre) — pas de bouton.
+                  Déposer sur le FOND (hors tuile/case) sort le PDF de sa case. */}
+              <div
+                onDragOver={e => { if (dragBase) e.preventDefault(); }}
+                onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
+                style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
                 {folders.map(f => (
                   <div key={f.id}
-                    onDragOver={e => { if (dragBase) e.preventDefault(); }}
-                    onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, f.id); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
-                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'8px 10px 10px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)' }}>
-                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:(f.bases||[]).length ? 8 : 0 }}>
+                    onDragOver={e => { if (dragBase) { e.preventDefault(); e.stopPropagation(); } }}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); if (dragBase) { moveBase(dragBase, f.id); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
+                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)',maxWidth:'100%',boxSizing:'border-box' }}>
+                    <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
                       {editingFolderId === f.id ? (
                         <input autoFocus value={editingFolderNom}
                           onChange={e => setEditingFolderNom(e.target.value)}
                           onBlur={() => { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); }}
                           onKeyDown={e => { if (e.key === 'Enter') { renameFolder(f.id, editingFolderNom.trim()); setEditingFolderId(null); } if (e.key === 'Escape') setEditingFolderId(null); }}
-                          placeholder="Nom de la case (facultatif)"
+                          placeholder="Nom de la case"
+                          draggable={false}
+                          onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
                           style={{ flex:1,minWidth:0,fontSize:16,fontWeight:700,border:`1.5px solid ${DA.red}`,borderRadius:8,padding:'5px 9px',outline:'none',boxSizing:'border-box' }}/>
                       ) : (
                         <p onClick={() => { setEditingFolderId(f.id); setEditingFolderNom(f.nom || ''); }}
                           title="Renommer la case"
-                          style={{ flex:1,minWidth:0,fontSize:13.5,fontWeight:800,color:f.nom ? DA.black : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+                          style={{ flex:1,minWidth:0,fontSize:12.5,fontWeight:800,color:f.nom ? DA.black : DA.grayL,fontStyle:f.nom ? 'normal' : 'italic',margin:0,cursor:'text',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
                           🗂 {f.nom || 'Sans nom'}
                         </p>
                       )}
-                      <span style={{ flexShrink:0,fontSize:10.5,color:DA.grayL }}>{(f.bases||[]).length} PDF</span>
-                      <button onClick={() => deleteFolder(f.id)} title="Supprimer la case (les PDF restent)"
-                        style={{ flexShrink:0,width:28,height:28,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                      <button onClick={() => deleteFolder(f.id)} title="Dissoudre la case (les PDF restent)"
+                        style={{ flexShrink:0,width:26,height:26,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
                         <Ic n="x" s={13}/>
                       </button>
                     </div>
-                    {(f.bases || []).length > 0 ? (
-                      <div style={tileGrid}>
-                        {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfTile(g))}
-                      </div>
-                    ) : (
-                      <p style={{ fontSize:11,color:DA.grayL,margin:0,fontStyle:'italic' }}>Case vide — utilisez 🗂 sur un PDF pour l'y ranger.</p>
-                    )}
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                      {(f.bases || []).map(b => groupsByBase.get(b)).filter(Boolean).map(g => renderPdfTile(g))}
+                      {(f.bases || []).length === 0 && (
+                        <p style={{ fontSize:11,color:DA.grayL,margin:'0 2px 4px',fontStyle:'italic' }}>Case vide — déposez un plan ici.</p>
+                      )}
+                    </div>
                   </div>
                 ))}
-
-                {/* PDF non rangés — y déposer une tuile la SORT de sa case */}
-                {(unassignedGroups.length > 0 || (dragBase && folders.some(f => (f.bases || []).includes(dragBase)))) && (
-                  <div
-                    onDragOver={e => { if (dragBase) e.preventDefault(); }}
-                    onDrop={e => { e.preventDefault(); if (dragBase) { moveBase(dragBase, null); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}>
-                    {folders.length > 0 && (
-                      <p style={{ fontSize:10,fontWeight:700,color:DA.grayL,textTransform:'uppercase',letterSpacing:0.4,margin:'2px 0 6px' }}>
-                        Non rangés{dragBase ? ' — déposez ici pour sortir d’une case' : ''}
-                      </p>
-                    )}
-                    <div style={tileGrid}>{unassignedGroups.map(g => renderPdfTile(g))}</div>
-                  </div>
-                )}
+                {unassignedGroups.map(g => renderPdfTile(g))}
               </div>
             </div>
           )}
