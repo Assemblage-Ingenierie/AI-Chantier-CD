@@ -551,6 +551,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // Réorganisation UNIFIÉE par barre d'insertion : index où l'élément déplacé sera inséré
   // dans la liste (tuiles + cases mélangées). Rendu simple et prévisible (demande Thomas).
   const [insertIdx, setInsertIdx] = useState(null);
+  // Cible de REGROUPEMENT survolée (centre d'une tuile → créer une case ; centre d'une case
+  // → y ranger). Coexiste avec insertIdx : centre = grouper, bords/gaps = réordonner.
+  const [dropTarget, setDropTarget] = useState(null); // { kind:'tile'|'folder', id }
   const gridRef = useRef(null);
   // Groupes de « Plans importés » dépliés (TOUT est replié par défaut — demande Thomas).
   const [openImported, setOpenImported] = useState(() => new Set());
@@ -760,7 +763,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     if (!s.moved) { s.base ? setDragBase(s.base) : setDragFolder(s.folderId); } // démarre le drag
     s.moved = true;
     e.preventDefault();
-    setInsertIdx(computeInsertIdx(e.clientX, e.clientY));
+    const d = computeDrop(e.clientX, e.clientY);
+    if (d.group) { setDropTarget(d.group); setInsertIdx(null); } else { setInsertIdx(d.insert); setDropTarget(null); }
     setTouchDrag({ base: s.base || null, x: e.clientX, y: e.clientY });
   };
   const onGripTouchEnd = (e) => {
@@ -771,7 +775,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       if (s.base) { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === s.base ? null : s.base); }
       return;
     }
-    applyInsert(insertIdx ?? computeInsertIdx(e.clientX, e.clientY));
+    applyDrop(e.clientX, e.clientY);
     endDrag();
   };
 
@@ -780,6 +784,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // regrouper/réordonner, tap pour le menu (renommer / ranger / supprimer). Clic = consulter.
   const renderPdfTile = (g) => {
     const tileActive = movePdf === g.nom || renamePdf?.base === g.nom || confirmDelPdf === g.nom;
+    const isGroupTgt = dropTarget?.kind === 'tile' && dropTarget.base === g.nom; // « déposer ici = créer une case »
     return (
       <div data-item data-base={g.nom}
         draggable={dragArmBase === g.nom}
@@ -795,12 +800,12 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         // s'agrandit (menu/renommage non coupés).
         className="plan-tile"
         style={{ position:'relative', boxSizing:'border-box',
-          border:`1.5px solid ${DA.border}`, borderRadius:12, background:'white',
+          border:`1.5px solid ${isGroupTgt ? DA.red : DA.border}`, borderRadius:12, background: isGroupTgt ? DA.redL : 'white',
           overflow: tileActive ? 'visible' : 'hidden',
           ...(tileActive ? { aspectRatio: 'auto', height: 'auto', zIndex: 2 } : {}),
           display:'flex', flexDirection:'column',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-          opacity: (dragBase === g.nom || touchDrag?.base === g.nom) ? 0.4 : 1, transition:'opacity 0.1s' }}>
+          boxShadow: isGroupTgt ? `0 0 0 2px ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
+          opacity: (dragBase === g.nom || touchDrag?.base === g.nom) ? 0.4 : 1, transition:'opacity 0.1s, box-shadow 0.1s' }}>
         {/* Poignée 6 points : glisser (souris OU doigt) pour RÉORDONNER — ou TAP pour le
             menu. touchAction:none = le doigt glisse la tuile, ne défile pas la page. */}
         <div
@@ -837,27 +842,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <Ic n="edt" s={14}/> Renommer
               </button>
             )}
-            {/* Mettre dans une case (le glisser sert au RÉORDONNANCEMENT ; le rangement en case
-                se fait ici, de façon fiable) : cases existantes + nouvelle case. */}
-            {onUpdateFolders && (
-              <div style={{ display:'flex', flexWrap:'wrap', gap:5, alignItems:'center' }}>
-                <span style={{ width:'100%', fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4 }}>Mettre dans une case</span>
-                {folders.map(f => {
-                  const active = (f.bases || []).includes(g.nom);
-                  return (
-                    <button key={f.id} onClick={() => { moveBase(g.nom, active ? null : f.id); setMovePdf(null); }}
-                      style={{ padding:'6px 10px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
-                        border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
-                      {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
-                    </button>
-                  );
-                })}
-                <button onClick={() => { const id = crypto.randomUUID(); setFolders([...folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== g.nom) })), { id, nom: '', bases: [g.nom] }]); setMovePdf(null); setEditingFolderId(id); setEditingFolderNom(''); }}
-                  style={{ padding:'6px 10px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer', border:`1.5px dashed ${DA.red}`, background:'white', color:DA.red }}>
-                  + Nouvelle case
-                </button>
-              </div>
-            )}
+            {/* Regrouper/ranger se fait au GLISSER (tuile au centre d'une autre = case ;
+                sur une case = dedans) — plus de menu « Mettre dans une case » (demande Thomas). */}
             {onUpdateFolders && folders.some(f => (f.bases || []).includes(g.nom)) && (
               <button onClick={() => { moveBase(g.nom, null); setMovePdf(null); }}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
@@ -929,8 +915,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       onDragEnd={endDrag}
       onMouseUp={() => setDragArmFolder(null)}
       className="plan-folder"
-      style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      style={{ border:`1.5px solid ${(dropTarget?.kind === 'folder' && dropTarget.id === f.id) ? DA.red : DA.border}`,borderRadius:14,background:(dropTarget?.kind === 'folder' && dropTarget.id === f.id) ? DA.redL : '#FAFBFC',padding:'6px 8px 8px',
+        boxShadow: (dropTarget?.kind === 'folder' && dropTarget.id === f.id) ? `0 0 0 2px ${DA.red}` : '0 1px 3px rgba(0,0,0,0.04)',
         opacity: (dragFolder === f.id) ? 0.4 : 1,
         boxSizing:'border-box' }}>
       <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
@@ -1048,7 +1034,39 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     }
   };
 
-  const endDrag = () => { setDragBase(null); setDragArmBase(null); setDragFolder(null); setDragArmFolder(null); setInsertIdx(null); setDropHint(null); setFolderDropHint(null); setTouchDrag(null); };
+  // Décide, à la position du pointeur : REGROUPER (centre d'une tuile/case) ou RÉORDONNER
+  // (ailleurs). Grouper ne concerne QUE le déplacement d'une tuile.
+  const computeDrop = (x, y) => {
+    const draggingTile = dragBase || touchDrag?.base || null;
+    if (draggingTile) {
+      const el = document.elementFromPoint(x, y);
+      const folderEl = el?.closest?.('[data-folder]');
+      const tileEl = el?.closest?.('[data-base]');
+      if (folderEl) {
+        const r = folderEl.getBoundingClientRect();
+        const fx = (x - r.left) / Math.max(1, r.width);
+        if (fx > 0.25 && fx < 0.75) return { group: { kind: 'folder', id: folderEl.getAttribute('data-folder') } };
+      } else if (tileEl && tileEl.getAttribute('data-base') !== draggingTile) {
+        const r = tileEl.getBoundingClientRect();
+        const fx = (x - r.left) / Math.max(1, r.width);
+        if (fx > 0.28 && fx < 0.72) return { group: { kind: 'tile', base: tileEl.getAttribute('data-base') } };
+      }
+    }
+    return { insert: computeInsertIdx(x, y) };
+  };
+  // Applique la décision de computeDrop.
+  const applyDrop = (x, y) => {
+    const d = computeDrop(x, y);
+    if (d.group) {
+      const draggingTile = dragBase || touchDrag?.base;
+      if (draggingTile) {
+        if (d.group.kind === 'folder') moveBase(draggingTile, d.group.id);       // ranger dans la case
+        else groupBases(draggingTile, d.group.base);                              // créer une case avec les 2
+      }
+    } else applyInsert(d.insert);
+  };
+
+  const endDrag = () => { setDragBase(null); setDragArmBase(null); setDragFolder(null); setDragArmFolder(null); setInsertIdx(null); setDropTarget(null); setTouchDrag(null); };
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
@@ -1169,8 +1187,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               {/* Réorganisation : on glisse une tuile OU une case, une BARRE D'INSERTION
                   rouge montre où ça tombera, on lâche. Simple et prévisible (demande Thomas). */}
               <div ref={gridRef} data-unfiled
-                onDragOver={e => { if (dragBase || dragFolder) { e.preventDefault(); setInsertIdx(computeInsertIdx(e.clientX, e.clientY)); } }}
-                onDrop={e => { e.preventDefault(); if (dragBase || dragFolder) { applyInsert(insertIdx ?? computeInsertIdx(e.clientX, e.clientY)); endDrag(); } }}
+                onDragOver={e => { if (dragBase || dragFolder) { e.preventDefault(); const d = computeDrop(e.clientX, e.clientY); if (d.group) { setDropTarget(d.group); setInsertIdx(null); } else { setInsertIdx(d.insert); setDropTarget(null); } } }}
+                onDrop={e => { e.preventDefault(); if (dragBase || dragFolder) { applyDrop(e.clientX, e.clientY); endDrag(); } }}
                 style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
                 {unifiedItems.map((it, i) => (
                   <React.Fragment key={itemKey(it)}>
