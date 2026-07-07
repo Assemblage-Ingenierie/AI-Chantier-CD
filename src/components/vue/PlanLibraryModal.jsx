@@ -1,11 +1,26 @@
 import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { renderPdfPage, renderPdfPages } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUtils.js';
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '' }) {
+// Rendu HD en ARRIÈRE-PLAN, au niveau module : l'import n'attend plus le 6500 px
+// (« à importer c'est hyper long » — Thomas) et la file survit à la fermeture du modal.
+// Chaque HD prête est attachée au plan via `attach(id, hd)` → sauvegarde auto (Storage).
+async function renderHdInBackground(docs, attach) {
+  for (const d of docs) {
+    for (const [num, id] of d.idByNum) {
+      try {
+        const hd = await renderPdfPageHQ(d.pdf, num);
+        if (hd) attach(id, hd);
+      } catch { /* le plan reste en aperçu 1600px */ }
+      await new Promise(r => setTimeout(r, 60)); // laisse respirer l'UI entre deux pages
+    }
+  }
+}
+
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', onAttachHd = null }) {
   const [rendering, setRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
@@ -28,13 +43,14 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const [drivePath, setDrivePath] = useState([]); // [{ id, name }] — racine = dossier affaire
   const [driveContent, setDriveContent] = useState(null); // { folders, files } du niveau courant
   const [driveErr, setDriveErr] = useState(null);
-  const [driveDl, setDriveDl] = useState(null); // { id, pct } — téléchargement en cours
+  const [driveDl, setDriveDl] = useState(null); // { idx, total, name, pct } — import en cours
+  const [driveSel, setDriveSel] = useState(new Map()); // id → fichier : MULTI-sélection, survit à la navigation
   const driveIdRef = useRef(null);
 
-  const browseTo = async (path) => {
+  const browseTo = async (path, { fresh = false } = {}) => {
     setDriveLoading(true); setDriveErr(null);
     try {
-      const content = await browseDriveFolder(path[path.length - 1].id, driveIdRef.current);
+      const content = await browseDriveFolder(path[path.length - 1].id, driveIdRef.current, { fresh });
       setDrivePath(path);
       setDriveContent(content);
     } catch (e) { setDriveErr(e.message); }
@@ -57,20 +73,41 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     } catch (e) { setDriveErr(e.message); setDriveLoading(false); }
   };
 
-  const pickDriveFile = async (f) => {
+  // Tap sur un PDF = coche/décoche (multi-sélection, y compris à travers plusieurs dossiers).
+  const toggleDriveSel = (f) => {
     if (driveDl) return;
+    setDriveSel(prev => {
+      const next = new Map(prev);
+      if (next.has(f.id)) next.delete(f.id); else next.set(f.id, f);
+      return next;
+    });
+  };
+
+  // Importe TOUTE la sélection : téléchargements successifs (chacun parallélisé en interne),
+  // puis un seul sélecteur de pages avec tous les documents.
+  const importDriveSelection = async () => {
+    const files = [...driveSel.values()];
+    if (!files.length || driveDl) return;
     setDriveErr(null);
-    setDriveDl({ id: f.id, pct: 0 });
+    const docs = [];
     try {
-      const dataUrl = await downloadDrivePlan(f.id, (got, total) => setDriveDl({ id: f.id, pct: total ? Math.round(got / total * 100) : 0 }));
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        setDriveDl({ idx: i + 1, total: files.length, name: f.name, pct: 0 });
+        const dataUrl = await downloadDrivePlan(f.id, (got, total) =>
+          setDriveDl({ idx: i + 1, total: files.length, name: f.name, pct: total ? Math.round(got / total * 100) : 0 }));
+        docs.push({ pdf: dataUrl, nom: f.name.replace(/\.[^.]+$/, '') });
+      }
       setDriveDl(null);
+      setDriveSel(new Map());
       setDriveOpen(false);
-      // Rejoint le flux d'import existant : sélecteur de pages puis rendu.
-      setPdfList([{ pdf: dataUrl, nom: f.name.replace(/\.[^.]+$/, '') }]);
+      // Rejoint le flux d'import existant : sélecteur de pages multi-PDF puis rendu.
+      setPdfList(docs);
       setShowPicker(true);
     } catch (e) {
       setDriveDl(null);
       setDriveErr(`Téléchargement impossible : ${e.message}`);
+      if (docs.length) { setPdfList(docs); setShowPicker(true); } // ce qui a réussi n'est pas perdu
     }
   };
 
@@ -128,25 +165,21 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     const onlyOne = totalCount === 1;
     const allResults = [];
     let done = 0;
+    const hdDocs = []; // pour le rendu HD différé (arrière-plan)
     try {
       for (const doc of result) {
         const rendered = await renderPdfPages(doc.pdf, doc.nums, {
           onProgress: (d, t) => setRenderProgress(`Rendu ${done + d} / ${totalCount} page${totalCount > 1 ? 's' : ''}…`),
         });
-        // Image HD par page (6500 px) EN PLUS de l'aperçu : c'est elle qui part dans
-        // Supabase Storage (hdCandidates de saveRemote) et qui rend la consultation
-        // NETTE au zoom. Avant, ce chemin d'import ne générait AUCUNE HD → plans
-        // pixelisés dès que la session d'import était fermée (retour Thomas).
-        const renderedHd = await renderPdfPages(doc.pdf, doc.nums, {
-          maxScale: 10.0, maxWidth: 6500, quality: 0.85, concurrency: 2,
-          onProgress: (d) => setRenderProgress(`Haute définition ${done + d} / ${totalCount}…`),
-        });
-        const hdByNum = new Map(renderedHd.map(r => [r.num, r.img]));
+        const idByNum = new Map();
         for (const { num, img } of rendered) {
           if (!img) continue;
+          const id = crypto.randomUUID();
           const nom = (onlyOne || doc.nums.length === 1) ? doc.nom : `${doc.nom} — Page ${num}`;
-          allResults.push({ id: crypto.randomUUID(), nom, bg: img, hd: hdByNum.get(num) || null, data: doc.pdf });
+          allResults.push({ id, nom, bg: img, data: doc.pdf });
+          idByNum.set(num, id);
         }
+        hdDocs.push({ pdf: doc.pdf, idByNum });
         done += doc.nums.length;
       }
     } catch (e) {
@@ -154,7 +187,11 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     }
     setRenderProgress('');
     setRendering(false);
-    if (allResults.length > 0) onAdd(allResults);
+    if (allResults.length > 0) {
+      onAdd(allResults);
+      // HD (6500 px) rendue en ARRIÈRE-PLAN — sans bloquer l'import ni le modal.
+      if (onAttachHd) renderHdInBackground(hdDocs, onAttachHd);
+    }
     else if (!renderErr) setRenderErr("Aucune page n'a pu être rendue.");
     setPdfList([]);
   };
@@ -292,7 +329,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             </button>
             {driveOpen && (
               <div style={{ border:`1px solid ${DA.border}`, borderTop:'none', borderRadius:'0 0 12px 12px', margin:'0 6px', background:'#FAFBFC', maxHeight:340, overflowY:'auto' }}>
-                {/* Fil d'Ariane : ‹ remonte d'un niveau, le chemin est cliquable */}
+                {/* Fil d'Ariane : ‹ remonte d'un niveau, le chemin est cliquable, ↻ actualise */}
                 {drivePath.length > 0 && (
                   <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 10px', borderBottom:`1px solid ${DA.grayXL}`, position:'sticky', top:0, background:'#FAFBFC', zIndex:1 }}>
                     {drivePath.length > 1 && (
@@ -302,6 +339,11 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
                         ‹
                       </button>
                     )}
+                    <button onClick={() => browseTo(drivePath, { fresh: true })} disabled={driveLoading}
+                      title="Actualiser ce dossier"
+                      style={{ flexShrink:0, width:30, height:30, borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', order:99 }}>
+                      <Ic n="rld" s={13}/>
+                    </button>
                     <div style={{ flex:1, minWidth:0, fontSize:11, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', direction:'rtl', textAlign:'left' }}>
                       <span style={{ direction:'ltr', unicodeBidi:'embed' }}>
                         {drivePath.map((p, i) => (
@@ -339,24 +381,41 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
                   </button>
                 ))}
                 {!driveLoading && (driveContent?.files || []).map(f => {
-                  const dl = driveDl?.id === f.id;
+                  const sel = driveSel.has(f.id);
                   const tooBig = f.size > 60 * 1024 * 1024;
                   return (
-                    <button key={f.id} onClick={() => !tooBig && pickDriveFile(f)} disabled={!!driveDl || tooBig}
-                      style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'9px 14px', background:'none',
+                    <button key={f.id} onClick={() => !tooBig && toggleDriveSel(f)} disabled={!!driveDl || tooBig}
+                      style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'9px 14px',
+                        background: sel ? DA.redL : 'none',
                         border:'none', borderTop:`1px solid ${DA.grayXL}`, cursor: (driveDl || tooBig) ? 'default' : 'pointer',
-                        textAlign:'left', opacity: tooBig ? 0.45 : driveDl && !dl ? 0.5 : 1 }}>
+                        textAlign:'left', opacity: tooBig ? 0.45 : 1 }}>
+                      {/* Case à cocher : sélectionnez AUTANT de documents que voulu (demande Thomas) */}
+                      <span style={{ flexShrink:0, width:20, height:20, borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center',
+                        border:`2px solid ${sel ? DA.red : DA.border}`, background: sel ? DA.red : 'white', color:'white' }}>
+                        {sel && <Ic n="chk" s={12}/>}
+                      </span>
                       <span style={{ fontSize:13, flexShrink:0 }}>📄</span>
                       <span style={{ flex:1, minWidth:0 }}>
-                        <span style={{ display:'block', fontSize:12, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</span>
+                        <span style={{ display:'block', fontSize:12, fontWeight:700, color: sel ? DA.red : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</span>
                         <span style={{ display:'block', fontSize:10.5, color:DA.grayL }}>
                           {[fmtDriveSize(f.size), tooBig ? 'trop volumineux (max 60 Mo)' : null].filter(Boolean).join(' · ')}
                         </span>
                       </span>
-                      {dl && <span style={{ flexShrink:0, fontSize:11, fontWeight:800, color:DA.red, display:'flex', alignItems:'center', gap:5 }}><Ic n="spn" s={12}/> {driveDl.pct} %</span>}
                     </button>
                   );
                 })}
+                {/* Barre d'import de la sélection — collée en bas du panneau */}
+                {(driveSel.size > 0 || driveDl) && (
+                  <div style={{ position:'sticky', bottom:0, padding:'8px 10px', background:'#FAFBFC', borderTop:`1px solid ${DA.grayXL}` }}>
+                    <button onClick={importDriveSelection} disabled={!!driveDl}
+                      style={{ width:'100%', padding:'11px 0', borderRadius:9, border:'none', background:DA.red, color:'white',
+                        fontSize:13, fontWeight:800, cursor: driveDl ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                      {driveDl
+                        ? <><Ic n="spn" s={14}/> Document {driveDl.idx}/{driveDl.total} · {driveDl.pct} %</>
+                        : <>Importer {driveSel.size} document{driveSel.size > 1 ? 's' : ''}</>}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

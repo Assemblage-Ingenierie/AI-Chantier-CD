@@ -1010,9 +1010,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         );
       })()}
 
+      {/* onAttachHd : HD rendue en arrière-plan après l'import, attachée au plan en forme
+          fonctionnelle (plusieurs pages arrivent en rafale) → la sauvegarde auto l'envoie
+          dans Storage (hdCandidates). Fonctionne même si on a quitté le projet. */}
       {modal?.t === 'planLib' && (
         <PlanLibraryModal
           projetNom={projet.nom || ''}
+          onAttachHd={(id, hd) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, hd } : p) }))}
           planLibrary={projet.planLibrary || []}
           onAdd={plans => {
             const arr = Array.isArray(plans) ? plans : [plans];
