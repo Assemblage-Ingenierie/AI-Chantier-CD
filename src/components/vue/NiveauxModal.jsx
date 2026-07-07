@@ -47,30 +47,24 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   // PDF source PARTAGÉ par tout le groupe : récupéré UNE seule fois. Avant, chaque PAGE
   // re-téléchargeait le document COMPLET depuis la base (le même PDF de 30-40 Mo, 18 fois
   // pour 18 pages) → « charger le moindre PDF prend beaucoup trop de temps » (Thomas).
-  const groupPdfRef = useRef({ key: null, promise: null });
-  const getGroupPdf = () => {
+  const groupPdfRef = useRef({ key: null, val: null });
+  const getGroupPdf = async () => {
     const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
-    if (inMem) return Promise.resolve(inMem.data);
-    if (groupPdfRef.current.key !== group.nom) groupPdfRef.current = { key: group.nom, promise: null };
-    if (!groupPdfRef.current.promise) {
-      groupPdfRef.current.promise = (async () => {
-        // 1) PDF source stocké dans Storage (chemin déterministe par base) — c'est LUI qui
-        //    donne la loupe vectorielle nette sur tous les appareils/sessions.
-        try {
-          if (projetId) {
-            const pdf = await fetchPlanPdfByBase(projetId, group.nom);
-            if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) return pdf;
-          }
-        } catch { /* pas de PDF stocké */ }
-        // 2) Repli legacy : colonne data (rarement un PDF ; en général un chemin image).
-        try {
-          const fd = await fetchPlanData((group.pages || [])[0]?.id);
-          if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) return fd.data;
-        } catch { /* pas de PDF en base */ }
-        return null;
-      })();
-    }
-    return groupPdfRef.current.promise;
+    if (inMem) return inMem.data;
+    if (groupPdfRef.current.key === group.nom && typeof groupPdfRef.current.val === 'string') return groupPdfRef.current.val; // succès mémorisé
+    // 1) PDF source stocké dans Storage (chemin déterministe par base).
+    try {
+      if (projetId) {
+        const pdf = await fetchPlanPdfByBase(projetId, group.nom);
+        if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: pdf }; return pdf; }
+      }
+    } catch { /* pas de PDF stocké */ }
+    // 2) Repli legacy : colonne data (rarement un PDF ; en général un chemin image).
+    try {
+      const fd = await fetchPlanData((group.pages || [])[0]?.id);
+      if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: fd.data }; return fd.data; }
+    } catch { /* pas de PDF en base */ }
+    return null; // échec NON mémorisé → réessai possible (upload en cours)
   };
   // Chargement HD À LA DEMANDE d'une page — chaque viewer décide QUAND.
   const loadHd = async (p) => {

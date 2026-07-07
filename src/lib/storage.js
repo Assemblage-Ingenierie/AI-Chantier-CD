@@ -813,7 +813,8 @@ const _planPdfCache = new Map(); // `${chantierId}|${base}` → dataURL | null |
 export async function fetchPlanPdfByBase(chantierId, base) {
   if (!chantierId || !base) return null;
   const key = `${chantierId}|${base}`;
-  if (_planPdfCache.has(key)) return _planPdfCache.get(key);
+  const cached = _planPdfCache.get(key);
+  if (typeof cached === 'string') return cached; // succès mémorisé
   const promise = (async () => {
     try {
       const sb = await getSupabase();
@@ -823,10 +824,14 @@ export async function fetchPlanPdfByBase(chantierId, base) {
       const resp = await fetch(signed.signedUrl);
       if (!resp.ok) return null;
       const blob = await resp.blob();
-      return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
+      const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
+      if (typeof dataUrl === 'string') _planPdfCache.set(key, dataUrl); // ne mémorise QUE les succès
+      return dataUrl;
     } catch { return null; }
   })();
-  _planPdfCache.set(key, promise);
+  // On NE mémorise PAS un échec (null) : un plan dont le PDF arrive juste après
+  // (upload en cours) doit pouvoir réussir au prochain essai (fin du « PDF indisponible »
+  // qui restait collé toute la session — retour Thomas).
   return promise;
 }
 
