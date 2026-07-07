@@ -442,7 +442,8 @@ export async function hydrateChantierPhotos(chantierIds) {
     const rows = [];
     for (let i = 0; i < chantierIds.length; i += BATCH) {
       const batch = chantierIds.slice(i, i + BATCH);
-      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,photo').in('id', batch);
+      // nom nécessaire pour reconstruire le chemin déterministe des couvertures à récupérer.
+      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,nom,photo').in('id', batch);
       if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); continue; }
       if (data) rows.push(...data);
     }
@@ -458,6 +459,28 @@ export async function hydrateChantierPhotos(chantierIds) {
       if (!pathToId[path]) paths.push(path);
       pathToId[path] = row.id;
     }
+
+    // ── AUTO-RÉCUPÉRATION des couvertures dont la colonne `photo` est vide mais dont le
+    //    fichier existe encore dans Storage (cas « Pavillon sous bois » : colonne écrasée à
+    //    null par une sauvegarde au cache froid, fichier intact). On teste les chemins
+    //    déterministes ; createSignedUrl échoue si le fichier n'existe pas → aucun faux
+    //    positif. Si trouvé : on réaffiche ET on réécrit le chemin en DB (réparation durable).
+    try {
+      for (const row of (data ?? [])) {
+        if (row.photo) continue;
+        const slug = `${slugify(row.nom)}_${String(row.id).slice(0, 8)}`;
+        const candidates = [`${slug}/cover/${row.id}.webp`, `${slug}/cover/${row.id}.jpg`, `cover_${row.id}/cover.webp`, `cover_${row.id}/cover.jpg`];
+        for (const cand of candidates) {
+          const { data: sg, error: sgErr } = await sb.storage.from('photos').createSignedUrl(cand, SIGNED_URL_TTL);
+          if (!sgErr && sg?.signedUrl) {
+            result[row.id] = sg.signedUrl;
+            sb.from('aichantier_chantiers').update({ photo: cand }).eq('id', row.id).then(() => {}, () => {});
+            break;
+          }
+        }
+      }
+    } catch (e) { console.warn('récupération couverture:', e); }
+
     if (!paths.length) return result;
 
     // Memoize : on évite de redemander une signed URL pour un cover déjà en cache.
