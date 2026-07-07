@@ -539,8 +539,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
           {/* Titre EN GRAND et TOUJOURS entier — pas de compteur de pages (demande Thomas). */}
-          <p style={{ position:'relative', fontSize:13.5, fontWeight:800, color:DA.black, margin:'0 0 8px', lineHeight:1.3,
-            whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word', minHeight:'2.6em' }}>
+          <p style={{ position:'relative', fontSize:15.5, fontWeight:800, color:DA.black, margin:'0 0 8px', lineHeight:1.25,
+            whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word', minHeight:'2.5em' }}>
             {g.nom}
           </p>
         </div>
