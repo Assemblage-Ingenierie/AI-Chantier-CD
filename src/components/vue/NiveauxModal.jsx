@@ -522,6 +522,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
   const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
   const [confirmDelPdf, setConfirmDelPdf] = useState(null); // base du PDF dont la suppression attend confirmation
+  const [confirmDelStep, setConfirmDelStep] = useState(1);  // double confirmation : étape 1 puis 2
   // Drag & drop des tuiles PDF (PC) : armé depuis l'icône « déplacer » de la tuile.
   // Déposer une tuile SUR une autre = regrouper les deux dans une case (demande Thomas).
   const [dragBase, setDragBase] = useState(null);       // base du PDF en cours de drag
@@ -781,6 +782,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const renderPdfTile = (g) => {
     // Zone de dépôt : MILIEU = regrouper dans une case, BORD gauche/droit = réordonner.
     const hintZone = (dropHint?.base === g.nom && dragBase && dragBase !== g.nom) ? dropHint.zone : null;
+    const tileActive = movePdf === g.nom || renamePdf?.base === g.nom || confirmDelPdf === g.nom;
     // Surbrillance de dépôt en mode TACTILE (le doigt survole cette tuile).
     const tHint = (touchDrag?.over?.kind === 'tile' && touchDrag.over.base === g.nom && touchDrag.base !== g.nom) ? touchDrag.over.zone : null;
     const zoneHint = hintZone || tHint;
@@ -817,9 +819,13 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         // Largeur gérée par .plan-tile (CSS) : 2 pleines colonnes sur téléphone,
         // CARRÉS fixes 168px sur PC (retour Thomas : le flex fluide devenait trop gros).
         className="plan-tile"
+        // En édition (menu/renommage/suppression), la tuile s'AGRANDIT : on lève le carré
+        // fixe + overflow:hidden qui coupaient le menu et le bouton OK (retour Thomas).
         style={{ position:'relative', boxSizing:'border-box',
           border:`1.5px solid ${zoneHint === 'group' ? DA.red : DA.border}`, borderRadius:12,
-          background: zoneHint === 'group' ? DA.redL : 'white', overflow:'hidden',
+          background: zoneHint === 'group' ? DA.redL : 'white',
+          overflow: tileActive ? 'visible' : 'hidden',
+          ...(tileActive ? { aspectRatio: 'auto', height: 'auto', zIndex: 2 } : {}),
           display:'flex', flexDirection:'column',
           boxShadow: zoneHint === 'before' ? `inset 4px 0 0 ${DA.red}` : zoneHint === 'after' ? `inset -4px 0 0 ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
           opacity: (dragBase === g.nom || touchDrag?.base === g.nom) ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
@@ -860,23 +866,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <Ic n="edt" s={14}/> Renommer
               </button>
             )}
-            {onUpdateFolders && folders.length > 0 && (
-              <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center' }}>
-                <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, width:'100%' }}>Ranger dans :</span>
-                {folders.map(f => {
-                  const active = (f.bases || []).includes(g.nom);
-                  return (
-                    <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
-                      style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
-                        border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
-                      {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
             {onDeletePlan && (
-              <button onClick={() => setConfirmDelPdf(g.nom)}
+              <button onClick={() => { setConfirmDelStep(1); setConfirmDelPdf(g.nom); }}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:'1px solid #FCA5A5', background:'#FFF5F5', color:'#B91C1C', cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
                 <Ic n="del" s={14}/> Supprimer
               </button>
@@ -900,15 +891,23 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           </div>
         )}
         {confirmDelPdf === g.nom && (
-          <div style={{ display:'flex', gap:5, alignItems:'center', padding:'0 8px 8px' }}>
-            <button onClick={() => deleteWholePdf(g)}
-              style={{ flex:1, padding:'7px 0', borderRadius:8, border:'none', background:'#B91C1C', color:'white', fontSize:11.5, fontWeight:800, cursor:'pointer' }}>
-              Supprimer ({g.pages.length} p.)
-            </button>
-            <button onClick={() => setConfirmDelPdf(null)}
-              style={{ flex:1, padding:'7px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#555', fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
-              Annuler
-            </button>
+          <div style={{ display:'flex', flexDirection:'column', gap:6, padding:'0 8px 8px' }}>
+            {/* Double confirmation (demande Thomas) : étape 1 puis étape 2 avant suppression. */}
+            <p style={{ margin:0, fontSize:11.5, fontWeight:700, color:'#B91C1C', textAlign:'center', lineHeight:1.35 }}>
+              {confirmDelStep === 1
+                ? `Supprimer ce plan (${g.pages.length} page${g.pages.length > 1 ? 's' : ''}) ?`
+                : 'Confirmer ? Cette suppression est définitive.'}
+            </p>
+            <div style={{ display:'flex', gap:5, alignItems:'center' }}>
+              <button onClick={() => { if (confirmDelStep === 1) setConfirmDelStep(2); else deleteWholePdf(g); }}
+                style={{ flex:1, padding:'8px 0', borderRadius:8, border:'none', background:'#B91C1C', color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                {confirmDelStep === 1 ? 'Supprimer' : 'Oui, supprimer'}
+              </button>
+              <button onClick={() => { setConfirmDelPdf(null); setConfirmDelStep(1); }}
+                style={{ flex:1, padding:'8px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#555', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                Annuler
+              </button>
+            </div>
           </div>
         )}
       </div>
