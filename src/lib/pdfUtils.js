@@ -68,8 +68,11 @@ export function pdfDataToBuffer(pdfData) {
 }
 
 // ─── Rendu d'une page PDF en image WebP ──────────────────────────────────────
-// Limite d'aire canvas — iOS Safari plafonne à ~16,7 M px par canvas.
-const MAX_CANVAS_AREA = 16_000_000;
+// Limite d'aire canvas — iOS Safari plafonne à ~16,7 M px par canvas ; les navigateurs
+// desktop acceptent bien plus : on monte à 64 M px hors iOS pour des plans NETS au zoom
+// (demande Thomas : « importe-les tels que je les vois en PDF, en très haute qualité »).
+const _isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const MAX_CANVAS_AREA = _isIOS ? 16_000_000 : 64_000_000;
 
 async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
   try {
@@ -161,8 +164,9 @@ export async function renderPdfPages(pdfData, pageNums, {
 }
 
 // Rendu haute qualité — image HD stockée dans Supabase Storage, affichée dans l'annotateur
+// et la visionneuse. 6500 px de large max (plafonné par l'aire canvas selon la plateforme).
 export function renderPdfPageHQ(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 8.0, 4500, 0.85);
+  return _renderPage(pdfData, pageNum, 10.0, 6500, 0.85);
 }
 
 // Convertit la 1re page d'un FICHIER PDF en image (data URL) — utilisé pour la photo de

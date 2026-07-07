@@ -305,8 +305,27 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
               <p style={{ fontSize:11, fontWeight:700, color:DA.gray, textTransform:'uppercase', letterSpacing:0.5, margin:'0 0 10px', display:'flex', alignItems:'center', gap:6 }}>
                 <Ic n="lib" s={12}/> Bibliothèque — sélectionnez un ou plusieurs plans
               </p>
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {planLibrary.map(pl => {
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                {(() => {
+                  // SÉPARÉ PAR PDF d'origine avec un TITRE par document (demande Thomas) :
+                  // regroupement par nom de base (« NomDuPdf — Page N »), pages triées.
+                  const RE = /\s*—\s*Page\s*(\d+)\s*$/i;
+                  const map = new Map();
+                  for (const pl of planLibrary) {
+                    const m = String(pl.nom || '').match(RE);
+                    const base = m ? pl.nom.replace(RE, '').trim() : (pl.nom || 'Document');
+                    if (!map.has(base)) map.set(base, []);
+                    map.get(base).push({ pl, page: m ? parseInt(m[1], 10) : 0 });
+                  }
+                  return [...map.entries()].map(([base, entries]) => (
+                    <div key={base}>
+                      <p style={{ fontSize:12, fontWeight:800, color:DA.black, margin:'0 2px 6px', display:'flex', alignItems:'center', gap:6 }}>
+                        <span style={{ flexShrink:0 }}>📄</span>
+                        <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{base}</span>
+                        {entries.length > 1 && <span style={{ flexShrink:0, color:DA.grayL, fontWeight:600 }}>· {entries.length} pages</span>}
+                      </p>
+                      <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                        {entries.sort((a, b) => a.page - b.page).map(({ pl }) => {
                   const sel = selectedIds.has(pl.id);
                   const selIdx = plans.findIndex(p => p.planId === pl.id);
                   const annot = selIdx >= 0 ? plans[selIdx].planAnnotations : null;
@@ -374,6 +393,10 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                     </div>
                   );
                 })}
+                      </div>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           )}

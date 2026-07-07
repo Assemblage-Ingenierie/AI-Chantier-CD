@@ -133,10 +133,19 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
         const rendered = await renderPdfPages(doc.pdf, doc.nums, {
           onProgress: (d, t) => setRenderProgress(`Rendu ${done + d} / ${totalCount} page${totalCount > 1 ? 's' : ''}…`),
         });
+        // Image HD par page (6500 px) EN PLUS de l'aperçu : c'est elle qui part dans
+        // Supabase Storage (hdCandidates de saveRemote) et qui rend la consultation
+        // NETTE au zoom. Avant, ce chemin d'import ne générait AUCUNE HD → plans
+        // pixelisés dès que la session d'import était fermée (retour Thomas).
+        const renderedHd = await renderPdfPages(doc.pdf, doc.nums, {
+          maxScale: 10.0, maxWidth: 6500, quality: 0.85, concurrency: 2,
+          onProgress: (d) => setRenderProgress(`Haute définition ${done + d} / ${totalCount}…`),
+        });
+        const hdByNum = new Map(renderedHd.map(r => [r.num, r.img]));
         for (const { num, img } of rendered) {
           if (!img) continue;
           const nom = (onlyOne || doc.nums.length === 1) ? doc.nom : `${doc.nom} — Page ${num}`;
-          allResults.push({ id: crypto.randomUUID(), nom, bg: img, data: doc.pdf });
+          allResults.push({ id: crypto.randomUUID(), nom, bg: img, hd: hdByNum.get(num) || null, data: doc.pdf });
         }
         done += doc.nums.length;
       }
