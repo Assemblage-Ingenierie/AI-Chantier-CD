@@ -63,7 +63,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
       </div>
 
       {/* Infos */}
-      <div className="proj-card-body" style={{ padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8 }}>
+      {/* display/alignements gérés en CSS (.proj-card-body) : centré verticalement sur mobile,
+          aligné EN HAUT sur PC — un inline style écraserait la variante desktop. */}
+      <div className="proj-card-body" style={{ padding:'10px 12px' }}>
         <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
           {/* Rangée titre : MOBILE uniquement (sur PC le nom est en bandeau sur la photo).
               PAS de display inline : il écraserait le display:none du CSS desktop (le nom
