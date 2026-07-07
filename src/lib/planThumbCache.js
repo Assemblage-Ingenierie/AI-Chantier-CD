@@ -126,6 +126,30 @@ export async function estimatePlanCacheBytes() {
   return a + b;
 }
 
+// Poids du cache plans (vignettes + HD) pour un SOUS-ENSEMBLE d'ids — permet d'afficher
+// « tout le projet en cache » (plans compris, pas que les photos) dans les Paramètres.
+export async function estimatePlanBytesByIds(planIds) {
+  if (!planIds?.length) return 0;
+  const db = await openDb();
+  if (!db) return 0;
+  const sumStore = (name) => new Promise((resolve) => {
+    let total = 0;
+    try {
+      const tx = db.transaction(name, 'readonly');
+      const store = tx.objectStore(name);
+      let pending = planIds.length;
+      planIds.forEach((id) => {
+        const r = store.get(id);
+        r.onsuccess = () => { if (typeof r.result === 'string') total += r.result.length; if (--pending === 0) resolve(total); };
+        r.onerror   = () => { if (--pending === 0) resolve(total); };
+      });
+      tx.onerror = () => resolve(total);
+    } catch { resolve(total); }
+  });
+  const [a, b] = await Promise.all([sumStore(STORE), sumStore(HD_STORE)]);
+  return a + b;
+}
+
 // Vide le cache plans (vignettes + HD). SANS RISQUE : tout est re-téléchargeable depuis
 // Supabase Storage à la prochaine ouverture d'un projet. Ne touche ni aux données projets
 // ni à la file d'upload photos ni à la boîte noire.
