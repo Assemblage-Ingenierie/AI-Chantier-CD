@@ -142,13 +142,26 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const onWheel = (e) => {
-    if (e.ctrlKey || e.metaKey) {
+  // Molette gérée EXPLICITEMENT (listener natif non-passif) : défilement garanti du
+  // conteneur — le natif était avalé chez Thomas (« j'ai plus de molette ») —
+  // Ctrl/⌘ + molette = zoom, Maj + molette = défilement horizontal.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheelNative = (e) => {
       e.preventDefault();
-      setZoom(zRef.current * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX, e.clientY);
-    }
-    // Sans Ctrl : défilement natif du conteneur (ne rien faire).
-  };
+      if (e.ctrlKey || e.metaKey) {
+        setZoom(zRef.current * (e.deltaY < 0 ? 1.15 : 0.87), e.clientX, e.clientY);
+      } else if (e.shiftKey) {
+        el.scrollLeft += (e.deltaY || e.deltaX);
+      } else {
+        el.scrollTop  += e.deltaY;
+        el.scrollLeft += e.deltaX;
+      }
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cliquer-glisser pour se déplacer (en plus des scrollbars/molette).
   const onPointerDown = (e) => {
@@ -192,11 +205,13 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
         </button>
         <button onClick={() => setZoom(zRef.current * 1.25)} title="Zoom avant" style={zBtn}>+</button>
       </div>
+      {/* position:absolute inset:0 → hauteur GARANTIE (le flex:1 sans parent flex, introduit
+          en retirant la barre du haut, laissait le conteneur sans hauteur → ni molette ni
+          cliquer-glisser possibles). La molette est gérée par le listener natif ci-dessus. */}
       <div ref={scrollRef}
-        onWheel={onWheel}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove}
         onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        style={{ flex:1, overflow:'auto', cursor: dragRef.current ? 'grabbing' : 'grab' }}>
+        style={{ position:'absolute', inset:0, overflow:'auto', cursor: dragRef.current ? 'grabbing' : 'grab' }}>
         <div style={{ width:`${z * 100}%`, margin:'0 auto', padding:'10px 0' }}>
           {group.pages.map(p => (
             <div key={p.id} style={{ position:'relative', marginBottom:8 }}>
