@@ -1013,7 +1013,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
             }}
             onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
-            onRenamePlan={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
+            onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
+          planFolders={projet.planFolders || []}
+          onUpdateFolders={folders => onUpdate({ planFolders: folders })}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
               onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
