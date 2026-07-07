@@ -3,6 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import CropTool from '../ui/CropTool.jsx';
 import IngenieursEditor from '../ui/IngenieursEditor.jsx';
+import { CoverSourcesHint } from './NewProjet.jsx';
 import { pdfFileToImageDataUrl } from '../../lib/pdfUtils.js';
 import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
 
@@ -126,7 +127,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
         <div style={{ position:'relative', width:'100%', paddingTop:'56.25%', borderRadius:12,
             border:`2px dashed ${f.photo ? 'transparent' : DA.border}`,
             overflow:'hidden', background: f.photo ? 'transparent' : DA.grayXL,
-            marginBottom:16, boxSizing:'border-box' }}>
+            marginBottom:10, boxSizing:'border-box' }}>
           {f.photo && <img src={f.photo} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>}
           <div style={{ position:'absolute', inset:0, background: f.photo ? 'rgba(0,0,0,0.34)' : 'transparent',
               display:'flex', alignItems:'center', justifyContent:'center', gap:12, flexWrap:'wrap', padding:10 }}>
@@ -167,6 +168,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
             <Ic n="spn" s={12}/> Lecture du PDF…
           </p>
         )}
+        <CoverSourcesHint/>
 
         {FIELDS.map(({ k, l, ph }) => (
           <div key={k} style={{ marginBottom:12 }}>

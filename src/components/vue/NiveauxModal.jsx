@@ -164,6 +164,22 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [editingFolderNom, setEditingFolderNom] = useState('');
   const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
   const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
+  // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
+  // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
+  // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
+  // ⚠️ DOIT être déclaré AVANT unassignedGroups/groupsByBase qui l'utilisent au rendu
+  // (sinon TDZ : « Cannot access 'pdfGroups' before initialization » → app plantée).
+  const pdfGroups = useMemo(() => {
+    const map = new Map();
+    for (const pl of (planLibrary || [])) {
+      const m = String(pl.nom || '').match(PDF_PAGE_RE);
+      const base = m ? pl.nom.replace(PDF_PAGE_RE, '').trim() : (pl.nom || 'Document');
+      const page = m ? parseInt(m[1], 10) : 1;
+      if (!map.has(base)) map.set(base, []);
+      map.get(base).push({ ...pl, _page: page });
+    }
+    return [...map.entries()].map(([nom, pages]) => ({ nom, pages: pages.sort((a, b) => a._page - b._page) }));
+  }, [planLibrary]);
   const folders = planFolders || [];
   const setFolders = (next) => { if (onUpdateFolders) onUpdateFolders(next); };
   const assignedBases = new Set(folders.flatMap(f => f.bases || []));
@@ -295,20 +311,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       )}
     </div>
   );
-  // ── Consultation : toutes les pages d'un même PDF regroupées (demande Thomas : sur site,
-  // feuilleter le document ENTIER au lieu d'ouvrir les plans un par un). Regroupement par
-  // nom de base (« NomDuPdf — Page N » → « NomDuPdf »), pages triées par numéro.
-  const pdfGroups = useMemo(() => {
-    const map = new Map();
-    for (const pl of (planLibrary || [])) {
-      const m = String(pl.nom || '').match(PDF_PAGE_RE);
-      const base = m ? pl.nom.replace(PDF_PAGE_RE, '').trim() : (pl.nom || 'Document');
-      const page = m ? parseInt(m[1], 10) : 1;
-      if (!map.has(base)) map.set(base, []);
-      map.get(base).push({ ...pl, _page: page });
-    }
-    return [...map.entries()].map(([nom, pages]) => ({ nom, pages: pages.sort((a, b) => a._page - b._page) }));
-  }, [planLibrary]);
   const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
