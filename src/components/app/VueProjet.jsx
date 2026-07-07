@@ -1021,8 +1021,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             }}
             onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
-          planFolders={projet.planFolders || []}
-          onUpdateFolders={folders => onUpdate({ planFolders: folders })}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
               onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
@@ -1069,6 +1067,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
           planFolders={projet.planFolders || []}
           onUpdateFolders={folders => onUpdate({ planFolders: folders })}
+          onReorderPlans={fn => onUpdate(prev => ({ planLibrary: fn(prev.planLibrary || []) }))}
           onRepairBg={(id, newBg) => {
             const pl = (projet.planLibrary || []).find(p => p.id === id);
             onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, bg: newBg } : p) });
