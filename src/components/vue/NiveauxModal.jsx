@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData } from '../../lib/storage.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
@@ -32,6 +32,14 @@ function ConsultViewer({ group, onClose }) {
           if (!hd && p.id) hd = await fetchPlanHdDataUrl(p.id);
           if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
             hd = await renderPdfPageHQ(p.data, p._page || 1);
+          }
+          // PC uniquement (mémoire) : si aucune HD stockée, tenter le PDF BRUT en base
+          // (plans legacy) et rendre en très haute résolution — « tel que le PDF ».
+          if (!hd && !coarse && p.id) {
+            const fd = await fetchPlanData(p.id);
+            if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) {
+              hd = await renderPdfPageHQ(fd.data, p._page || 1);
+            }
           }
           if (!cancelled && hd) setHdById(h => ({ ...h, [p.id]: hd }));
         } catch { /* le bg reste affiché */ }
@@ -304,6 +312,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [dragBase, setDragBase] = useState(null);       // base du PDF en cours de drag
   const [dragArmBase, setDragArmBase] = useState(null); // tuile armée (mousedown sur l'icône)
   const [dropHint, setDropHint] = useState(null);       // cible survolée (surbrillance)
+  // Drag des CASES elles-mêmes (réorganiser les « grands titres » — demande Thomas).
+  const [dragFolder, setDragFolder] = useState(null);       // id de la case en cours de drag
+  const [dragArmFolder, setDragArmFolder] = useState(null); // case armée (mousedown sur sa poignée)
+  const [folderDropHint, setFolderDropHint] = useState(null); // { id, after }
   // Groupes de « Plans importés » dépliés (TOUT est replié par défaut — demande Thomas).
   const [openImported, setOpenImported] = useState(() => new Set());
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
@@ -342,6 +354,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const groupsByBase = new Map(pdfGroups.map(g => [g.nom, g]));
   // (Les cases se créent uniquement par FUSION de deux tuiles — plus de bouton dédié.)
   const deleteFolder = (fid) => setFolders(folders.filter(f => f.id !== fid)); // ses PDF redeviennent « non rangés »
+  // Réordonne les cases : la case déplacée s'insère avant/après la case cible.
+  const reorderFolders = (draggedId, targetId, after) => {
+    if (!draggedId || draggedId === targetId) return;
+    const rest = folders.filter(f => f.id !== draggedId);
+    const dragged = folders.find(f => f.id === draggedId);
+    const idx = rest.findIndex(f => f.id === targetId);
+    if (!dragged || idx < 0) return;
+    const at = idx + (after ? 1 : 0);
+    setFolders([...rest.slice(0, at), dragged, ...rest.slice(at)]);
+  };
   const renameFolder = (fid, nom) => setFolders(folders.map(f => f.id === fid ? { ...f, nom } : f));
   const moveBase = (base, fid) => {
     setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== base).concat(f.id === fid ? [base] : []) })));
@@ -493,6 +515,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         // la sélection, qui remonte ici et « déplace la tuile » (bug récurrent, Thomas).
         onDragStart={e => {
           if (dragArmBase !== g.nom) { e.preventDefault(); e.stopPropagation(); return; }
+          e.stopPropagation(); // ne pas déclencher aussi le drag de la CASE parente
           setDragBase(g.nom); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ }
         }}
         onDragEnd={() => { setDragBase(null); setDragArmBase(null); setDropHint(null); }}
@@ -727,12 +750,46 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
                 {folders.map(f => (
                   <div key={f.id}
-                    onDragOver={e => { if (dragBase) { e.preventDefault(); e.stopPropagation(); } }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); if (dragBase) { moveBase(dragBase, f.id); setDragBase(null); setDragArmBase(null); setDropHint(null); } }}
-                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',boxShadow:'0 1px 3px rgba(0,0,0,0.04)',maxWidth:'100%',boxSizing:'border-box' }}>
+                    draggable={dragArmFolder === f.id}
+                    onDragStart={e => {
+                      if (dragArmFolder !== f.id) { e.preventDefault(); return; }
+                      setDragFolder(f.id); try { e.dataTransfer.effectAllowed = 'move'; } catch { /* ok */ }
+                    }}
+                    onDragEnd={() => { setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null); }}
+                    onDragOver={e => {
+                      if (dragBase) { e.preventDefault(); e.stopPropagation(); return; }
+                      if (dragFolder && dragFolder !== f.id) {
+                        e.preventDefault(); e.stopPropagation();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setFolderDropHint({ id: f.id, after: (e.clientX - r.left) > r.width / 2 });
+                      }
+                    }}
+                    onDragLeave={() => { if (folderDropHint?.id === f.id) setFolderDropHint(null); }}
+                    onDrop={e => {
+                      e.preventDefault(); e.stopPropagation();
+                      if (dragBase) { moveBase(dragBase, f.id); }
+                      else if (dragFolder && dragFolder !== f.id) {
+                        reorderFolders(dragFolder, f.id, folderDropHint?.id === f.id ? folderDropHint.after : true);
+                      }
+                      setDragBase(null); setDragArmBase(null); setDropHint(null);
+                      setDragFolder(null); setDragArmFolder(null); setFolderDropHint(null);
+                    }}
+                    onMouseUp={() => setDragArmFolder(null)}
+                    style={{ border:`1.5px solid ${DA.border}`,borderRadius:14,background:'#FAFBFC',padding:'6px 8px 8px',
+                      boxShadow: folderDropHint?.id === f.id && dragFolder
+                        ? (folderDropHint.after ? `inset -4px 0 0 ${DA.red}` : `inset 4px 0 0 ${DA.red}`)
+                        : '0 1px 3px rgba(0,0,0,0.04)',
+                      opacity: dragFolder === f.id ? 0.45 : 1,
+                      maxWidth:'100%',boxSizing:'border-box' }}>
                     <div style={{ display:'flex',alignItems:'center',gap:8,marginBottom:6 }}>
-                      {/* Espaceur symétrique du bouton ✕ pour que le titre soit VRAIMENT centré */}
-                      {editingFolderId !== f.id && <span style={{ width:26, flexShrink:0 }}/>}
+                      {/* Poignée de réorganisation des cases (symétrique du ✕ → titre centré) */}
+                      {editingFolderId !== f.id && (
+                        <span onMouseDown={() => setDragArmFolder(f.id)}
+                          title="Glisser pour réorganiser les cases"
+                          style={{ width:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:DA.grayL, cursor:'grab' }}>
+                          <Ic n="grp" s={13}/>
+                        </span>
+                      )}
                       {editingFolderId === f.id ? (
                         <input autoFocus value={editingFolderNom}
                           onChange={e => setEditingFolderNom(e.target.value)}
