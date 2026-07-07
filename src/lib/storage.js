@@ -1568,6 +1568,17 @@ export async function savePlanBgNow(chantierId, plans) {
         }
         return row;
       }));
+    // PDF source → Storage dès l'import (une fois par base) : la loupe vectorielle est
+    // disponible immédiatement sur tous les appareils, sans attendre la sauvegarde différée.
+    const PDF_RE = /\s*—\s*Page\s*\d+\s*$/i;
+    const pdfByBase = new Map();
+    for (const pl of plans) {
+      if (typeof pl.data === 'string' && pl.data.startsWith('data:application/pdf')) {
+        const base = String(pl.nom || '').replace(PDF_RE, '').trim() || (pl.nom || 'doc');
+        if (!pdfByBase.has(base)) pdfByBase.set(base, pl.data);
+      }
+    }
+    for (const [base, pdf] of pdfByBase) { try { await uploadPlanPdf(chantierId, base, pdf); } catch { /* best-effort */ } }
     if (!rows.length) return;
     await sb.from('aichantier_chantier_plans').upsert(rows, { onConflict: 'id' });
   } catch (e) { console.warn('savePlanBgNow:', e); }

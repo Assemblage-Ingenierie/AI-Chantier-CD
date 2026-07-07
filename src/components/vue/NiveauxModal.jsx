@@ -268,6 +268,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
   //    PDF source → netteté « telle que le PDF » quel que soit le zoom (et l'iPhone
   //    dont le canvas est limité n'a plus besoin d'images géantes). ────────────────
   const [ultra, setUltra] = useState(null); // { pageId, fx, fy, fw, fh, src }
+  const [noPdf, setNoPdf] = useState(false); // zoomé mais aucun PDF source dispo (réimport requis)
   const ultraSeq = useRef(0);
   const ultraTimer = useRef(null);
 
@@ -394,26 +395,29 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
       const img = best.el.querySelector('img');
       const natural = img?.naturalWidth || 0;
       const dpr = Math.min(3, window.devicePixelRatio || 1);
-      const pdf = await getPdf();
-      // Densité affichée suffisante ? (px source par px écran ≥ densité écran).
-      // Si un PDF source est dispo, on est plus exigeant (on peut toujours faire mieux) ;
-      // sinon on ne déclenche que si l'image courante est vraiment sous-échantillonnée.
-      const need = z * dpr * (pdf ? 1.0 : 0.85);
-      if (!natural || natural / vw >= need) { return; }
       const page = pageById.current.get(best.id);
-      if (!page || !pdf) return;
+      if (!page) return;
+      const pdf = await getPdf();
+      // Zoomé sans PDF source dispo → on ne peut pas faire mieux que l'image : le signaler
+      // (« réimportez pour la HD ») pour lever le doute plutôt que de laisser flou en silence.
+      if (!pdf) { setNoPdf(z > 1.4); return; }
+      setNoPdf(false);
+      // Densité affichée suffisante ? (px source affichés par px écran ≥ densité écran).
+      if (natural && natural / vw >= z * dpr) return;
       const pw = vw, ph = best.el.offsetHeight;
-      const margin = 0.1; // marge réduite → résolution concentrée sur le visible
+      const margin = 0.12; // petite marge pour paner un peu sans re-rendre à chaque pixel
       const fx = Math.max(0, (cx0 - margin * cw) / pw);
       const fx2 = Math.min(1, (cx0 + cw * (1 + margin)) / pw);
       const fy = Math.max(0, (cy0 - best.el.offsetTop - margin * ch) / ph);
       const fy2 = Math.min(1, (cy0 - best.el.offsetTop + ch * (1 + margin)) / ph);
       if (fx2 <= fx || fy2 <= fy) return;
       const seq = ++ultraSeq.current;
+      // Résolution cible = densité écran PLEINE sur la zone visible (×2 pour marge de netteté),
+      // rapportée à la région rendue (visible + marges). Cap élevé (garde-fou canvas côté lib).
+      const visibleDevicePx = vw * dpr * 2;
       const src = await renderPdfRegion(pdf, page._page || 1, {
         fx, fy, fw: fx2 - fx, fh: fy2 - fy,
-        // Résolution PLEINE densité écran (×2) : lire exactement ce qui est écrit au zoom fort.
-        outWidth: Math.min(4200, Math.round(vw * dpr * 2)),
+        outWidth: Math.min(6000, Math.round(visibleDevicePx * (fx2 - fx) / (cw / pw))),
       });
       if (src && seq === ultraSeq.current) {
         setUltra({ pageId: best.id, fx, fy, fw: fx2 - fx, fh: fy2 - fy, src });
@@ -500,6 +504,14 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
         <Ic n="x" s={22}/>
       </button>
+      {/* Zoomé mais pas de PDF source → l'image ne peut pas être plus nette : le dire. */}
+      {noPdf && (
+        <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 14px)', left:'50%', transform:'translateX(-50%)',
+          background:'rgba(180,30,30,0.92)', color:'white', fontSize:11, fontWeight:700, borderRadius:10, padding:'6px 12px',
+          zIndex:5, maxWidth:'70vw', textAlign:'center', lineHeight:1.35 }}>
+          Qualité limitée — réimportez ce plan (Drive) pour la HD
+        </div>
+      )}
       {/* Rotation manuelle 90° — pour les téléphones dont la rotation auto est bloquée */}
       <button onClick={() => setRot(v => !v)} aria-label="Pivoter le plan" title="Pivoter le plan"
         style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:68,
@@ -760,9 +772,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const renderPdfTile = (g) => {
     // Zone de dépôt : MILIEU = regrouper dans une case, BORD gauche/droit = réordonner.
     const hintZone = (dropHint?.base === g.nom && dragBase && dragBase !== g.nom) ? dropHint.zone : null;
-    const actBtn = (active = false) => ({ flex:1, height:34, borderRadius:8, border:`1px solid ${active ? DA.red : DA.border}`,
-      background:'white', color: active ? DA.red : DA.gray, cursor:'pointer',
-      display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 });
     return (
       <div key={g.nom}
         draggable={dragArmBase === g.nom}
@@ -802,45 +811,62 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           display:'flex', flexDirection:'column',
           boxShadow: hintZone === 'before' ? `inset 4px 0 0 ${DA.red}` : hintZone === 'after' ? `inset -4px 0 0 ${DA.red}` : '0 1px 4px rgba(0,0,0,0.05)',
           opacity: dragBase === g.nom ? 0.45 : 1, transition:'border-color 0.1s, background 0.1s' }}>
-        {/* Icône déplacer (drag PC / menu tactile) */}
-        {onUpdateFolders && (
-          <div
-            onMouseDown={() => setDragArmBase(g.nom)}
-            onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
-            title="Glisser sur une autre tuile pour regrouper — ou appuyer pour choisir une case"
-            style={{ position:'absolute', top:5, right:5, width:30, height:30, borderRadius:8, cursor:'grab',
-              display:'flex', alignItems:'center', justifyContent:'center', color:DA.grayL, background:'white',
-              border:`1px solid ${movePdf === g.nom ? DA.red : 'transparent'}`, zIndex:1 }}>
-            <Ic n="grp" s={14}/>
-          </div>
-        )}
+        {/* Poignée 6 points : glisser (PC) pour réorganiser/regrouper — ou TAP pour ouvrir le
+            menu (renommer / ranger / supprimer). Les boutons ✎/🗑 permanents sont retirés
+            (demande Thomas : tout passe par ce menu). */}
+        <div
+          onMouseDown={() => setDragArmBase(g.nom)}
+          onClick={() => { setRenamePdf(null); setConfirmDelPdf(null); setMovePdf(movePdf === g.nom ? null : g.nom); }}
+          title="Glisser pour déplacer — ou appuyer pour les options"
+          style={{ position:'absolute', top:5, right:5, width:32, height:32, borderRadius:8, cursor:'grab',
+            display:'flex', alignItems:'center', justifyContent:'center', color: movePdf === g.nom ? DA.red : DA.grayL, background:'white',
+            border:`1px solid ${movePdf === g.nom ? DA.red : DA.border}`, zIndex:1 }}>
+          <Ic n="grp" s={15}/>
+        </div>
         {/* Zone cliquable : nom COMPLET (jamais tronqué — demande Thomas), sigle Ai en
             filigrane léger derrière le texte. → ouvre la visionneuse */}
-        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', textAlign:'center', position:'relative', padding:'14px 10px 4px' }}>
+        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', textAlign:'center', position:'relative', padding:'14px 10px 10px', flex:1 }}>
           <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
           {/* Titre EN GRAND et TOUJOURS entier — pas de compteur de pages (demande Thomas). */}
-          <p style={{ position:'relative', fontSize:15.5, fontWeight:800, color:DA.black, margin:'0 0 8px', lineHeight:1.25,
+          <p style={{ position:'relative', fontSize:15.5, fontWeight:800, color:DA.black, margin:0, lineHeight:1.25,
             whiteSpace:'normal', overflowWrap:'anywhere', wordBreak:'break-word', minHeight:'2.5em' }}>
             {g.nom}
           </p>
         </div>
-        {/* Actions */}
-        <div style={{ display:'flex', gap:5, padding:'0 8px 8px', marginTop:'auto' }}>
-          {onRenamePlan && (
-            <button onClick={() => { setMovePdf(null); setConfirmDelPdf(null); setRenamePdf(renamePdf?.base === g.nom ? null : { base: g.nom, val: g.nom }); }}
-              title="Renommer le PDF entier (toutes ses pages)" style={actBtn(renamePdf?.base === g.nom)}>
-              <Ic n="edt" s={14}/>
-            </button>
-          )}
-          {onDeletePlan && (
-            <button onClick={() => { setRenamePdf(null); setMovePdf(null); setConfirmDelPdf(confirmDelPdf === g.nom ? null : g.nom); }}
-              title="Supprimer ce PDF (toutes ses pages)" style={actBtn(confirmDelPdf === g.nom)}>
-              <Ic n="del" s={14}/>
-            </button>
-          )}
-        </div>
+        {/* Menu ouvert par la poignée : Renommer · Ranger dans… · Supprimer */}
+        {movePdf === g.nom && renamePdf?.base !== g.nom && confirmDelPdf !== g.nom && (
+          <div style={{ display:'flex', flexDirection:'column', gap:6, padding:'0 8px 8px' }} onClick={e => e.stopPropagation()}>
+            {onRenamePlan && (
+              <button onClick={() => setRenamePdf({ base: g.nom, val: g.nom })}
+                style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
+                <Ic n="edt" s={14}/> Renommer
+              </button>
+            )}
+            {onUpdateFolders && folders.length > 0 && (
+              <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center' }}>
+                <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, width:'100%' }}>Ranger dans :</span>
+                {folders.map(f => {
+                  const active = (f.bases || []).includes(g.nom);
+                  return (
+                    <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
+                      style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
+                        border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
+                      {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {onDeletePlan && (
+              <button onClick={() => setConfirmDelPdf(g.nom)}
+                style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:'1px solid #FCA5A5', background:'#FFF5F5', color:'#B91C1C', cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
+                <Ic n="del" s={14}/> Supprimer
+              </button>
+            )}
+          </div>
+        )}
         {renamePdf?.base === g.nom && (
           <div style={{ display:'flex', flexDirection:'column', gap:5, padding:'0 8px 8px' }}>
             {/* Grand champ pleine largeur, même corps que le titre (l'ancien mini-champ
@@ -855,25 +881,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 border:`1.5px solid ${DA.red}`, borderRadius:8, padding:'8px 9px', outline:'none', boxSizing:'border-box' }}/>
             <button onClick={() => renameWholePdf(g.nom, renamePdf.val)}
               style={{ width:'100%', padding:'9px 0', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>OK</button>
-          </div>
-        )}
-        {movePdf === g.nom && (
-          <div style={{ display:'flex', gap:5, flexWrap:'wrap', alignItems:'center', padding:'0 8px 8px' }}>
-            <span style={{ fontSize:10, fontWeight:700, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.4, width:'100%' }}>Ranger dans :</span>
-            {folders.map(f => {
-              const active = (f.bases || []).includes(g.nom);
-              return (
-                <button key={f.id} onClick={() => moveBase(g.nom, active ? null : f.id)}
-                  style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer',
-                    border:`1.5px solid ${active ? DA.red : DA.border}`, background: active ? DA.redL : 'white', color: active ? DA.red : DA.gray }}>
-                  {f.nom || 'Sans nom'}{active ? ' ✓' : ''}
-                </button>
-              );
-            })}
-            <button onClick={() => { const id = crypto.randomUUID(); setFolders([...folders, { id, nom: '', bases: [g.nom] }].map(f => f.id === id ? f : { ...f, bases: (f.bases || []).filter(b => b !== g.nom) })); setMovePdf(null); setEditingFolderId(id); setEditingFolderNom(''); }}
-              style={{ padding:'6px 11px', borderRadius:16, fontSize:11.5, fontWeight:700, cursor:'pointer', border:`1.5px dashed ${DA.red}`, background:'white', color:DA.red }}>
-              + Nouvelle case
-            </button>
           </div>
         )}
         {confirmDelPdf === g.nom && (
