@@ -545,7 +545,6 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const [renamePdf, setRenamePdf] = useState(null); // { base, val } — renommage du PDF ENTIER
   const [movePdf, setMovePdf] = useState(null);     // base du PDF dont le menu « ranger » est ouvert
   const [confirmDelPdf, setConfirmDelPdf] = useState(null); // base du PDF dont la suppression attend confirmation
-  const [confirmDelStep, setConfirmDelStep] = useState(1);  // double confirmation : étape 1 puis 2
   // Drag & drop des tuiles PDF (PC) : armé depuis l'icône « déplacer » de la tuile.
   // Déposer une tuile SUR une autre = regrouper les deux dans une case (demande Thomas).
   const [dragBase, setDragBase] = useState(null);       // base du PDF en cours de drag
@@ -888,6 +887,17 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         {/* Menu ouvert par la poignée : Renommer · Ranger dans… · Supprimer */}
         {movePdf === g.nom && renamePdf?.base !== g.nom && confirmDelPdf !== g.nom && (
           <div style={{ display:'flex', flexDirection:'column', gap:6, padding:'0 8px 8px' }} onClick={e => e.stopPropagation()}>
+            {/* Flèches : déplacer la tuile d'un cran dans l'ordre (avant/après tuiles ET cases). */}
+            <div style={{ display:'flex', gap:6 }}>
+              <button disabled={!canMove(it => it.type === 'tile' && it.g.nom === g.nom, -1)}
+                onClick={() => moveItemOrder(it => it.type === 'tile' && it.g.nom === g.nom, -1)}
+                title="Déplacer vers la gauche"
+                style={{ flex:1, padding:'8px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', fontSize:15, fontWeight:800 }}>◀</button>
+              <button disabled={!canMove(it => it.type === 'tile' && it.g.nom === g.nom, 1)}
+                onClick={() => moveItemOrder(it => it.type === 'tile' && it.g.nom === g.nom, 1)}
+                title="Déplacer vers la droite"
+                style={{ flex:1, padding:'8px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', fontSize:15, fontWeight:800 }}>▶</button>
+            </div>
             {onRenamePlan && (
               <button onClick={() => setRenamePdf({ base: g.nom, val: g.nom })}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
@@ -903,7 +913,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               </button>
             )}
             {onDeletePlan && (
-              <button onClick={() => { setConfirmDelStep(1); setConfirmDelPdf(g.nom); }}
+              <button onClick={() => setConfirmDelPdf(g.nom)}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'8px 10px', borderRadius:8, border:'1px solid #FCA5A5', background:'#FFF5F5', color:'#B91C1C', cursor:'pointer', fontSize:12.5, fontWeight:700 }}>
                 <Ic n="del" s={14}/> Supprimer
               </button>
@@ -928,18 +938,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         )}
         {confirmDelPdf === g.nom && (
           <div style={{ display:'flex', flexDirection:'column', gap:6, padding:'0 8px 8px' }}>
-            {/* Double confirmation (demande Thomas) : étape 1 puis étape 2 avant suppression. */}
+            {/* Une seule confirmation (menu « Supprimer » = 1er clic, « Oui » = 2e). */}
             <p style={{ margin:0, fontSize:11.5, fontWeight:700, color:'#B91C1C', textAlign:'center', lineHeight:1.35 }}>
-              {confirmDelStep === 1
-                ? `Supprimer ce plan (${g.pages.length} page${g.pages.length > 1 ? 's' : ''}) ?`
-                : 'Confirmer ? Cette suppression est définitive.'}
+              Supprimer ce plan ({g.pages.length} page{g.pages.length > 1 ? 's' : ''}) ?
             </p>
             <div style={{ display:'flex', gap:5, alignItems:'center' }}>
-              <button onClick={() => { if (confirmDelStep === 1) setConfirmDelStep(2); else deleteWholePdf(g); }}
+              <button onClick={() => deleteWholePdf(g)}
                 style={{ flex:1, padding:'8px 0', borderRadius:8, border:'none', background:'#B91C1C', color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>
-                {confirmDelStep === 1 ? 'Supprimer' : 'Oui, supprimer'}
+                Oui, supprimer
               </button>
-              <button onClick={() => { setConfirmDelPdf(null); setConfirmDelStep(1); }}
+              <button onClick={() => setConfirmDelPdf(null)}
                 style={{ flex:1, padding:'8px 0', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#555', fontSize:12, fontWeight:700, cursor:'pointer' }}>
                 Annuler
               </button>
@@ -1021,6 +1029,15 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
             {f.nom || 'Sans nom'}
           </p>
         )}
+        {/* Flèches : déplacer la case d'un cran dans l'ordre (avant/après tuiles ET cases). */}
+        <button disabled={!canMove(it => it.type === 'folder' && it.f.id === f.id, -1)}
+          onClick={() => moveItemOrder(it => it.type === 'folder' && it.f.id === f.id, -1)}
+          title="Déplacer la case vers la gauche"
+          style={{ flexShrink:0,width:24,height:26,borderRadius:6,border:'none',background:'none',color:DA.grayL,cursor:'pointer',fontSize:14,fontWeight:800 }}>◀</button>
+        <button disabled={!canMove(it => it.type === 'folder' && it.f.id === f.id, 1)}
+          onClick={() => moveItemOrder(it => it.type === 'folder' && it.f.id === f.id, 1)}
+          title="Déplacer la case vers la droite"
+          style={{ flexShrink:0,width:24,height:26,borderRadius:6,border:'none',background:'none',color:DA.grayL,cursor:'pointer',fontSize:14,fontWeight:800 }}>▶</button>
         <button onClick={() => deleteFolder(f.id)} title="Dissoudre la case (les PDF restent)"
           style={{ flexShrink:0,width:26,height:26,borderRadius:7,border:'none',background:'none',color:DA.grayL,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
           <Ic n="x" s={13}/>
@@ -1050,6 +1067,33 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     folders.forEach(f => { if (!emitted.has(f.id)) out.push({ type: 'folder', f }); }); // cases vides
     return out;
   })();
+
+  // Déplace un BLOC de bases avant/après une base ancre dans la bibliothèque (persisté).
+  const moveGroupBefore = (movingBases, anchorBase, after) => {
+    const set = new Set(movingBases);
+    onReorderPlans?.(lib => {
+      const moving = lib.filter(pl => set.has(baseOfPl(pl)));
+      const rest = lib.filter(pl => !set.has(baseOfPl(pl)));
+      const idxs = rest.map((pl, i) => baseOfPl(pl) === anchorBase ? i : -1).filter(i => i >= 0);
+      if (!moving.length || !idxs.length) return lib;
+      const at = after ? idxs[idxs.length - 1] + 1 : idxs[0];
+      return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+    });
+  };
+  // Flèches ◀ ▶ : déplace un élément (tuile OU case) d'un cran dans l'ordre unifié —
+  // déterministe, sans drag (demande Thomas). dir = -1 (gauche) / +1 (droite).
+  const basesOfItem = (it) => it.type === 'folder' ? orderedFolderBases(it.f) : [it.g.nom];
+  const moveItemOrder = (predicate, dir) => {
+    const i = unifiedItems.findIndex(predicate);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= unifiedItems.length) return;
+    const moving = basesOfItem(unifiedItems[i]);
+    const nb = basesOfItem(unifiedItems[j]);
+    if (!moving.length || !nb.length) return;
+    // gauche : passer avant le 1er plan du voisin ; droite : après son dernier plan.
+    moveGroupBefore(moving, dir < 0 ? nb[0] : nb[nb.length - 1], dir > 0);
+  };
+  const canMove = (predicate, dir) => { const i = unifiedItems.findIndex(predicate); return i >= 0 && i + dir >= 0 && i + dir < unifiedItems.length; };
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
