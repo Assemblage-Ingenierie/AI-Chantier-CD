@@ -4,6 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
 import { fetchPlanHdDataUrl, fetchPlanData } from '../../lib/storage.js';
+import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
@@ -31,18 +32,28 @@ function ConsultViewer({ group, onClose }) {
     try {
       let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
       if (!hd) hd = await fetchPlanHdDataUrl(p.id);
+      let rendered = false;
       if (!hd && typeof p.data === 'string' && p.data.startsWith('data:application/pdf')) {
         hd = await renderPdfPageHQ(p.data, p._page || 1);
+        rendered = !!hd;
       }
-      // PC uniquement (mémoire) : si aucune HD stockée, tenter le PDF BRUT en base
-      // (plans legacy) et rendre en très haute résolution — « tel que le PDF ».
-      if (!hd && !coarse) {
+      // Si aucune HD stockée : tenter le PDF BRUT en base (plans legacy, colonne data) et
+      // rendre en très haute résolution — « tel que le PDF ». Sur MOBILE aussi : une page
+      // à la fois, à la demande — le réserver au PC laissait le téléphone bloqué sur
+      // l'aperçu 1600 px « horrible » (retour Thomas).
+      if (!hd) {
         const fd = await fetchPlanData(p.id);
         if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) {
           hd = await renderPdfPageHQ(fd.data, p._page || 1);
+          rendered = !!hd;
         }
       }
-      if (hd) setHdById(h => ({ ...h, [p.id]: hd }));
+      if (hd) {
+        // Persister la HQ rendue à la volée (IndexedDB, même clé que les HD téléchargées) :
+        // instantanée aux prochaines ouvertures, y compris hors ligne.
+        if (rendered) setPlanHd(p.id, hd);
+        setHdById(h => ({ ...h, [p.id]: hd }));
+      }
     } catch { /* le bg reste affiché */ }
   };
   // PC (défilement natif, pas de transform) : toutes les HD en séquence.
@@ -173,6 +184,11 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
+              {!hdById[p.id] && p.bg && (
+                <span style={{ position:'absolute',bottom:8,left:8,display:'inline-flex',alignItems:'center',gap:4,background:'rgba(0,0,0,0.65)',color:'white',fontSize:10,fontWeight:700,borderRadius:6,padding:'3px 7px' }}>
+                  <Ic n="spn" s={10}/> HD…
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -370,6 +386,11 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
+              {vis && !hdById[p.id] && p.bg && (
+                <span style={{ position:'absolute',bottom:8,left:8,display:'inline-flex',alignItems:'center',gap:4,background:'rgba(0,0,0,0.65)',color:'white',fontSize:10,fontWeight:700,borderRadius:6,padding:'3px 7px' }}>
+                  <Ic n="spn" s={10}/> HD…
+                </span>
+              )}
             </div>
             );
           })}
