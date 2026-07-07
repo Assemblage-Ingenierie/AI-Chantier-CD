@@ -21,6 +21,23 @@ function ConsultViewer({ group, onClose }) {
   const gestRef  = useRef(null);       // instantané du geste { t, pts:[{x,y}…] }
   const tRef     = useRef(t); tRef.current = t;
   const lastTap  = useRef({ ts: 0, x: 0, y: 0 });
+  // Zoom minimal = « page ENTIÈRE visible » (fix PC : la vue s'ouvrait calée sur la largeur →
+  // impression de zoom, et impossible de dézoomer sous 100 %). Calculé au chargement de la
+  // première page, appliqué comme vue initiale (centrée).
+  const [minZ, setMinZ] = useState(1);
+  const minZRef = useRef(1); minZRef.current = minZ;
+  const fitApplied = useRef(false);
+  const applyFit = (ar) => {
+    if (fitApplied.current) return;
+    const box = boxRef.current;
+    if (!box || !ar) return;
+    fitApplied.current = true;
+    const vw = box.clientWidth, vh = box.clientHeight;
+    const pageH = vw / ar;                       // hauteur affichée de la page à z=1 (largeur = vw)
+    const fz = Math.min(1, vh / pageH);          // z pour voir la page en entier
+    setMinZ(fz);
+    setT({ z: fz, x: (vw - vw * fz) / 2, y: 0 }); // centrée horizontalement
+  };
 
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
@@ -28,8 +45,9 @@ function ConsultViewer({ group, onClose }) {
     const vw = box.clientWidth, vh = box.clientHeight;
     const cw = vw * nt.z;                       // largeur du contenu à l'échelle
     const ch = inner.offsetHeight * nt.z;       // hauteur naturelle × zoom
-    const minX = Math.min(0, vw - cw), minY = Math.min(0, vh - ch);
-    return { z: nt.z, x: Math.max(minX, Math.min(0, nt.x)), y: Math.max(minY, Math.min(0, nt.y)) };
+    const xMin = Math.min(0, vw - cw), xMax = Math.max(0, vw - cw);
+    const yMin = Math.min(0, vh - ch), yMax = Math.max(0, vh - ch);
+    return { z: nt.z, x: Math.max(xMin, Math.min(xMax, nt.x)), y: Math.max(yMin, Math.min(yMax, nt.y)) };
   };
 
   const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
@@ -49,7 +67,7 @@ function ConsultViewer({ group, onClose }) {
       // Pincement : zoom autour du point médian (le point du plan sous les doigts reste sous les doigts)
       const d0 = Math.hypot(g.pts[1].x - g.pts[0].x, g.pts[1].y - g.pts[0].y) || 1;
       const d1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      const z  = Math.max(1, Math.min(6, g.t.z * (d1 / d0)));
+      const z  = Math.max(minZRef.current, Math.min(6, g.t.z * (d1 / d0)));
       const m0 = { x: (g.pts[0].x + g.pts[1].x) / 2, y: (g.pts[0].y + g.pts[1].y) / 2 };
       const m1 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       const cx = (m0.x - g.t.x) / g.t.z, cy = (m0.y - g.t.y) / g.t.z;
@@ -69,7 +87,11 @@ function ConsultViewer({ group, onClose }) {
       if (moved < 12) {
         if (now - lastTap.current.ts < 320 && Math.hypot(e.clientX - lastTap.current.x, e.clientY - lastTap.current.y) < 40) {
           const cur = tRef.current;
-          if (cur.z > 1.05) setT(clampT({ z: 1, x: 0, y: cur.y / cur.z }));
+          if (cur.z > minZRef.current * 1.05) {
+            const box = boxRef.current;
+            const vw = box ? box.clientWidth : 0;
+            setT(clampT({ z: minZRef.current, x: (vw - vw * minZRef.current) / 2, y: cur.y * (minZRef.current / cur.z) }));
+          }
           else {
             const z = 2.5;
             const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
@@ -85,7 +107,7 @@ function ConsultViewer({ group, onClose }) {
     e.preventDefault();
     const cur = tRef.current;
     if (e.ctrlKey || e.metaKey) {
-      const z = Math.max(1, Math.min(6, cur.z * (e.deltaY < 0 ? 1.15 : 0.87)));
+      const z = Math.max(minZRef.current, Math.min(6, cur.z * (e.deltaY < 0 ? 1.15 : 0.87)));
       const cx = (e.clientX - cur.x) / cur.z, cy = (e.clientY - cur.y) / cur.z;
       setT(clampT({ z, x: e.clientX - cx * z, y: e.clientY - cy * z }));
     } else {
@@ -100,6 +122,9 @@ function ConsultViewer({ group, onClose }) {
         <p style={{ flex:1,minWidth:0,fontSize:13,fontWeight:700,color:'white',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
           {group.nom} <span style={{ color:'rgba(255,255,255,0.45)',fontWeight:400 }}>· {group.pages.length} page{group.pages.length > 1 ? 's' : ''}</span>
         </p>
+        {typeof window !== 'undefined' && window.innerWidth >= 900 && (
+          <span style={{ flexShrink:0,fontSize:10,color:'rgba(255,255,255,0.45)',whiteSpace:'nowrap' }}>Ctrl + molette : zoom</span>
+        )}
         <button onClick={onClose}
           style={{ width:36,height:36,borderRadius:8,border:'none',background:'rgba(255,255,255,0.12)',color:'white',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0 }}>
           <Ic n="x" s={16}/>
@@ -111,10 +136,12 @@ function ConsultViewer({ group, onClose }) {
         style={{ flex:1,overflow:'hidden',position:'relative',touchAction:'none',cursor:'grab' }}>
         <div ref={innerRef}
           style={{ width:'100%',transform:`translate(${t.x}px, ${t.y}px) scale(${t.z})`,transformOrigin:'0 0' }}>
-          {group.pages.map(p => (
+          {group.pages.map((p, i) => (
             <div key={p.id} style={{ position:'relative',marginBottom:6 }}>
               {p.bg
-                ? <img src={p.bg} alt="" draggable={false} style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
+                ? <img src={p.bg} alt="" draggable={false}
+                    onLoad={i === 0 ? (e) => applyFit(e.target.naturalWidth / e.target.naturalHeight) : undefined}
+                    style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
