@@ -86,13 +86,30 @@ function InlineEditForm({ contact, onSave, onCancel, saving }) {
       <div style={{ fontSize:9, fontWeight:800, color:'#92400E', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 }}>
         {contact.id ? 'Modifier le contact' : 'Nouveau contact'}
       </div>
-      {[['nom','Nom *'],['poste','Poste (ex : Architecte)'],['entreprise','Entreprise'],['email','Email'],['tel','Téléphone']].map(([k, lbl]) => (
-        <input key={k} value={form[k]}
-          onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
-          placeholder={lbl}
-          style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6,
-            padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white' }}/>
-      ))}
+      {/* COMPACT : nom pleine largeur, puis Poste|Entreprise et Email|Téléphone côte à côte —
+          le formulaire (boutons compris) tient dans la zone sans avoir à défiler (demande Thomas). */}
+      {(() => {
+        const inp = (k, lbl, extra = {}) => (
+          <input key={k} value={form[k]}
+            onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+            placeholder={lbl}
+            style={{ width:'100%', minWidth:0, fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6,
+              padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit', background:'white', ...extra }}/>
+        );
+        return (
+          <>
+            {inp('nom', 'Nom *')}
+            <div style={{ display:'flex', gap:4 }}>
+              <div style={{ flex:1, minWidth:0 }}>{inp('poste', 'Poste')}</div>
+              <div style={{ flex:1, minWidth:0 }}>{inp('entreprise', 'Entreprise')}</div>
+            </div>
+            <div style={{ display:'flex', gap:4 }}>
+              <div style={{ flex:1.4, minWidth:0 }}>{inp('email', 'Email')}</div>
+              <div style={{ flex:1, minWidth:0 }}>{inp('tel', 'Téléphone')}</div>
+            </div>
+          </>
+        );
+      })()}
       <div style={{ display:'flex', gap:6, marginTop:2 }}>
         <button onClick={() => onSave({ ...contact, ...form })} disabled={!form.nom.trim() || saving}
           style={{ flex:1, padding:'6px 0', borderRadius:8, fontSize:11, fontWeight:700, border:'none',
@@ -371,7 +388,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
               placeholder="Rechercher…"
               style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
           </div>
-          <div style={{ maxHeight:220, overflowY:'auto' }}>
+          <div style={{ maxHeight:280, overflowY:'auto' }}>
             {loadingC
               ? <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Chargement…</div>
               : filteredAssemblage.length === 0
@@ -392,7 +409,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
                   placeholder="Rechercher dans les contacts…"
                   style={{ width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 8px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}/>
               </div>
-              <div style={{ maxHeight:180, overflowY:'auto' }}>
+              <div style={{ maxHeight:320, overflowY:'auto' }}>
                 {loadingC
                   ? <div style={{ padding:12, fontSize:11, color:DA.grayL, textAlign:'center' }}>Chargement…</div>
                   : filteredExternal.map(c => renderExternalRow(c))
@@ -442,7 +459,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
         </div>
 
         {q && (
-          <div style={{ position:'absolute', left:0, right:0, top:'100%', marginTop:3, background:'white', border:`1px solid ${DA.border}`, borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:20, maxHeight:240, overflowY:'auto' }}>
+          <div style={{ position:'absolute', left:0, right:0, top:'100%', marginTop:3, background:'white', border:`1px solid ${DA.border}`, borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:20, maxHeight:320, overflowY:'auto' }}>
             {!hasQuickResults && (
               <div style={{ padding:'12px 10px', fontSize:11, color:DA.grayL, textAlign:'center' }}>Aucun résultat pour « {quickSearch} »</div>
             )}
