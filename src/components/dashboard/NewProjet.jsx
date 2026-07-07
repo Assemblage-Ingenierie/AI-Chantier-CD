@@ -14,6 +14,25 @@ const FIELDS = [
 const RATIO_TUILE = 16 / 9;
 const RATIO_GARDE = 210 / 85;
 
+// Touche clavier stylisée pour l'astuce Ctrl+V.
+const Kbd = ({ children }) => (
+  <span style={{ display:'inline-block', border:`1px solid ${DA.border}`, borderBottomWidth:2, borderRadius:4,
+    padding:'0 5px', fontSize:10, fontWeight:700, color:DA.gray, background:'white', lineHeight:'16px' }}>{children}</span>
+);
+
+// Astuce visible en permanence : les collègues doivent SAVOIR qu'un PDF (page de garde…)
+// ou une capture d'écran collée fonctionnent comme source de couverture (demande Thomas).
+export const CoverSourcesHint = () => (
+  <div style={{ display:'flex', alignItems:'flex-start', gap:8, background:DA.grayXL,
+    border:`1px solid ${DA.border}`, borderRadius:9, padding:'8px 11px', marginBottom:14 }}>
+    <span style={{ fontSize:14, lineHeight:'18px' }}>💡</span>
+    <p style={{ fontSize:11.5, color:DA.gray, margin:0, lineHeight:1.5 }}>
+      Fonctionne avec une <b>photo</b>, un <b>PDF</b> (sa 1<sup>re</sup> page, ex : page de garde)
+      ou une <b>capture d'écran collée</b> directement ici — <Kbd>Ctrl</Kbd>+<Kbd>V</Kbd> sur PC.
+    </p>
+  </div>
+);
+
 export default function NewProjet({ onClose, onSave }) {
   const [f,        setF]       = useState({ nom:'', adresse:'', photo:null, photoCouverture:null, maitreOuvrage:'', ingenieurs:'' });
   const [cropSrc,  setCropSrc] = useState(null);
@@ -132,13 +151,12 @@ export default function NewProjet({ onClose, onSave }) {
                 <p style={{ fontSize:11, color:DA.grayL, marginTop:6, marginBottom:0 }}>
                   {pdfBusy ? 'Lecture du PDF…' : 'Appuyer pour ajouter une photo ou un PDF'}
                 </p>
-                {!pdfBusy && <p style={{ fontSize:10, color:DA.grayL, marginTop:3, marginBottom:0 }}>PC : collez une capture d'écran (Ctrl+V)</p>}
               </div>
             )}
           </div>
         </div>
 
-        <div style={{ display:'flex', gap:6, marginBottom:16 }}>
+        <div style={{ display:'flex', gap:6, marginBottom:10 }}>
           <button onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}
             style={{ border:`1px solid ${DA.border}`, background:'white', borderRadius:7, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:DA.gray }}>
             <Ic n="img" s={11}/> Galerie
@@ -153,6 +171,8 @@ export default function NewProjet({ onClose, onSave }) {
 
         <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }}
           onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
+
+        <CoverSourcesHint/>
 
         {FIELDS.map(({ k, l, ph }) => (
           <div key={k} style={{ marginBottom:12 }}>
