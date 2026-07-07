@@ -189,6 +189,51 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).map(b => b === base ? newBase : b) })));
     setRenamePdf(null);
   };
+  // Ligne d'UN plan importé (vignette + renommage + réimport + suppression) — réutilisée
+  // dans les bulles automatiques par PDF d'origine et pour les plans isolés.
+  const renderImportedRow = (pl) => (
+    <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
+      {pl.bg
+        ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
+        : <div style={{ width:44,height:30,borderRadius:5,border:'1px dashed #FCA5A5',flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={14}/></div>
+      }
+      {editingPlanId === pl.id ? (
+        <input autoFocus value={editingPlanNom}
+          onChange={e => setEditingPlanNom(e.target.value)}
+          onBlur={() => { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); }}
+          onKeyDown={e => { if (e.key === 'Enter') { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); } if (e.key === 'Escape') setEditingPlanId(null); }}
+          style={{ flex:1,fontSize:12,fontWeight:600,border:`1px solid ${DA.red}`,borderRadius:5,padding:'2px 6px',outline:'none',boxSizing:'border-box' }}/>
+      ) : (
+        <p onClick={() => { if (onRenamePlan) { setEditingPlanId(pl.id); setEditingPlanNom(pl.nom); } }}
+          style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:onRenamePlan?'text':'default' }}>{pl.nom}</p>
+      )}
+      {!pl.bg && onRepairBg && (
+        <button
+          onClick={() => { setRepairTargetId(pl.id); repairFileRef.current.click(); }}
+          disabled={repairingId === pl.id}
+          title="Réimporter l'image de ce plan"
+          style={{ padding:'3px 7px',color:'#B91C1C',background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:5,cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,whiteSpace:'nowrap',flexShrink:0 }}>
+          {repairingId === pl.id ? <Ic n="spn" s={11}/> : <Ic n="und" s={11}/>}
+          Réimporter
+        </button>
+      )}
+      {onDeletePlan && (confirmDelPlanId === pl.id ? (
+        <>
+          <button onClick={() => { onDeletePlan(pl.id); setConfirmDelPlanId(null); }}
+            style={{ fontSize:11,fontWeight:700,padding:'3px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,cursor:'pointer' }}>Supprimer</button>
+          <button onClick={() => setConfirmDelPlanId(null)}
+            style={{ fontSize:11,padding:'3px 7px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:5,cursor:'pointer' }}>Non</button>
+        </>
+      ) : (
+        <button onClick={() => setConfirmDelPlanId(pl.id)}
+          style={{ padding:'4px 6px',color:'#ccc',background:'none',border:'none',cursor:'pointer',borderRadius:5,lineHeight:0 }}
+          onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+          <Ic n="del" s={13}/>
+        </button>
+      ))}
+    </div>
+  );
+
   // Ligne PDF réutilisable (dans une case ou « non rangés ») : consulter + renommer + ranger.
   const renderPdfRow = (g) => (
     <div key={g.nom} style={{ display:'flex', flexDirection:'column', gap:4 }}>
@@ -481,49 +526,21 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               <>
               {repairErr && <div style={{ background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:6,padding:'6px 10px',marginBottom:6,fontSize:11,color:'#B91C1C' }}>⚠️ {repairErr}</div>}
               <input ref={repairFileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }} onChange={handleRepairFile}/>
-              <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
-                {planLibrary.map(pl => (
-                  <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:8,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
-                    {pl.bg
-                      ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:44,height:30,objectFit:'cover',borderRadius:5,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
-                      : <div style={{ width:44,height:30,borderRadius:5,border:'1px dashed #FCA5A5',flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={14}/></div>
-                    }
-                    {editingPlanId === pl.id ? (
-                      <input autoFocus value={editingPlanNom}
-                        onChange={e => setEditingPlanNom(e.target.value)}
-                        onBlur={() => { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); }}
-                        onKeyDown={e => { if (e.key === 'Enter') { if (editingPlanNom.trim() && onRenamePlan) onRenamePlan(pl.id, editingPlanNom.trim()); setEditingPlanId(null); } if (e.key === 'Escape') setEditingPlanId(null); }}
-                        style={{ flex:1,fontSize:12,fontWeight:600,border:`1px solid ${DA.red}`,borderRadius:5,padding:'2px 6px',outline:'none',boxSizing:'border-box' }}/>
-                    ) : (
-                      <p onClick={() => { if (onRenamePlan) { setEditingPlanId(pl.id); setEditingPlanNom(pl.nom); } }}
-                        style={{ flex:1,fontSize:12,fontWeight:600,color:DA.black,margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',cursor:onRenamePlan?'text':'default' }}>{pl.nom}</p>
-                    )}
-                    {!pl.bg && onRepairBg && (
-                      <button
-                        onClick={() => { setRepairTargetId(pl.id); repairFileRef.current.click(); }}
-                        disabled={repairingId === pl.id}
-                        title="Réimporter l'image de ce plan"
-                        style={{ padding:'3px 7px',color:'#B91C1C',background:'#FFF0F0',border:'1px solid #FCA5A5',borderRadius:5,cursor:'pointer',display:'flex',alignItems:'center',gap:3,fontSize:10,fontWeight:700,whiteSpace:'nowrap',flexShrink:0 }}>
-                        {repairingId === pl.id ? <Ic n="spn" s={11}/> : <Ic n="und" s={11}/>}
-                        Réimporter
-                      </button>
-                    )}
-                    {onDeletePlan && (confirmDelPlanId === pl.id ? (
-                      <>
-                        <button onClick={() => { onDeletePlan(pl.id); setConfirmDelPlanId(null); }}
-                          style={{ fontSize:11,fontWeight:700,padding:'3px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:5,cursor:'pointer' }}>Supprimer</button>
-                        <button onClick={() => setConfirmDelPlanId(null)}
-                          style={{ fontSize:11,padding:'3px 7px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:5,cursor:'pointer' }}>Non</button>
-                      </>
-                    ) : (
-                      <button onClick={() => setConfirmDelPlanId(pl.id)}
-                        style={{ padding:'4px 6px',color:'#ccc',background:'none',border:'none',cursor:'pointer',borderRadius:5,lineHeight:0 }}
-                        onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
-                        <Ic n="del" s={13}/>
-                      </button>
-                    ))}
+              <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+                {/* BULLES AUTOMATIQUES par PDF d'origine (demande Thomas : la liste plate de
+                    toutes les pages était le bazar). Le regroupement se calcule à partir des
+                    NOMS (« base — Page N ») → renommer le PDF entier ou une page met tout à
+                    jour automatiquement, sans état supplémentaire. Plans isolés : ligne simple. */}
+                {pdfGroups.map(g => g.pages.length > 1 ? (
+                  <div key={g.nom} style={{ border:`1.5px solid ${DA.border}`,borderRadius:12,background:'#FAFBFC',padding:'7px 8px 8px' }}>
+                    <p style={{ fontSize:11.5,fontWeight:800,color:DA.black,margin:'0 2px 6px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>
+                      📄 {g.nom} <span style={{ color:DA.grayL,fontWeight:600 }}>· {g.pages.length} pages</span>
+                    </p>
+                    <div style={{ display:'flex',flexDirection:'column',gap:5 }}>
+                      {g.pages.map(pl => renderImportedRow(pl))}
+                    </div>
                   </div>
-                ))}
+                ) : renderImportedRow(g.pages[0]))}
               </div>
               </>
             )}
