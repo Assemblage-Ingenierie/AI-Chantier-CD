@@ -111,7 +111,6 @@ function splitTextSegs(text) {
 
 // Estimation fallback (utilisée uniquement si la mesure DOM n'est pas encore dispo)
 function estimateBlockH(block, ppl) {
-  if (block.type === 'groupHeader') return block.kind === 'bat' ? 34 : 24;
   if (block.type === 'zone') return 42;
   if (block.type === 'plan') return Math.round(CW * 0.6) + 30 + 90;
   const item = block.item;
@@ -154,38 +153,14 @@ function itemHasReportContent(i) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoRow)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-// Ordonne les zones par regroupement Bâtiment ▸ Niveau (premier vu), comme à l'écran.
-// Si aucune zone n'est classée, l'ordre d'origine est préservé (un seul groupe vide).
-function orderLocsByGroup(locs) {
-  const batOrder = [], batMap = new Map();
-  for (const loc of locs) {
-    const b = (loc.batiment || '').trim(), n = (loc.niveau || '').trim();
-    if (!batMap.has(b)) { batMap.set(b, { nivOrder: [], nivMap: new Map() }); batOrder.push(b); }
-    const bg = batMap.get(b);
-    if (!bg.nivMap.has(n)) { bg.nivMap.set(n, []); bg.nivOrder.push(n); }
-    bg.nivMap.get(n).push(loc);
-  }
-  const out = [];
-  for (const b of batOrder) { const bg = batMap.get(b); for (const n of bg.nivOrder) out.push(...bg.nivMap.get(n)); }
-  return out;
-}
-
 function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = [], breaks = new Set()) {
   const blocks = [];
   const planTail = []; // plans groupés en fin quand plansNoBreak=true
   const cols   = Math.min(ppl, 3);
 
-  let lastBat = null, lastNiv = null;
-  for (const loc of orderLocsByGroup(locs)) {
+  for (const loc of locs) {
     const items = (loc.items || []).filter(itemHasReportContent);
     if (!items.length) continue;
-    // En-têtes de regroupement (bâtiment / niveau) — émis seulement pour les zones classées,
-    // juste avant la première zone visible du groupe.
-    const bat = (loc.batiment || '').trim();
-    const niv = (loc.niveau || '').trim();
-    if (bat && bat !== lastBat) { blocks.push({ type:'groupHeader', kind:'bat', id:`gh-b-${bat}`, batiment:bat }); lastNiv = null; }
-    if (niv && (bat !== lastBat || niv !== lastNiv)) { blocks.push({ type:'groupHeader', kind:'niv', id:`gh-n-${bat}|${niv}`, batiment:bat, niveau:niv }); }
-    lastBat = bat; lastNiv = niv;
     blocks.push({ type:'zone', id:loc.id, loc });
     let photoOffset = 0;
     for (const item of items) {
@@ -430,22 +405,6 @@ function ZoneHeader({ loc }) {
   return (
     <div style={{ borderBottom:`2px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
       <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loc.nom}</span>
-    </div>
-  );
-}
-
-// En-tête de bâtiment (bandeau noir) / niveau (sous-titre rouge) dans le rapport.
-function GroupHeader({ kind, batiment, niveau }) {
-  if (kind === 'bat') {
-    return (
-      <div style={{ background:'#000', color:'#fff', padding:'6px 10px', marginTop:4, marginBottom:7, borderRadius:3 }}>
-        <span style={{ fontSize:11, fontFamily:"'Open Sans', sans-serif", fontWeight:800, textTransform:'uppercase', letterSpacing:'0.09em' }}>{batiment}</span>
-      </div>
-    );
-  }
-  return (
-    <div style={{ marginTop:2, marginBottom:5, paddingBottom:2, borderBottom:`1px solid ${DA.red}` }}>
-      <span style={{ fontSize:9.5, fontFamily:"'Open Sans', sans-serif", fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:'0.07em' }}>{niveau}</span>
     </div>
   );
 }
@@ -2438,9 +2397,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           <div style={{ width:CW, visibility:'hidden', pointerEvents:'none' }}>
             {allBlocks.map(block => (
               <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
-                {block.type === 'groupHeader'
-                  ? <GroupHeader kind={block.kind} batiment={block.batiment} niveau={block.niveau}/>
-                  : block.type === 'zone'
+                {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
@@ -2501,9 +2458,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     <React.Fragment key={block.id}>
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
                       <div>
-                        {block.type === 'groupHeader'
-                          ? <GroupHeader kind={block.kind} batiment={block.batiment} niveau={block.niveau} />
-                          : block.type === 'zone'
+                        {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
                           ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
