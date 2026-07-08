@@ -389,6 +389,20 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
 
               </div>
 
+              {/* Plan propre à l'observation : ouvre l'éditeur où l'on assigne/annote le(s)
+                  plan(s) de CETTE observation (mécanique item.plans, déjà reprise au rapport).
+                  Surligné + compteur quand l'observation a au moins un plan. */}
+              <button onClick={e => { e.stopPropagation(); onEdit(item); }}
+                title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
+                aria-label="Plan de l'observation"
+                style={{ padding: isDesktop ? '10px 12px' : '8px 9px', cursor:'pointer', flexShrink:0, alignSelf:'flex-start', marginRight:6,
+                  color:(item.plans || []).length ? DA.red : DA.grayL,
+                  background:(item.plans || []).length ? DA.redL : 'white',
+                  border:`1px solid ${(item.plans || []).length ? DA.red : DA.border}`,
+                  borderRadius:8, display:'flex', alignItems:'center' }}>
+                <Ic n="map" s={15}/>
+                {(item.plans || []).length > 0 && <span style={{ fontSize:11, fontWeight:800, marginLeft:4 }}>{item.plans.length}</span>}
+              </button>
               {(confirmDelId === item.id
                 ? <div style={{ display:'flex',alignItems:'center',gap:6,flexShrink:0 }} onClick={e => e.stopPropagation()}>
                     <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
