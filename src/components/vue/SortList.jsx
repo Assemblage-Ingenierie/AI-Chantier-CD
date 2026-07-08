@@ -243,6 +243,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
         {items.map((item, i) => {
           const isDragging = dragIdx === i;
           const isOver     = overIdx === i && dragIdx !== i;
+          const ICON_BTN   = isDesktop ? 38 : 36; // taille fixe commune aux icônes d'action de la ligne
           return (
             <div key={item.id}
               draggable
@@ -389,29 +390,34 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
 
               </div>
 
-              {/* Plan propre à l'observation : ouvre l'éditeur où l'on assigne/annote le(s)
-                  plan(s) de CETTE observation (mécanique item.plans, déjà reprise au rapport).
-                  Surligné + compteur quand l'observation a au moins un plan. */}
-              <button onClick={e => { e.stopPropagation(); onEdit(item); }}
-                title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
-                aria-label="Plan de l'observation"
-                style={{ padding: isDesktop ? '10px 12px' : '8px 9px', cursor:'pointer', flexShrink:0, alignSelf:'flex-start', marginRight:6,
-                  color:(item.plans || []).length ? DA.red : DA.grayL,
-                  background:(item.plans || []).length ? DA.redL : 'white',
-                  border:`1px solid ${(item.plans || []).length ? DA.red : DA.border}`,
-                  borderRadius:8, display:'flex', alignItems:'center' }}>
-                <Ic n="map" s={15}/>
-                {(item.plans || []).length > 0 && <span style={{ fontSize:11, fontWeight:800, marginLeft:4 }}>{item.plans.length}</span>}
-              </button>
-              {(confirmDelId === item.id
-                ? <div style={{ display:'flex',alignItems:'center',gap:6,flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                    <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
-                    <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
-                  </div>
-                : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red,padding: isDesktop ? '10px 12px' : '8px 9px',cursor:'pointer',flexShrink:0,background:'#FFF0F0',border:'1px solid #FECACA',borderRadius:8,display:'flex',alignItems:'center' }}>
-                    <Ic n="del" s={15}/>
-                  </button>
-              )}
+              {/* Actions à droite : plan de l'observation + suppression. Tailles FIXES et
+                  identiques, alignées en colonne (le compteur est une pastille en coin qui ne
+                  décale plus la corbeille). Le bouton plan ouvre l'éditeur où l'on assigne/annote
+                  le(s) plan(s) PROPRES à cette observation (mécanique item.plans). */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, alignSelf:'flex-start' }}>
+                <button onClick={e => { e.stopPropagation(); onEdit(item); }}
+                  title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
+                  aria-label="Plan de l'observation"
+                  style={{ position:'relative', width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer',
+                    color:(item.plans || []).length ? DA.red : DA.grayL,
+                    background:(item.plans || []).length ? DA.redL : 'white',
+                    border:`1px solid ${(item.plans || []).length ? DA.red : DA.border}`,
+                    borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Ic n="map" s={16}/>
+                  {(item.plans || []).length > 0 && (
+                    <span style={{ position:'absolute', top:-6, right:-6, background:DA.red, color:'white', borderRadius:9, minWidth:16, height:16, padding:'0 4px', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>{item.plans.length}</span>
+                  )}
+                </button>
+                {confirmDelId === item.id
+                  ? <div style={{ display:'flex',alignItems:'center',gap:6 }} onClick={e => e.stopPropagation()}>
+                      <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
+                      <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
+                    </div>
+                  : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red, width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer', background:'#FFF0F0', border:'1px solid #FECACA', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <Ic n="del" s={15}/>
+                    </button>
+                }
+              </div>
             </div>
           );
         })}

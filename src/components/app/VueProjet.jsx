@@ -726,11 +726,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               </span>
                             )}
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
-                              style={{ padding:'7px 9px', border:`1px solid ${hasAnyPlan ? DA.red : DA.border}`, background:hasAnyPlan ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:hasAnyPlan ? DA.red : DA.grayL }}>
-                              <Ic n="map" s={15}/>
+                              style={{ width:38, height:38, padding:0, justifyContent:'center', border:`1px solid ${hasAnyPlan ? DA.red : DA.border}`, background:hasAnyPlan ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:hasAnyPlan ? DA.red : DA.grayL }}>
+                              <Ic n="map" s={16}/>
                             </button>
                             <button onClick={() => deleteLoc(loc.id, loc.nom)}
-                              style={{ padding:'7px 8px', border:'none', background:'none', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
+                              style={{ width:38, height:38, padding:0, justifyContent:'center', border:'none', background:'none', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:'#ccc' }}
                               onMouseEnter={e => e.currentTarget.style.color = DA.red}
                               onMouseLeave={e => e.currentTarget.style.color = '#ccc'}>
                               <Ic n="del" s={16}/>
