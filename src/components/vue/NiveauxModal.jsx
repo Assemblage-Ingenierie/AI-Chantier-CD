@@ -388,8 +388,10 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
     const v = clampT(nt);
     tRef.current = v;
     if (innerRef.current) innerRef.current.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.z})`;
-    scheduleVis();
-    if (commit) setT(v);
+    // On NE recalcule PAS la visibilité/charge HD pendant le geste (pinch/pan) : c'est ce
+    // qui provoquait re-rendus (rigidité) et reflows (saut de page multi-pages). Uniquement
+    // à la FIN du geste (commit) → geste 100% fluide, plus de saut (demande Thomas).
+    if (commit) { setT(v); scheduleVis(); }
   };
 
   const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
