@@ -240,88 +240,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [zoneDragArm, setZoneDragArm] = useState(null);
   const zoneDragDidMove = useRef(false);
 
-  // ── Bâtiments / niveaux (regroupement OPTIONNEL — Règle N°5 : invisible tant qu'inutilisé) ──
-  // Deux champs facultatifs par zone : `batiment` et `niveau`. AUCUNE migration : ce sont de
-  // simples propriétés ajoutées à l'objet localisation (persisté tel quel dans la visite).
-  // Aucune zone classée ⇒ rendu à plat, strictement identique à avant.
-  const [classEditLocId, setClassEditLocId] = useState(null);
-  const [closedGroups, setClosedGroups]     = useState(() => new Set());
-  const toggleGroup = useCallback((key) => {
-    setClosedGroups(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }, []);
-
-  // Valeurs existantes pour l'autocomplétion (datalist) — évite les fautes de frappe et la
-  // prolifération de libellés proches (« RDC » vs « rdc »).
-  const zoneClassOptions = useMemo(() => {
-    const bats = new Set(), nivs = new Set();
-    for (const l of (visitProjet.localisations || [])) {
-      const b = (l.batiment || '').trim(); if (b) bats.add(b);
-      const n = (l.niveau   || '').trim(); if (n) nivs.add(n);
-    }
-    return { bats: [...bats], nivs: [...nivs] };
-  }, [visitProjet.localisations]);
-
-  // Regroupement ordonné (premier vu) : Bâtiment ▸ Niveau ▸ zones. null = mode plat (aucun classement).
-  const zoneGroups = useMemo(() => {
-    const locs = visitProjet.localisations || [];
-    const hasClass = locs.some(l => (l.batiment || '').trim() || (l.niveau || '').trim());
-    if (!hasClass) return null;
-    const batOrder = [], batMap = new Map();
-    locs.forEach((loc) => {
-      const b = (loc.batiment || '').trim();
-      const n = (loc.niveau   || '').trim();
-      if (!batMap.has(b)) { batMap.set(b, { batiment: b, nivOrder: [], nivMap: new Map() }); batOrder.push(b); }
-      const bg = batMap.get(b);
-      if (!bg.nivMap.has(n)) { bg.nivMap.set(n, { niveau: n, zones: [] }); bg.nivOrder.push(n); }
-      bg.nivMap.get(n).zones.push(loc);
-    });
-    return batOrder.map(b => {
-      const bg = batMap.get(b);
-      return { batiment: b, niveaux: bg.nivOrder.map(n => bg.nivMap.get(n)) };
-    });
-  }, [visitProjet.localisations]);
-
-  // Ordre d'affichage aligné sur le regroupement — INDISPENSABLE pour que le drag par index
-  // (surtout tactile) corresponde à l'ordre réellement visible. En mode plat = ordre d'origine.
-  const orderedLocs = useMemo(() => {
-    if (!zoneGroups) return visitProjet.localisations || [];
-    return zoneGroups.flatMap(bg => bg.niveaux.flatMap(ng => ng.zones));
-  }, [zoneGroups, visitProjet.localisations]);
-
-  // Liste de rendu : en-têtes de bâtiment/niveau intercalés + zones. `idx` = index dans
-  // orderedLocs (base du drag). Les zones d'un groupe replié sont retirées mais l'idx reste
-  // aligné pour ne pas décaler le drag des groupes suivants.
-  const zoneDisplayList = useMemo(() => {
-    if (!zoneGroups) return (visitProjet.localisations || []).map((loc, idx) => ({ type: 'zone', loc, idx }));
-    const list = []; let idx = 0;
-    for (const bg of zoneGroups) {
-      const hasBat = !!bg.batiment;
-      const batClosed = hasBat && closedGroups.has('B:' + bg.batiment);
-      const zoneCount = bg.niveaux.reduce((s, ng) => s + ng.zones.length, 0);
-      if (hasBat) list.push({ type: 'batHeader', batiment: bg.batiment, count: zoneCount, closed: batClosed });
-      if (hasBat && batClosed) { idx += zoneCount; continue; }
-      for (const ng of bg.niveaux) {
-        const hasNiv = !!ng.niveau;
-        const nivClosed = hasNiv && closedGroups.has('N:' + bg.batiment + '|' + ng.niveau);
-        if (hasNiv) list.push({ type: 'nivHeader', batiment: bg.batiment, niveau: ng.niveau, count: ng.zones.length, closed: nivClosed, indent: hasBat });
-        if (hasNiv && nivClosed) { idx += ng.zones.length; continue; }
-        for (const loc of ng.zones) { list.push({ type: 'zone', loc, idx }); idx++; }
-      }
-    }
-    return list;
-  }, [zoneGroups, closedGroups, visitProjet.localisations]);
-
   const moveZone = useCallback((fromIdx, toIdx) => {
-    if (fromIdx === toIdx || toIdx < 0 || toIdx >= orderedLocs.length) return;
-    const locs = [...orderedLocs];
+    if (fromIdx === toIdx || toIdx < 0 || toIdx >= visitProjet.localisations.length) return;
+    const locs = [...visitProjet.localisations];
     const [moved] = locs.splice(fromIdx, 1);
     locs.splice(toIdx, 0, moved);
     onUpdateVisit({ localisations: locs });
-  }, [orderedLocs, onUpdateVisit]);
+  }, [visitProjet.localisations, onUpdateVisit]);
 
   const patchLoc = useCallback((locId, patch) => {
     const locs = visitProjet.localisations.map(l => l.id === locId ? { ...l, ...patch } : l);
@@ -608,28 +533,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const totalItems = visitProjet.localisations.flatMap(l => l.items || []).length;
 
-  // En-têtes de regroupement (bâtiment / niveau) — pliables. Rendus seulement en mode groupé.
-  const renderBatHeader = (it) => (
-    <button key={'bh:' + it.batiment} onClick={() => toggleGroup('B:' + it.batiment)}
-      style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', marginTop:2,
-        background:DA.black, color:'white', border:'none', borderRadius:10, cursor:'pointer', textAlign:'left' }}>
-      <span style={{ display:'flex', transition:'transform 0.15s', transform: it.closed ? 'rotate(-90deg)' : 'rotate(0deg)' }}><Ic n="chv" s={16}/></span>
-      <Ic n="bld" s={16}/>
-      <span style={{ fontSize:14, fontWeight:800, letterSpacing:0.5, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.batiment}</span>
-      <span style={{ fontSize:11, fontWeight:700, opacity:0.65 }}>{it.count}</span>
-    </button>
-  );
-  const renderNivHeader = (it) => (
-    <button key={'nh:' + it.batiment + '|' + it.niveau} onClick={() => toggleGroup('N:' + it.batiment + '|' + it.niveau)}
-      style={{ width: it.indent ? 'calc(100% - 16px)' : '100%', marginLeft: it.indent ? 16 : 0,
-        display:'flex', alignItems:'center', gap:8, padding:'10px 14px',
-        background:DA.redL, color:DA.red, border:`1px solid ${DA.red}22`, borderRadius:9, cursor:'pointer', textAlign:'left' }}>
-      <span style={{ display:'flex', transition:'transform 0.15s', transform: it.closed ? 'rotate(-90deg)' : 'rotate(0deg)' }}><Ic n="chv" s={14}/></span>
-      <span style={{ fontSize:12, fontWeight:800, letterSpacing:0.4, textTransform:'uppercase', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.niveau}</span>
-      <span style={{ fontSize:11, fontWeight:700, opacity:0.6 }}>{it.count}</span>
-    </button>
-  );
-
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
@@ -764,12 +667,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 </div>
               ) : (
                 <>
-                  <datalist id="dl-bat">{zoneClassOptions.bats.map(b => <option key={b} value={b}/>)}</datalist>
-                  <datalist id="dl-niv">{zoneClassOptions.nivs.map(n => <option key={n} value={n}/>)}</datalist>
-                  {zoneDisplayList.map((it) => {
-                    if (it.type === 'batHeader') return renderBatHeader(it);
-                    if (it.type === 'nivHeader') return renderNivHeader(it);
-                    const loc = it.loc, locIdx = it.idx;
+                  {visitProjet.localisations.map((loc, locIdx) => {
                     const items    = loc.items || [];
                     const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
@@ -827,46 +725,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 {urgentCount} ⚠
                               </span>
                             )}
-                            {/* Classement bâtiment / niveau (Règle N°5) : icône discrète tant que vide,
-                                pastille rouge dès qu'un bâtiment ou niveau est défini. */}
-                            <div style={{ position:'relative', flexShrink:0 }}>
-                              <button onClick={e => { e.stopPropagation(); setClassEditLocId(classEditLocId === loc.id ? null : loc.id); }}
-                                title="Bâtiment / niveau"
-                                style={{ padding:'7px 9px', border:`1px solid ${(loc.batiment || loc.niveau) ? DA.red : DA.border}`, background:(loc.batiment || loc.niveau) ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', gap:5, color:(loc.batiment || loc.niveau) ? DA.red : '#ccc', maxWidth:150 }}>
-                                <Ic n="bld" s={14}/>
-                                {(loc.batiment || loc.niveau) && (
-                                  <span style={{ fontSize:11, fontWeight:700, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{[loc.batiment, loc.niveau].filter(Boolean).join(' · ')}</span>
-                                )}
-                              </button>
-                              {classEditLocId === loc.id && (
-                                <>
-                                  <div onClick={() => setClassEditLocId(null)} style={{ position:'fixed', inset:0, zIndex:29 }}/>
-                                  <div onClick={e => e.stopPropagation()}
-                                    style={{ position:'absolute', top:'calc(100% + 6px)', right:0, zIndex:30, background:'white', border:`1px solid ${DA.border}`, borderRadius:10, boxShadow:'0 8px 28px rgba(0,0,0,0.18)', padding:12, width:230, display:'flex', flexDirection:'column', gap:9 }}>
-                                    <div>
-                                      <label style={{ display:'block', fontSize:10, fontWeight:800, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>Bâtiment</label>
-                                      <input list="dl-bat" value={loc.batiment || ''} placeholder="ex. Bâtiment A"
-                                        onChange={e => patchLoc(loc.id, { batiment: e.target.value })}
-                                        style={{ width:'100%', padding:'8px 10px', border:`1px solid ${DA.border}`, borderRadius:8, fontSize:13, outline:'none' }}/>
-                                    </div>
-                                    <div>
-                                      <label style={{ display:'block', fontSize:10, fontWeight:800, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.5, marginBottom:4 }}>Niveau</label>
-                                      <input list="dl-niv" value={loc.niveau || ''} placeholder="ex. RDC, R+1"
-                                        onChange={e => patchLoc(loc.id, { niveau: e.target.value })}
-                                        style={{ width:'100%', padding:'8px 10px', border:`1px solid ${DA.border}`, borderRadius:8, fontSize:13, outline:'none' }}/>
-                                    </div>
-                                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginTop:2 }}>
-                                      {(loc.batiment || loc.niveau) ? (
-                                        <button onClick={() => patchLoc(loc.id, { batiment:'', niveau:'' })}
-                                          style={{ background:'none', border:'none', color:DA.grayL, fontSize:11, fontWeight:700, cursor:'pointer', padding:0, textDecoration:'underline' }}>Retirer</button>
-                                      ) : <span/>}
-                                      <button onClick={() => setClassEditLocId(null)}
-                                        style={{ background:DA.red, color:'white', border:'none', borderRadius:8, padding:'7px 16px', fontSize:12, fontWeight:800, cursor:'pointer' }}>OK</button>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
                               style={{ padding:'7px 9px', border:`1px solid ${hasAnyPlan ? DA.red : DA.border}`, background:hasAnyPlan ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:hasAnyPlan ? DA.red : DA.grayL }}>
                               <Ic n="map" s={15}/>
