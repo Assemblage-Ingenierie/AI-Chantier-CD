@@ -328,6 +328,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
+  // Ranger une zone dans un bâtiment / niveau en la glissant sur son bandeau (voir headers).
+  const [zoneDropHeader, setZoneDropHeader] = useState(null); // clé du bandeau survolé pendant un drag
+  const zoneHeaderNodesRef = useRef(new Map());               // clé → { el, batiment, niveau } (drag tactile)
+  const headerDropRef = useRef(false);                        // vrai = le drag s'est terminé sur un bandeau
+  const assignZoneToGroup = useCallback((locId, batiment, niveau) => {
+    patchLoc(locId, { batiment: batiment ?? '', niveau: niveau ?? '' });
+  }, [patchLoc]);
+
   const reorderZonePlan = useCallback((locId, fromIdx, toIdx) => {
     const loc = visitProjet.localisations.find(l => l.id === locId);
     if (!loc || toIdx < 0) return;
@@ -347,10 +355,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   }, [visitProjet.localisations, patchLoc]);
 
   const onZoneDragEnd = useCallback(() => {
-    if (zoneDragDidMove.current && zoneDragIdx !== null && zoneOverIdx !== null) {
+    // Un drop sur un bandeau (bâtiment/niveau) a déjà réaffecté la zone → pas de réordonnancement.
+    if (headerDropRef.current) {
+      headerDropRef.current = false;
+    } else if (zoneDragDidMove.current && zoneDragIdx !== null && zoneOverIdx !== null) {
       moveZone(zoneDragIdx, zoneOverIdx);
     }
-    setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
+    setZoneDragIdx(null); setZoneOverIdx(null); setZoneDropHeader(null); zoneDragDidMove.current = false;
   }, [zoneDragIdx, zoneOverIdx, moveZone]);
 
   // Réordonnancement TACTILE des zones (le drag HTML5 ne marche pas au doigt — mobile est la
@@ -360,12 +371,25 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const zoneTouch = useRef(null);
   const startZoneTouch = useCallback((e, idx) => {
     zoneDragDidMove.current = false;
-    zoneTouch.current = { from: idx, overIdx: idx };
+    zoneTouch.current = { from: idx, overIdx: idx, header: null };
     setZoneDragIdx(idx); setZoneOverIdx(idx);
     const onMove = (ev) => {
       const t = ev.touches[0]; if (!t) return;
       ev.preventDefault(); // touchAction:'none' sur la poignée → pas de scroll parasite
       zoneDragDidMove.current = true;
+      // 1) Doigt sur un bandeau (bâtiment/niveau) ? → réaffectation plutôt que réordonnancement.
+      let header = null, headerKey = null;
+      for (const [key, info] of zoneHeaderNodesRef.current.entries()) {
+        const r = info.el.getBoundingClientRect();
+        if (t.clientY >= r.top && t.clientY <= r.bottom) { header = info; headerKey = key; break; }
+      }
+      if (header) {
+        zoneTouch.current.header = header;
+        setZoneDropHeader(headerKey); setZoneOverIdx(idx); // pas de cible de réordonnancement
+        return;
+      }
+      zoneTouch.current.header = null; setZoneDropHeader(null);
+      // 2) Sinon, réordonnancement classique par rapport au milieu de chaque carte.
       let over = idx;
       const entries = [...zoneNodesRef.current.entries()].sort((a, b) => a[0] - b[0]);
       for (const [i, el] of entries) {
@@ -381,13 +405,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onEnd);
       const st = zoneTouch.current; zoneTouch.current = null;
-      if (zoneDragDidMove.current && st && st.from !== st.overIdx) moveZone(st.from, st.overIdx);
-      setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
+      if (zoneDragDidMove.current && st?.header) {
+        const dl = orderedLocs[st.from];
+        if (dl) assignZoneToGroup(dl.id, st.header.batiment, st.header.niveau);
+      } else if (zoneDragDidMove.current && st && st.from !== st.overIdx) {
+        moveZone(st.from, st.overIdx);
+      }
+      setZoneDragIdx(null); setZoneOverIdx(null); setZoneDropHeader(null); zoneDragDidMove.current = false;
     };
     document.addEventListener('touchmove', onMove, { passive: false });
     document.addEventListener('touchend', onEnd);
     document.addEventListener('touchcancel', onEnd);
-  }, [moveZone]);
+  }, [moveZone, orderedLocs, assignZoneToGroup]);
 
   const [openLocIds, setOpenLocIds] = useState(
     () => new Set((selectedVisite?.localisations || []).map(l => l.id))
@@ -608,27 +637,55 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const totalItems = visitProjet.localisations.flatMap(l => l.items || []).length;
 
-  // En-têtes de regroupement (bâtiment / niveau) — pliables. Rendus seulement en mode groupé.
-  const renderBatHeader = (it) => (
-    <button key={'bh:' + it.batiment} onClick={() => toggleGroup('B:' + it.batiment)}
+  // En-têtes de regroupement (bâtiment / niveau) — pliables ET cibles de dépôt : glisser une
+  // zone dessus la range dans ce bâtiment/niveau. Rendus seulement en mode groupé.
+  const dropOnHeader = (batiment, niveau) => (e) => {
+    if (zoneDragIdx === null) return;
+    e.preventDefault();
+    const dl = orderedLocs[zoneDragIdx];
+    if (dl) { headerDropRef.current = true; assignZoneToGroup(dl.id, batiment, niveau); }
+    setZoneDropHeader(null);
+  };
+  const renderBatHeader = (it) => {
+    const key = 'B|' + it.batiment;
+    const isTgt = zoneDropHeader === key;
+    return (
+    <button key={'bh:' + it.batiment}
+      ref={el => { if (el) zoneHeaderNodesRef.current.set(key, { el, batiment: it.batiment, niveau: '' }); else zoneHeaderNodesRef.current.delete(key); }}
+      onClick={() => toggleGroup('B:' + it.batiment)}
+      onDragOver={e => { if (zoneDragIdx !== null) { e.preventDefault(); setZoneDropHeader(key); } }}
+      onDragLeave={() => setZoneDropHeader(prev => prev === key ? null : prev)}
+      onDrop={dropOnHeader(it.batiment, '')}
       style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', marginTop:2,
-        background:DA.black, color:'white', border:'none', borderRadius:10, cursor:'pointer', textAlign:'left' }}>
+        background:DA.black, color:'white', border:'none', borderRadius:10, cursor:'pointer', textAlign:'left',
+        outline: isTgt ? `3px solid ${DA.red}` : 'none', outlineOffset: isTgt ? -1 : 0 }}>
       <span style={{ display:'flex', transition:'transform 0.15s', transform: it.closed ? 'rotate(-90deg)' : 'rotate(0deg)' }}><Ic n="chv" s={16}/></span>
       <Ic n="bld" s={16}/>
       <span style={{ fontSize:14, fontWeight:800, letterSpacing:0.5, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.batiment}</span>
-      <span style={{ fontSize:11, fontWeight:700, opacity:0.65 }}>{it.count}</span>
+      <span style={{ fontSize:11, fontWeight:700, opacity:0.65 }}>{isTgt ? 'Déposer ici' : it.count}</span>
     </button>
-  );
-  const renderNivHeader = (it) => (
-    <button key={'nh:' + it.batiment + '|' + it.niveau} onClick={() => toggleGroup('N:' + it.batiment + '|' + it.niveau)}
+    );
+  };
+  const renderNivHeader = (it) => {
+    const key = 'N|' + it.batiment + '|' + it.niveau;
+    const isTgt = zoneDropHeader === key;
+    return (
+    <button key={'nh:' + it.batiment + '|' + it.niveau}
+      ref={el => { if (el) zoneHeaderNodesRef.current.set(key, { el, batiment: it.batiment, niveau: it.niveau }); else zoneHeaderNodesRef.current.delete(key); }}
+      onClick={() => toggleGroup('N:' + it.batiment + '|' + it.niveau)}
+      onDragOver={e => { if (zoneDragIdx !== null) { e.preventDefault(); setZoneDropHeader(key); } }}
+      onDragLeave={() => setZoneDropHeader(prev => prev === key ? null : prev)}
+      onDrop={dropOnHeader(it.batiment, it.niveau)}
       style={{ width: it.indent ? 'calc(100% - 16px)' : '100%', marginLeft: it.indent ? 16 : 0,
         display:'flex', alignItems:'center', gap:8, padding:'10px 14px',
-        background:DA.redL, color:DA.red, border:`1px solid ${DA.red}22`, borderRadius:9, cursor:'pointer', textAlign:'left' }}>
+        background:DA.redL, color:DA.red, border:`1px solid ${isTgt ? DA.red : DA.red + '22'}`, borderRadius:9, cursor:'pointer', textAlign:'left',
+        outline: isTgt ? `2px solid ${DA.red}` : 'none' }}>
       <span style={{ display:'flex', transition:'transform 0.15s', transform: it.closed ? 'rotate(-90deg)' : 'rotate(0deg)' }}><Ic n="chv" s={14}/></span>
       <span style={{ fontSize:12, fontWeight:800, letterSpacing:0.4, textTransform:'uppercase', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.niveau}</span>
-      <span style={{ fontSize:11, fontWeight:700, opacity:0.6 }}>{it.count}</span>
+      <span style={{ fontSize:11, fontWeight:700, opacity:0.6 }}>{isTgt ? 'Déposer ici' : it.count}</span>
     </button>
-  );
+    );
+  };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
