@@ -140,21 +140,6 @@ const VISIT_FIELDS = new Set([
   'includeConclusion','conclusion','conclusionAlign','ingenieur',
 ]);
 
-// Sous-zones : une localisation peut être rattachée à une zone parente via `parentId`.
-// On garde le tableau `localisations` ORDONNÉ « parent puis ses sous-zones » (bloc contigu) —
-// indispensable pour que le drag par index reste aligné sur l'ordre affiché, et pour que le
-// rapport enchaîne naturellement une zone et ses sous-zones. Un projet sans sous-zone n'est
-// pas modifié (tout est de premier niveau, ordre d'origine conservé).
-function normalizeLocs(locs) {
-  const tops = locs.filter(l => !l.parentId);
-  const childrenOf = id => locs.filter(l => l.parentId === id);
-  const out = tops.flatMap(t => [t, ...childrenOf(t.id)]);
-  // Sécurité : une sous-zone dont le parent a disparu est promue en zone de premier niveau.
-  const placed = new Set(out.map(l => l.id));
-  for (const l of locs) if (!placed.has(l.id)) out.push({ ...l, parentId: null });
-  return out;
-}
-
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
@@ -255,23 +240,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const [zoneDragArm, setZoneDragArm] = useState(null);
   const zoneDragDidMove = useRef(false);
 
-  // Réordonnancement des zones de PREMIER NIVEAU : la zone parente se déplace AVEC ses
-  // sous-zones (bloc contigu). Les sous-zones ne se déplacent pas individuellement (pas de poignée).
   const moveZone = useCallback((fromIdx, toIdx) => {
-    if (fromIdx === toIdx || toIdx < 0) return;
-    const locs = visitProjet.localisations;
-    const from = locs[fromIdx];
-    if (!from || from.parentId) return;                       // seules les zones parentes bougent
-    const overCard = locs[toIdx];
-    const toTopId = overCard ? (overCard.parentId || overCard.id) : null;
-    if (!toTopId || toTopId === from.id) return;
-    const childrenOf = id => locs.filter(l => l.parentId === id);
-    const byId = new Map(locs.map(l => [l.id, l]));
-    const order = locs.filter(l => !l.parentId).map(t => t.id).filter(id => id !== from.id);
-    let at = order.indexOf(toTopId);
-    if (fromIdx < toIdx) at += 1;                             // vers le bas → insérer après la cible
-    order.splice(at, 0, from.id);
-    onUpdateVisit({ localisations: order.flatMap(id => [byId.get(id), ...childrenOf(id)]) });
+    if (fromIdx === toIdx || toIdx < 0 || toIdx >= visitProjet.localisations.length) return;
+    const locs = [...visitProjet.localisations];
+    const [moved] = locs.splice(fromIdx, 1);
+    locs.splice(toIdx, 0, moved);
+    onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
   const patchLoc = useCallback((locId, patch) => {
@@ -407,31 +381,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     setOpenLocIds(prev => new Set([...prev, newLoc.id]));
   };
 
-  // Ajoute une sous-zone rattachée à `parentId`, insérée juste après la dernière sous-zone
-  // existante de ce parent (invariant « parent puis ses sous-zones »).
-  const addSubZone = (parentId) => {
-    const child = { id: crypto.randomUUID(), nom: 'Sous-zone', parentId, items: [], planBg: null, planData: null, planAnnotations: null };
-    const locs = [...visitProjet.localisations];
-    const pIdx = locs.findIndex(l => l.id === parentId);
-    if (pIdx === -1) { locs.push(child); }
-    else {
-      let j = pIdx + 1;
-      while (j < locs.length && locs[j].parentId === parentId) j++;
-      locs.splice(j, 0, child);
-    }
-    onUpdateVisit({ localisations: locs });
-    setOpenLocIds(prev => new Set([...prev, parentId, child.id]));
-  };
-
   // Suppression de zone : retrait immédiat + toast « Annuler » (même pattern sûr que la
   // suppression d'observation) — remplace le window.confirm bloquant, jarring sur mobile.
-  // Supprimer une zone parente PROMEUT ses sous-zones en premier niveau (zéro perte de données).
   const deleteLoc = (locId, nom) => {
     const prevLocs = visitProjet.localisations;
-    const next = normalizeLocs(
-      prevLocs.filter(l => l.id !== locId).map(l => l.parentId === locId ? { ...l, parentId: null } : l)
-    );
-    onUpdateVisit({ localisations: next });
+    onUpdateVisit({ localisations: prevLocs.filter(l => l.id !== locId) });
     showUndo(`Zone « ${nom || 'sans nom'} » supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
   };
 
@@ -715,7 +669,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 <>
                   {visitProjet.localisations.map((loc, locIdx) => {
                     const items    = loc.items || [];
-                    const isChild  = !!loc.parentId;   // sous-zone (rattachée à une zone parente)
                     const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
@@ -743,24 +696,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : 'white',
                           borderRadius: 10,
                           border: `1px solid ${zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.red : DA.border}`,
-                          // Sous-zone : décalée vers la droite + liseré rouge à gauche pour signaler le rattachement.
-                          marginLeft: isChild ? 22 : 0,
-                          borderLeft: isChild ? `3px solid ${DA.red}` : `1px solid ${zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.red : DA.border}`,
                           boxShadow: zoneDragIdx===locIdx ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
                           overflow: 'hidden',
                           opacity: zoneDragIdx===locIdx ? 0.45 : 1,
                           transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
                         }}>
-                        <div style={{ display:'flex', alignItems:'center', padding: isChild ? '11px 16px' : '16px 18px', gap:10 }}>
-                          {!isChild && (
-                            <div onClick={e => e.stopPropagation()}
-                              onTouchStart={e => startZoneTouch(e, locIdx)}
-                              onMouseDown={() => setZoneDragArm(locIdx)}
-                              title="Glisser pour réorganiser"
-                              style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
-                              <Ic n="grp" s={18}/>
-                            </div>
-                          )}
+                        <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
+                          <div onClick={e => e.stopPropagation()}
+                            onTouchStart={e => startZoneTouch(e, locIdx)}
+                            onMouseDown={() => setZoneDragArm(locIdx)}
+                            title="Glisser pour réorganiser"
+                            style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
+                            <Ic n="grp" s={18}/>
+                          </div>
                           <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={16}/>
@@ -911,14 +859,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 onClick={() => setModal({ t:'plan', locId:loc.id })}
                                 style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px 14px', background:DA.grayXL, border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12 }}>
                                 <Ic n="map" s={13}/> Assigner un plan à cette zone
-                              </button>
-                            )}
-                            {/* Sous-zone : optionnelle, réutilise toute la mécanique d'une zone
-                                (plan + observations). Une sous-zone ne peut pas elle-même en contenir. */}
-                            {!isChild && (
-                              <button onClick={() => addSubZone(loc.id)}
-                                style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'9px 14px', background:'white', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', color:DA.grayL, fontSize:12, fontWeight:600 }}>
-                                <Ic n="plus" s={13}/> Sous-zone
                               </button>
                             )}
                           </div>
