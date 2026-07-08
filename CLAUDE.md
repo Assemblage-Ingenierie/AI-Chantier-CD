@@ -104,6 +104,28 @@ const isMobile = /Mobi|Android/i.test(navigator.userAgent) || isIOS;
 
 ---
 
+## 🟣 RÈGLE N°5 — LÉGÈRETÉ & UX AVANT TOUT
+
+**L'application doit rester la plus légère et la plus simple possible. N'importe qui, même sans notice, doit comprendre chaque fonctionnalité au premier coup d'œil.** Priorité absolue : *beau, épuré, ergonomique*. Un chantier se remplit vite, sur téléphone, souvent d'une main — l'app ne doit jamais ralentir ni faire réfléchir.
+
+### Principes non négociables
+
+1. **Pas de prolifération de boutons.** Avant d'ajouter un bouton/onglet/menu, chercher d'abord à :
+   - le rendre inutile (bon défaut, comportement automatique),
+   - le fusionner avec un contrôle existant,
+   - le cacher tant qu'il n'est pas pertinent (révélation progressive).
+   Si un bouton doit vraiment exister, il remplace ou se range à côté d'un existant — il ne s'empile pas.
+2. **Zéro configuration obligatoire.** Toute nouvelle capacité est **optionnelle et invisible par défaut** : ne rien remplir = comportement d'avant, identique. On n'impose jamais une nouvelle étape à celui qui n'en a pas besoin.
+3. **Révélation progressive.** Les options avancées (sous-parties, bâtiments, etc.) n'apparaissent que quand l'utilisateur commence à s'en servir. Pas de champs vides qui encombrent l'écran par défaut.
+4. **Une action = un geste évident.** Pas de double sens, pas de menu à tiroirs pour une action courante. Le libellé dit ce qui va se passer.
+5. **Beauté = contrainte, pas bonus.** Espacements cohérents, alignements propres, pas de surcharge visuelle. Sur un viewport 375px, l'écran ne doit jamais paraître « plein de trucs ».
+
+### Réflexe avant tout ajout d'UI
+
+Se poser, dans l'ordre : « Est-ce que ça peut être **automatique** ? Sinon **fusionnable** ? Sinon **caché jusqu'à utile** ? Sinon seulement, l'ajouter — et retirer ou ranger quelque chose en échange. » Si un ajout rend l'écran plus chargé sans gain clair pour un utilisateur lambda → **ne pas le faire, ou le proposer à Thomas avant**.
+
+---
+
 
 
 **Branche de travail** : toujours développer sur une branche feature dédiée.
