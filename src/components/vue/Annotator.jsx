@@ -516,8 +516,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Exposer getAnnotation() pour auto-save depuis le parent (navigation entre photos)
   useImperativeHandle(ref, () => ({
     getAnnotation: () => {
+      // Flush du texte inline en cours → la navigation (plan/photo précédent/suivant) sauvegarde
+      // ce qui est en train d'être tapé, sans devoir sortir du champ d'abord (demande Thomas).
+      const fp = applyInlineEdit(paths);
       const cv = cvRef.current;
-      if (!cv || !bgRef.current) return { paths, annotated: null };
+      if (!cv || !bgRef.current) return { paths: fp, annotated: null };
       const EW = Math.min(cv.width, 1400);
       const EH = Math.round(cv.height * EW / cv.width);
       const ec = document.createElement('canvas');
@@ -531,12 +534,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       // indépendant de l'écran), plans = ratio*0.5 (inchangé).
       const baseScale = isPhotoCtx ? cv.width / 1400 : ratio * 0.5;
       const drawScales = { text: baseScale * scaleText, symbol: baseScale * scaleSymbol, shape: scaleShape };
-      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(paths, vpNumByPath, vpBase) : paths, drawScales, ratio);
+      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(fp, vpNumByPath, vpBase) : fp, drawScales, ratio);
       ectx.restore();
       const sc = hqScaleRef.current;
-      return { paths: scalePaths(paths, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol };
+      return { paths: scalePaths(fp, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol };
     },
-  }), [paths, scaleText, scaleSymbol, scaleShape, exportSizeMultiplier, vpNumByPath, vpBase]);
+  }), [paths, scaleText, scaleSymbol, scaleShape, exportSizeMultiplier, vpNumByPath, vpBase, inlineEditVal, inlineEditIdx, inlineEditPos]);
 
   // Navigation préc/suiv entre photos — via ref pour rester à jour dans le handler clavier.
   const navRef = useRef({});
@@ -1666,12 +1669,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     inlineEditCanvasPt.current = null;
   };
 
-  const confirmInlineEdit = () => {
+  // Applique l'édition de texte inline EN COURS à un tableau de paths et renvoie le nouveau
+  // tableau (fonction PURE, synchrone). Permet de « flusher » le texte en cours SANS attendre le
+  // blur : au clic sur Sauvegarder / à la navigation, on committe tel quel (demande Thomas :
+  // valider doit sauvegarder même si on n'est pas sorti du champ de texte).
+  const applyInlineEdit = (basePaths) => {
+    if (inlineEditPos === null) return basePaths;
     const val = inlineEditVal.trim();
     if (inlineEditIdx !== null) {
-      if (val) setPaths(prev => prev.map((p, i) => i === inlineEditIdx ? { ...p, text: val } : p));
-      else setPaths(p => p.filter((_, i) => i !== inlineEditIdx));
-    } else if (val && inlineEditCanvasPt.current) {
+      return val ? basePaths.map((p, i) => i === inlineEditIdx ? { ...p, text: val } : p)
+                 : basePaths.filter((_, i) => i !== inlineEditIdx);
+    }
+    if (val && inlineEditCanvasPt.current) {
       const pt = inlineEditCanvasPt.current;
       const entry = { type: 'text', text: val, x: pt.x, y: pt.y, color, size, textMode };
       if (textMode === 'arrow') {
@@ -1692,8 +1701,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           entry.textW = Math.max(80, cv.width - pt.x - pad * 2 - margin);
         }
       }
-      setPaths(prev => [...prev, entry]);
+      return [...basePaths, entry];
     }
+    return basePaths;
+  };
+
+  const confirmInlineEdit = () => {
+    if (inlineEditPos !== null) setPaths(prev => applyInlineEdit(prev));
     cancelInlineEdit();
   };
 
@@ -1934,8 +1948,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
             </button>
             <button onClick={() => {
+              // Flush du texte inline EN COURS (si le champ est encore ouvert/focus) → valider
+              // sauvegarde tout tel quel, sans devoir d'abord sortir du champ (demande Thomas).
+              const fp = applyInlineEdit(paths);
+              if (fp !== paths) { setPaths(fp); cancelInlineEdit(); }
               const cv = cvRef.current;
-              if (!cv || !bgRef.current) { onSave(paths, null, null); onClose(); return; }
+              if (!cv || !bgRef.current) { onSave(fp, null, null); onClose(); return; }
               // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
               const EW = Math.min(cv.width, 1400);
               const EH = Math.round(cv.height * EW / cv.width);
@@ -1946,11 +1964,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ectx.save();
               ectx.scale(EW / cv.width, EH / cv.height);
               const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-              drawAnnotationPaths(ectx, relabel(paths), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
+              drawAnnotationPaths(ectx, relabel(fp), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
               ectx.restore();
               // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
               const sc = hqScaleRef.current;
-              onSave(scalePaths(paths, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
+              onSave(scalePaths(fp, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
               onClose();
             }}
               style={{ padding:isMob?'8px 12px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
