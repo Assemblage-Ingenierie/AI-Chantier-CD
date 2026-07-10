@@ -109,20 +109,21 @@ async function _renderPage(pdfData, pageNum, maxScale, maxWidth, quality) {
 }
 
 // Rendu standard — image d'AFFICHAGE stockée (cache + Supabase, affichage immédiat).
-// 1600px max / scale 4.0 : suffisant pour l'aperçu en app (affiché petit) et comme base
-// LQ de l'annotateur (qui swap ensuite vers l'image HD). Réduit fortement le poids stocké
-// (~3x moins qu'à 3500px) → moins d'egress et vignettes qui tiennent en cache. La qualité
-// du RAPPORT ne dépend PAS de cette image : il utilise l'image HD séparée
-// (fetchPlanHdDataUrl / renderPdfPageHQ).
+// 2400px max / scale 6.0 : l'image d'affichage est désormais NETTE directement — pour annoter
+// ET consulter les plans sans dépendre du swap HD (fragile/lent : HD ou PDF source pas toujours
+// dispo). 2400px = plafond EXACT du rendu rapport (RapportPreview MAXW) → les annotations, dont
+// les coordonnées sont relatives à cette image, tombent au pixel près sur le rapport (aucun
+// décalage). L'image HD séparée (renderPdfPageHQ) reste un bonus de netteté au zoom.
+// (Demande Thomas 2026-07-10 : « directement tout en haute qualité pour éviter tout problème ».)
 export function renderPdfPage(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 4.0, 1600, 0.9);
+  return _renderPage(pdfData, pageNum, 6.0, 2400, 0.9);
 }
 
 // Rendu de PLUSIEURS pages en une passe : parse le PDF UNE seule fois (au lieu d'un
 // getDocument par page) et rend les pages en parallèle par lots. Énorme gain à l'import
 // (10 pages = 1 parse + rendus concurrents, au lieu de 10 parses séquentiels).
 export async function renderPdfPages(pdfData, pageNums, {
-  maxScale = 4.0, maxWidth = 1600, quality = 0.9, concurrency = 4, onProgress,
+  maxScale = 6.0, maxWidth = 2400, quality = 0.9, concurrency = 4, onProgress,
 } = {}) {
   await ensurePdfJs();
   if (!window.pdfjsLib || !pdfData || !pageNums?.length) return [];
