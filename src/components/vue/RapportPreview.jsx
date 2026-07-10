@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallba
 import { createPortal } from 'react-dom';
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup, stripMarkup } from '../../lib/markup.jsx';
-import { getAllSymbols, drawAnnotationPaths, drawVP } from './Annotator.jsx';
+import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
@@ -929,19 +929,16 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
   );
 }
 
-function scalePlanPaths(paths, s) {
-  if (s === 1 || !paths?.length) return paths;
-  return paths.map(p => {
-    const sc = v => v != null ? v * s : v;
-    const out = { ...p, x: sc(p.x), y: sc(p.y) };
-    if (p.x1 != null) out.x1 = sc(p.x1);
-    if (p.y1 != null) out.y1 = sc(p.y1);
-    if (p.x2 != null) out.x2 = sc(p.x2);
-    if (p.y2 != null) out.y2 = sc(p.y2);
-    if (p.arrowX != null) out.arrowX = sc(p.arrowX);
-    if (p.arrowY != null) out.arrowY = sc(p.arrowY);
-    if (p.points) out.points = p.points.map(pt => [pt[0] * s, pt[1] * s]);
-    return out;
+// Largeur naturelle d'une image (data URL ou URL signée) — sert à connaître la largeur de
+// l'espace de coordonnées des annotations d'un plan (= largeur du planBg) pour les remettre à
+// l'échelle du canvas de rendu. Renvoie null si indéterminable.
+function imgNaturalWidth(src) {
+  return new Promise(res => {
+    if (!src) { res(null); return; }
+    const im = new window.Image();
+    im.onload = () => res(im.naturalWidth || null);
+    im.onerror = () => res(null);
+    im.src = src;
   });
 }
 
@@ -997,8 +994,13 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       // est une vignette → marqueurs Vxx et texte FLOUS (surtout en plan portrait pleine page).
       // L'image HD donne un canvas à haute résolution → marqueurs nets (mêmes tailles, juste plus
       // nets car dessinés puis réduits). Repli sur la vignette si pas de HD. Memoïsé (_hdCache).
-      let src = bgSrc;
-      if (planId) { try { const hd = await fetchPlanHdDataUrl(planId); if (hd) src = hd; } catch { /* repli vignette */ } }
+      // Les coords d'annotation sont stockées dans l'espace du planBg (bgSrc) → on mesure sa
+      // largeur pour remettre les coords à l'échelle du canvas HD (sinon les Vxx se décalent
+      // vers le coin haut-gauche). On n'active le HD que si cette largeur est connue.
+      const bgW = await imgNaturalWidth(bgSrc);
+      if (cancelled) return;
+      let src = bgSrc, usedHd = false;
+      if (planId && bgW) { try { const hd = await fetchPlanHdDataUrl(planId); if (hd) { src = hd; usedHd = true; } } catch { /* repli vignette */ } }
       if (cancelled) return;
       const el = new window.Image();
       el.onload = () => {
@@ -1018,7 +1020,12 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
         const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
         const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
         const shapeF = _o ? (deferredAnnotScale.shape  ?? 1) : 1;
-        drawAnnotationPaths(ctx, scalePlanPaths(drawPaths, 1), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
+        // Espace de coords des annotations : largeur du HD-source (bgW) si on a swappé sur le HD,
+        // sinon la largeur de l'image effectivement rendue (le bg). coordScale ramène ces coords
+        // dans l'espace du canvas → marqueurs au bon endroit, quelle que soit la résolution.
+        const pathsSpaceW = usedHd ? bgW : el.naturalWidth;
+        const coordScale = pathsSpaceW ? cv.width / pathsSpaceW : 1;
+        drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
         // JPEG 0.95 : qualité supérieure pour ne pas flouter le texte fin des marqueurs (le plan
         // reste opaque → pas de transparence perdue), data-URL toujours raisonnable.
         setRenderedImg(cv.toDataURL('image/jpeg', 0.95));
