@@ -42,8 +42,12 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   }, [dims, photo.annotations, photo.annotSizeScale]);
 
   const src = photo.annotated || photo.data;
+  // Tuile « pleine largeur » (grille mobile 2 colonnes) quand imgStyle demande width:100% :
+  // le span doit alors être block et occuper 100% de la cellule (sinon inline-block se rétrécit
+  // au contenu et la photo ne remplit pas sa colonne). Desktop (width:auto) → inchangé.
+  const fill = imgStyle?.width === '100%';
   return (
-    <span style={{ position:'relative', display:'inline-block', flexShrink:0, lineHeight:0 }}>
+    <span style={{ position:'relative', display: fill ? 'block' : 'inline-block', width: fill ? '100%' : undefined, flexShrink:0, lineHeight:0 }}>
       <img src={src} alt="" draggable={false}
         onPointerDown={e => { e.stopPropagation(); startLP(src); }}
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
@@ -305,7 +309,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                     const shown = validPhotos;
                     const extra = 0;
                     return (
-                      <div style={{ display:'flex', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap:'wrap' }}
+                      <div style={{ display: isDesktop ? 'flex' : 'grid', gridTemplateColumns: isDesktop ? undefined : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap: isDesktop ? 'wrap' : undefined }}
                         // Déposer dans le vide de la zone photos d'une observation → y déplacer la
                         // photo glissée (depuis une autre observation/zone). Les photos elles-mêmes
                         // gèrent leur propre drop (réordonner / déposer dessus) via stopPropagation.
@@ -352,7 +356,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               startLP={startPhotoLP}
                               endLP={endPhotoLP}
                               lpRef={photoLP}
-                              imgStyle={{ height: isDesktop ? 160 : 90, width:'auto', maxWidth: isDesktop ? 240 : 120, objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
+                              imgStyle={{ height: isDesktop ? 160 : 'auto', width: isDesktop ? 'auto' : '100%', maxWidth: isDesktop ? 240 : '100%', aspectRatio: isDesktop ? undefined : '4 / 3', objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
                                 <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.45)', borderRadius: isDesktop ? 10 : 6 }}
