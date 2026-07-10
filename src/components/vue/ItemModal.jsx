@@ -1033,20 +1033,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             </div>
           )}
 
-          {/* Vignette(s) plan(s) de la zone */}
+          {/* Plan(s) PROPRES à l'observation. On n'affiche PAS le plan de la zone ici (demande
+              Thomas : « sur une observation je vois le plan général, je veux juste le plan
+              correspondant »). La gestion du plan de zone se fait depuis la vue de zone. */}
           {(() => {
-            const primaryBg = planBg || (planId && planLibrary.find(p => p.id === planId)?.bg) || null;
-            const allZonePlans = [];
-            if (primaryBg || planAnnotations?.exported) {
-              allZonePlans.push({ bg: primaryBg, annotations: planAnnotations, nom: null, isPrimary: true });
-            }
-            for (const ep of extraPlans) {
-              const epBg = ep.planBg || (ep.planId && planLibrary.find(p => p.id === ep.planId)?.bg) || null;
-              if (epBg || ep.planAnnotations?.exported) {
-                allZonePlans.push({ bg: epBg, annotations: ep.planAnnotations, nom: planLibrary.find(p => p.id === ep.planId)?.nom || null, isPrimary: false });
-              }
-            }
-            const totalAnnot = allZonePlans.reduce((n, zp) => n + (zp.annotations?.paths?.length || 0), 0);
+            const primaryBg = null;      // pas de plan de zone dans l'éditeur d'observation
+            const allZonePlans = [];     // idem : on ne montre que form.plans (plans de l'observation)
+            const totalAnnot = 0;
             // Aucun plan (ni zone ni observation) → bouton d'ajout CLAIR pleine largeur : on peut
             // TOUJOURS ajouter un plan propre à l'observation. Avant, toute la section était masquée
             // dans ce cas → aucun moyen d'ajouter, on ne voyait que « Plan (vide) » (retour Thomas).
@@ -1136,12 +1129,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         {/* Sticky footer */}
         <div style={{ padding: isDesktop ? '12px 24px' : '12px 16px', borderTop:`1px solid ${DA.border}`, background:'white', flexShrink:0 }}>
           <div style={{ display:'flex',gap:8,alignItems:'stretch' }}>
-            {!planBg && (
-              <button onClick={() => setShowPlan(true)}
-                style={{ border:`1px solid ${DA.border}`,borderRadius:10,padding:'12px 14px',fontSize:13,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap' }}>
-                <Ic n="map" s={15}/> Plan de la zone
-              </button>
-            )}
             <button onClick={handleSave} disabled={compressing}
               style={{ flex:1,background:!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:!compressing?'pointer':'not-allowed' }}>
               Enregistrer l'observation

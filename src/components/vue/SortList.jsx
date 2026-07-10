@@ -60,7 +60,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross }) {
+export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -247,7 +247,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
         {items.map((item, i) => {
           const isDragging = dragIdx === i;
           const isOver     = overIdx === i && dragIdx !== i;
-          const ICON_BTN   = isDesktop ? 38 : 36; // taille fixe commune aux icônes d'action de la ligne
+          const ICON_BTN   = 38; // taille commune aux icônes d'action — ALIGNÉE sur l'en-tête de zone (38px)
           return (
             <div key={item.id}
               draggable
@@ -258,7 +258,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
               onClick={() => { if (dragDidMoveRef.current) { dragDidMoveRef.current = false; return; } onEdit(item); }}
               style={{
                 display:'flex', alignItems:'flex-start', gap: isDesktop ? 12 : 8,
-                padding: isDesktop ? '18px 20px 18px 8px' : '14px 14px 14px 6px',
+                padding: isDesktop ? '18px 18px 18px 8px' : '14px 18px 14px 6px',
                 borderBottom:`1px solid ${DA.border}`,
                 borderLeft:`4px solid ${URGENCE[item.urgence]?.dot || DA.border}`,
                 cursor:'pointer',
@@ -305,8 +305,8 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
 
                   {/* Actions : plan de l'observation + suppression (le bouton plan ouvre l'éditeur
                       où l'on assigne/annote le(s) plan(s) PROPRES à cette observation). */}
-                  <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }} onClick={e => e.stopPropagation()}>
-                    <button onClick={e => { e.stopPropagation(); onEdit(item); }}
+                  <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); (onOpenItemPlan || onEdit)(item); }}
                       title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
                       aria-label="Plan de l'observation"
                       style={{ position:'relative', width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer',

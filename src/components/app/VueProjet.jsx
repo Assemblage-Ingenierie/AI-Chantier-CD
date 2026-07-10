@@ -757,7 +757,43 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               onReorderPhoto={(item, photos) => {
                                 patchItem(loc.id, { ...item, photos, _photosHydrated: true });
                               }}
+                              onOpenItemPlan={item => setModal({ t:'itemPlan', locId: loc.id, itemId: item.id })}
                             />
+                            {/* Plans PROPRES aux observations — affichés EN PREMIER (obs 1 → plan,
+                                obs 2 → plan…), AVANT le plan de la zone (rendu ensuite). Chacun est
+                                coiffé du titre de son observation. Cliquer ouvre le modal
+                                d'assignation / annotation propre à l'observation (comme la zone). */}
+                            {(() => {
+                              const obsPlans = [];
+                              for (const it of items) {
+                                for (let pi = 0; pi < (it.plans || []).length; pi++) {
+                                  const pl  = it.plans[pi];
+                                  const lib = (projet.planLibrary || []).find(p => p.id === pl.planId);
+                                  const bg  = pl.planBg || lib?.bg || null;
+                                  if (!bg && !pl.planAnnotations?.exported) continue; // orphelin → ignoré
+                                  obsPlans.push({ it, pl, pi, bg, nom: lib?.nom || null });
+                                }
+                              }
+                              if (!obsPlans.length) return null;
+                              return (
+                                <div style={{ borderTop:`1px solid ${DA.border}` }}>
+                                  {obsPlans.map(({ it, pl, pi, bg, nom }) => (
+                                    <button key={it.id + '_' + pi} onClick={() => setModal({ t:'itemPlan', locId: loc.id, itemId: it.id, annotIdx: pi })}
+                                      style={{ width:'100%', display:'block', border:'none', borderTop:`1px solid ${DA.border}`, background:'#f4f4f4', cursor:'pointer', padding:0 }}>
+                                      <div style={{ padding:'7px 12px', textAlign:'left', background:'white', borderBottom:`1px solid ${DA.border}`, display:'flex', alignItems:'center', gap:6 }}>
+                                        <Ic n="map" s={12}/>
+                                        <span style={{ fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                          {it.titre || 'Observation'}{nom ? ' · ' + nom : ''}
+                                        </span>
+                                      </div>
+                                      <div style={{ height: isDesktop ? 300 : 220, background:'#f4f4f4' }}>
+                                        <PlanAnnotThumb bg={bg} annotations={pl.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
                                 {allPlanThumbs.length > 1 && (
@@ -861,42 +897,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 <Ic n="map" s={13}/> Assigner un plan à cette zone
                               </button>
                             )}
-                            {/* Plans PROPRES aux observations : rendus comme le plan général
-                                (même style « screen 2 »), chacun coiffé du titre de son observation.
-                                Cohabite sans conflit avec le plan général de la zone (rendu au-dessus) —
-                                normalement on utilise l'un OU l'autre, mais les deux s'affichent sans bug.
-                                Cliquer ouvre l'observation pour annoter/gérer son plan. */}
-                            {(() => {
-                              const obsPlans = [];
-                              for (const it of items) {
-                                for (let pi = 0; pi < (it.plans || []).length; pi++) {
-                                  const pl  = it.plans[pi];
-                                  const lib = (projet.planLibrary || []).find(p => p.id === pl.planId);
-                                  const bg  = pl.planBg || lib?.bg || null;
-                                  if (!bg && !pl.planAnnotations?.exported) continue; // orphelin → ignoré
-                                  obsPlans.push({ it, pl, pi, bg, nom: lib?.nom || null });
-                                }
-                              }
-                              if (!obsPlans.length) return null;
-                              return (
-                                <div style={{ borderTop:`1px solid ${DA.border}` }}>
-                                  {obsPlans.map(({ it, pl, pi, bg, nom }) => (
-                                    <button key={it.id + '_' + pi} onClick={() => setModal({ t:'item', locId: loc.id, item: it })}
-                                      style={{ width:'100%', display:'block', border:'none', borderTop:`1px solid ${DA.border}`, background:'#f4f4f4', cursor:'pointer', padding:0 }}>
-                                      <div style={{ padding:'7px 12px', textAlign:'left', background:'white', borderBottom:`1px solid ${DA.border}`, display:'flex', alignItems:'center', gap:6 }}>
-                                        <Ic n="map" s={12}/>
-                                        <span style={{ fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                          {it.titre || 'Observation'}{nom ? ' · ' + nom : ''}
-                                        </span>
-                                      </div>
-                                      <div style={{ height: isDesktop ? 300 : 220, background:'#f4f4f4' }}>
-                                        <PlanAnnotThumb bg={bg} annotations={pl.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                              );
-                            })()}
                           </div>
                         )}
                       </div>
@@ -1034,6 +1034,56 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               }));
               onUpdate({ visites: updatedVisites });
               modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
+            }}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
+            onAddToLibrary={newPlans => {
+              const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
+              onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
+              savePlanBgNow(projet.id, arr);
+            }}
+          />
+        );
+      })()}
+
+      {/* Plan PROPRE à une observation — même modal que le plan de zone (bibliothèque : sélection /
+          import / annotation), mais borné à l'observation (item.plans). Pas de propagation entre
+          zones : un plan d'observation est spécifique. Le premier plan = « primaire », les suivants
+          = extraPlans (même structure interne que PlanLocModal). */}
+      {modal?.t === 'itemPlan' && (() => {
+        const loc  = visitProjet.localisations.find(l => l.id === modal.locId);
+        const item = (loc?.items || []).find(it => it.id === modal.itemId);
+        if (!item) return null;
+        const [primary, ...rest] = (item.plans || []);
+        const pseudoLoc = {
+          id: item.id,
+          nom: item.titre || 'Observation',
+          planId: primary?.planId || null,
+          planBg: primary?.planBg || null,
+          planData: primary?.planData || null,
+          planAnnotations: primary?.planAnnotations || null,
+          extraPlans: rest,
+        };
+        return (
+          <PlanLocModal
+            loc={pseudoLoc}
+            items={[item]}
+            planLibrary={projet.planLibrary || []}
+            autoAnnot={!!modal.autoAnnot}
+            annotIdx={modal.annotIdx ?? null}
+            vpNumByPath={vpNumGlobal}
+            vpBase={vpMaxGlobal}
+            onClose={() => setModal(null)}
+            onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
+              const newPlans = [];
+              if (planId || planBg || planAnnotations) {
+                newPlans.push({ id: primary?.id || crypto.randomUUID(), planId: planId || null, planBg: planBg || null, planData: planData || null, planAnnotations: planAnnotations || null });
+              }
+              for (const ep of (extraPlans || [])) {
+                newPlans.push({ id: ep.id || crypto.randomUUID(), planId: ep.planId || null, planBg: ep.planBg || null, planData: ep.planData || null, planAnnotations: ep.planAnnotations || null });
+              }
+              patchItem(modal.locId, { ...item, plans: newPlans });
+              setModal(null);
             }}
             onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
