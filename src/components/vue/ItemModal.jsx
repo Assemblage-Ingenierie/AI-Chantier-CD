@@ -1046,8 +1046,18 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 allZonePlans.push({ bg: epBg, annotations: ep.planAnnotations, nom: planLibrary.find(p => p.id === ep.planId)?.nom || null, isPrimary: false });
               }
             }
-            if (!allZonePlans.length && !form.plans.length) return null;
             const totalAnnot = allZonePlans.reduce((n, zp) => n + (zp.annotations?.paths?.length || 0), 0);
+            // Aucun plan (ni zone ni observation) → bouton d'ajout CLAIR pleine largeur : on peut
+            // TOUJOURS ajouter un plan propre à l'observation. Avant, toute la section était masquée
+            // dans ce cas → aucun moyen d'ajouter, on ne voyait que « Plan (vide) » (retour Thomas).
+            if (!allZonePlans.length && !form.plans.length) return (
+              <div style={{ marginBottom:14 }}>
+                <button onClick={() => setShowPlanPicker(true)}
+                  style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px', border:`1.5px dashed ${DA.red}`, borderRadius:10, background:DA.redL, color:DA.red, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  <Ic n="map" s={15}/> Ajouter un plan à cette observation
+                </button>
+              </div>
+            );
             return (
               <div style={{ marginBottom:14 }}>
                 <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
@@ -1129,7 +1139,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             {!planBg && (
               <button onClick={() => setShowPlan(true)}
                 style={{ border:`1px solid ${DA.border}`,borderRadius:10,padding:'12px 14px',fontSize:13,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap' }}>
-                <Ic n="map" s={15}/> Plan (vide)
+                <Ic n="map" s={15}/> Plan de la zone
               </button>
             )}
             <button onClick={handleSave} disabled={compressing}

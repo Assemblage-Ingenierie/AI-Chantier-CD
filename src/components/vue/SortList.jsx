@@ -282,25 +282,57 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
 
               {/* ── Content ── */}
               <div style={{ flex:1, minWidth:0 }}>
-                {/* Text block — toujours pleine largeur */}
-                <div>
-                  <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
-                    <Badge level={item.urgence}/>
-                    <span style={{ display:'flex', alignItems:'center', gap:3 }}>
-                      <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
-                        e.stopPropagation();
-                        const keys = Object.keys(SUIVI);
-                        const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
-                        onEdit({ ...item, suivi: next, _quickSuivi: true });
-                      }}/>
-                      <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
-                    </span>
+                {/* En-tête : titre + badges à gauche, icônes d'action (plan / suppr.) à droite,
+                    SUR la même ligne que le titre. Ainsi le commentaire et les photos prennent
+                    TOUTE la largeur du contenu en dessous (avant, la colonne d'icônes à droite
+                    rognait ~90px sur texte ET photos → écran mal optimisé, retour Thomas). */}
+                <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
+                      <Badge level={item.urgence}/>
+                      <span style={{ display:'flex', alignItems:'center', gap:3 }}>
+                        <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {
+                          e.stopPropagation();
+                          const keys = Object.keys(SUIVI);
+                          const next = keys[(keys.indexOf(item.suivi||'rien')+1)%keys.length];
+                          onEdit({ ...item, suivi: next, _quickSuivi: true });
+                        }}/>
+                        <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
+                      </span>
+                    </div>
                   </div>
-                  {item.commentaire && (
-                    <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '6px 0 0' : '4px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
-                  )}
+
+                  {/* Actions : plan de l'observation + suppression (le bouton plan ouvre l'éditeur
+                      où l'on assigne/annote le(s) plan(s) PROPRES à cette observation). */}
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                    <button onClick={e => { e.stopPropagation(); onEdit(item); }}
+                      title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
+                      aria-label="Plan de l'observation"
+                      style={{ position:'relative', width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer',
+                        color:(item.plans || []).length ? DA.red : DA.grayL,
+                        background:(item.plans || []).length ? DA.redL : 'white',
+                        border:`1px solid ${(item.plans || []).length ? DA.red : DA.border}`,
+                        borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <Ic n="map" s={16}/>
+                      {(item.plans || []).length > 0 && (
+                        <span style={{ position:'absolute', top:-6, right:-6, background:DA.red, color:'white', borderRadius:9, minWidth:16, height:16, padding:'0 4px', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>{item.plans.length}</span>
+                      )}
+                    </button>
+                    {confirmDelId === item.id
+                      ? <div style={{ display:'flex',alignItems:'center',gap:6 }} onClick={e => e.stopPropagation()}>
+                          <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
+                          <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
+                        </div>
+                      : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red, width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer', background:'#FFF0F0', border:'1px solid #FECACA', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <Ic n="del" s={15}/>
+                        </button>
+                    }
+                  </div>
                 </div>
+                {item.commentaire && (
+                  <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
+                )}
 
                 {/* Photos — toujours en dessous du texte (mobile + desktop) */}
                 {(() => {
@@ -392,35 +424,6 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                   return null;
                 })()}
 
-              </div>
-
-              {/* Actions à droite : plan de l'observation + suppression. Tailles FIXES et
-                  identiques, alignées en colonne (le compteur est une pastille en coin qui ne
-                  décale plus la corbeille). Le bouton plan ouvre l'éditeur où l'on assigne/annote
-                  le(s) plan(s) PROPRES à cette observation (mécanique item.plans). */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, alignSelf:'flex-start' }}>
-                <button onClick={e => { e.stopPropagation(); onEdit(item); }}
-                  title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
-                  aria-label="Plan de l'observation"
-                  style={{ position:'relative', width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer',
-                    color:(item.plans || []).length ? DA.red : DA.grayL,
-                    background:(item.plans || []).length ? DA.redL : 'white',
-                    border:`1px solid ${(item.plans || []).length ? DA.red : DA.border}`,
-                    borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <Ic n="map" s={16}/>
-                  {(item.plans || []).length > 0 && (
-                    <span style={{ position:'absolute', top:-6, right:-6, background:DA.red, color:'white', borderRadius:9, minWidth:16, height:16, padding:'0 4px', fontSize:9, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1 }}>{item.plans.length}</span>
-                  )}
-                </button>
-                {confirmDelId === item.id
-                  ? <div style={{ display:'flex',alignItems:'center',gap:6 }} onClick={e => e.stopPropagation()}>
-                      <button onClick={e => { e.stopPropagation(); onDelete(item.id); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'#B91C1C',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer' }}>Oui</button>
-                      <button onClick={e => { e.stopPropagation(); setConfirmDelId(null); }} style={{ padding:'8px 12px',background:'white',color:'#555',border:'1px solid #E5E5E5',borderRadius:8,fontSize:13,cursor:'pointer' }}>Non</button>
-                    </div>
-                  : <button onClick={e => { e.stopPropagation(); setConfirmDelId(item.id); }} style={{ color:DA.red, width: ICON_BTN, height: ICON_BTN, padding:0, cursor:'pointer', background:'#FFF0F0', border:'1px solid #FECACA', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <Ic n="del" s={15}/>
-                    </button>
-                }
               </div>
             </div>
           );
