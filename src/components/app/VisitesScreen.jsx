@@ -245,7 +245,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       label: `Visite ${visites.length + 1}`,
       dateVisite: today,
       ingenieur: '',
-      participants: [], tableauRecap: [],
+      // Reprend la liste d'intervenants du dernier rapport (demande Thomas : « la liste
+      // d'intervenants ne reste pas d'un rapport à l'autre »). Les id sont régénérés pour
+      // éviter toute collision avec la visite d'origine. tableauRecap reste vide (auto-régénéré).
+      participants: (lastVisite?.participants || []).map(p => ({ ...p, id: crypto.randomUUID() })),
+      tableauRecap: [],
       photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
       includeTableauRecap: true, includeConclusion: false, conclusion: '',
       localisations,

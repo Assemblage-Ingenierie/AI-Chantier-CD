@@ -2,17 +2,34 @@ import { ensureJsPDF } from './pdfUtils.js';
 import { fetchPlanData, fetchPlanHdDataUrl } from './storage.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
-import { getAllSymbols, drawAnnotationPaths, drawVP } from '../components/vue/Annotator.jsx';
+import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
 import { computeVpNumbering, dedupPlanPaths } from './vpNumbering.js';
+
+/** Largeur naturelle d'une image (data URL ou URL signée). Sert à connaître la largeur de
+ *  l'espace de coordonnées des annotations (= largeur du planBg). Renvoie null si indéterminable. */
+function imgNaturalWidth(src) {
+  return new Promise(res => {
+    if (!src) { res(null); return; }
+    const im = new window.Image();
+    im.onload = () => res(im.naturalWidth || null);
+    im.onerror = () => res(null);
+    im.src = src;
+  });
+}
 
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
 async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null) {
-  if (planId) {
+  // Espace de coordonnées des annotations = largeur du planBg (les coords y sont relatives). On
+  // le mesure AVANT de swapper vers l'image HD, pour remettre les coords à l'échelle du canvas
+  // rendu (sinon les marqueurs Vxx se décalent vers le coin). On n'active le HD que si connu.
+  const bgW = planBg ? await imgNaturalWidth(planBg) : null;
+  let usedHd = false;
+  if (planId && bgW) {
     const hd = await fetchPlanHdDataUrl(planId);
-    if (hd) planBg = hd;
+    if (hd) { planBg = hd; usedHd = true; }
   }
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
@@ -34,7 +51,11 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
       // sizeScale ∝ largeur → les annotations gardent la même taille relative qu'à 4500px.
       const sizeScale = Math.max(0.5, cv.width / 1400) * annotScale;
-      drawAnnotationPaths(ctx, drawPaths, sizeScale);
+      // Ramène les coords (espace planBg) dans l'espace du canvas : bgW si on a swappé sur le HD,
+      // sinon la largeur de l'image rendue (le bg). → marqueurs au bon endroit à toute résolution.
+      const pathsSpaceW = usedHd ? bgW : img.naturalWidth;
+      const coordScale = pathsSpaceW ? cv.width / pathsSpaceW : 1;
+      drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), sizeScale);
       // JPEG (le plan est opaque) : embarqué tel quel par jsPDF (DCTDecode) → 5-10× plus
       // léger qu'un PNG et SANS l'étape de compression zlib lente du PNG.
       const out = cv.toDataURL('image/jpeg', 0.8);

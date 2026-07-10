@@ -10,23 +10,36 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
-// Ouvre un PDF (data URL) dans la visionneuse native (moteur PDF de l'OS/navigateur) :
-// qualité VECTORIELLE parfaite à tout zoom, tous formats (A0/A1…), sans limite de pixels.
-// Conversion SYNCHRONE data URL → blob (pas de fetch async → garde le user-gesture, évite
-// le blocage de pop-up). Renvoie true si l'ouverture a été tentée.
-function openPdfBlob(pdf) {
-  if (!pdf || !pdf.startsWith('data:application/pdf')) return false;
+// Retrouve le PDF source (vectoriel) d'un groupe de plans : mémoire (import frais) → Storage
+// (chemin déterministe par base) → repli legacy (colonne data). Renvoie null si aucun PDF source.
+async function getGroupSourcePdf(group, projetId) {
+  const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
+  if (inMem) return inMem.data;
+  try {
+    if (projetId) {
+      const pdf = await fetchPlanPdfByBase(projetId, group.nom);
+      if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) return pdf;
+    }
+  } catch { /* pas de PDF stocké */ }
+  try {
+    const fd = await fetchPlanData((group.pages || [])[0]?.id);
+    if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) return fd.data;
+  } catch { /* pas de PDF en base */ }
+  return null;
+}
+
+// Convertit un PDF (data URL) en blob object URL (à ouvrir dans la visionneuse native de l'OS :
+// qualité VECTORIELLE parfaite à tout zoom, fluide car accélérée matériellement). Renvoie null si
+// ce n'est pas un PDF. La conversion est SYNCHRONE → utilisable dans un user-gesture.
+function pdfToBlobUrl(pdf) {
+  if (!pdf || !pdf.startsWith('data:application/pdf')) return null;
   try {
     const b64 = pdf.split(',')[1];
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-    const w = window.open(url, '_blank');
-    if (!w) { const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.click(); }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    return true;
-  } catch { return false; }
+    return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  } catch { return null; }
 }
 
 // ── Visionneuse « Consulter les plans » ────────────────────────────────────────
@@ -49,22 +62,10 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   // pour 18 pages) → « charger le moindre PDF prend beaucoup trop de temps » (Thomas).
   const groupPdfRef = useRef({ key: null, val: null });
   const getGroupPdf = async () => {
-    const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
-    if (inMem) return inMem.data;
     if (groupPdfRef.current.key === group.nom && typeof groupPdfRef.current.val === 'string') return groupPdfRef.current.val; // succès mémorisé
-    // 1) PDF source stocké dans Storage (chemin déterministe par base).
-    try {
-      if (projetId) {
-        const pdf = await fetchPlanPdfByBase(projetId, group.nom);
-        if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: pdf }; return pdf; }
-      }
-    } catch { /* pas de PDF stocké */ }
-    // 2) Repli legacy : colonne data (rarement un PDF ; en général un chemin image).
-    try {
-      const fd = await fetchPlanData((group.pages || [])[0]?.id);
-      if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: fd.data }; return fd.data; }
-    } catch { /* pas de PDF en base */ }
-    return null; // échec NON mémorisé → réessai possible (upload en cours)
+    const pdf = await getGroupSourcePdf(group, projetId);
+    if (typeof pdf === 'string') groupPdfRef.current = { key: group.nom, val: pdf }; // ne mémorise QUE les succès
+    return pdf; // échec (null) NON mémorisé → réessai possible (upload en cours)
   };
   // Chargement HD À LA DEMANDE d'une page — chaque viewer décide QUAND.
   const loadHd = async (p) => {
@@ -116,17 +117,16 @@ function ConsultViewer({ group, projetId = null, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} getPdf={getGroupPdf} onClose={onClose}/>
-    : <ConsultViewerDesktop group={group} hdById={hdById} getPdf={getGroupPdf} onClose={onClose}/>;
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
+    : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
 }
 
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
 // Interface MINIMALE (demande Thomas) : croix flottante + pilule de zoom, rien d'autre.
-function ConsultViewerDesktop({ group, hdById = {}, getPdf = null, onClose }) {
+function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
-  const [pdfBusy, setPdfBusy] = useState(false);
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
@@ -227,16 +227,6 @@ function ConsultViewerDesktop({ group, hdById = {}, getPdf = null, onClose }) {
         </button>
         <button onClick={() => setZoom(zRef.current * 1.25)} title="Zoom avant" style={zBtn}>+</button>
       </div>
-      {/* Qualité MAXIMALE : ouvre le vrai PDF vectoriel (tous formats, net à tout zoom) */}
-      {getPdf && (
-        <button disabled={pdfBusy} title="Ouvrir en très haute qualité (PDF)"
-          onClick={async () => { setPdfBusy(true); try { const pdf = await getPdf(); if (!openPdfBlob(pdf)) alert('PDF source indisponible — réimportez ce plan via « Drive de l’affaire » pour la qualité maximale.'); } finally { setPdfBusy(false); } }}
-          style={{ position:'absolute', top:12, left:14, display:'flex', alignItems:'center', gap:7, padding:'10px 16px',
-            borderRadius:22, border:'none', background:'rgba(227,5,19,0.92)', color:'white', fontSize:13, fontWeight:800,
-            cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)', boxShadow:'0 4px 14px rgba(0,0,0,0.35)' }}>
-          {pdfBusy ? <Ic n="spn" s={14}/> : <Ic n="eye" s={14}/>} Haute qualité (PDF)
-        </button>
-      )}
       {/* position:absolute inset:0 → hauteur GARANTIE (le flex:1 sans parent flex, introduit
           en retirant la barre du haut, laissait le conteneur sans hauteur → ni molette ni
           cliquer-glisser possibles). La molette est gérée par le listener natif ci-dessus. */}
@@ -271,8 +261,7 @@ function ConsultViewerDesktop({ group, hdById = {}, getPdf = null, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, onClose }) {
-  const [pdfBusy, setPdfBusy] = useState(false);
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -481,17 +470,6 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, getPdf = null, 
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)', fontSize:20 }}>
         ⟳
       </button>
-      {/* Qualité MAXIMALE : ouvre le vrai PDF vectoriel (tous formats, net à tout zoom) */}
-      {getPdf && (
-        <button disabled={pdfBusy} title="Ouvrir en très haute qualité (PDF)"
-          onClick={async () => { setPdfBusy(true); try { const pdf = await getPdf(); if (!openPdfBlob(pdf)) alert('PDF source indisponible — réimportez ce plan via « Drive de l’affaire » pour la qualité maximale.'); } finally { setPdfBusy(false); } }}
-          style={{ position:'absolute', bottom:'calc(env(safe-area-inset-bottom, 0px) + 14px)', left:'50%', transform:'translateX(-50%)',
-            display:'flex', alignItems:'center', gap:7, padding:'11px 18px', borderRadius:24, border:'none',
-            background:'rgba(227,5,19,0.94)', color:'white', fontSize:13.5, fontWeight:800, cursor:'pointer',
-            zIndex:5, backdropFilter:'blur(2px)', boxShadow:'0 4px 16px rgba(0,0,0,0.4)' }}>
-          {pdfBusy ? <Ic n="spn" s={15}/> : <Ic n="eye" s={15}/>} Haute qualité (PDF)
-        </button>
-      )}
       <div ref={boxRef}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
         onWheel={onWheel}
@@ -566,7 +544,27 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const touchDragRef = useRef(null); touchDragRef.current = touchDrag;
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
   // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
-  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
+  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse (repli)
+  // Consulter un plan : ouvre le PDF NATIF (fluide + vectoriel, moteur PDF de l'OS) quand le PDF
+  // source existe ; repli sur la visionneuse image sinon (plan importé en image, PDF pas encore
+  // monté…). On pré-ouvre l'onglet de façon SYNCHRONE dans le geste — sinon iOS bloque le pop-up
+  // après l'await du fetch. (Demande Thomas : « le PDF natif est super fluide, garder que le top ».)
+  const openPlanConsult = (g) => {
+    let win = null;
+    try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
+    (async () => {
+      const pdf = await getGroupSourcePdf(g, projetId);
+      const url = pdf ? pdfToBlobUrl(pdf) : null;
+      if (url && win && !win.closed) {
+        win.location.href = url;
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return;
+      }
+      if (url) URL.revokeObjectURL(url);
+      if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
+      setConsultGroup(g); // pas de PDF source (ou onglet bloqué) → visionneuse image dans l'app
+    })();
+  };
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
@@ -825,7 +823,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         </div>
         {/* Zone cliquable : titre en MAJUSCULES, centré H+V, sigle Ai en filigrane derrière.
             → ouvre la visionneuse (demande Thomas). */}
-        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', position:'relative', padding:'14px 10px', flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div onClick={() => openPlanConsult(g)} style={{ cursor:'pointer', position:'relative', padding:'14px 10px', flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
           <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>

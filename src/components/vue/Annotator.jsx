@@ -361,8 +361,11 @@ export function getAllSymbols() {
 
 // exportSizeMultiplier : 7 pour photos (miniature ~90px), 2 pour plans (affichés ~500px)
 
-// Mise à l'échelle de toutes les coordonnées d'annotation (LQ ↔ HQ)
-function scalePaths(paths, sx, sy) {
+// Mise à l'échelle de toutes les coordonnées d'annotation (LQ ↔ HQ).
+// Exportée : le rapport (RapportPreview / generateRapport) rend les annotations d'un plan sur un
+// canvas dérivé de l'image HD (plus grande que l'espace de coords, qui est celui du planBg) et
+// doit remettre les coords à l'échelle du canvas, sinon les marqueurs se décalent vers le coin.
+export function scalePaths(paths, sx, sy) {
   if (!paths || (sx === 1 && sy === 1)) return paths;
   return paths.map(p => {
     const s = { ...p };
