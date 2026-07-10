@@ -10,6 +10,38 @@ import PdfPagePicker from './PdfPagePicker.jsx';
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N ».
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
+// Retrouve le PDF source (vectoriel) d'un groupe de plans : mémoire (import frais) → Storage
+// (chemin déterministe par base) → repli legacy (colonne data). Renvoie null si aucun PDF source.
+async function getGroupSourcePdf(group, projetId) {
+  const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
+  if (inMem) return inMem.data;
+  try {
+    if (projetId) {
+      const pdf = await fetchPlanPdfByBase(projetId, group.nom);
+      if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) return pdf;
+    }
+  } catch { /* pas de PDF stocké */ }
+  try {
+    const fd = await fetchPlanData((group.pages || [])[0]?.id);
+    if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) return fd.data;
+  } catch { /* pas de PDF en base */ }
+  return null;
+}
+
+// Convertit un PDF (data URL) en blob object URL (à ouvrir dans la visionneuse native de l'OS :
+// qualité VECTORIELLE parfaite à tout zoom, fluide car accélérée matériellement). Renvoie null si
+// ce n'est pas un PDF. La conversion est SYNCHRONE → utilisable dans un user-gesture.
+function pdfToBlobUrl(pdf) {
+  if (!pdf || !pdf.startsWith('data:application/pdf')) return null;
+  try {
+    const b64 = pdf.split(',')[1];
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  } catch { return null; }
+}
+
 // ── Visionneuse « Consulter les plans » ────────────────────────────────────────
 // Deux modes (demande Thomas : sur PC le transform maison n'était « pas du tout pratique ») :
 //  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
@@ -30,22 +62,10 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   // pour 18 pages) → « charger le moindre PDF prend beaucoup trop de temps » (Thomas).
   const groupPdfRef = useRef({ key: null, val: null });
   const getGroupPdf = async () => {
-    const inMem = (group.pages || []).find(pg => typeof pg.data === 'string' && pg.data.startsWith('data:application/pdf'));
-    if (inMem) return inMem.data;
     if (groupPdfRef.current.key === group.nom && typeof groupPdfRef.current.val === 'string') return groupPdfRef.current.val; // succès mémorisé
-    // 1) PDF source stocké dans Storage (chemin déterministe par base).
-    try {
-      if (projetId) {
-        const pdf = await fetchPlanPdfByBase(projetId, group.nom);
-        if (typeof pdf === 'string' && pdf.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: pdf }; return pdf; }
-      }
-    } catch { /* pas de PDF stocké */ }
-    // 2) Repli legacy : colonne data (rarement un PDF ; en général un chemin image).
-    try {
-      const fd = await fetchPlanData((group.pages || [])[0]?.id);
-      if (typeof fd?.data === 'string' && fd.data.startsWith('data:application/pdf')) { groupPdfRef.current = { key: group.nom, val: fd.data }; return fd.data; }
-    } catch { /* pas de PDF en base */ }
-    return null; // échec NON mémorisé → réessai possible (upload en cours)
+    const pdf = await getGroupSourcePdf(group, projetId);
+    if (typeof pdf === 'string') groupPdfRef.current = { key: group.nom, val: pdf }; // ne mémorise QUE les succès
+    return pdf; // échec (null) NON mémorisé → réessai possible (upload en cours)
   };
   // Chargement HD À LA DEMANDE d'une page — chaque viewer décide QUAND.
   const loadHd = async (p) => {
@@ -524,7 +544,27 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const touchDragRef = useRef(null); touchDragRef.current = touchDrag;
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
   // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
-  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse
+  const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse (repli)
+  // Consulter un plan : ouvre le PDF NATIF (fluide + vectoriel, moteur PDF de l'OS) quand le PDF
+  // source existe ; repli sur la visionneuse image sinon (plan importé en image, PDF pas encore
+  // monté…). On pré-ouvre l'onglet de façon SYNCHRONE dans le geste — sinon iOS bloque le pop-up
+  // après l'await du fetch. (Demande Thomas : « le PDF natif est super fluide, garder que le top ».)
+  const openPlanConsult = (g) => {
+    let win = null;
+    try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
+    (async () => {
+      const pdf = await getGroupSourcePdf(g, projetId);
+      const url = pdf ? pdfToBlobUrl(pdf) : null;
+      if (url && win && !win.closed) {
+        win.location.href = url;
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return;
+      }
+      if (url) URL.revokeObjectURL(url);
+      if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
+      setConsultGroup(g); // pas de PDF source (ou onglet bloqué) → visionneuse image dans l'app
+    })();
+  };
   const [confirmDelAll, setConfirmDelAll] = useState(false);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingPlanNom, setEditingPlanNom] = useState('');
@@ -783,7 +823,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
         </div>
         {/* Zone cliquable : titre en MAJUSCULES, centré H+V, sigle Ai en filigrane derrière.
             → ouvre la visionneuse (demande Thomas). */}
-        <div onClick={() => setConsultGroup(g)} style={{ cursor:'pointer', position:'relative', padding:'14px 10px', flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div onClick={() => openPlanConsult(g)} style={{ cursor:'pointer', position:'relative', padding:'14px 10px', flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
           <div aria-hidden style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
             <span style={{ fontWeight:900, fontSize:52, letterSpacing:-2, color:DA.red, opacity:0.07, userSelect:'none' }}>Ai</span>
           </div>
