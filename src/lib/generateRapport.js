@@ -40,9 +40,11 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
-      // Plafonne la résolution : ~1800px de côté ≈ 260 dpi à la largeur A4 — net pour
-      // l'impression des plans/annotations et nettement plus léger qu'un rendu à 2400/4500px.
-      const MAXD = 1800;
+      // Plafonne la résolution : ~1400px de côté ≈ 198 dpi à la largeur A4 — net pour
+      // l'impression des plans/annotations (Vxx bien lisibles) et nettement plus léger pour
+      // l'envoi email (optimisation demandée). Les coords d'annotation suivent (coordScale =
+      // largeur canvas / largeur bg) → positions des Vxx inchangées.
+      const MAXD = 1400;
       const dScale = Math.min(1, MAXD / Math.max(img.naturalWidth, img.naturalHeight));
       const cv  = document.createElement('canvas');
       cv.width  = Math.round(img.naturalWidth  * dScale);
@@ -475,11 +477,14 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   {
     const cols  = Math.max(1, Math.min(photosParLigne, 3));
     const maxPh = cols <= 2 ? 4 : 6;
-    // Résolution cible = ~250 dpi de la taille d'affichage réelle de la case (largeur en mm).
-    // 250 dpi reste net à l'impression d'une photo ; au-delà on ne stocke que des pixels
-    // invisibles qui alourdissent le PDF. On parallélise le redimensionnement (Promise.all).
+    // Résolution cible = ~180 dpi de la taille d'affichage réelle de la case (largeur en mm) —
+    // OPTIMISATION EMAIL (demande) : une photo est affichée dans une case de ~6-9 cm ; 180 dpi y
+    // reste net à l'écran comme à l'impression, avec encore une marge de zoom, tout en pesant
+    // ~2× moins qu'à 250 dpi. Au-delà on ne stocke que des pixels invisibles qui font exploser le
+    // poids du PDF (le PDF de rapport partait à ~45 Mo, non envoyable par email). Photos en JPEG
+    // 0.72 : contenu photographique → compression propre, pas d'artefact visible à cette taille.
     const phWmm   = (CW - 6 - (cols - 1) * 2) / cols;
-    const photoMaxDim = Math.min(1400, Math.max(700, Math.round(phWmm / 25.4 * 250)));
+    const photoMaxDim = Math.min(1100, Math.max(640, Math.round(phWmm / 25.4 * 180)));
     const uniquePhotos = [...new Set(
       localisations.flatMap(loc =>
         (loc.items || []).flatMap(item =>
@@ -488,7 +493,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       )
     )];
     await Promise.all(uniquePhotos.map(async src => {
-      photoDataCache.set(src, await downscaleDataUrl(src, photoMaxDim, 0.78));
+      photoDataCache.set(src, await downscaleDataUrl(src, photoMaxDim, 0.72));
     }));
   }
 
