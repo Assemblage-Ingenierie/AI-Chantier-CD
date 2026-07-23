@@ -341,7 +341,11 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                     const shown = validPhotos;
                     const extra = 0;
                     return (
-                      <div style={{ display: isDesktop ? 'flex' : 'grid', gridTemplateColumns: isDesktop ? undefined : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, flexWrap: isDesktop ? 'wrap' : undefined }}
+                      // Grille responsive : tuiles UNIFORMES qui remplissent toute la ligne, quelle
+                      // que soit l'orientation → plus de « blanc » à droite avec les photos paysage
+                      // (retour Bach). Mobile = 2 colonnes ; desktop = autant de colonnes de ≥150px
+                      // que la largeur permet (≥2), sans trou.
+                      <div style={{ display:'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10 }}
                         // Déposer dans le vide de la zone photos d'une observation → y déplacer la
                         // photo glissée (depuis une autre observation/zone). Les photos elles-mêmes
                         // gèrent leur propre drop (réordonner / déposer dessus) via stopPropagation.
@@ -388,7 +392,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               startLP={startPhotoLP}
                               endLP={endPhotoLP}
                               lpRef={photoLP}
-                              imgStyle={{ height: isDesktop ? 160 : 'auto', width: isDesktop ? 'auto' : '100%', maxWidth: isDesktop ? 240 : '100%', aspectRatio: isDesktop ? undefined : '4 / 3', objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
+                              imgStyle={{ width:'100%', aspectRatio:'4 / 3', objectFit:'cover', borderRadius: isDesktop ? 10 : 6, border:`1px solid ${DA.border}`, cursor:'pointer', display:'block', userSelect:'none' }}/>
                             {onDeletePhoto && (
                               confirmDelPhoto?.item === item && confirmDelPhoto?.photoIdx === realIdx ? (
                                 <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.45)', borderRadius: isDesktop ? 10 : 6 }}
