@@ -6,6 +6,7 @@ import IngenieursEditor from '../ui/IngenieursEditor.jsx';
 import { CoverSourcesHint } from './NewProjet.jsx';
 import { pdfFileToImageDataUrl } from '../../lib/pdfUtils.js';
 import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
+import { getAffaireNum, setAffaireNum } from '../../lib/driveUpload.js';
 
 const FIELDS = [
   { k: 'nom',          l: 'Nom du projet *',  ph: 'Ex: Résidence Les Acacias'     },
@@ -18,6 +19,10 @@ const RATIO_GARDE = 210 / 85;
 
 export default function EditProjet({ projet, onClose, onSave }) {
   const [f,        setF]       = useState({ nom: projet.nom || '', adresse: projet.adresse || '', photo: projet.photo || null, photoCouverture: projet.photoCouverture || null, maitreOuvrage: projet.maitreOuvrage || '', ingenieurs: projet.ingenieurs || '' });
+  // Numéro d'affaire (pour retrouver le dossier Google Drive) — stocké en LOCAL, indépendant du
+  // nom : le projet peut être renommé sans casser le lien Drive. Non envoyé à Supabase (pas de
+  // colonne) → persiste sur cet appareil, ce qui suffit pour l'upload des photos prises ici.
+  const [affNum,   setAffNum]  = useState(() => getAffaireNum(projet.id));
   const [cropSrc,  setCropSrc] = useState(null);
   const [cropStep, setCropStep] = useState(null); // 'tuile' | 'garde'
   const [pdfBusy,  setPdfBusy]  = useState(false); // rendu PDF → image en cours
@@ -190,7 +195,20 @@ export default function EditProjet({ projet, onClose, onSave }) {
           <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0' }}>Le projet apparaîtra dans « Mes projets » de ces initiales.</p>
         </div>
 
-        <button onClick={() => { onSave(f); onClose(); }} disabled={!f.nom}
+        {/* Numéro d'affaire (Drive) : sert à retrouver le dossier Google Drive de l'affaire, même
+            si le projet a été renommé. À renseigner si les photos ne se sauvegardent pas sur le Drive. */}
+        <div style={{ marginBottom:12 }}>
+          <label style={{ display:'block', fontSize:11, fontWeight:700, color:DA.gray, marginBottom:5, textTransform:'uppercase', letterSpacing:0.5 }}>
+            Numéro d'affaire (Drive)
+          </label>
+          <input value={affNum} onChange={e => setAffNum(e.target.value)} placeholder="Ex: A696"
+            style={{ width:'100%', border:`1px solid ${DA.border}`, borderRadius:8, padding:'10px 12px', fontSize:16, outline:'none', boxSizing:'border-box' }}
+            onFocus={e => e.target.style.borderColor = DA.red}
+            onBlur={e  => e.target.style.borderColor = DA.border}/>
+          <p style={{ fontSize:10, color:DA.grayL, margin:'4px 0 0' }}>Permet de sauvegarder les photos dans le bon dossier Drive même après un renommage du projet.</p>
+        </div>
+
+        <button onClick={() => { setAffaireNum(projet.id, affNum); onSave(f); onClose(); }} disabled={!f.nom}
           style={{ width:'100%', background: f.nom ? DA.red : '#ccc', color:'white', border:'none', borderRadius:12, padding:13, fontSize:14, fontWeight:800, cursor: f.nom ? 'pointer' : 'not-allowed', marginTop:4, display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
           <Ic n="chk" s={15}/> Enregistrer
         </button>

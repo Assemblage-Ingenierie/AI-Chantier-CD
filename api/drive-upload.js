@@ -149,8 +149,11 @@ function extractProjetNum(nom) {
 
 // Find an existing project folder by number (e.g. A696 matches "2026_A696_PEGUY_...")
 // Falls back to creating a new folder with the project name if no match found.
-async function findProjetFolder(token, driveId, projetNom) {
-  const num = extractProjetNum(projetNom);
+// projetNum (fourni explicitement par le client) est PRÉFÉRÉ au numéro déduit du nom : le projet
+// peut avoir été renommé sans le « Axxx », auquel cas seule cette valeur permet de retrouver le
+// bon dossier. Repli sur l'extraction depuis le nom pour les affaires non renseignées (rétro-compat).
+async function findProjetFolder(token, driveId, projetNom, projetNum) {
+  const num = (projetNum || '').trim().toUpperCase() || extractProjetNum(projetNom);
   if (num) {
     const params = new URLSearchParams({
       q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`,
@@ -211,7 +214,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { base64, mimeType, fileName, projetNom, visiteLabel, visiteDate, ingenieur } = req.body || {};
+    const { base64, mimeType, fileName, projetNom, projetNum, visiteLabel, visiteDate, ingenieur } = req.body || {};
 
     if (!base64 || !mimeType || !fileName) {
       return res.status(400).json({ error: 'base64, mimeType and fileName are required' });
@@ -230,7 +233,7 @@ export default async function handler(req, res) {
 
     // Navigate: Affaires root > project folder > 02_VISITES (or similar) > Visite_label
     const { id: affairesId, driveId } = await findAffairesFolder(token);
-    const projetFolderId = await findProjetFolder(token, driveId, projetNom);
+    const projetFolderId = await findProjetFolder(token, driveId, projetNom, projetNum);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
     const datePrefix = visiteDate
       ? new Date(visiteDate).toISOString().slice(0, 10).replace(/-/g, '_')

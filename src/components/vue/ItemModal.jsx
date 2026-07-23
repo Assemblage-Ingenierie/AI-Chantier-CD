@@ -7,7 +7,7 @@ import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
-import { uploadToDrive } from '../../lib/driveUpload.js';
+import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
@@ -514,7 +514,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         if (fromCamera) {
           const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
           if (!isIOS) valid.forEach(autoSaveToDevice); // download link ouvre un onglet sur iOS, skip
-          valid.forEach(ph => uploadToDrive({ ...ph, projetNom, visiteLabel, visiteDate, ingenieur }));
+          valid.forEach(ph => uploadToDrive({ ...ph, projetNom, projetNum: getAffaireNum(projetId), visiteLabel, visiteDate, ingenieur }));
         }
       })
       .finally(() => setCompressing(false));
