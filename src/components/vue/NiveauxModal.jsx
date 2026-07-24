@@ -896,11 +896,16 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     );
   };
 
-  // Bases d'une case ordonnées selon la bibliothèque (pour placer une tuile juste avant/après).
+  // Bases d'une case dans l'ordre STOCKÉ (f.bases) — réordonnable en glissant une tuile sur une
+  // autre de la même case. On ne filtre que les bases orphelines (plan supprimé). Avant, on
+  // re-triait par l'ordre global de la bibliothèque → l'ordre choisi dans la case était ignoré
+  // (« réorganiser les plans dans les box, pas possible » — Bach).
   const orderedFolderBases = (f) => {
-    const idx = new Map(pdfGroups.map((g, i) => [g.nom, i]));
-    return (f.bases || []).filter(b => idx.has(b)).sort((a, b) => idx.get(a) - idx.get(b));
+    const known = new Set(pdfGroups.map(g => g.nom));
+    return (f.bases || []).filter(b => known.has(b));
   };
+  // Case contenant une base donnée (null si la tuile est libre).
+  const folderOfBase = (base) => folders.find(f => (f.bases || []).includes(base)) || null;
 
   // Rendu d'une CASE (extrait pour pouvoir l'INTERCLASSER avec les tuiles libres — demande
   // Thomas : pouvoir placer une tuile avant une case). Glisser une tuile sur le BORD de la
@@ -1042,14 +1047,27 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
       const el = document.elementFromPoint(x, y);
       const folderEl = el?.closest?.('[data-folder]');
       const tileEl = el?.closest?.('[data-base]');
+      const targetBase = tileEl?.getAttribute('data-base');
+      // 1) PRIORITÉ : dépôt sur une AUTRE tuile de la MÊME case → réordonner À L'INTÉRIEUR de la
+      //    case (avant/après selon le côté). Sans ça, glisser dans une box ne changeait pas l'ordre.
+      if (targetBase && targetBase !== draggingTile) {
+        const dragF = folderOfBase(draggingTile), tgtF = folderOfBase(targetBase);
+        if (dragF && tgtF && dragF.id === tgtF.id) {
+          const r = tileEl.getBoundingClientRect();
+          const after = (x - r.left) / Math.max(1, r.width) > 0.5;
+          return { reorderInFolder: { targetBase, after } };
+        }
+      }
+      // 2) Dépôt au MILIEU d'une case → ranger la tuile dedans.
       if (folderEl) {
         const r = folderEl.getBoundingClientRect();
         const fx = (x - r.left) / Math.max(1, r.width);
         if (fx > 0.25 && fx < 0.75) return { group: { kind: 'folder', id: folderEl.getAttribute('data-folder') } };
-      } else if (tileEl && tileEl.getAttribute('data-base') !== draggingTile) {
+      } else if (targetBase && targetBase !== draggingTile) {
+        // 3) Dépôt au MILIEU d'une tuile LIBRE → créer une case avec les deux.
         const r = tileEl.getBoundingClientRect();
         const fx = (x - r.left) / Math.max(1, r.width);
-        if (fx > 0.28 && fx < 0.72) return { group: { kind: 'tile', base: tileEl.getAttribute('data-base') } };
+        if (fx > 0.28 && fx < 0.72) return { group: { kind: 'tile', base: targetBase } };
       }
     }
     return { insert: computeInsertIdx(x, y) };
@@ -1057,8 +1075,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // Applique la décision de computeDrop.
   const applyDrop = (x, y) => {
     const d = computeDrop(x, y);
-    if (d.group) {
-      const draggingTile = dragBase || touchDrag?.base;
+    const draggingTile = dragBase || touchDrag?.base;
+    if (d.reorderInFolder && draggingTile) {
+      reorderBases(draggingTile, d.reorderInFolder.targetBase, d.reorderInFolder.after); // réordonner DANS la case
+    } else if (d.group) {
       if (draggingTile) {
         if (d.group.kind === 'folder') moveBase(draggingTile, d.group.id);       // ranger dans la case
         else groupBases(draggingTile, d.group.base);                              // créer une case avec les 2
