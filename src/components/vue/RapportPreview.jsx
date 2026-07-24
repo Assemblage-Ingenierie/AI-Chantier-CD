@@ -237,6 +237,22 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
         });
       }
 
+      // Plans PROPRES à l'observation (item.plans), juste après ses photos — comme dans le PDF
+      // (generateRapport « Plans additionnels annotés »). Seulement les plans ANNOTÉS et à fond
+      // résolvable. L'id n'est jamais dans `breaks` → aucun saut de page forcé (pagination intacte).
+      (item.plans || []).forEach((pl, pidx) => {
+        if (!pl.planAnnotations?.paths?.length) return;
+        const bg = pl.planBg || (planLibrary.find(p => p.id === pl.planId)?.bg) || null;
+        if (!bg && !pl.planAnnotations?.exported) return;
+        blocks.push({
+          type: 'itemplan',
+          id: `${item.id}_iplan${pidx}`,
+          item, locId: loc.id,
+          plan: { bg, planId: pl.planId || null, annotations: pl.planAnnotations },
+          planNom: (planLibrary.find(p => p.id === pl.planId)?.nom || '').toUpperCase() || null,
+        });
+      });
+
       photoOffset += photos.length;
     }
     // Un plan n'est "visible" (et ne crée donc un bloc titre) que si son fond est réellement
@@ -1087,6 +1103,24 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   }
   if (cur.length) groups.push(cur);
   return groups.map((plans, gi) => ({ plans, topBreakId: gi > 0 ? plans[0].breakId : null }));
+}
+
+// Rendu d'UN plan propre à une observation dans l'aperçu, calqué sur le PDF (section « Plans
+// additionnels annotés » de generateRapport, juste après les photos de l'observation). Réutilise
+// SinglePlanImage (fond + annotations + numérotation Vxx globale). Titre = nom du plan si connu.
+function ItemPlanBlock({ plan, planNom = null, annotScale = 1, vpNumByPath = null }) {
+  if (!plan) return null;
+  return (
+    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
+      {planNom && (
+        <div style={{ background:'#F7F7F7', borderBottom:`2px solid ${DA.red}`, padding:'5px 9px' }}>
+          <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>{planNom}</span>
+        </div>
+      )}
+      <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations}
+        annotScale={annotScale} alt={planNom || 'Plan observation'} vpNumByPath={vpNumByPath}/>
+    </div>
+  );
 }
 
 function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null }) {
@@ -2408,6 +2442,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <ZoneHeader loc={block.loc}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
+                  : block.type === 'itemplan'
+                  ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
                 }
               </div>
@@ -2469,6 +2505,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                           ? <ZoneHeader loc={block.loc} />
                           : block.type === 'plan'
                           ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
+                          : block.type === 'itemplan'
+                          ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
