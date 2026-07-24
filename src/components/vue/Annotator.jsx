@@ -1662,6 +1662,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
   };
 
+  // Échap / suppression : marque qu'il ne faut PAS re-committer le texte au blur qui suit.
+  const discardInlineRef = useRef(false);
   const cancelInlineEdit = () => {
     setInlineEditIdx(null);
     setInlineEditPos(null);
@@ -2318,17 +2320,24 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {/* Saisie inline — apparaît directement au point de tap */}
             {inlineEditPos && (
               <>
+                {/* Clic à côté → on fait perdre le focus au champ : le commit se fait alors dans
+                    onBlur (chemin UNIQUE de validation). */}
                 <div style={{ position:'absolute', inset:0, zIndex:19 }}
-                  onPointerDown={() => confirmInlineEdit()}/>
+                  onPointerDown={() => { try { document.activeElement?.blur?.(); } catch { /* noop */ } }}/>
                 <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
                   transform:'translate(-4px, -36px)', pointerEvents:'auto' }}>
                   <textarea autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
                     rows={Math.max(1, inlineEditVal.split('\n').length)}
+                    // Validation ROBUSTE : dès que le champ perd le focus (clic à côté, bouton
+                    // Sauvegarder, changement d'outil…), le texte est committé. Plus besoin d'un
+                    // geste précis (retour Bach : le texte se perdait au clic « Sauvegarder »).
+                    onBlur={() => { if (discardInlineRef.current) { discardInlineRef.current = false; return; } confirmInlineEdit(); }}
                     onKeyDown={e=>{
-                      // Entrée = saut de ligne (zone de texte libre). Validation = clic à côté.
-                      if(e.key==='Escape'){ e.preventDefault(); cancelInlineEdit(); }
+                      // Entrée = saut de ligne (zone de texte libre). Validation = perte de focus.
+                      if(e.key==='Escape'){ e.preventDefault(); discardInlineRef.current = true; cancelInlineEdit(); }
                       if((e.key==='Delete'||e.key==='Backspace') && !inlineEditVal){
                         e.preventDefault();
+                        discardInlineRef.current = true;
                         if(inlineEditIdx !== null) setPaths(p=>p.filter((_,i)=>i!==inlineEditIdx));
                         cancelInlineEdit();
                       }
