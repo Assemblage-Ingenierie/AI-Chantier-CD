@@ -1662,8 +1662,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
   };
 
-  // Échap / suppression : marque qu'il ne faut PAS re-committer le texte au blur qui suit.
-  const discardInlineRef = useRef(false);
   const cancelInlineEdit = () => {
     setInlineEditIdx(null);
     setInlineEditPos(null);
@@ -1709,8 +1707,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
 
   const confirmInlineEdit = () => {
-    if (inlineEditPos !== null) setPaths(prev => applyInlineEdit(prev));
-    cancelInlineEdit();
+    // Calcul SYNCHRONE, AVANT cancelInlineEdit : applyInlineEdit lit inlineEditCanvasPt.current
+    // (une ref). Dans un updater différé setPaths(prev => …), cancelInlineEdit aurait déjà remis
+    // cette ref à null → le nouveau texte n'était JAMAIS ajouté (perte de texte signalée par Bach).
+    if (inlineEditPos !== null) {
+      const next = applyInlineEdit(paths);
+      cancelInlineEdit();
+      setPaths(next);
+    } else {
+      cancelInlineEdit();
+    }
   };
 
   const addCustomSym = () => {
@@ -2320,24 +2326,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {/* Saisie inline — apparaît directement au point de tap */}
             {inlineEditPos && (
               <>
-                {/* Clic à côté → on fait perdre le focus au champ : le commit se fait alors dans
-                    onBlur (chemin UNIQUE de validation). */}
+                {/* Clic à côté (sur le canvas) = valider : commit SYNCHRONE via confirmInlineEdit. */}
                 <div style={{ position:'absolute', inset:0, zIndex:19 }}
-                  onPointerDown={() => { try { document.activeElement?.blur?.(); } catch { /* noop */ } }}/>
+                  onPointerDown={() => confirmInlineEdit()}/>
                 <div style={{ position:'absolute', left:inlineEditPos.left, top:inlineEditPos.top, zIndex:20,
                   transform:'translate(-4px, -36px)', pointerEvents:'auto' }}>
                   <textarea autoFocus value={inlineEditVal} onChange={e=>setInlineEditVal(e.target.value)}
                     rows={Math.max(1, inlineEditVal.split('\n').length)}
-                    // Validation ROBUSTE : dès que le champ perd le focus (clic à côté, bouton
-                    // Sauvegarder, changement d'outil…), le texte est committé. Plus besoin d'un
-                    // geste précis (retour Bach : le texte se perdait au clic « Sauvegarder »).
-                    onBlur={() => { if (discardInlineRef.current) { discardInlineRef.current = false; return; } confirmInlineEdit(); }}
                     onKeyDown={e=>{
-                      // Entrée = saut de ligne (zone de texte libre). Validation = perte de focus.
-                      if(e.key==='Escape'){ e.preventDefault(); discardInlineRef.current = true; cancelInlineEdit(); }
+                      // Entrée = saut de ligne (zone de texte libre). Validation = clic à côté ou Sauvegarder.
+                      if(e.key==='Escape'){ e.preventDefault(); cancelInlineEdit(); }
                       if((e.key==='Delete'||e.key==='Backspace') && !inlineEditVal){
                         e.preventDefault();
-                        discardInlineRef.current = true;
                         if(inlineEditIdx !== null) setPaths(p=>p.filter((_,i)=>i!==inlineEditIdx));
                         cancelInlineEdit();
                       }
