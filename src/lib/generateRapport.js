@@ -60,6 +60,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
     const hd = await fetchPlanHdDataUrl(planId);
     if (hd) { planBg = hd; usedHd = true; }
   }
+  if (metaOut) metaOut.usedHd = usedHd;
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
   if (planId) console.log(`[PDF] plan ${planId} : image HD ${usedHd ? 'OUI' : 'NON (miniature ' + (bgW || '?') + 'px)'}`);
@@ -554,6 +555,11 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // vectoriel donne un plan PIRE qu'avant. Retour Thomas.)
   const rasterOpts = () => ({});
 
+  // Compteurs de DIAGNOSTIC (affichés dans la feuille « PDF prêt » sur mobile) : permettent de
+  // voir d'un coup d'œil pourquoi un plan reste flou (pas d'image HD ? pas de PDF source ?).
+  const diag = { plans: 0, hd: 0, thumb: 0, src: 0, vectorized: 0 };
+  const countPlan = (meta, src) => { diag.plans++; if (meta.usedHd) diag.hd++; else diag.thumb++; if (src) diag.src++; };
+
   // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non.
   // *Vps : viewpoints (position fractionnaire + label) redessinés en VECTORIEL au placement.
   // *Src : { bytes, pageIndex } du PDF source à embarquer en vectoriel (ou absent).
@@ -563,7 +569,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const src = await getPlanSrc(loc.planId);
     const meta = {};
     const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
-    if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; if (src) planSrc[loc.id] = src; }
+    if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; if (src) planSrc[loc.id] = src; countPlan(meta, src); }
   }
 
   const extraPlanImages = {}, extraPlanVps = {}, extraPlanSrc = {}; // clé: `${locId}_${planIdx}`
@@ -579,7 +585,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       const src = await getPlanSrc(ep.planId);
       const meta = {};
       const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
-      if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; if (src) extraPlanSrc[`${loc.id}_${i}`] = src; }
+      if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; if (src) extraPlanSrc[`${loc.id}_${i}`] = src; countPlan(meta, src); }
     }
   }
 
@@ -594,7 +600,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const src = await getPlanSrc(pl.planId);
         const meta = {};
         const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
-        if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; if (src) itemPlanSrc[`${item.id}_${i}`] = src; }
+        if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; if (src) itemPlanSrc[`${item.id}_${i}`] = src; countPlan(meta, src); }
       }
     }
   }
@@ -1313,6 +1319,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           done++;
         } catch (e) { console.warn('[PDF] vectorisation plan échouée (repli raster):', e); }
       }
+      diag.vectorized = done;
       if (done > 0) {
         const outBytes = await outDoc.save();
         blob = new Blob([outBytes], { type: 'application/pdf' });
@@ -1321,7 +1328,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     } catch (e) { console.warn('[PDF] vectorisation globale échouée (PDF raster conservé):', e); }
   }
 
-  console.log(`[PDF] Fichier final : ${(blob.size / 1048576).toFixed(1)} Mo`);
+  const diagLine = `Plans ${diag.plans} · HD ${diag.hd} · miniature ${diag.thumb} · PDF source ${diag.src} · vectorisés ${diag.vectorized} · ${(blob.size / 1048576).toFixed(1)} Mo`;
+  console.log(`[PDF] ${diagLine}`);
   const url = URL.createObjectURL(blob);
   const safeName   = (projet.nom      || 'Projet').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
   const safeVisite = (projet.visiteNom || '').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
@@ -1333,7 +1341,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     // Mobile : feuille « Rapport prêt » + partage natif. L'ancien window.open(blob)
     // remplaçait l'app par le PDF en PWA installée (standalone = pas de barre de
     // navigation) → aucun moyen de revenir, il fallait tuer l'app.
-    showPdfReadySheet(blob, url, filename);
+    showPdfReadySheet(blob, url, filename, diagLine);
   } else {
     const a = document.createElement('a');
     a.href = url;
@@ -1349,7 +1357,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 // iOS/Android PAR-DESSUS l'app — on n'en sort jamais, contrairement à window.open(blob).
 // Passer par un bouton garantit aussi le "user gesture" exigé par iOS : un share appelé
 // directement après les longues secondes de génération serait rejeté (NotAllowedError).
-function showPdfReadySheet(blob, url, filename) {
+function showPdfReadySheet(blob, url, filename, diagLine = '') {
   const id = '__pdf_ready__';
   document.getElementById(id)?.remove();
   const wrap = document.createElement('div');
@@ -1363,6 +1371,11 @@ function showPdfReadySheet(blob, url, filename) {
   const sub = document.createElement('p');
   sub.style.cssText = 'margin:0 0 6px;font-size:12px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
   sub.textContent = filename;
+  // Ligne de diagnostic plans (temporaire) : permet de comprendre en un coup d'œil, sur mobile,
+  // pourquoi un plan resterait flou (image HD absente ? PDF source absent ? vectorisé ou non ?).
+  const diagEl = document.createElement('p');
+  diagEl.style.cssText = 'margin:-4px 0 4px;font-size:10.5px;color:#aaa;line-height:1.3;';
+  if (diagLine) diagEl.textContent = '🔎 ' + diagLine;
   const shareBtn = document.createElement('button');
   shareBtn.style.cssText = 'width:100%;padding:14px;border:none;border-radius:12px;background:#E30513;color:#fff;font-size:14px;font-weight:800;cursor:pointer;';
   shareBtn.textContent = 'Enregistrer / Partager';
@@ -1390,7 +1403,9 @@ function showPdfReadySheet(blob, url, filename) {
   };
   closeBtn.onclick = cleanup;
   wrap.addEventListener('click', (e) => { if (e.target === wrap) cleanup(); });
-  sheet.append(title, sub, shareBtn, closeBtn);
+  sheet.append(title, sub);
+  if (diagLine) sheet.append(diagEl);
+  sheet.append(shareBtn, closeBtn);
   wrap.append(sheet);
   document.body.appendChild(wrap);
 }
