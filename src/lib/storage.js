@@ -1241,8 +1241,14 @@ async function saveRemote(ps, dirtyIds = null) {
       // Safety guard: if local plan list is empty but DB has plans, skip deletion.
       // Local can be empty because plans weren't hydrated yet (bg/data loaded lazily).
       if (metaRows.length === 0 && dbPlanIds.size > 0) return;
+      // ⚠️ INCIDENT 2026-07-28 « les plans ont disparu » : la purge AUTOMATIQUE des plans lors
+      // d'une sauvegarde est DÉSACTIVÉE. Un état local partiellement chargé (sauvegarde forcée
+      // avant hydratation complète de la bibliothèque) pouvait supprimer en base des plans encore
+      // valides → perte. Les suppressions VOLONTAIRES de l'utilisateur passent déjà par
+      // deleteRemotePlan() (immédiat, ciblé). On ne supprime donc plus JAMAIS un plan via une
+      // sauvegarde de fond → zéro perte possible. (removedPlanIds conservé pour diagnostic.)
+      if (removedPlanIds.length) logWarn('saveRemote.planPurgeSkipped', { projet: p.id, wouldDelete: removedPlanIds.length, dbTotal: dbPlanIds.size });
       await Promise.all([
-        removedPlanIds.length ? sb.from('aichantier_chantier_plans').delete().in('id', removedPlanIds) : Promise.resolve(),
         metaRows.length       ? sb.from('aichantier_chantier_plans').upsert(metaRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
       ]);
       // bg en second (les lignes méta existent désormais) — batch homogène, n'écrase aucun bg existant.
