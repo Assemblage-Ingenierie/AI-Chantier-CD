@@ -1330,6 +1330,9 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   const diagLine = `Plans ${diag.plans} · HD ${diag.hd} · miniature ${diag.thumb} · PDF source ${diag.src} · vectorisés ${diag.vectorized} · ${(blob.size / 1048576).toFixed(1)} Mo`;
   console.log(`[PDF] ${diagLine}`);
+  // DIAGNOSTIC TEMPORAIRE (toutes plateformes) : alerte bloquante avant téléchargement/partage
+  // pour que Thomas puisse screenshoter les compteurs même sur PC (pas de popup au download).
+  try { alert('DIAGNOSTIC PLANS\n\n' + diagLine); } catch {}
   const url = URL.createObjectURL(blob);
   const safeName   = (projet.nom      || 'Projet').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
   const safeVisite = (projet.visiteNom || '').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
