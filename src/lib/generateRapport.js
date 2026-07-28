@@ -543,7 +543,15 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const { base, pageIndex } = parsePlanBaseAndPage(nom);
     if (!_srcPdfByBase.has(base)) {
       let bytes = null;
-      try { const durl = await fetchPlanPdfByBase(projet.id, base); if (durl) bytes = dataUrlToUint8(durl); } catch (e) { console.warn('[PDF] fetchPlanPdfByBase', base, e); }
+      // Timeout 8 s : un réseau lent ne doit JAMAIS bloquer la génération du PDF (retour Thomas :
+      // « rien ne s'ouvre à part le générateur »). En cas de dépassement → null → repli raster.
+      try {
+        const durl = await Promise.race([
+          fetchPlanPdfByBase(projet.id, base),
+          new Promise(res => setTimeout(() => res(null), 8000)),
+        ]);
+        if (durl) bytes = dataUrlToUint8(durl);
+      } catch (e) { console.warn('[PDF] fetchPlanPdfByBase', base, e); }
       _srcPdfByBase.set(base, bytes);
       console.log(`[PDF] PDF source plan « ${base} » : ${bytes ? 'TROUVÉ (' + Math.round(bytes.length / 1024) + ' Ko) → vectorisable' : 'ABSENT → repli raster'}`);
     }
@@ -608,6 +616,15 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // Jobs de vectorisation : rectangles (mm, page) où embarquer le PDF source vectoriel par-dessus
   // le raster de repli, remplis au moment du placement dans la mise en page.
   const vectorPlanJobs = [];
+  // Numéro de page courant, BLINDÉ : si l'API jsPDF diffère, on retombe sur le nombre total de
+  // pages (on écrit toujours sur la dernière). Ne doit JAMAIS jeter → sinon toute la génération
+  // planterait (aucun PDF produit).
+  const curPage = () => {
+    try { return doc.internal.getCurrentPageInfo().pageNumber; } catch {}
+    try { return doc.internal.getNumberOfPages(); } catch {}
+    try { return doc.getNumberOfPages(); } catch {}
+    return 1;
+  };
   const recordVectorJob = (src, vps, pageNumber, x, y, w, h) => {
     if (src) vectorPlanJobs.push({ ...src, vps: vps || [], page: pageNumber, x, y, w, h });
   };
@@ -1051,7 +1068,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         try { doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST'); } catch {}
         drawVpBadgesPdf(doc, itemPlanVps[`${item.id}_${pidx}`], ML, y, CW, ih, RD); // Vxx vectoriels
-        recordVectorJob(itemPlanSrc[`${item.id}_${pidx}`], itemPlanVps[`${item.id}_${pidx}`], doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
+        recordVectorJob(itemPlanSrc[`${item.id}_${pidx}`], itemPlanVps[`${item.id}_${pidx}`], curPage(), ML, y, CW, ih);
         doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.15); doc.rect(ML, y, CW, ih);
         y += ih + 4;
       });
@@ -1098,7 +1115,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
             doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           } catch {}
           drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
-          recordVectorJob(src, vps, doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
+          recordVectorJob(src, vps, curPage(), ML, y, CW, ih);
           y += ih + 4;
         });
         y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
@@ -1246,7 +1263,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
         } catch {}
         drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
-        recordVectorJob(src, vps, doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
+        recordVectorJob(src, vps, curPage(), ML, y, CW, ih);
         y += ih + 4;
       });
       y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
@@ -1269,6 +1286,12 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // erreur laisse le PDF jsPDF (raster) intact → zéro régression possible.
   if (vectorPlanJobs.length) {
     try {
+      // GARDE-FOU ANTI-BLOCAGE : toute la vectorisation est bornée à 30 s. Si le chargement de
+      // pdf-lib ou l'embarquement traîne, on abandonne et on garde le PDF raster → le
+      // téléchargement se déclenche TOUJOURS (retour Thomas : « rien ne s'ouvre à part le
+      // générateur »). Le PDF raster (déjà prêt dans `blob`) reste le repli garanti.
+      const newBlob = await Promise.race([
+        (async () => {
       // Import dynamique : pdf-lib (~180 Ko gzip) n'est chargé qu'au moment d'exporter un rapport
       // avec des plans vectorisables → n'alourdit pas le démarrage de l'app (mobile).
       const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
@@ -1322,10 +1345,14 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       diag.vectorized = done;
       if (done > 0) {
         const outBytes = await outDoc.save();
-        blob = new Blob([outBytes], { type: 'application/pdf' });
-        console.log(`[PDF] Plans vectorisés : ${done}/${vectorPlanJobs.length}`);
+        return new Blob([outBytes], { type: 'application/pdf' });
       }
-    } catch (e) { console.warn('[PDF] vectorisation globale échouée (PDF raster conservé):', e); }
+      return null;
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('vectorisation timeout 30s')), 30000)),
+      ]);
+      if (newBlob) { blob = newBlob; console.log(`[PDF] Plans vectorisés : ${diag.vectorized}/${vectorPlanJobs.length}`); }
+    } catch (e) { console.warn('[PDF] vectorisation ignorée (PDF raster conservé) :', e?.message || e); }
   }
 
   const diagLine = `Plans ${diag.plans} · HD ${diag.hd} · miniature ${diag.thumb} · PDF source ${diag.src} · vectorisés ${diag.vectorized} · ${(blob.size / 1048576).toFixed(1)} Mo`;
