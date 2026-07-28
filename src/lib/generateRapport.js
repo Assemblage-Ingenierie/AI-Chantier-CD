@@ -62,6 +62,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   }
   const exported = planAnnotations?.exported;
   const paths    = planAnnotations?.paths;
+  if (planId) console.log(`[PDF] plan ${planId} : image HD ${usedHd ? 'OUI' : 'NON (miniature ' + (bgW || '?') + 'px)'}`);
   if (!planBg) return exported ?? null;
   if (!paths?.length) return planBg;
   // Dédoublonne les annotations + numérote les viewpoints (1 seul Vxx par marqueur sur le plan).
@@ -541,15 +542,17 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const { base, pageIndex } = parsePlanBaseAndPage(nom);
     if (!_srcPdfByBase.has(base)) {
       let bytes = null;
-      try { const durl = await fetchPlanPdfByBase(projet.id, base); if (durl) bytes = dataUrlToUint8(durl); } catch {}
+      try { const durl = await fetchPlanPdfByBase(projet.id, base); if (durl) bytes = dataUrlToUint8(durl); } catch (e) { console.warn('[PDF] fetchPlanPdfByBase', base, e); }
       _srcPdfByBase.set(base, bytes);
+      console.log(`[PDF] PDF source plan « ${base} » : ${bytes ? 'TROUVÉ (' + Math.round(bytes.length / 1024) + ' Ko) → vectorisable' : 'ABSENT → repli raster'}`);
     }
     const bytes = _srcPdfByBase.get(base);
     return bytes ? { bytes, pageIndex } : null;
   };
-  // Quand le fond est vectorisé (PDF source dispo), le raster n'est qu'un REPLI caché sous le
-  // vectoriel → on le rend petit (léger). Sinon pleine résolution HD.
-  const rasterOpts = (hasVector) => (hasVector ? { maxDim: 1800, quality: 0.7 } : {});
+  // Le raster est TOUJOURS rendu en pleine résolution HD : c'est le repli si la vectorisation
+  // pdf-lib échoue. (Ne JAMAIS le dégrader en pariant sur le vectoriel — sinon un échec du
+  // vectoriel donne un plan PIRE qu'avant. Retour Thomas.)
+  const rasterOpts = () => ({});
 
   // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non.
   // *Vps : viewpoints (position fractionnaire + label) redessinés en VECTORIEL au placement.
