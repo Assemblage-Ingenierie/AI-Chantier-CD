@@ -1,10 +1,29 @@
 import { ensureJsPDF } from './pdfUtils.js';
-import { fetchPlanData, fetchPlanHdDataUrl } from './storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl, fetchPlanPdfByBase } from './storage.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths } from '../components/vue/Annotator.jsx';
 import { getBrandingUrl } from './branding.js';
 import { computeVpNumbering, dedupPlanPaths } from './vpNumbering.js';
+
+// Convertit un data URL (ou base64 brut) en Uint8Array pour pdf-lib.
+function dataUrlToUint8(dataUrl) {
+  try {
+    const b64 = String(dataUrl).includes(',') ? String(dataUrl).split(',')[1] : String(dataUrl);
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  } catch { return null; }
+}
+
+// Nom de plan « Base — Page N » → { base, pageIndex } (index 0 si pas de suffixe page).
+function parsePlanBaseAndPage(nom) {
+  const s = String(nom || '');
+  const m = s.match(/—\s*Page\s*(\d+)\s*$/i);
+  const base = s.replace(/\s*—\s*Page\s*\d+\s*$/i, '').trim() || s || 'doc';
+  return { base, pageIndex: m ? Math.max(0, parseInt(m[1], 10) - 1) : 0 };
+}
 
 /** Largeur naturelle d'une image (data URL ou URL signée). Sert à connaître la largeur de
  *  l'espace de coordonnées des annotations (= largeur du planBg). Renvoie null si indéterminable. */
@@ -29,7 +48,7 @@ const MAX_PLAN_CANVAS_AREA = _isIOS_PDF ? 16_000_000 : 40_000_000; // plafond ca
 // (0..1) de chaque marqueur + son angle + son label ; exportPdf les redessine ensuite en vectoriel
 // natif jsPDF par-dessus l'image (nets à tout zoom, poids nul).
 async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}, metaOut = null) {
-  const MAXD_OPT = opts.maxDim || 4500;   // pleine résolution HD (l'image HD stockée va jusqu'à 4500px)
+  const MAXD_OPT = opts.maxDim || 6500;   // pleine résolution HD (l'image HD stockée va jusqu'à 6500px)
   const Q_OPT    = opts.quality || 0.85;  // qualité JPEG du plan
   if (metaOut) metaOut.vps = [];
   // Espace de coordonnées des annotations = largeur du planBg (les coords y sont relatives). On
@@ -511,18 +530,40 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // des plans pour réécrire les labels des marqueurs. Logique partagée avec l'aperçu écran.
   const { vxxPhotoMap: vxxPhotoMapPdf, vpNumByPath: vpNumByPathPdf } = computeVpNumbering(localisations);
 
+  // Source PDF VECTORIEL d'un plan (par planId) : renvoie { bytes, pageIndex } si le PDF source
+  // est stocké (→ embarqué en vectoriel dans le rapport, net à tout zoom), sinon null. Caché par
+  // base. Sans PDF source (plans image legacy) : null → repli sur le raster.
+  const _srcPdfByBase = new Map();
+  const getPlanSrc = async (planId) => {
+    if (!planId || !projet.id) return null;
+    const nom = (projet.planLibrary || []).find(p => p.id === planId)?.nom;
+    if (!nom) return null;
+    const { base, pageIndex } = parsePlanBaseAndPage(nom);
+    if (!_srcPdfByBase.has(base)) {
+      let bytes = null;
+      try { const durl = await fetchPlanPdfByBase(projet.id, base); if (durl) bytes = dataUrlToUint8(durl); } catch {}
+      _srcPdfByBase.set(base, bytes);
+    }
+    const bytes = _srcPdfByBase.get(base);
+    return bytes ? { bytes, pageIndex } : null;
+  };
+  // Quand le fond est vectorisé (PDF source dispo), le raster n'est qu'un REPLI caché sous le
+  // vectoriel → on le rend petit (léger). Sinon pleine résolution HD.
+  const rasterOpts = (hasVector) => (hasVector ? { maxDim: 1800, quality: 0.7 } : {});
+
   // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non.
-  // *Vps : liste des viewpoints (position fractionnaire + label) redessinés en VECTORIEL au
-  // placement (drawVpBadgesPdf), clés identiques aux dicts d'images.
-  const planImages = {}, planVps = {};
+  // *Vps : viewpoints (position fractionnaire + label) redessinés en VECTORIEL au placement.
+  // *Src : { bytes, pageIndex } du PDF source à embarquer en vectoriel (ou absent).
+  const planImages = {}, planVps = {}, planSrc = {};
   for (const loc of localisations) {
     const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
+    const src = await getPlanSrc(loc.planId);
     const meta = {};
-    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, {}, meta);
-    if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; }
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
+    if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; if (src) planSrc[loc.id] = src; }
   }
 
-  const extraPlanImages = {}, extraPlanVps = {}; // clé: `${locId}_${planIdx}`
+  const extraPlanImages = {}, extraPlanVps = {}, extraPlanSrc = {}; // clé: `${locId}_${planIdx}`
   for (const loc of localisations) {
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
@@ -532,26 +573,35 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         if (fetched?.bg) bg = fetched.bg;
       }
       if (!bg && !ep.planId) continue;
+      const src = await getPlanSrc(ep.planId);
       const meta = {};
-      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, {}, meta);
-      if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; }
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
+      if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; if (src) extraPlanSrc[`${loc.id}_${i}`] = src; }
     }
   }
 
   // Pré-rendu des plans additionnels par item (uniquement si annotés)
-  const itemPlanImages = {}, itemPlanVps = {}; // clé: `${itemId}_${planIdx}`
+  const itemPlanImages = {}, itemPlanVps = {}, itemPlanSrc = {}; // clé: `${itemId}_${planIdx}`
   for (const loc of localisations) {
     for (const item of (loc.items || [])) {
       for (let i = 0; i < (item.plans || []).length; i++) {
         const pl = item.plans[i];
         if (!pl.planAnnotations?.paths?.length) continue;
         const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
+        const src = await getPlanSrc(pl.planId);
         const meta = {};
-        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, {}, meta);
-        if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; }
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
+        if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; if (src) itemPlanSrc[`${item.id}_${i}`] = src; }
       }
     }
   }
+
+  // Jobs de vectorisation : rectangles (mm, page) où embarquer le PDF source vectoriel par-dessus
+  // le raster de repli, remplis au moment du placement dans la mise en page.
+  const vectorPlanJobs = [];
+  const recordVectorJob = (src, vps, pageNumber, x, y, w, h) => {
+    if (src) vectorPlanJobs.push({ ...src, vps: vps || [], page: pageNumber, x, y, w, h });
+  };
 
   // Pré-réduction des photos affichées : on ré-encode chaque photo en JPEG à une résolution
   // adaptée à sa taille d'affichage (~1400px max). C'est LE poste qui faisait exploser le PDF
@@ -992,6 +1042,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         try { doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST'); } catch {}
         drawVpBadgesPdf(doc, itemPlanVps[`${item.id}_${pidx}`], ML, y, CW, ih, RD); // Vxx vectoriels
+        recordVectorJob(itemPlanSrc[`${item.id}_${pidx}`], itemPlanVps[`${item.id}_${pidx}`], doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
         doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.15); doc.rect(ML, y, CW, ih);
         y += ih + 4;
       });
@@ -1012,8 +1063,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     // Plans inline (si !plansEnFin) — principal + supplémentaires à la suite, une seule légende
     if (!plansEnFin) {
       const allZonePlans = [
-        { img: planImages[loc.id], vps: planVps[loc.id], annotations: loc.planAnnotations, breakId: `plan-${loc.id}` },
-        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
+        { img: planImages[loc.id], vps: planVps[loc.id], src: planSrc[loc.id], annotations: loc.planAnnotations, breakId: `plan-${loc.id}` },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], src: extraPlanSrc[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
       ].filter(p => p.img);
 
       if (allZonePlans.length > 0) {
@@ -1025,7 +1076,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
         pb(22 + ih);
         secHdr(`Plan — ${loc.nom}`);
-        allZonePlans.forEach(({ img: planImg, vps }, planI) => {
+        allZonePlans.forEach(({ img: planImg, vps, src }, planI) => {
           const isLast = planI === allZonePlans.length - 1;
           // Saut de page forcé entre plans (via mode découpe)
           if (planI > 0 && pageBreaksSet.has(allZonePlans[planI].breakId)) {
@@ -1038,6 +1089,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
             doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           } catch {}
           drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
+          recordVectorJob(src, vps, doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
           y += ih + 4;
         });
         y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
@@ -1163,8 +1215,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const planLocs = localisations.filter(l => planImages[l.id] || (l.extraPlans || []).some((_, i) => extraPlanImages[`${l.id}_${i}`]));
     planLocs.forEach(loc => {
       const allZonePlans = [
-        { img: planImages[loc.id], vps: planVps[loc.id], annotations: loc.planAnnotations, breakId: null },
-        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
+        { img: planImages[loc.id], vps: planVps[loc.id], src: planSrc[loc.id], annotations: loc.planAnnotations, breakId: null },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], src: extraPlanSrc[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
       ].filter(p => p.img);
       if (!allZonePlans.length) return;
 
@@ -1174,7 +1226,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
       doc.addPage(); y = 18; hdr();
       secHdr(`Plan — ${loc.nom}`);
-      allZonePlans.forEach(({ img: planImg, vps, breakId }, planI) => {
+      allZonePlans.forEach(({ img: planImg, vps, src, breakId }, planI) => {
         if (planI > 0 && pageBreaksSet.has(breakId)) {
           doc.addPage(); y = 18; hdr();
         } else {
@@ -1185,6 +1237,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
         } catch {}
         drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
+        recordVectorJob(src, vps, doc.internal.getCurrentPageInfo().pageNumber, ML, y, CW, ih);
         y += ih + 4;
       });
       y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
@@ -1198,8 +1251,74 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
   // ── TÉLÉCHARGEMENT ────────────────────────────────────────────────────────────
 
-  const blob = doc.output('blob');
-  console.log(`[PDF] Fichier final : ${(blob.size / 1048576).toFixed(1)} Mo — ${doc.getNumberOfPages()} pages`);
+  let blob = doc.output('blob');
+
+  // ── VECTORISATION DES PLANS (pdf-lib) ────────────────────────────────────────────────
+  // On repasse sur le PDF jsPDF et, pour chaque plan dont le PDF SOURCE est disponible, on
+  // embarque la page source en VECTORIEL par-dessus le raster de repli (net à TOUT zoom, retour
+  // Thomas), puis on redessine les Vxx en vectoriel au-dessus. Tout est en try/catch : la moindre
+  // erreur laisse le PDF jsPDF (raster) intact → zéro régression possible.
+  if (vectorPlanJobs.length) {
+    try {
+      // Import dynamique : pdf-lib (~180 Ko gzip) n'est chargé qu'au moment d'exporter un rapport
+      // avec des plans vectorisables → n'alourdit pas le démarrage de l'app (mobile).
+      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
+      const srcBytes = await doc.output('arraybuffer');
+      const outDoc = await PDFDocument.load(srcBytes);
+      const font = await outDoc.embedFont(StandardFonts.HelveticaBold);
+      const pages = outDoc.getPages();
+      const MM = 72 / 25.4;               // mm → points PDF
+      const red = rgb(227 / 255, 5 / 255, 19 / 255);
+      const white = rgb(1, 1, 1);
+      const embedCache = new Map();       // clé bytes+page → page embarquée (réutilise si même plan)
+      let done = 0;
+      for (const job of vectorPlanJobs) {
+        try {
+          const page = pages[job.page - 1];
+          if (!page) continue;
+          const cacheKey = `${job.pageIndex}:${job.bytes.length}:${job.bytes[job.bytes.length - 1]}`;
+          let embedded = embedCache.get(cacheKey);
+          if (!embedded) {
+            [embedded] = await outDoc.embedPdf(job.bytes, [job.pageIndex]);
+            embedCache.set(cacheKey, embedded);
+          }
+          const PH = page.getHeight();
+          const xPt = job.x * MM, wPt = job.w * MM, hPt = job.h * MM;
+          const yPt = PH - (job.y + job.h) * MM; // origine bas-gauche en pdf-lib
+          // Fond blanc : masque le raster de repli (souvent une page PDF au fond transparent
+          // laisserait voir le raster flou entre les traits vectoriels).
+          page.drawRectangle({ x: xPt, y: yPt, width: wPt, height: hPt, color: white });
+          page.drawPage(embedded, { x: xPt, y: yPt, width: wPt, height: hPt });
+          // Vxx vectoriels PAR-DESSUS la page embarquée (sinon masqués par le plan)
+          for (const vp of job.vps || []) {
+            const cx = xPt + Math.min(1, Math.max(0, vp.fx)) * wPt;
+            const cy = yPt + hPt - Math.min(1, Math.max(0, vp.fy)) * hPt; // fy compté depuis le haut
+            const CONE = 9 * MM, A = 0.62;
+            // cône (l'axe y du plan est vers le bas → on inverse le sinus pour l'espace PDF)
+            page.drawLine({ start: { x: cx, y: cy }, end: { x: cx + Math.cos(vp.angle - A) * CONE, y: cy - Math.sin(vp.angle - A) * CONE }, thickness: 0.25 * MM, color: red });
+            page.drawLine({ start: { x: cx, y: cy }, end: { x: cx + Math.cos(vp.angle + A) * CONE, y: cy - Math.sin(vp.angle + A) * CONE }, thickness: 0.25 * MM, color: red });
+            page.drawCircle({ x: cx, y: cy, size: 1.4 * MM, color: red });
+            page.drawCircle({ x: cx, y: cy, size: 0.55 * MM, color: white });
+            if (vp.label) {
+              const fs = 7, tw = font.widthOfTextAtSize(vp.label, fs);
+              const bw = tw + 2.2 * MM, bh = 4 * MM;
+              const bx = cx + 1.8 * MM, by = cy + 0.6 * MM; // pastille au-dessus du point
+              page.drawRectangle({ x: bx, y: by, width: bw, height: bh, color: white, borderColor: red, borderWidth: 0.2 * MM });
+              page.drawText(vp.label, { x: bx + (bw - tw) / 2, y: by + (bh - fs) / 2 + 0.5, size: fs, font, color: red });
+            }
+          }
+          done++;
+        } catch (e) { console.warn('[PDF] vectorisation plan échouée (repli raster):', e); }
+      }
+      if (done > 0) {
+        const outBytes = await outDoc.save();
+        blob = new Blob([outBytes], { type: 'application/pdf' });
+        console.log(`[PDF] Plans vectorisés : ${done}/${vectorPlanJobs.length}`);
+      }
+    } catch (e) { console.warn('[PDF] vectorisation globale échouée (PDF raster conservé):', e); }
+  }
+
+  console.log(`[PDF] Fichier final : ${(blob.size / 1048576).toFixed(1)} Mo`);
   const url = URL.createObjectURL(blob);
   const safeName   = (projet.nom      || 'Projet').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
   const safeVisite = (projet.visiteNom || '').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
