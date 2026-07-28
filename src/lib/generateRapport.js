@@ -21,7 +21,9 @@ function imgNaturalWidth(src) {
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
-async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null) {
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}) {
+  const MAXD_OPT = opts.maxDim || 2200;   // plafond de résolution du plan rendu (Vxx lisibles au zoom)
+  const Q_OPT    = opts.quality || 0.85;  // qualité JPEG du plan
   // Espace de coordonnées des annotations = largeur du planBg (les coords y sont relatives). On
   // le mesure AVANT de swapper vers l'image HD, pour remettre les coords à l'échelle du canvas
   // rendu (sinon les marqueurs Vxx se décalent vers le coin). On n'active le HD que si connu.
@@ -40,11 +42,11 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
-      // Plafonne la résolution : ~1400px de côté ≈ 198 dpi à la largeur A4 — net pour
-      // l'impression des plans/annotations (Vxx bien lisibles) et nettement plus léger pour
-      // l'envoi email (optimisation demandée). Les coords d'annotation suivent (coordScale =
-      // largeur canvas / largeur bg) → positions des Vxx inchangées.
-      const MAXD = 1400;
+      // Plafonne la résolution : ~2200px de côté ≈ 300 dpi à la largeur A4 — les plans et
+      // surtout les marqueurs Vxx restent nets au zoom (retour Thomas : « V1/V2 illisibles »).
+      // Le budget de poids global (exportPdf) réduit ensuite au besoin pour rester < 25 Mo.
+      // Les coords d'annotation suivent (coordScale = largeur canvas / largeur bg) → Vxx bien placés.
+      const MAXD = MAXD_OPT;
       const dScale = Math.min(1, MAXD / Math.max(img.naturalWidth, img.naturalHeight));
       const cv  = document.createElement('canvas');
       cv.width  = Math.round(img.naturalWidth  * dScale);
@@ -60,7 +62,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), sizeScale);
       // JPEG (le plan est opaque) : embarqué tel quel par jsPDF (DCTDecode) → 5-10× plus
       // léger qu'un PNG et SANS l'étape de compression zlib lente du PNG.
-      const out = cv.toDataURL('image/jpeg', 0.8);
+      const out = cv.toDataURL('image/jpeg', Q_OPT);
       cv.width = 0; cv.height = 0;
       resolve(out);
     };
@@ -114,6 +116,31 @@ async function downscaleDataUrl(src, maxDim, quality = 0.82) {
     });
   } catch { return src; }
   finally { if (objUrl) URL.revokeObjectURL(objUrl); }
+}
+
+/** Recompresse un dataURL JPEG à une qualité inférieure SANS changer sa résolution.
+ *  Utilisé par le budget de poids pour les PLANS : la résolution (et donc la taille des
+ *  marqueurs Vxx) est conservée, seule la qualité JPEG baisse → gain de poids en dernier
+ *  recours sans rendre les Vxx plus petits. Renvoie l'original si l'opération échoue. */
+async function recompressJpeg(dataUrl, quality = 0.7) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  return new Promise(resolve => {
+    const img = new window.Image();
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas');
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(img, 0, 0);
+        const out = cv.toDataURL('image/jpeg', quality);
+        cv.width = 0; cv.height = 0;
+        resolve(out && out.length > 50 ? out : dataUrl);
+      } catch { resolve(dataUrl); }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 /** Pré-rend l'icône de viewpoint (œil + cône) pour la légende PDF. */
@@ -484,7 +511,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     // poids du PDF (le PDF de rapport partait à ~45 Mo, non envoyable par email). Photos en JPEG
     // 0.72 : contenu photographique → compression propre, pas d'artefact visible à cette taille.
     const phWmm   = (CW - 6 - (cols - 1) * 2) / cols;
-    const photoMaxDim = Math.min(1100, Math.max(640, Math.round(phWmm / 25.4 * 180)));
+    // Résolution INITIALE généreuse (~1600px) : la photo reste nette même en zoomant dans le
+    // PDF (retour Thomas). Le budget de poids global (plus bas) la réduit ensuite SEULEMENT si
+    // le PDF dépasse la limite email — les petits rapports gardent donc des photos pleine qualité.
+    const photoMaxDim = Math.min(1600, Math.max(900, Math.round(phWmm / 25.4 * 220)));
     const uniquePhotos = [...new Set(
       localisations.flatMap(loc =>
         (loc.items || []).flatMap(item =>
@@ -493,9 +523,52 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       )
     )];
     await Promise.all(uniquePhotos.map(async src => {
-      photoDataCache.set(src, await downscaleDataUrl(src, photoMaxDim, 0.72));
+      photoDataCache.set(src, await downscaleDataUrl(src, photoMaxDim, 0.78));
     }));
   }
+
+  // ── BUDGET DE POIDS — garantit un PDF envoyable par email (< 25 Mo) ──────────────────────
+  // On mesure le poids cumulé des images embarquées (plans + photos). En cas de dépassement,
+  // on RÉ-ENCODE d'abord les PHOTOS (contenu photographique → compression propre, peu visible),
+  // puis, en tout dernier recours, on recompresse les PLANS. Les plans et leurs marqueurs Vxx
+  // gardent ainsi leur netteté aussi longtemps que le budget le permet.
+  const TARGET_IMG_BYTES = 22 * 1024 * 1024; // marge sous 25 Mo pour la structure PDF + texte
+  const b64Bytes = (u) => (typeof u === 'string' && u.startsWith('data:'))
+    ? Math.floor((u.length - u.indexOf(',') - 1) * 0.75) : 0;
+  const weighImages = () => {
+    let plans = 0, photos = 0;
+    for (const d of [planImages, extraPlanImages, itemPlanImages])
+      for (const v of Object.values(d)) plans += b64Bytes(v);
+    for (const v of photoDataCache.values()) photos += b64Bytes(v);
+    return { plans, photos, total: plans + photos };
+  };
+  const MB = (n) => (n / 1048576).toFixed(1) + ' Mo';
+  let w = weighImages();
+  console.log(`[PDF] Poids images initial : ${MB(w.total)} (plans ${MB(w.plans)} · photos ${MB(w.photos)})`);
+
+  // Paliers PHOTOS (résolution ↓, qualité ↓) — appliqués tant qu'on dépasse le budget.
+  const photoTiers = [{ dim: 1200, q: 0.72 }, { dim: 1000, q: 0.68 }, { dim: 820, q: 0.62 }];
+  for (const t of photoTiers) {
+    if (w.total <= TARGET_IMG_BYTES) break;
+    // Réduire à partir de la valeur DÉJÀ encodée (dataURL) — évite de re-télécharger les
+    // photos distantes depuis Supabase à chaque palier.
+    await Promise.all([...photoDataCache.entries()].map(async ([src, cur]) => {
+      photoDataCache.set(src, await downscaleDataUrl(cur || src, t.dim, t.q));
+    }));
+    w = weighImages();
+    console.log(`[PDF] Réduction photos → ${t.dim}px q${t.q} : ${MB(w.total)}`);
+  }
+
+  // Paliers PLANS (recompression JPEG à résolution conservée → Vxx restent grands/lisibles).
+  const planTiers = [0.74, 0.64, 0.55];
+  for (const q of planTiers) {
+    if (w.total <= TARGET_IMG_BYTES) break;
+    for (const d of [planImages, extraPlanImages, itemPlanImages])
+      for (const k of Object.keys(d)) d[k] = await recompressJpeg(d[k], q);
+    w = weighImages();
+    console.log(`[PDF] Recompression plans → q${q} : ${MB(w.total)}`);
+  }
+  console.log(`[PDF] Poids images final : ${MB(w.total)} (plans ${MB(w.plans)} · photos ${MB(w.photos)})`);
 
   // Pré-rendu des icônes de symboles et viewpoint pour les légendes
   const allSymbolIds = new Set();
@@ -1067,6 +1140,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // ── TÉLÉCHARGEMENT ────────────────────────────────────────────────────────────
 
   const blob = doc.output('blob');
+  console.log(`[PDF] Fichier final : ${(blob.size / 1048576).toFixed(1)} Mo — ${doc.getNumberOfPages()} pages`);
   const url = URL.createObjectURL(blob);
   const safeName   = (projet.nom      || 'Projet').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
   const safeVisite = (projet.visiteNom || '').replace(/[^a-zA-Z0-9À-ž _-]/g, '').trim();
