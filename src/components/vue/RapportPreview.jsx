@@ -1021,12 +1021,19 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
       const el = new window.Image();
       el.onload = () => {
         if (cancelled) return;
-        // Plafond de résolution : assez pour une impression A4 nette, sans data-URL géant.
-        const MAXW = 2400;
-        const sc = el.naturalWidth > MAXW ? MAXW / el.naturalWidth : 1;
+        // Plafond de résolution RELEVÉ (retour Thomas : aperçu flou au zoom). L'image HD source
+        // va jusqu'à 6500px → on en garde bien plus (4000px) pour un aperçu bien plus net au zoom.
+        // Garde-fou aire canvas (iOS ~16 Mpx) pour ne pas planter sur iPhone.
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+        const MAX_AREA = isIOS ? 15_000_000 : 36_000_000;
+        const MAXW = 4000;
+        let sc = el.naturalWidth > MAXW ? MAXW / el.naturalWidth : 1;
+        let cw = Math.max(1, Math.round(el.naturalWidth * sc));
+        let ch = Math.max(1, Math.round(el.naturalHeight * sc));
+        if (cw * ch > MAX_AREA) { const k = Math.sqrt(MAX_AREA / (cw * ch)); cw = Math.round(cw * k); ch = Math.round(ch * k); }
         const cv  = document.createElement('canvas');
-        cv.width  = Math.max(1, Math.round(el.naturalWidth * sc));
-        cv.height = Math.max(1, Math.round(el.naturalHeight * sc));
+        cv.width  = cw;
+        cv.height = ch;
         const ctx = cv.getContext('2d');
         ctx.drawImage(el, 0, 0, cv.width, cv.height);
         // Échelles par type (texte/forme/symbole). base = largeur canvas / 1400 → taille des
