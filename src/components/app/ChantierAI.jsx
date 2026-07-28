@@ -5,7 +5,7 @@ import { useProjets } from '../../hooks/useProjets.js';
 import { useBrandingLogo } from '../../lib/branding.js';
 import { fetchRemoteTimestamps } from '../../lib/storage.js';
 import { processDriveQueue } from '../../lib/driveUpload.js';
-import { initPhotoUploadQueue } from '../../lib/photoUploadQueue.js';
+import { initPhotoUploadQueue, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import AccountModal, { isProfileIncomplete } from '../auth/AccountModal.jsx';
 import { projectMatchesInitials } from '../../lib/profile.js';
@@ -36,7 +36,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -56,6 +56,19 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   // File d'upload photos : reprend les envois en attente (photos prises sur site dont
   // l'upload a été interrompu) dès l'ouverture de l'app, puis au retour en ligne/premier plan.
   useEffect(() => { initPhotoUploadQueue(); }, []);
+
+  // Filet hors-ligne (retour Thomas) : dès que la file d'upload se VIDE (tous les fichiers photos
+  // partis vers Storage, connexion revenue), on force une sauvegarde distante des projets modifiés
+  // → les LIGNES en base (item_photos + items) s'écrivent même si le téléphone avait été mis en
+  // poche avant la sauvegarde débouncée. Sans ça, le fichier existait dans Storage mais sans
+  // référence en base → invisible sur les autres appareils.
+  useEffect(() => {
+    let prev = 0;
+    return subscribePendingUploads((n) => {
+      if (prev > 0 && n === 0) syncPendingNow();
+      prev = n;
+    });
+  }, [syncPendingNow]);
 
   // ── Pré-téléchargement HORS-LIGNE automatique des projets de l'ingénieur ──
   // Une fois les données chargées et les initiales connues : télécharge en arrière-plan

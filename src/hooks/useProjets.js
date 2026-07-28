@@ -1121,6 +1121,43 @@ export function useProjets(onSyncStatus) {
     }
   }, [onSyncStatus]);
 
+  // Force une sauvegarde distante IMMÉDIATE des projets modifiés non synchronisés (dirtyIds).
+  // Filet hors-ligne (retour Thomas) : la file d'upload photos ne pousse que les FICHIERS vers
+  // Storage — les LIGNES en base (item_photos + items) ne sont écrites que par saveRemote. Si le
+  // téléphone est mis en poche / tué avant la sauvegarde débouncée, la référence n'existe jamais
+  // → les photos n'apparaissent pas sur le PC. On rejoue donc une sauvegarde complète :
+  //   • au démarrage si des dirtyIds persistés restent d'une session précédente (offline) ;
+  //   • dès que la file d'upload se vide (connexion revenue) — appelé depuis ChantierAI.
+  // Même protocole que le flush de fermeture (optimiste + restauration en cas d'échec) → aucun
+  // risque de perte, aucune modification de saveRemote/mergeWithLocal.
+  const syncPendingNow = useCallback(() => {
+    if (!dirtyIds.current.size) return;
+    if (syncPausedRef.current) return;
+    if (savingRef.current) return;
+    userModified.current = true;
+    savingRef.current = true;
+    const ids = new Set(dirtyIds.current);
+    dirtyIds.current.clear();
+    setPersistedDirtyIds(dirtyIds.current);
+    syncDirtyMirror();
+    onSyncStatus?.('saving');
+    Promise.resolve(saveData(projetsRef.current, onSyncStatus, ids))
+      .then((ok) => {
+        if (!ok) { dirtyIds.current = new Set([...ids, ...dirtyIds.current]); setPersistedDirtyIds(dirtyIds.current); syncDirtyMirror(); }
+        savingRef.current = false;
+      })
+      .catch(() => { dirtyIds.current = new Set([...ids, ...dirtyIds.current]); setPersistedDirtyIds(dirtyIds.current); syncDirtyMirror(); savingRef.current = false; });
+  }, [onSyncStatus]);
+
+  // Démarrage : si des dirtyIds persistés subsistent (session offline précédente), on pousse dès
+  // que le chargement distant est terminé (petit délai pour laisser la fusion s'installer).
+  useEffect(() => {
+    if (!remoteLoaded) return;
+    if (!dirtyIds.current.size) return;
+    const t = setTimeout(() => syncPendingNow(), 1500);
+    return () => clearTimeout(t);
+  }, [remoteLoaded, syncPendingNow]);
+
   // Épingle une visite « hors-ligne » : pré-hydrate ses photos + les plans du projet, puis la
   // marque comme prête. But : garantir que tout est en cache local AVANT une visite sans réseau.
   const pinVisite = useCallback(async (projectId, visiteId) => {
@@ -1139,5 +1176,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow };
 }

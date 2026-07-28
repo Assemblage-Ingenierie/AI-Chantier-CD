@@ -1410,6 +1410,14 @@ async function saveRemote(ps, dirtyIds = null) {
         const keptSet = keptIdsByItem.get(itemId) ?? new Set();
         // À supprimer = photos connues au chargement que l'utilisateur a retirées (plus dans kept).
         const toDelete = [...known].filter(id => !keptSet.has(id) && typeof id === 'string' && /^[\w-]+$/.test(id));
+        // DIAGNOSTIC (retour Thomas : « au reload, des photos disparaissent ») — on trace toute
+        // suppression de photo avec son contexte. Permet de repérer en prod une purge anormale
+        // (ex : item marqué comme ayant des photos locales alors que l'état était vide/non hydraté).
+        if (toDelete.length > 0) {
+          logWarn('saveRemote.photoPurge', {
+            itemId, known: known.size, kept: keptSet.size, deleting: toDelete.length,
+          });
+        }
         const p = toDelete.length
           ? sb.from('aichantier_item_photos').delete().eq('item_id', itemId).in('id', toDelete)
           : Promise.resolve();
