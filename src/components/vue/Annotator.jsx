@@ -87,13 +87,17 @@ function drawPenteSolPath(ctx, x1, y1, x2, y2, s, c) {
 //     mises à l'échelle géométriquement, elles gardent la taille à laquelle elles sont dessinées)
 // strokeScale : échelle pour les tracés (normalisée en pixels écran, indépendante).
 // Rétro-compat : si on passe un nombre, text=symbol=ce nombre et shape=1 → rendu identique à avant.
-export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null) {
+// skipTypes (optionnel) : Set de types d'annotation à NE PAS dessiner (ex : new Set(['viewpoint'])).
+// Sert au PDF, qui redessine les Vxx en VECTORIEL par-dessus l'image (nets à tout zoom) et ne veut
+// donc pas de version cuite dans le raster. Par défaut (null) : tout est dessiné → aperçu écran inchangé.
+export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null, skipTypes = null) {
   const _o   = sizeScale && typeof sizeScale === 'object';
   const sT   = _o ? (sizeScale.text   ?? 1) : sizeScale; // texte
   const sSym = _o ? (sizeScale.symbol ?? 1) : sizeScale; // symboles + viewpoints
   const sShape = _o ? (sizeScale.shape ?? 1) : 1;        // épaisseur formes (neutre par défaut)
   const ss = strokeScale ?? (_o ? 1 : sizeScale);
   (paths || []).forEach(p => {
+    if (skipTypes && skipTypes.has(p.type)) return;
     if (p.type === 'viewpoint') {
       ctx.save();
       if (sSym !== 1 && p.x != null) {

@@ -21,9 +21,17 @@ function imgNaturalWidth(src) {
 /** Rend le plan bg + annotations sur un canvas en mémoire et retourne un dataURL PNG.
  *  Les annotations sont agrandies proportionnellement à la résolution de l'image
  *  pour rester lisibles une fois réduites à la taille A4. */
-async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}) {
-  const MAXD_OPT = opts.maxDim || 2200;   // plafond de résolution du plan rendu (Vxx lisibles au zoom)
+const _isIOS_PDF = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent || '');
+const MAX_PLAN_CANVAS_AREA = _isIOS_PDF ? 16_000_000 : 40_000_000; // plafond canvas (iOS 16 Mpx)
+
+// VIEWPOINTS EN VECTORIEL : les marqueurs Vxx ne sont PLUS cuits dans le raster (ils pixellisaient
+// avec lui — retour Thomas). renderPlanImage remonte, via metaOut.vps, la position FRACTIONNAIRE
+// (0..1) de chaque marqueur + son angle + son label ; exportPdf les redessine ensuite en vectoriel
+// natif jsPDF par-dessus l'image (nets à tout zoom, poids nul).
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}, metaOut = null) {
+  const MAXD_OPT = opts.maxDim || 4500;   // pleine résolution HD (l'image HD stockée va jusqu'à 4500px)
   const Q_OPT    = opts.quality || 0.85;  // qualité JPEG du plan
+  if (metaOut) metaOut.vps = [];
   // Espace de coordonnées des annotations = largeur du planBg (les coords y sont relatives). On
   // le mesure AVANT de swapper vers l'image HD, pour remettre les coords à l'échelle du canvas
   // rendu (sinon les marqueurs Vxx se décalent vers le coin). On n'active le HD que si connu.
@@ -42,15 +50,16 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   return new Promise(resolve => {
     const img = new window.Image();
     img.onload = () => {
-      // Plafonne la résolution : ~2200px de côté ≈ 300 dpi à la largeur A4 — les plans et
-      // surtout les marqueurs Vxx restent nets au zoom (retour Thomas : « V1/V2 illisibles »).
-      // Le budget de poids global (exportPdf) réduit ensuite au besoin pour rester < 25 Mo.
-      // Les coords d'annotation suivent (coordScale = largeur canvas / largeur bg) → Vxx bien placés.
-      const MAXD = MAXD_OPT;
-      const dScale = Math.min(1, MAXD / Math.max(img.naturalWidth, img.naturalHeight));
+      // Résolution HD (jusqu'à 4500px) → plan + formes nets au zoom. Plafond canvas iOS (16 Mpx)
+      // respecté. Les Vxx sont exclus du raster (skipTypes) et redessinés en vectoriel dans le PDF.
+      let dScale = Math.min(1, MAXD_OPT / Math.max(img.naturalWidth, img.naturalHeight));
+      let cw = Math.round(img.naturalWidth * dScale), ch = Math.round(img.naturalHeight * dScale);
+      if (cw * ch > MAX_PLAN_CANVAS_AREA) {
+        const k = Math.sqrt(MAX_PLAN_CANVAS_AREA / (cw * ch));
+        dScale *= k; cw = Math.round(cw * k); ch = Math.round(ch * k);
+      }
       const cv  = document.createElement('canvas');
-      cv.width  = Math.round(img.naturalWidth  * dScale);
-      cv.height = Math.round(img.naturalHeight * dScale);
+      cv.width  = cw; cv.height = ch;
       const ctx = cv.getContext('2d');
       ctx.drawImage(img, 0, 0, cv.width, cv.height);
       // sizeScale ∝ largeur → les annotations gardent la même taille relative qu'à 4500px.
@@ -59,7 +68,16 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       // sinon la largeur de l'image rendue (le bg). → marqueurs au bon endroit à toute résolution.
       const pathsSpaceW = usedHd ? bgW : img.naturalWidth;
       const coordScale = pathsSpaceW ? cv.width / pathsSpaceW : 1;
-      drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), sizeScale);
+      // Bake TOUT SAUF les viewpoints (redessinés en vectoriel). L'espace de coords du plan
+      // (largeur=pathsSpaceW, hauteur = même ratio que le canvas) sert à positionner les Vxx.
+      drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), sizeScale, null, new Set(['viewpoint']));
+      if (metaOut) {
+        const coordW = pathsSpaceW || cv.width;
+        const coordH = coordW * (cv.height / cv.width);
+        metaOut.vps = drawPaths
+          .filter(p => p.type === 'viewpoint' && p.x != null)
+          .map(p => ({ fx: p.x / coordW, fy: p.y / coordH, angle: p.angle ?? 0, label: p.label || '' }));
+      }
       // JPEG (le plan est opaque) : embarqué tel quel par jsPDF (DCTDecode) → 5-10× plus
       // léger qu'un PNG et SANS l'étape de compression zlib lente du PNG.
       const out = cv.toDataURL('image/jpeg', Q_OPT);
@@ -69,6 +87,39 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
     img.onerror = () => resolve(exported ?? planBg);
     img.src = planBg;
   });
+}
+
+/** Dessine les marqueurs de viewpoint (Vxx) en VECTORIEL natif sur la page PDF, par-dessus
+ *  l'image de plan posée dans le rectangle {x,y,w,h} (mm). `vps` = liste { fx, fy, angle, label }
+ *  en coordonnées fractionnaires (0..1) du plan. Taille FIXE en mm → nets et lisibles à tout zoom,
+ *  quelle que soit la résolution du plan. Style : cône de visée + pastille + numéro « Vn ». */
+function drawVpBadgesPdf(doc, vps, x, y, w, h, RD) {
+  if (!vps?.length) return;
+  const red = RD || [227, 5, 19];
+  const CONE_L = 9, CONE_A = 0.62; // longueur cône (mm) + demi-angle (~35°)
+  for (const vp of vps) {
+    const px = x + Math.min(1, Math.max(0, vp.fx)) * w;
+    const py = y + Math.min(1, Math.max(0, vp.fy)) * h;
+    // Cône de visée (2 traits fins depuis le point)
+    doc.setDrawColor(...red); doc.setLineWidth(0.25);
+    doc.line(px, py, px + Math.cos(vp.angle - CONE_A) * CONE_L, py + Math.sin(vp.angle - CONE_A) * CONE_L);
+    doc.line(px, py, px + Math.cos(vp.angle + CONE_A) * CONE_L, py + Math.sin(vp.angle + CONE_A) * CONE_L);
+    // Pastille (point) : cercle rouge + centre blanc
+    doc.setFillColor(...red); doc.circle(px, py, 1.4, 'F');
+    doc.setFillColor(255, 255, 255); doc.circle(px, py, 0.55, 'F');
+    // Numéro « Vn » dans une pastille blanche bordée (toujours net, taille fixe)
+    if (vp.label) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const tw = doc.getTextWidth(vp.label);
+      const bw = tw + 2.2, bh = 4;
+      const bx = px + 1.8, by = py - bh - 0.6;
+      doc.setFillColor(255, 255, 255); doc.setDrawColor(...red); doc.setLineWidth(0.2);
+      doc.roundedRect(bx, by, bw, bh, 0.7, 0.7, 'FD');
+      doc.setTextColor(...red);
+      doc.text(vp.label, bx + bw / 2, by + bh - 1.2, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
+    }
+  }
 }
 
 /** Réduit une image pour l'embarquer dans le PDF : on plafonne le plus grand côté à maxDim px
@@ -460,15 +511,18 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // des plans pour réécrire les labels des marqueurs. Logique partagée avec l'aperçu écran.
   const { vxxPhotoMap: vxxPhotoMapPdf, vpNumByPath: vpNumByPathPdf } = computeVpNumbering(localisations);
 
-  // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non
-  const planImages = {};
+  // Pré-rendu des plans (principal + supplémentaires) — tous rendus, annotés ou non.
+  // *Vps : liste des viewpoints (position fractionnaire + label) redessinés en VECTORIEL au
+  // placement (drawVpBadgesPdf), clés identiques aux dicts d'images.
+  const planImages = {}, planVps = {};
   for (const loc of localisations) {
     const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
-    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf);
-    if (img) planImages[loc.id] = img;
+    const meta = {};
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, {}, meta);
+    if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; }
   }
 
-  const extraPlanImages = {}; // clé: `${locId}_${planIdx}`
+  const extraPlanImages = {}, extraPlanVps = {}; // clé: `${locId}_${planIdx}`
   for (const loc of localisations) {
     for (let i = 0; i < (loc.extraPlans || []).length; i++) {
       const ep = loc.extraPlans[i];
@@ -478,21 +532,23 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         if (fetched?.bg) bg = fetched.bg;
       }
       if (!bg && !ep.planId) continue;
-      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf);
-      if (img) extraPlanImages[`${loc.id}_${i}`] = img;
+      const meta = {};
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, {}, meta);
+      if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; }
     }
   }
 
   // Pré-rendu des plans additionnels par item (uniquement si annotés)
-  const itemPlanImages = {}; // clé: `${itemId}_${planIdx}`
+  const itemPlanImages = {}, itemPlanVps = {}; // clé: `${itemId}_${planIdx}`
   for (const loc of localisations) {
     for (const item of (loc.items || [])) {
       for (let i = 0; i < (item.plans || []).length; i++) {
         const pl = item.plans[i];
         if (!pl.planAnnotations?.paths?.length) continue;
         const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
-        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf);
-        if (img) itemPlanImages[`${item.id}_${i}`] = img;
+        const meta = {};
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, {}, meta);
+        if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; }
       }
     }
   }
@@ -935,6 +991,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         }
         const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         try { doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST'); } catch {}
+        drawVpBadgesPdf(doc, itemPlanVps[`${item.id}_${pidx}`], ML, y, CW, ih, RD); // Vxx vectoriels
         doc.setDrawColor(215, 215, 215); doc.setLineWidth(0.15); doc.rect(ML, y, CW, ih);
         y += ih + 4;
       });
@@ -955,8 +1012,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     // Plans inline (si !plansEnFin) — principal + supplémentaires à la suite, une seule légende
     if (!plansEnFin) {
       const allZonePlans = [
-        { img: planImages[loc.id], annotations: loc.planAnnotations, breakId: `plan-${loc.id}` },
-        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
+        { img: planImages[loc.id], vps: planVps[loc.id], annotations: loc.planAnnotations, breakId: `plan-${loc.id}` },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
       ].filter(p => p.img);
 
       if (allZonePlans.length > 0) {
@@ -968,10 +1025,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
         pb(22 + ih);
         secHdr(`Plan — ${loc.nom}`);
-        allZonePlans.forEach(({ img: planImg, breakId }, planI) => {
+        allZonePlans.forEach(({ img: planImg, vps }, planI) => {
           const isLast = planI === allZonePlans.length - 1;
           // Saut de page forcé entre plans (via mode découpe)
-          if (planI > 0 && pageBreaksSet.has(breakId)) {
+          if (planI > 0 && pageBreaksSet.has(allZonePlans[planI].breakId)) {
             doc.addPage(); y = 18; hdr();
           } else {
             pb(ih + (isLast ? legH : 4));
@@ -980,6 +1037,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
             const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
             doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
           } catch {}
+          drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
           y += ih + 4;
         });
         y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
@@ -1105,8 +1163,8 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const planLocs = localisations.filter(l => planImages[l.id] || (l.extraPlans || []).some((_, i) => extraPlanImages[`${l.id}_${i}`]));
     planLocs.forEach(loc => {
       const allZonePlans = [
-        { img: planImages[loc.id], annotations: loc.planAnnotations, breakId: null },
-        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
+        { img: planImages[loc.id], vps: planVps[loc.id], annotations: loc.planAnnotations, breakId: null },
+        ...(loc.extraPlans || []).map((ep, idx) => ({ img: extraPlanImages[`${loc.id}_${idx}`], vps: extraPlanVps[`${loc.id}_${idx}`], annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${idx}` })),
       ].filter(p => p.img);
       if (!allZonePlans.length) return;
 
@@ -1116,7 +1174,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
 
       doc.addPage(); y = 18; hdr();
       secHdr(`Plan — ${loc.nom}`);
-      allZonePlans.forEach(({ img: planImg, breakId }, planI) => {
+      allZonePlans.forEach(({ img: planImg, vps, breakId }, planI) => {
         if (planI > 0 && pageBreaksSet.has(breakId)) {
           doc.addPage(); y = 18; hdr();
         } else {
@@ -1126,6 +1184,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           const ext = planImg.startsWith('data:image/webp') ? 'WEBP' : planImg.startsWith('data:image/png') ? 'PNG' : 'JPEG';
           doc.addImage(planImg, ext, ML, y, CW, ih, undefined, 'FAST');
         } catch {}
+        drawVpBadgesPdf(doc, vps, ML, y, CW, ih, RD); // Vxx vectoriels nets à tout zoom
         y += ih + 4;
       });
       y = addPlanLegend(doc, combinedAnnot, y, ML, CW, W, MR, RD, GR, symbolIcons, vpIconUrl);
