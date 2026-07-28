@@ -1,4 +1,4 @@
-const CACHE = 'aichantier-v5';
+const CACHE = 'aichantier-v6';
 
 // Ressources connues à pré-cacher au premier install
 const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];

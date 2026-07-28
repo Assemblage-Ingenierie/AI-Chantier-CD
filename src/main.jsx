@@ -20,16 +20,31 @@ try {
   for (let i = 0; i < 25; i++) history.pushState({ pwaSentinel: true }, '');
 } catch { /* Safari privé / throttle — le tampon de ChantierAI reprendra au montage */ }
 
-// ── Service worker — mise à jour SILENCIEUSE (jamais de reload pendant l'usage) ──
-// Un reload forcé sur 'controllerchange' réinitialisait l'historique en plein usage
-// → le bouton retour fermait l'app ("ça reset le truc"). On laisse donc le SW se
-// mettre à jour en arrière-plan ; le nouveau code s'applique au prochain démarrage
-// à froid de l'app. Les assets étant hashés (Vite) et le HTML servi en network-first,
-// un lancement à froid récupère naturellement la dernière version.
+// ── Service worker — mise à jour AUTOMATIQUE ────────────────────────────────────
+// INCIDENT 2026-07-28 : l'ancienne stratégie « mise à jour silencieuse, jamais de
+// reload » laissait les utilisateurs bloqués des jours sur une VIEILLE version en
+// cache (aucune correction ne leur parvenait). On applique désormais le nouveau code
+// dès qu'il est prêt : le nouveau SW (skipWaiting côté sw.js) prend le contrôle, ce
+// qui déclenche 'controllerchange' → un reload UNIQUE (garde `refreshing`). Le tampon
+// anti-retour (ci-dessus) se ré-arme à chaque chargement → le bouton retour reste sûr,
+// et les données sont sauvegardées en continu (localStorage + boîte noire) → reload sans risque.
 if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       reg.update();
+      if (reg.waiting) reg.waiting.postMessage('skipWaiting'); // MAJ déjà en attente → l'activer
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw?.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) nw.postMessage('skipWaiting');
+        });
+      });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') reg.update();
       });
