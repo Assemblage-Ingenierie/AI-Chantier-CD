@@ -7,7 +7,7 @@ import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { freezeVpNumsForZone } from '../../lib/vpNumbering.js';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0 }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0, onUploadHd = null }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -54,12 +54,16 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     (async () => {
       // 1. Image HD déjà en mémoire (plan fraîchement importé)
       if (typeof libEntry?.hd === 'string' && libEntry.hd.startsWith('data:')) {
-        setHqImageData(libEntry.hd); return;
+        setHqImageData(libEntry.hd);
+        // PERSISTANCE (retour Thomas « éditeur net, rapport flou ») : on stocke aussitôt cette HD
+        // (indexée par planId → insensible au renommage) → le rapport la retrouvera. Best-effort.
+        if (planId) onUploadHd?.(planId, libEntry.hd);
+        return;
       }
       // 2. Image HD stockée dans Supabase Storage
       if (planId) {
         const durl = await fetchPlanHdDataUrl(planId);
-        if (!cancelled && durl) { setHqImageData(durl); return; }
+        if (!cancelled && durl) { setHqImageData(durl); return; } // déjà stockée → rien à persister
       }
       // 3. Fallback : rendre depuis le PDF en mémoire si présent (sans planId, ou HD pas encore stockée)
       const pdf = p?.planData || libEntry?.data || null;
@@ -69,7 +73,11 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
           const nomMatch = libEntry?.nom?.match(/[-—]\s*Page\s*(\d+)/i);
           const pageNum = nomMatch ? parseInt(nomMatch[1], 10) : 1;
           const hq = await renderPdfPageHQ(pdf, pageNum);
-          if (!cancelled && hq) setHqImageData(hq);
+          if (!cancelled && hq) {
+            setHqImageData(hq);
+            // On persiste ce rendu HD pour que le rapport ait la MÊME qualité que l'éditeur.
+            if (planId) onUploadHd?.(planId, hq);
+          }
         } catch { /* LQ reste affiché */ }
       }
     })();
