@@ -1301,8 +1301,10 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   // → me dit EXACTEMENT pourquoi un plan reste flou. À RETIRER une fois le diagnostic fait.
   try {
     doc.setPage(1);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(227, 5, 19);
-    doc.text(`DIAG  plans=${diag.plans}  HD=${diag.hd}  vignette=${diag.thumb}  PDFsource=${diag.src}`, 8, 6);
+    // Encadré JAUNE VIF plein largeur en haut → lisible même sur la photo de couverture foncée.
+    doc.setFillColor(255, 235, 0); doc.rect(0, 0, 210, 9, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+    doc.text(`DIAG  plans=${diag.plans}  HD=${diag.hd}  vignette=${diag.thumb}  PDFsource=${diag.src}`, 6, 6);
     doc.setTextColor(0, 0, 0);
   } catch {}
 
