@@ -55,6 +55,7 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   // le mesure AVANT de swapper vers l'image HD, pour remettre les coords à l'échelle du canvas
   // rendu (sinon les marqueurs Vxx se décalent vers le coin). On n'active le HD que si connu.
   const bgW = planBg ? await imgNaturalWidth(planBg) : null;
+  const origThumb = planBg; // GARDE-FOU : miniature d'origine → repli si l'image HD échoue à charger
   let usedHd = false;
   if (planId && bgW) {
     const hd = await fetchPlanHdDataUrl(planId);
@@ -105,7 +106,19 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
       cv.width = 0; cv.height = 0;
       resolve(out);
     };
-    img.onerror = () => resolve(exported ?? planBg);
+    // Si l'image HD échoue à charger, on NE renvoie JAMAIS rien (plan absent — retour Thomas) :
+    // on retombe sur la miniature d'origine (toujours valide) → le plan reste présent, quitte à
+    // être moins net. Dernier filet : jamais de plan manquant dans le rapport.
+    img.onerror = () => {
+      if (planBg !== origThumb && origThumb) {
+        const img2 = new window.Image();
+        img2.onload = () => { try { const c = document.createElement('canvas'); c.width = img2.naturalWidth; c.height = img2.naturalHeight; c.getContext('2d').drawImage(img2, 0, 0); resolve(c.toDataURL('image/jpeg', Q_OPT)); } catch { resolve(origThumb); } };
+        img2.onerror = () => resolve(exported ?? origThumb);
+        img2.src = origThumb;
+      } else {
+        resolve(exported ?? origThumb ?? planBg);
+      }
+    };
     img.src = planBg;
   });
 }
