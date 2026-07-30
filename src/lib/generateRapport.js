@@ -51,6 +51,13 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   const MAXD_OPT = opts.maxDim || 6500;   // pleine résolution HD (l'image HD stockée va jusqu'à 6500px)
   const Q_OPT    = opts.quality || 0.85;  // qualité JPEG du plan
   if (metaOut) metaOut.vps = [];
+  // ROBUSTESSE ANTI-PLAN-ABSENT (retour Thomas : « les plans n'apparaissent plus ») : le fond du
+  // plan (bg) n'est pas toujours hydraté en mémoire au moment de générer le rapport. Avant, un bg
+  // null faisait abandonner le rendu → plan ABSENT. On va donc le chercher en base par planId
+  // (identifiant stable) quand il manque, pour toujours avoir une image.
+  if (!planBg && planId) {
+    try { const f = await fetchPlanData(planId); if (f?.bg) planBg = f.bg; } catch (e) { console.warn('[PDF] fetchPlanData bg', planId, e); }
+  }
   // Espace de coordonnées des annotations = largeur du planBg (les coords y sont relatives). On
   // le mesure AVANT de swapper vers l'image HD, pour remettre les coords à l'échelle du canvas
   // rendu (sinon les marqueurs Vxx se décalent vers le coin). On n'active le HD que si connu.
