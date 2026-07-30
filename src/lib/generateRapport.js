@@ -1,4 +1,4 @@
-import { ensureJsPDF, renderPdfPages } from './pdfUtils.js';
+import { ensureJsPDF } from './pdfUtils.js';
 import { fetchPlanData, fetchPlanHdDataUrl, fetchPlanPdfByBase } from './storage.js';
 import { URGENCE, SUIVI } from './constants.js';
 import { stripMarkup } from './markup.jsx';
@@ -47,7 +47,7 @@ const MAX_PLAN_CANVAS_AREA = _isIOS_PDF ? 16_000_000 : 40_000_000; // plafond ca
 // avec lui — retour Thomas). renderPlanImage remonte, via metaOut.vps, la position FRACTIONNAIRE
 // (0..1) de chaque marqueur + son angle + son label ; exportPdf les redessine ensuite en vectoriel
 // natif jsPDF par-dessus l'image (nets à tout zoom, poids nul).
-async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}, metaOut = null, srcPdf = null) {
+async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId = null, vpNumByPath = null, opts = {}, metaOut = null) {
   const MAXD_OPT = opts.maxDim || 6500;   // pleine résolution HD (l'image HD stockée va jusqu'à 6500px)
   const Q_OPT    = opts.quality || 0.85;  // qualité JPEG du plan
   if (metaOut) metaOut.vps = [];
@@ -59,17 +59,6 @@ async function renderPlanImage(planBg, planAnnotations, annotScale = 1, planId =
   if (planId && bgW) {
     const hd = await fetchPlanHdDataUrl(planId);
     if (hd) { planBg = hd; usedHd = true; }
-  }
-  // MIROIR ÉDITEUR (retour Thomas : « l'éditeur est méga qualité, le rapport pixelisé ») : si
-  // AUCUNE image HD n'est stockée mais qu'un PDF source existe, on rend la page du PDF à HAUTE
-  // résolution — EXACTEMENT comme l'annotateur (renderPdfPageHQ). Le rapport a alors le même fond
-  // net que l'éditeur, au lieu de retomber sur la vignette basse déf. (Le vectoriel pdf-lib passera
-  // par-dessus si dispo ; sinon ce raster HD est déjà bien meilleur que la vignette.)
-  if (!usedHd && bgW && srcPdf?.dataUrl) {
-    try {
-      const pages = await renderPdfPages(srcPdf.dataUrl, [(srcPdf.pageIndex || 0) + 1], { maxWidth: 4500, quality: 0.9 });
-      if (pages?.[0]?.img) { planBg = pages[0].img; usedHd = true; } // traité comme HD → coords calées sur bgW
-    } catch (e) { console.warn('[PDF] rendu plan depuis PDF source échoué:', e); }
   }
   if (metaOut) metaOut.usedHd = usedHd;
   const exported = planAnnotations?.exported;
@@ -553,7 +542,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     if (!nom) return null;
     const { base, pageIndex } = parsePlanBaseAndPage(nom);
     if (!_srcPdfByBase.has(base)) {
-      let entry = null;
+      let bytes = null;
       // Timeout 8 s : un réseau lent ne doit JAMAIS bloquer la génération du PDF (retour Thomas :
       // « rien ne s'ouvre à part le générateur »). En cas de dépassement → null → repli raster.
       try {
@@ -561,13 +550,13 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
           fetchPlanPdfByBase(projet.id, base),
           new Promise(res => setTimeout(() => res(null), 8000)),
         ]);
-        if (durl) { const bytes = dataUrlToUint8(durl); if (bytes) entry = { bytes, dataUrl: durl }; }
+        if (durl) bytes = dataUrlToUint8(durl);
       } catch (e) { console.warn('[PDF] fetchPlanPdfByBase', base, e); }
-      _srcPdfByBase.set(base, entry);
-      console.log(`[PDF] PDF source plan « ${base} » : ${entry ? 'TROUVÉ (' + Math.round(entry.bytes.length / 1024) + ' Ko) → vectorisable' : 'ABSENT → repli raster'}`);
+      _srcPdfByBase.set(base, bytes);
+      console.log(`[PDF] PDF source plan « ${base} » : ${bytes ? 'TROUVÉ (' + Math.round(bytes.length / 1024) + ' Ko) → vectorisable' : 'ABSENT → repli raster'}`);
     }
-    const entry = _srcPdfByBase.get(base);
-    return entry ? { bytes: entry.bytes, dataUrl: entry.dataUrl, pageIndex } : null;
+    const bytes = _srcPdfByBase.get(base);
+    return bytes ? { bytes, pageIndex } : null;
   };
   // Le raster est TOUJOURS rendu en pleine résolution HD : c'est le repli si la vectorisation
   // pdf-lib échoue. (Ne JAMAIS le dégrader en pariant sur le vectoriel — sinon un échec du
@@ -587,7 +576,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     const bg = loc.planBg || (projet.planLibrary || []).find(p => p.id === loc.planId)?.bg || null;
     const src = await getPlanSrc(loc.planId);
     const meta = {};
-    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta, src);
+    const img = await renderPlanImage(bg, loc.planAnnotations, annotScale, loc.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
     if (img) { planImages[loc.id] = img; planVps[loc.id] = meta.vps || []; if (src) planSrc[loc.id] = src; countPlan(meta, src); }
   }
 
@@ -603,7 +592,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
       if (!bg && !ep.planId) continue;
       const src = await getPlanSrc(ep.planId);
       const meta = {};
-      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta, src);
+      const img = await renderPlanImage(bg, ep.planAnnotations, annotScale, ep.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
       if (img) { extraPlanImages[`${loc.id}_${i}`] = img; extraPlanVps[`${loc.id}_${i}`] = meta.vps || []; if (src) extraPlanSrc[`${loc.id}_${i}`] = src; countPlan(meta, src); }
     }
   }
@@ -618,7 +607,7 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
         const bg = pl.planBg || (projet.planLibrary || []).find(p => p.id === pl.planId)?.bg || null;
         const src = await getPlanSrc(pl.planId);
         const meta = {};
-        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta, src);
+        const img = await renderPlanImage(bg, pl.planAnnotations, annotScale, pl.planId || null, vpNumByPathPdf, rasterOpts(!!src), meta);
         if (img) { itemPlanImages[`${item.id}_${i}`] = img; itemPlanVps[`${item.id}_${i}`] = meta.vps || []; if (src) itemPlanSrc[`${item.id}_${i}`] = src; countPlan(meta, src); }
       }
     }
