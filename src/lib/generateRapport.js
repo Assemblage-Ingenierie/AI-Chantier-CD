@@ -1295,6 +1295,17 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
   const tot = doc.getNumberOfPages();
   for (let i = 1; i <= tot; i++) { doc.setPage(i); ftr(i, tot); }
 
+  // ── DIAGNOSTIC TEMPORAIRE écrit SUR le PDF (console inaccessible chez Thomas) ──────────
+  // Une ligne rouge en haut de la 1ʳᵉ page indique, par plan : combien utilisent l'image HD,
+  // combien retombent sur la vignette basse déf, et combien ont un PDF source (vectorisable).
+  // → me dit EXACTEMENT pourquoi un plan reste flou. À RETIRER une fois le diagnostic fait.
+  try {
+    doc.setPage(1);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(227, 5, 19);
+    doc.text(`DIAG  plans=${diag.plans}  HD=${diag.hd}  vignette=${diag.thumb}  PDFsource=${diag.src}`, 8, 6);
+    doc.setTextColor(0, 0, 0);
+  } catch {}
+
   // ── TÉLÉCHARGEMENT ────────────────────────────────────────────────────────────
 
   let blob = doc.output('blob');
