@@ -994,7 +994,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             annotIdx={modal.annotIdx ?? null}
             vpNumByPath={vpNumGlobal}
             vpBase={vpMaxGlobal}
-            onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
             onClose={() => modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null)}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
@@ -1074,7 +1073,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             annotIdx={modal.annotIdx ?? null}
             vpNumByPath={vpNumGlobal}
             vpBase={vpMaxGlobal}
-            onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
             onClose={() => setModal(null)}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const newPlans = [];
