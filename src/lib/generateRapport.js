@@ -720,6 +720,24 @@ export async function exportPdf({ projet, localisations, photosParLigne = 2, rap
     w = weighImages();
     console.log(`[PDF] Recompression plans → q${q} : ${MB(w.total)}`);
   }
+
+  // DERNIER RECOURS — GARANTIE de poids (CLAUDE.md : PDF toujours envoyable) : tant qu'on dépasse
+  // la cible, on réduit ENCORE photos + plans (résolution ↓ et qualité ↓) jusqu'à passer sous la
+  // cible ou atteindre un plancher. Ne s'exécute que sur les rapports très lourds.
+  let guard = 0;
+  while (w.total > TARGET_IMG_BYTES && guard < 6) {
+    guard++;
+    const dim = Math.max(520, 820 - guard * 90);
+    const pq  = Math.max(0.42, 0.62 - guard * 0.04);
+    await Promise.all([...photoDataCache.entries()].map(async ([src, cur]) => {
+      photoDataCache.set(src, await downscaleDataUrl(cur || src, dim, pq));
+    }));
+    const plq = Math.max(0.40, 0.55 - guard * 0.03);
+    for (const d of [planImages, extraPlanImages, itemPlanImages])
+      for (const k of Object.keys(d)) d[k] = await recompressJpeg(d[k], plq);
+    w = weighImages();
+    console.log(`[PDF] Réduction forcée #${guard} (photos ${dim}px q${pq.toFixed(2)}) : ${MB(w.total)}`);
+  }
   console.log(`[PDF] Poids images final : ${MB(w.total)} (plans ${MB(w.plans)} · photos ${MB(w.photos)})`);
 
   // Pré-rendu des icônes de symboles et viewpoint pour les légendes

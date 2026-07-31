@@ -213,6 +213,18 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 
 ---
 
+## 🔴 EXPORT PDF — POIDS TOUJOURS ENVOYABLE PAR EMAIL (exigence Thomas)
+
+**Tout PDF exporté par l'app DOIT rester envoyable par email — cible < 25 Mo, idéalement quelques Mo — SANS EXCEPTION.** Un rapport à 45 Mo est inadmissible (rejeté par la plupart des messageries).
+
+- Le rendu PDF est centralisé dans `src/lib/generateRapport.js > exportPdf` — c'est le SEUL chemin d'export, donc toute garantie de poids doit y vivre.
+- **Budget de poids OBLIGATOIRE** (déjà en place) : après encodage des images, on mesure le poids cumulé ; s'il dépasse ~22 Mo, on réduit d'abord les PHOTOS (paliers résolution/qualité), puis en dernier recours on recompresse les PLANS. Ne JAMAIS retirer ce budget.
+- Ne jamais embarquer une image en pleine résolution capteur sans la ré-encoder (`downscaleDataUrl`). Les plans par observation peuvent multiplier le nombre d'images embarquées → le budget doit rester le garde-fou.
+- Si on ajoute un nouveau type d'export PDF, il doit passer par le même budget.
+- Log de contrôle : `[PDF] Fichier final : X Mo` à chaque export (console).
+
+---
+
 ## Supabase Storage
 
 - Bucket photos : **`photos`** (privé) — toujours utiliser `createSignedUrl`, jamais `getPublicUrl`
