@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from 're
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
-import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
 import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, savePlanHdNow } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
@@ -136,7 +136,7 @@ function ConsultViewer({ group, projetId = null, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} loadingHd={loadingHd} onClose={onClose}/>
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} loadingHd={loadingHd} getPdf={getGroupPdf} onClose={onClose}/>
     : <ConsultViewerDesktop group={group} hdById={hdById} loadingHd={loadingHd} onClose={onClose}/>;
 }
 
@@ -280,7 +280,7 @@ function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), onClo
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new Set(), onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new Set(), getPdf = null, onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -289,6 +289,11 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   const tRef     = useRef(t); tRef.current = t;
   const lastTap  = useRef({ ts: 0, x: 0, y: 0 });
   const MAX_Z = 16; // « je ne peux pas zoomer assez » — la loupe vectorielle garde ça net
+  // LOUPE VECTORIELLE : au zoom, la zone visible est re-rendue depuis le PDF source à la
+  // résolution réelle du zoom → nette « comme le PDF » (mobile compris). Superposée AU-DESSUS
+  // du raster (qui reste le repli). { img, left, top, w, h } en pixels ÉCRAN (coords du box).
+  const [vec, setVec] = useState(null);
+  const vecReq = useRef(0);
 
   // ── ROTATION MANUELLE (le téléphone peut bloquer la rotation auto) ─────────────
   // Bouton ↻ : la visionneuse entière pivote de 90° (astuce 100vh×100vw centrée).
@@ -379,6 +384,44 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
     return () => cancelAnimationFrame(id);
   }, [rot]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── LOUPE VECTORIELLE : à la fin d'un geste, re-rend la zone visible depuis le PDF source
+  //    à la résolution réelle du zoom → nette « comme le PDF » (mobile compris). Ne s'active
+  //    qu'au zoom fort et hors rotation (le repère pivoté fausserait le placement). ─────────
+  const renderVec = async () => {
+    const box = boxRef.current, inner = innerRef.current;
+    if (!box || !inner || !getPdf) { setVec(null); return; }
+    const { z, x, y } = tRef.current;
+    if (rotRef.current || z < Math.max(1.4, minZRef.current * 1.6)) { setVec(null); return; }
+    const req = ++vecReq.current;
+    let pdf = null;
+    try { pdf = await getPdf(); } catch { pdf = null; }
+    if (!pdf) { setVec(null); return; }
+    if (req !== vecReq.current) return;
+    const vw = box.clientWidth, vh = box.clientHeight;
+    const pageW = inner.clientWidth || vw;
+    const cx0 = -x / z, cy0 = -y / z;              // origine visible en coords contenu
+    const cw = vw / z, ch = vh / z;
+    const cyCenter = cy0 + ch / 2;
+    let focus = null;                              // page sous le centre du viewport
+    for (const p of (group.pages || [])) {
+      const el = pageEls.current.get(p.id); if (!el) continue;
+      const top = el.offsetTop, h = el.offsetHeight;
+      if (cyCenter >= top && cyCenter <= top + h) { focus = { p, top, h }; break; }
+    }
+    if (!focus || focus.h <= 0) { setVec(null); return; }
+    const fx = Math.min(1, Math.max(0, cx0 / pageW));
+    const fw = Math.min(1 - fx, cw / pageW);
+    const fy = Math.min(1, Math.max(0, (cy0 - focus.top) / focus.h));
+    const fh = Math.min(1 - fy, ch / focus.h);
+    if (fw <= 0.001 || fh <= 0.001) { setVec(null); return; }
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const outWidth = Math.min(4096, Math.max(800, Math.round(fw * pageW * z * dpr)));
+    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx, fy, fw, fh, outWidth });
+    if (!img || req !== vecReq.current) return;
+    setVec({ img, left: x + fx * pageW * z, top: y + (focus.top + fy * focus.h) * z, w: fw * pageW * z, h: fh * focus.h * z });
+  };
+  useEffect(() => { const id = setTimeout(renderVec, 130); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
     if (!box || !inner) return nt;
@@ -406,6 +449,8 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
 
   const onDown = (e) => {
     boxRef.current?.setPointerCapture?.(e.pointerId);
+    vecReq.current++;              // invalide un rendu vectoriel en cours
+    if (vec) setVec(null);         // masque la loupe pendant le geste (sinon décalée) — re-rendue au relâcher
     const c = pt(e.clientX, e.clientY);
     ptrs.current.set(e.pointerId, c);
     snapshot();
@@ -522,6 +567,12 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
             );
           })}
         </div>
+        {/* LOUPE VECTORIELLE : zone visible rendue depuis le PDF, superposée au raster (net à tout zoom). */}
+        {vec && (
+          <img src={vec.img} alt="" draggable={false} decoding="async"
+            style={{ position:'absolute', left:vec.left, top:vec.top, width:vec.w, height:vec.h,
+              pointerEvents:'none', userSelect:'none', background:'white' }}/>
+        )}
       </div>
     </div>
   );
