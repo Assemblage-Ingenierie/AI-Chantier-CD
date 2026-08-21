@@ -3,26 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUtils.js';
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
-import { fetchPlanData, fetchPlanPdfByBase } from '../../lib/storage.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
-
-// Pages issues d'un import PDF : nommées « NomDuPdf — Page N » → on isole le n° de page
-// pour ouvrir le PDF natif DIRECTEMENT sur la bonne page (#page=N).
-const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
-
-// PDF (data URL) → blob object URL, à ouvrir dans la visionneuse PDF NATIVE de l'OS :
-// qualité VECTORIELLE parfaite à tout zoom, fluide (accélérée matériellement). Conversion
-// SYNCHRONE → utilisable dans un user-gesture (sinon iOS bloque le pop-up après un await).
-function pdfToBlobUrl(pdf) {
-  if (typeof pdf !== 'string' || !pdf.startsWith('data:application/pdf')) return null;
-  try {
-    const b64 = pdf.split(',')[1];
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-  } catch { return null; }
-}
 
 // Rendu HD en ARRIÈRE-PLAN, au niveau module : l'import n'attend plus le 6500 px
 // (« à importer c'est hyper long » — Thomas) et la file survit à la fermeture du modal.
@@ -40,9 +21,8 @@ async function renderHdInBackground(docs, attach, uploadNow) {
   }
 }
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', projetId = null, onAttachHd = null, onUploadHd = null }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', onAttachHd = null, onUploadHd = null }) {
   const [rendering, setRendering] = useState(false);
-  const [openingId, setOpeningId] = useState(null); // plan dont on récupère le PDF source (spinner)
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -226,40 +206,6 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     if (editingNom.trim() && onRename) onRename(editingId, editingNom.trim());
     setEditingId(null);
     setEditingNom('');
-  };
-
-  // Consulter un plan de la bibliothèque en QUALITÉ VECTORIELLE : on ouvre le PDF source dans
-  // la visionneuse NATIVE de l'OS (net à tout zoom, fluide) plutôt que la vignette raster (qui
-  // pixelise dès qu'on zoome). Source : PDF en mémoire (import frais) → Storage (par nom de
-  // base) → colonne data (legacy). Repli sur l'aperçu image si le plan n'a AUCUN PDF source
-  // (plan importé en image). L'onglet est pré-ouvert de façon SYNCHRONE dans le geste — sinon
-  // iOS bloque le pop-up après l'await du fetch (même mécanique que la consultation NiveauxModal).
-  const openLibraryPlan = async (pl) => {
-    if (openingId) return;
-    // Plan image pur (aucun PDF possible) → aperçu image direct, sans ouvrir d'onglet inutile.
-    const hasInlinePdf = typeof pl.data === 'string' && pl.data.startsWith('data:application/pdf');
-    if (!hasInlinePdf && !pl.data && !projetId) { setPreviewBg(pl.bg); return; }
-    let win = null;
-    try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
-    setOpeningId(pl.id);
-    try {
-      let pdf = hasInlinePdf ? pl.data : null;
-      const base = (pl.nom || '').replace(PDF_PAGE_RE, '').trim();
-      if (!pdf && projetId && base) { try { pdf = await fetchPlanPdfByBase(projetId, base); } catch { pdf = null; } }
-      if (!pdf) { try { pdf = (await fetchPlanData(pl.id))?.data || null; } catch { pdf = null; } }
-      const url = pdfToBlobUrl(pdf);
-      if (url && win && !win.closed) {
-        const m = PDF_PAGE_RE.exec(pl.nom || '');
-        win.location.href = m ? `${url}#page=${m[1]}` : url; // saute directement sur la bonne page
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        return;
-      }
-      if (url) URL.revokeObjectURL(url);
-      if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
-      setPreviewBg(pl.bg); // pas de PDF source (ou onglet bloqué) → aperçu image dans l'app
-    } finally {
-      setOpeningId(null);
-    }
   };
 
   const handleRepairFile = e => {
@@ -496,15 +442,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             {planLibrary.map(pl => (
               <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
                 {pl.bg
-                  ? <div onClick={() => openLibraryPlan(pl)} title="Ouvrir le plan en haute qualité"
-                      style={{ position:'relative',width:64,height:44,flexShrink:0,cursor:'pointer' }}>
-                      <img src={pl.bg} alt="" style={{ width:'100%',height:'100%',objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,display:'block' }}/>
-                      {openingId === pl.id && (
-                        <span style={{ position:'absolute',inset:0,borderRadius:6,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',color:'white' }}>
-                          <Ic n="spn" s={16}/>
-                        </span>
-                      )}
-                    </div>
+                  ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
                   : <div style={{ width:64,height:44,borderRadius:6,border:`1px dashed #FCA5A5`,flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={18}/></div>
                 }
                 <div style={{ flex:1,minWidth:0 }}>

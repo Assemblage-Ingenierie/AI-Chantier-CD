@@ -1104,7 +1104,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {modal?.t === 'planLib' && (
         <PlanLibraryModal
           projetNom={projet.nom || ''}
-          projetId={projet.id}
           onAttachHd={(id, hd) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, hd } : p) }))}
           onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
           planLibrary={projet.planLibrary || []}
