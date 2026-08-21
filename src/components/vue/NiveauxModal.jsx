@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, savePlanHdNow } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -57,6 +57,10 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   const [hdById, setHdById] = useState({});
   const hdRef = useRef({}); hdRef.current = hdById;
   const pendingHd = useRef(new Set());
+  // Pages dont le chargement HD est EN COURS (réactif) → pilote le spinner « HD… ». Dès que le
+  // chargement se termine (succès OU échec), on retire l'id → le spinner s'arrête (fin du
+  // « buffering en boucle » : avant, un HD qui n'aboutissait pas laissait le spinner à vie).
+  const [loadingHd, setLoadingHd] = useState(new Set());
   // PDF source PARTAGÉ par tout le groupe : récupéré UNE seule fois. Avant, chaque PAGE
   // re-téléchargeait le document COMPLET depuis la base (le même PDF de 30-40 Mo, 18 fois
   // pour 18 pages) → « charger le moindre PDF prend beaucoup trop de temps » (Thomas).
@@ -71,6 +75,7 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   const loadHd = async (p) => {
     if (!p?.id || hdRef.current[p.id] || pendingHd.current.has(p.id)) return;
     pendingHd.current.add(p.id);
+    setLoadingHd(s => { const n = new Set(s); n.add(p.id); return n; });
     try {
       let hd = (typeof p.hd === 'string' && p.hd.startsWith('data:')) ? p.hd : null;
       if (!hd) hd = await fetchPlanHdDataUrl(p.id);
@@ -85,12 +90,22 @@ function ConsultViewer({ group, projetId = null, onClose }) {
         }
       }
       if (hd) {
-        // Persister la HQ rendue à la volée (IndexedDB, même clé que les HD téléchargées) :
-        // instantanée aux prochaines ouvertures, y compris hors ligne.
-        if (rendered) setPlanHd(p.id, hd);
+        // Persister la HQ rendue à la volée : IndexedDB (instantané aux prochaines ouvertures,
+        // hors ligne compris) ET Supabase (savePlanHdNow) → le rendu coûteux depuis le PDF de
+        // 30-40 Mo n'est fait qu'UNE fois, pour TOUS les appareils (le mobile récupère ensuite
+        // la HD stockée, légère, sans re-télécharger le gros PDF). Best-effort.
+        if (rendered) {
+          setPlanHd(p.id, hd);
+          if (projetId) savePlanHdNow(projetId, p.id, hd);
+        }
         setHdById(h => ({ ...h, [p.id]: hd }));
       }
     } catch { /* le bg reste affiché */ }
+    finally {
+      // Fin du chargement (succès OU échec) → on arrête le spinner et on libère le verrou.
+      pendingHd.current.delete(p.id);
+      setLoadingHd(s => { const n = new Set(s); n.delete(p.id); return n; });
+    }
   };
   // PC (défilement natif, pas de transform) : toutes les HD en séquence.
   // MOBILE : le viewer tactile demande la HD des pages PROCHES du viewport (fluidité) ;
@@ -117,15 +132,15 @@ function ConsultViewer({ group, projetId = null, onClose }) {
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
-    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} onClose={onClose}/>
-    : <ConsultViewerDesktop group={group} hdById={hdById} onClose={onClose}/>;
+    ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} loadingHd={loadingHd} onClose={onClose}/>
+    : <ConsultViewerDesktop group={group} hdById={hdById} loadingHd={loadingHd} onClose={onClose}/>;
 }
 
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
 // Interface MINIMALE (demande Thomas) : croix flottante + pilule de zoom, rien d'autre.
-function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
+function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
@@ -244,7 +259,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
-              {!hdById[p.id] && p.bg && (
+              {loadingHd.has(p.id) && !hdById[p.id] && p.bg && (
                 <span style={{ position:'absolute',bottom:8,left:8,display:'inline-flex',alignItems:'center',gap:4,background:'rgba(0,0,0,0.65)',color:'white',fontSize:10,fontWeight:700,borderRadius:6,padding:'3px 7px' }}>
                   <Ic n="spn" s={10}/> HD…
                 </span>
@@ -261,7 +276,7 @@ function ConsultViewerDesktop({ group, hdById = {}, onClose }) {
 // Toutes les pages du PDF à la suite. Gestes naturels (demande Thomas : pas de boutons) :
 // pincement = zoom, un doigt = déplacement, double-tap = zoom ×2.5 / retour. Transform
 // translate+scale maison car le zoom navigateur est désactivé dans la PWA (user-scalable=no).
-function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
+function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new Set(), onClose }) {
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const boxRef   = useRef(null);   // conteneur visible (viewport)
   const innerRef = useRef(null);   // contenu (colonne de pages, largeur = viewport à z=1)
@@ -494,7 +509,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, onClose }) {
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
                 Page {p._page}
               </span>
-              {vis && !hdById[p.id] && p.bg && (
+              {vis && loadingHd.has(p.id) && !hdById[p.id] && p.bg && (
                 <span style={{ position:'absolute',bottom:8,left:8,display:'inline-flex',alignItems:'center',gap:4,background:'rgba(0,0,0,0.65)',color:'white',fontSize:10,fontWeight:700,borderRadius:6,padding:'3px 7px' }}>
                   <Ic n="spn" s={10}/> HD…
                 </span>
