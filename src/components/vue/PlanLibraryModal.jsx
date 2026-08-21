@@ -4,6 +4,10 @@ import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUtils.js';
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
+import { ConsultViewer } from './NiveauxModal.jsx';
+
+// Pages issues d'un import PDF : nommées « NomDuPdf — Page N » → base = nom sans le suffixe.
+const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
 
 // Rendu HD en ARRIÈRE-PLAN, au niveau module : l'import n'attend plus le 6500 px
 // (« à importer c'est hyper long » — Thomas) et la file survit à la fermeture du modal.
@@ -21,8 +25,9 @@ async function renderHdInBackground(docs, attach, uploadNow) {
   }
 }
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', onAttachHd = null, onUploadHd = null }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', projetId = null, onAttachHd = null, onUploadHd = null }) {
   const [rendering, setRendering] = useState(false);
+  const [consultGroup, setConsultGroup] = useState(null); // plan ouvert en visionneuse (PDF natif vectoriel / loupe)
   const [renderProgress, setRenderProgress] = useState('');
   const [renderErr, setRenderErr] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -208,6 +213,20 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     setEditingNom('');
   };
 
+  // Consulter un plan en QUALITÉ VECTORIELLE : on ouvre la MÊME visionneuse que depuis les
+  // niveaux (ConsultViewer) — PC/Android : PDF source natif dans un <iframe> (net comme le
+  // fichier d'origine) ; mobile : loupe vectorielle. Aucun pop-up (marche dans la PWA). Le
+  // groupe synthétisé porte le nom de BASE (pour retrouver le PDF stocké) + la page. Repli
+  // interne sur l'image si le plan n'a aucun PDF source (plan importé en image).
+  const openLibraryPlan = (pl) => {
+    const m = PDF_PAGE_RE.exec(pl.nom || '');
+    const base = (pl.nom || '').replace(PDF_PAGE_RE, '').trim() || (pl.nom || 'Plan');
+    setConsultGroup({
+      nom: base,
+      pages: [{ id: pl.id, bg: pl.bg, _page: m ? Number(m[1]) : 1, data: pl.data ?? null }],
+    });
+  };
+
   const handleRepairFile = e => {
     const f = e.target.files?.[0];
     if (!f || !repairTargetId) return;
@@ -260,6 +279,10 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
       onSelectMany={handlePagesSelected}
       onClose={() => { setShowPicker(false); setPdfList([]); }}
     />
+  );
+
+  if (consultGroup) return (
+    <ConsultViewer group={consultGroup} projetId={projetId} onClose={() => setConsultGroup(null)}/>
   );
 
   if (previewBg) return (
@@ -442,7 +465,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
             {planLibrary.map(pl => (
               <div key={pl.id} style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:12,border:`1px solid ${pl.bg ? DA.border : '#FCA5A5'}`,background:DA.white }}>
                 {pl.bg
-                  ? <img src={pl.bg} alt="" onClick={() => setPreviewBg(pl.bg)} style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'zoom-in' }}/>
+                  ? <img src={pl.bg} alt="" onClick={() => openLibraryPlan(pl)} title="Ouvrir le plan en haute qualité" style={{ width:64,height:44,objectFit:'cover',borderRadius:6,border:`1px solid ${DA.border}`,flexShrink:0,cursor:'pointer' }}/>
                   : <div style={{ width:64,height:44,borderRadius:6,border:`1px dashed #FCA5A5`,flexShrink:0,background:'#FFF8F8',display:'flex',alignItems:'center',justifyContent:'center' }}><Ic n="img" s={18}/></div>
                 }
                 <div style={{ flex:1,minWidth:0 }}>

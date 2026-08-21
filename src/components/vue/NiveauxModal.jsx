@@ -47,7 +47,7 @@ function pdfToBlobUrl(pdf) {
 //  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
 //  - PC                          → lecteur PDF CLASSIQUE : défilement natif (molette,
 //    scrollbars), barre de zoom − / % / +, Ctrl+molette = zoom, cliquer-glisser = déplacer.
-function ConsultViewer({ group, projetId = null, onClose }) {
+export function ConsultViewer({ group, projetId = null, onClose }) {
   const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
   // QUALITÉ (demande Thomas : « les plans importés sont d'une super mauvaise qualité ») :
   // l'aperçu standard (bg, 1600 px) est illisible une fois zoomé. Chaque page est upgradée
@@ -137,19 +137,40 @@ function ConsultViewer({ group, projetId = null, onClose }) {
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
   return coarse
     ? <ConsultViewerTouch group={group} hdById={hdById} loadHd={loadHd} loadingHd={loadingHd} getPdf={getGroupPdf} onClose={onClose}/>
-    : <ConsultViewerDesktop group={group} hdById={hdById} loadingHd={loadingHd} onClose={onClose}/>;
+    : <ConsultViewerDesktop group={group} hdById={hdById} loadingHd={loadingHd} getPdf={getGroupPdf} onClose={onClose}/>;
 }
 
 // Lecteur classique PC : les pages empilées dans un conteneur à défilement NATIF.
 // Le zoom change simplement la largeur du contenu (% du viewport) — le navigateur gère
 // scrollbars et molette tout seul, comme un vrai viewer PDF.
 // Interface MINIMALE (demande Thomas) : croix flottante + pilule de zoom, rien d'autre.
-function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), onClose }) {
+function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), getPdf = null, onClose }) {
   const [z, setZ] = useState(1); // 1 = adapté à la largeur
   const zRef = useRef(z); zRef.current = z;
   const scrollRef = useRef(null);
   const dragRef = useRef(null);
   const anchorRef = useRef(null); // point focal à préserver pendant le changement de zoom
+
+  // ── PDF NATIF (qualité VECTORIELLE parfaite au zoom, comme le fichier d'origine) ──────
+  // Sur PC/Android, le moteur PDF du navigateur rend le PDF source dans un <iframe> IN-APP
+  // (pas de pop-up → marche dans la PWA). Le scroller raster ci-dessous n'est plus qu'un
+  // repli (plan importé en image, ou PDF source indisponible). L'<iframe> couvre tout l'écran.
+  const [pdfUrl, setPdfUrl] = useState(null);
+  useEffect(() => {
+    if (!getPdf) return;
+    let url = null, cancelled = false;
+    (async () => {
+      let pdf = null;
+      try { pdf = await getPdf(); } catch { pdf = null; }
+      if (cancelled || !pdf) return;
+      url = pdfToBlobUrl(pdf);
+      if (url && !cancelled) {
+        const pg = (group.pages || [])[0]?._page || 1;
+        setPdfUrl(`${url}#page=${pg}`);
+      } else if (url) { URL.revokeObjectURL(url); url = null; }
+    })();
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+  }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Zoom en conservant le point focal. La correction de défilement est appliquée dans un
   // useLayoutEffect (APRÈS la mise en page, AVANT l'affichage) : l'ancien requestAnimationFrame
@@ -226,6 +247,19 @@ function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), onClo
   const zBtn = { width:38, height:38, borderRadius:9, border:'none', background:'transparent',
     color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
     flexShrink:0, fontSize:19, fontWeight:800, lineHeight:1 };
+
+  // PDF source disponible → visionneuse NATIVE vectorielle plein écran (qualité parfaite au zoom).
+  if (pdfUrl) return (
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80 }}>
+      <button onClick={onClose} aria-label="Fermer" title="Fermer (Échap)"
+        style={{ position:'absolute', top:12, right:14, width:48, height:48, borderRadius:14, border:'none',
+          background:'rgba(20,20,20,0.55)', color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center',
+          justifyContent:'center', cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
+        <Ic n="x" s={22}/>
+      </button>
+      <iframe src={pdfUrl} title="Plan" style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', background:'#111' }}/>
+    </div>
+  );
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80 }}>
