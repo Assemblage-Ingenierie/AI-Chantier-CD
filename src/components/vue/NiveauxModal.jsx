@@ -86,6 +86,10 @@ function ConsultViewer({ group, projetId = null, onClose }) {
         const pdf = await getGroupPdf();
         if (pdf) {
           hd = await renderPdfPageHQ(pdf, p._page || 1);
+          // Repli si le rendu HQ échoue (mémoire mobile épuisée sur les pages suivantes d'un plan
+          // multi-pages → « la page d'après on ne voit plus rien », retour Thomas) : on rend une
+          // version PLUS LÉGÈRE (renderPdfPage, ~2400px) → la page reste visible au lieu d'être vide.
+          if (!hd) hd = await renderPdfPage(pdf, p._page || 1);
           rendered = !!hd;
         }
       }
