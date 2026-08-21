@@ -165,9 +165,12 @@ export async function renderPdfPages(pdfData, pageNums, {
 }
 
 // Rendu haute qualité — image HD stockée dans Supabase Storage, affichée dans l'annotateur
-// et la visionneuse. 6500 px de large max (plafonné par l'aire canvas selon la plateforme).
+// et la visionneuse. Plafonné à 3600 px (au lieu de 6500) : une image > ~16 Mpx ne se décode
+// PAS sur mobile (iOS surtout) → le HD « ne chargeait pas » sur téléphone et le plan restait
+// pixelisé (retour Thomas). 3600 px reste très net (~480 dpi A4) ET s'affiche sur tous les
+// appareils. L'image HD doit passer sur le plus faible appareil (le mobile), pas seulement le PC.
 export function renderPdfPageHQ(pdfData, pageNum) {
-  return _renderPage(pdfData, pageNum, 10.0, 6500, 0.85);
+  return _renderPage(pdfData, pageNum, 10.0, 3600, 0.85);
 }
 
 // Cache des documents PDF.js parsés (clé = data URL) — parser un gros PDF coûte plusieurs
