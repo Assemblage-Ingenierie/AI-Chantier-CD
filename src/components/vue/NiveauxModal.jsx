@@ -42,6 +42,12 @@ function pdfToBlobUrl(pdf) {
   } catch { return null; }
 }
 
+// iOS bride le rendu PDF en <iframe> (page unique, zoom impossible) → on garde la loupe
+// vectorielle pour iOS. PC ET Android affichent le PDF natif vectoriel dans un <iframe>
+// (net comme le fichier d'origine). iPadOS 13+ se déclare « MacIntel » avec du tactile.
+const _IS_IOS = typeof navigator !== 'undefined'
+  && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
 // ── Visionneuse « Consulter les plans » ────────────────────────────────────────
 // Deux modes (demande Thomas : sur PC le transform maison n'était « pas du tout pratique ») :
 //  - tactile (pointer: coarse)  → gestes pincement/déplacement/double-tap (ConsultViewerTouch)
@@ -328,6 +334,23 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   // du raster (qui reste le repli). { img, left, top, w, h } en pixels ÉCRAN (coords du box).
   const [vec, setVec] = useState(null);
   const vecReq = useRef(0);
+  // ANDROID (et tout tactile NON-iOS) : le moteur PDF du navigateur rend le PDF source dans
+  // un <iframe> IN-APP → qualité VECTORIELLE parfaite au zoom, comme sur PC (retour Thomas :
+  // la loupe restait « un chouille » floue). iOS bride le PDF en iframe → il garde la loupe.
+  const [pdfUrl, setPdfUrl] = useState(null);
+  useEffect(() => {
+    if (_IS_IOS || !getPdf) return;
+    let url = null, cancelled = false;
+    (async () => {
+      let pdf = null;
+      try { pdf = await getPdf(); } catch { pdf = null; }
+      if (cancelled || !pdf) return;
+      url = pdfToBlobUrl(pdf);
+      if (url && !cancelled) { const pg = (group.pages || [])[0]?._page || 1; setPdfUrl(`${url}#page=${pg}`); }
+      else if (url) { URL.revokeObjectURL(url); url = null; }
+    })();
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+  }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── ROTATION MANUELLE (le téléphone peut bloquer la rotation auto) ─────────────
   // Bouton ↻ : la visionneuse entière pivote de 90° (astuce 100vh×100vw centrée).
@@ -549,6 +572,20 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
       applyT({ ...cur, x: cur.x - e.deltaX, y: cur.y - e.deltaY }, true);
     }
   };
+
+  // Android/non-iOS + PDF source → visionneuse PDF NATIVE plein écran (vectoriel parfait au zoom).
+  if (pdfUrl) return (
+    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
+      <button onClick={onClose} aria-label="Fermer"
+        style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
+          width:48, height:48, borderRadius:14, border:'none', background:'rgba(20,20,20,0.55)',
+          color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
+        <Ic n="x" s={22}/>
+      </button>
+      <iframe src={pdfUrl} title="Plan" style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', background:'#111' }}/>
+    </div>
+  );
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
