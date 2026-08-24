@@ -432,12 +432,12 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
     const box = boxRef.current, inner = innerRef.current;
     if (!box || !inner || !getPdf) { setVec(null); return; }
     const { z, x, y } = tRef.current;
-    // S'active dès qu'on zoome un peu au-delà de la vue « page entière » (retour Thomas : ça
-    // restait pixelisé). Désactivé en rotation manuelle (le repère pivoté fausse le placement).
-    if (rotRef.current || z < Math.max(1.1, minZRef.current * 1.2)) { setVec(null); return; }
+    // S'active dès qu'on zoome un peu au-delà de la vue « page entière ». Désactivé en rotation
+    // manuelle (le repère pivoté fausse le placement en coords contenu).
+    if (rotRef.current || z < Math.max(1.1, minZRef.current * 1.2)) { setVec(null); vecCache.current = {}; return; }
     const vw = box.clientWidth, vh = box.clientHeight;
     const pageW = inner.clientWidth || vw;
-    const cy0 = -y / z, ch = vh / z;
+    const cx0 = -x / z, cy0 = -y / z, cw = vw / z, ch = vh / z; // fenêtre visible en coords contenu
     const cyCenter = cy0 + ch / 2;
     // Page sous le centre du viewport ; repli sur la 1re page visible si le centre tombe dans une marge.
     let focus = null;
@@ -452,25 +452,36 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
       if (top < cy0 + ch && top + h > cy0) { focus = { p, top, h }; break; }
     }
     if (!focus || focus.h <= 0) { setVec(null); return; }
-    const pos = { left: x, top: y + focus.top * z, w: pageW * z, h: focus.h * z };
-    // La PAGE ENTIÈRE est re-rendue depuis le PDF (fx=0..fw=1) → placement trivialement correct
-    // sur toutes les pages (le calcul de région fractionnaire, fragile en multi-pages, est
-    // supprimé). Cache par (page + palier de zoom) : le pan ne fait que repositionner l'image.
-    const zR = Math.round(z * 4) / 4;
-    const key = `${focus.p.id}|${zR}`;
-    if (vecCache.current.key === key && vecCache.current.img) { setVec({ img: vecCache.current.img, ...pos }); return; }
+    // Rectangle VISIBLE en fractions de la page focalisée (clampé 0..1).
+    const vfx = Math.min(1, Math.max(0, cx0 / pageW));
+    const vfy = Math.min(1, Math.max(0, (cy0 - focus.top) / focus.h));
+    const vfw = Math.min(1 - vfx, cw / pageW);
+    const vfh = Math.min(1 - vfy, ch / focus.h);
+    if (vfw <= 0.001 || vfh <= 0.001) { setVec(null); return; }
+    const zR = Math.round(z * 2) / 2; // palier de zoom
+    const c = vecCache.current;
+    // Déjà couvert (même page, même palier de zoom, zone visible DANS la région rendue) → RIEN
+    // à faire : l'overlay est dans inner, il suit déjà le transform (pan/zoom = zéro re-rendu).
+    if (c.img && c.pageId === focus.p.id && c.zR === zR &&
+        vfx >= c.fx && vfy >= c.fy && vfx + vfw <= c.fx + c.fw && vfy + vfh <= c.fy + c.fh) return;
+    // Nouvelle région = visible + marge (léger dépassement → pans courts sans re-rendu).
+    const mx = Math.min(vfw * 0.5, 0.12), my = Math.min(vfh * 0.5, 0.12);
+    const fx = Math.max(0, vfx - mx), fy = Math.max(0, vfy - my);
+    const fw = Math.min(1 - fx, vfw + 2 * mx), fh = Math.min(1 - fy, vfh + 2 * my);
     const req = ++vecReq.current;
     let pdf = null;
     try { pdf = await getPdf(); } catch { pdf = null; }
     if (!pdf || req !== vecReq.current) { if (!pdf) setVec(null); return; }
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const outWidth = Math.min(_IS_IOS ? 3000 : 6000, Math.max(1000, Math.round(pageW * z * dpr)));
-    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx: 0, fy: 0, fw: 1, fh: 1, outWidth });
+    // Résolution = taille écran de la région × densité (cap modéré → rendu RAPIDE, pas de gel).
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const outWidth = Math.min(2600, Math.max(700, Math.round(fw * pageW * z * dpr)));
+    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx, fy, fw, fh, outWidth });
     if (!img || req !== vecReq.current) return;
-    vecCache.current = { key, img };
-    setVec({ img, ...pos });
+    vecCache.current = { pageId: focus.p.id, zR, fx, fy, fw, fh, img };
+    // Coords CONTENU (l'overlay est DANS inner → suit translate+scale de lui-même).
+    setVec({ img, left: fx * pageW, top: focus.top + fy * focus.h, w: fw * pageW, h: fh * focus.h });
   };
-  useEffect(() => { const id = setTimeout(renderVec, 120); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const id = setTimeout(renderVec, 140); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
@@ -500,7 +511,8 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   const onDown = (e) => {
     boxRef.current?.setPointerCapture?.(e.pointerId);
     vecReq.current++;              // invalide un rendu vectoriel en cours
-    if (vec) setVec(null);         // masque la loupe pendant le geste (sinon décalée) — re-rendue au relâcher
+    // NB : on NE masque PLUS la loupe au toucher — elle est dans inner, elle suit le transform
+    // pendant le geste (net et sans à-coup). Re-rendue à la bonne résolution en fin de geste.
     const c = pt(e.clientX, e.clientY);
     ptrs.current.set(e.pointerId, c);
     snapshot();
@@ -593,7 +605,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
               overflow:'hidden', touchAction:'none', cursor:'grab' }
           : { position:'absolute', inset:0, overflow:'hidden', touchAction:'none', cursor:'grab' }}>
         <div ref={innerRef}
-          style={{ width:'100%',transform:`translate(${tRef.current.x}px, ${tRef.current.y}px) scale(${tRef.current.z})`,transformOrigin:'0 0',willChange:'transform' }}>
+          style={{ position:'relative',width:'100%',transform:`translate(${tRef.current.x}px, ${tRef.current.y}px) scale(${tRef.current.z})`,transformOrigin:'0 0',willChange:'transform' }}>
           {group.pages.map((p, i) => {
             const vis = visIds.has(p.id);
             const src = (vis && hdById[p.id]) || p.bg || (vis ? hdById[p.id] : null);
@@ -616,13 +628,14 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
             </div>
             );
           })}
+          {/* LOUPE VECTORIELLE : région visible rendue depuis le PDF, DANS inner (coords CONTENU)
+              → elle suit translate+scale automatiquement (pan/zoom fluides, zéro re-rendu au pan). */}
+          {vec && (
+            <img src={vec.img} alt="" draggable={false} decoding="async"
+              style={{ position:'absolute', left:vec.left, top:vec.top, width:vec.w, height:vec.h,
+                pointerEvents:'none', userSelect:'none', background:'white' }}/>
+          )}
         </div>
-        {/* LOUPE VECTORIELLE : zone visible rendue depuis le PDF, superposée au raster (net à tout zoom). */}
-        {vec && (
-          <img src={vec.img} alt="" draggable={false} decoding="async"
-            style={{ position:'absolute', left:vec.left, top:vec.top, width:vec.w, height:vec.h,
-              pointerEvents:'none', userSelect:'none', background:'white' }}/>
-        )}
       </div>
     </div>
   );
