@@ -338,16 +338,19 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   // un <iframe> IN-APP → qualité VECTORIELLE parfaite au zoom, comme sur PC (retour Thomas :
   // la loupe restait « un chouille » floue). iOS bride le PDF en iframe → il garde la loupe.
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfState, setPdfState] = useState('idle'); // idle | loading | ready | none — DIAG temporaire visible
   useEffect(() => {
-    if (_IS_IOS || !getPdf) return;
+    if (_IS_IOS || !getPdf) { setPdfState('none'); return; }
     let url = null, cancelled = false;
+    setPdfState('loading');
     (async () => {
       let pdf = null;
       try { pdf = await getPdf(); } catch { pdf = null; }
-      if (cancelled || !pdf) return;
+      if (cancelled) return;
+      if (!pdf) { setPdfState('none'); return; }
       url = pdfToBlobUrl(pdf);
-      if (url && !cancelled) { const pg = (group.pages || [])[0]?._page || 1; setPdfUrl(`${url}#page=${pg}`); }
-      else if (url) { URL.revokeObjectURL(url); url = null; }
+      if (url && !cancelled) { const pg = (group.pages || [])[0]?._page || 1; setPdfUrl(`${url}#page=${pg}`); setPdfState('ready'); }
+      else { setPdfState('none'); if (url) { URL.revokeObjectURL(url); url = null; } }
     })();
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -583,12 +586,22 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
           cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
         <Ic n="x" s={22}/>
       </button>
-      <iframe src={pdfUrl} title="Plan" style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', background:'#111' }}/>
+      <iframe src={pdfUrl} title="Plan"
+        onError={() => { setPdfUrl(null); setPdfState('none'); }}
+        style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', background:'#111' }}/>
     </div>
   );
 
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
+      {/* DIAG TEMPORAIRE (retour Thomas) : dit si le PDF source vectoriel a été trouvé. */}
+      {!_IS_IOS && pdfState !== 'ready' && (
+        <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', left:12, zIndex:6,
+          background: pdfState === 'none' ? 'rgba(180,30,30,0.9)' : 'rgba(20,20,20,0.7)', color:'white',
+          fontSize:11, fontWeight:700, borderRadius:8, padding:'5px 9px', backdropFilter:'blur(2px)' }}>
+          {pdfState === 'loading' ? 'DIAG : PDF source… (chargement)' : 'DIAG : PDF source INTROUVABLE → image seule'}
+        </div>
+      )}
       {/* Interface MINIMALE : croix + rotation flottantes, rien d'autre. */}
       <button onClick={onClose} aria-label="Fermer"
         style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
