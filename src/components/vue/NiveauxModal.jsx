@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, fetchPlanPdfSignedUrl, savePlanHdNow } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, fetchPlanPdfSignedUrl, downloadPlansOffline, countOfflinePlans, savePlanHdNow } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -670,6 +670,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // ⚠️ Tous les états utilisés par renderImportedRow/renderPdfTile sont déclarés ICI, AVANT
   // ces fonctions (règle TDZ de CLAUDE.md — incident du 2026-07-07).
   const [consultGroup, setConsultGroup] = useState(null); // groupe ouvert dans la visionneuse (repli)
+  // MODE HORS LIGNE : { status:'idle'|'run'|'done', done, total, have } — plans téléchargés en local.
+  const [offline, setOffline] = useState({ status: 'idle', done: 0, total: 0, have: 0 });
   // Consulter un plan : ouvre le PDF NATIF (fluide + vectoriel, moteur PDF de l'OS) quand le PDF
   // source existe ; repli sur la visionneuse image sinon (plan importé en image, PDF pas encore
   // monté…). On pré-ouvre l'onglet de façon SYNCHRONE dans le geste — sinon iOS bloque le pop-up
@@ -679,10 +681,13 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     // est net (retour Thomas : la consultation multi-pages pixelisait à mort). On NE passe PLUS
     // par le pop-up natif sur mobile (il sortait de la PWA / était bloqué → repli incohérent).
     // PC inchangé (« parfait ») : pop-up PDF natif, repli visionneuse in-app (iframe vectoriel).
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+    // HORS LIGNE : pas de réseau → directement la visionneuse in-app (lit le PDF stocké en
+    // local), sans ouvrir d'onglet vide inutile.
+    if (coarse && typeof navigator !== 'undefined' && navigator.onLine === false) { setConsultGroup(g); return; }
     // On pré-ouvre l'onglet SYNCHRONE dans le geste (sinon iOS/Android bloquent le pop-up après await).
     let win = null;
     try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
-    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
     (async () => {
       // MOBILE : lecteur PDF NATIF via URL signée https → 100% fluide et net comme le fichier
       // téléchargé (choix Thomas). L'iframe/blob provoquait un téléchargement ; une URL https
@@ -737,6 +742,24 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     }
     return [...map.entries()].map(([nom, pages]) => ({ nom, pages: pages.sort((a, b) => a._page - b._page) }));
   }, [planLibrary]);
+  // Combien de plans déjà dispo hors ligne (au chargement + après un téléchargement).
+  useEffect(() => {
+    let cancelled = false;
+    if (!projetId || pdfGroups.length === 0) { setOffline(o => ({ ...o, have: 0, total: pdfGroups.length })); return; }
+    (async () => {
+      const have = await countOfflinePlans(projetId, pdfGroups.map(g => g.nom));
+      if (!cancelled) setOffline(o => ({ ...o, have, total: pdfGroups.length, status: o.status === 'run' ? 'run' : (have >= pdfGroups.length ? 'done' : 'idle') }));
+    })();
+    return () => { cancelled = true; };
+  }, [pdfGroups, projetId]);
+  const downloadOffline = async () => {
+    if (offline.status === 'run' || !projetId || pdfGroups.length === 0) return;
+    const bases = pdfGroups.map(g => g.nom);
+    setOffline({ status: 'run', done: 0, total: bases.length, have: offline.have });
+    await downloadPlansOffline(projetId, bases, (done, total) => setOffline(o => ({ ...o, done, total })));
+    const have = await countOfflinePlans(projetId, bases);
+    setOffline({ status: 'done', done: bases.length, total: bases.length, have });
+  };
   const folders = planFolders || [];
   const setFolders = (next) => { if (onUpdateFolders) onUpdateFolders(next); };
   const assignedBases = new Set(folders.flatMap(f => f.bases || []));
@@ -1341,13 +1364,31 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               renommables, PDF rangés à sa sauce, tout synchronisé entre appareils. */}
           {(pdfGroups.length > 0 || folders.length > 0) && (
             <div style={{ marginBottom:16 }}>
-              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+              <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8 }}>
                 <p style={{ fontSize:11,fontWeight:700,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,margin:0 }}>
                   Consulter les plans
                 </p>
-                {(dragBase || dragFolder || touchDrag) && (
-                  <span style={{ fontSize:10.5,color:DA.grayL }}>glissez où vous voulez · la barre rouge montre la position</span>
-                )}
+                {(dragBase || dragFolder || touchDrag)
+                  ? <span style={{ fontSize:10.5,color:DA.grayL }}>glissez où vous voulez · la barre rouge montre la position</span>
+                  : projetId && pdfGroups.length > 0 && (
+                    // HORS LIGNE (façon Deezer) : télécharge les PDF du projet en local → consultables
+                    // sans réseau. Un seul bouton, état visible (Règle légèreté). Caché si déjà tout dispo.
+                    (offline.status === 'done' || (offline.have >= pdfGroups.length && offline.status !== 'run'))
+                      ? <span title="Tous les plans sont téléchargés pour une consultation hors ligne"
+                          style={{ display:'inline-flex',alignItems:'center',gap:4,fontSize:10.5,fontWeight:700,color:'#15803D' }}>
+                          <Ic n="chk" s={12}/> Hors ligne prêt
+                        </span>
+                      : <button onClick={downloadOffline} disabled={offline.status === 'run'}
+                          title="Télécharger tous les plans pour les consulter sans réseau (sur site)"
+                          style={{ display:'inline-flex',alignItems:'center',gap:5,fontSize:10.5,fontWeight:700,
+                            color: offline.status === 'run' ? DA.grayL : DA.red, background: offline.status === 'run' ? '#F5F5F5' : DA.redL,
+                            border:`1px solid ${offline.status === 'run' ? DA.border : DA.red}`, borderRadius:8, padding:'4px 9px',
+                            cursor: offline.status === 'run' ? 'default' : 'pointer', whiteSpace:'nowrap' }}>
+                          {offline.status === 'run'
+                            ? <><Ic n="spn" s={12}/> {offline.done}/{offline.total}</>
+                            : <><Ic n="dl" s={12}/> Hors ligne</>}
+                        </button>
+                  )}
               </div>
 
               {/* Réorganisation : on glisse une tuile OU une case, une BARRE D'INSERTION

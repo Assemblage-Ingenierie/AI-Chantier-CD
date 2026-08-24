@@ -873,6 +873,27 @@ export async function fetchPlanPdfSignedUrl(chantierId, base) {
   } catch { return null; }
 }
 
+// MODE HORS LIGNE (demande Thomas, façon Deezer) : télécharge tous les PDF source du projet
+// dans IndexedDB → consultables sans réseau. fetchPlanPdfByBase persiste déjà en IndexedDB à
+// chaque succès réseau, donc « télécharger » = simplement le forcer une fois par plan.
+export async function downloadPlansOffline(chantierId, bases, onProgress) {
+  let done = 0, ok = 0;
+  for (const base of (bases || [])) {
+    try { const pdf = await fetchPlanPdfByBase(chantierId, base); if (typeof pdf === 'string') ok++; } catch { /* réseau */ }
+    onProgress?.(++done, bases.length);
+  }
+  return ok;
+}
+
+// Combien de plans du projet sont déjà dispo hors ligne (PDF présent dans IndexedDB).
+export async function countOfflinePlans(chantierId, bases) {
+  let n = 0;
+  for (const base of (bases || [])) {
+    try { const v = await getPlanPdf(`${chantierId}|${base}`); if (typeof v === 'string') n++; } catch { /* ignore */ }
+  }
+  return n;
+}
+
 async function uploadPlanHd(sb, chantierId, planId, base64) {
   const path = `plans/${chantierId}/${planId}.webp`;
   // Une tentative + un retry : l'upload HD est la source de qualité du rapport ; un échec
