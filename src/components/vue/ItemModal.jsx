@@ -3,7 +3,6 @@ const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
-import IASug from './IASug.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
@@ -90,6 +89,72 @@ function patchHtmlText(html, del, add) {
   return doc.body.innerHTML;
 }
 
+// Insère `add` (texte) JUSTE APRÈS l'extrait `anchor` dans le commentaire HTML (nouvelle ligne).
+// Réutilise patchHtmlText (matching tolérant aux balises). Si pas d'ancre trouvée → ajoute en fin.
+function insertAfterHtml(html, anchor, add) {
+  const clean = String(add || '').trim();
+  if (!clean) return html;
+  if (anchor) {
+    const patched = patchHtmlText(html, anchor, `${anchor}\n${clean}`);
+    if (patched !== html) return patched; // ancre trouvée → inséré au bon endroit
+  }
+  const esc = clean.replace(/[<>&]/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[s]));
+  const sep = (html && html.trim()) ? '<div><br></div>' : '';
+  return `${html || ''}${sep}<div>${esc}</div>`;
+}
+
+// Photo (data URL ou URL signée Supabase) → bloc image base64 pour l'API vision. Redimensionne
+// à 800px, ré-encode en JPEG (léger + évite le taint canvas cross-origin). Renvoie null si échec.
+async function photoToImageBlock(url) {
+  try {
+    let base = url;
+    if (!url.startsWith('data:')) {
+      const resp = await fetch(url); if (!resp.ok) return null;
+      const blob = await resp.blob();
+      base = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+    }
+    const dataUrl = await new Promise((res) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const MAX = 800, scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.naturalWidth * scale); cv.height = Math.round(img.naturalHeight * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        try { res(cv.toDataURL('image/jpeg', 0.75)); } catch { res(base); }
+      };
+      img.onerror = () => res(base);
+      img.src = base;
+    });
+    const [hdr, b64] = dataUrl.split(',');
+    const mt = hdr.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+    return { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } };
+  } catch { return null; }
+}
+
+// ── Périmètre STRUCTURE partagé par les deux prompts (BET structure — demande Thomas :
+//    zéro bruit sécurité/EHS/autres corps d'état, 100% structure). ─────────────────────────
+const SCOPE_STRUCTURE = `PÉRIMÈTRE STRICT — STRUCTURE SEULEMENT : béton armé, coffrage, ferraillage (sections, recouvrements, enrobage), fondations, reprises de bétonnage, fissuration structurelle, étaiement, descentes de charges, réservations, appuis, joints, scellements, aciers en attente, planéité/verticalité des ouvrages porteurs. N'ÉMETS JAMAIS de remarque sur la sécurité chantier / EHS, l'organisation, la propreté, ni les autres corps d'état (plomberie, élec, cloisons, finitions…). Si un point n'apporte pas de valeur STRUCTURE claire, ne le mentionne pas.`;
+
+// Cas « texte présent » : corrige + reformule + enrichit (points de vigilance structure), en
+// JSON, tout à valider une par une. Enrichissement fondé sur photos + texte ; « à vérifier »
+// quand ce n'est pas certain (anti-invention), affirmation quand c'est clairement visible.
+const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'études structure, en visite de chantier. Tu analyses une observation (texte rédigé par l'ingénieur + photos jointes) et proposes des améliorations, UNIQUEMENT sous l'angle STRUCTURE.
+${SCOPE_STRUCTURE}
+TON ANALYSE PRODUIT 3 CHOSES :
+1) CORRECTIONS : uniquement fautes d'orthographe/grammaire. Même sens, même longueur, mêmes mots (hors faute).
+2) REFORMULATIONS : seulement les passages réellement lourds/confus/maladroits. Sens, faits, chiffres, références et vocabulaire métier STRICTEMENT préservés. Conserve le découpage en puces/lignes (une puce reste une puce, jamais de fusion). Seuil élevé : ne propose RIEN pour un passage déjà clair. 1 à 2 propositions par passage.
+3) AJOUTS (points de vigilance / approfondissements) STRUCTURE : fondés UNIQUEMENT sur ce qui est visible sur les photos ou déductible du texte. Si l'élément est clairement VISIBLE sur une photo → formulation AFFIRMATIVE ; si c'est une hypothèse ou un contrôle à faire → commence par « À vérifier : » ou « À confirmer : ». N'invente JAMAIS une cote, une cause ou une préconisation non fondée. Chaque ajout est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) pour être inséré au bon endroit ; si aucun ancrage logique, laisse "apres" vide. Concis et ADAPTATIF : autant d'ajouts que réellement pertinent, ni remplissage ni liste à rallonge.
+STYLE : français technique impeccable. N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – ») ; emploie virgule, deux-points, parenthèse ou point. Ne transforme jamais une affirmation en question.
+Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
+{"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}],"ajouts":[{"apres":"<phrase/puce existante copiée mot pour mot, ou vide>","texte":"<ajout>","certitude":"sûr|à vérifier","raison":"vigilance|approfondissement"}]}
+Chaque "extrait"/"apres" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
+
+// Cas « champ vide » : rédige un commentaire structure depuis l'intitulé + photos.
+const PROMPT_GENERER = `Tu es un INGÉNIEUR STRUCTURE SENIOR en visite de chantier. À partir de l'intitulé de l'observation et des photos jointes, rédige un commentaire d'observation STRUCTURE, factuel et professionnel.
+${SCOPE_STRUCTURE}
+Décris ce qui est réellement VISIBLE sur les photos. N'invente aucune cote ni cause ; formule les incertitudes en « À vérifier : … ». Concis, en puces si plusieurs points distincts. Français impeccable, jamais de « — » ni « – ».
+Réponds UNIQUEMENT avec le texte du commentaire, sans titre, sans guillemets, sans explication.`;
+
 export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
   const [form, setForm] = useState(() => {
     // id stable dès le départ : sert d'ORIGINE aux marqueurs Vxx posés sur les plans de
@@ -166,6 +231,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [reformError, setReformError] = useState('');
   const [reformList, setReformList] = useState(null); // [{ extrait, propositions:[], raison }]
   const [reformApplied, setReformApplied] = useState(new Set());
+  // ── SUPER BOUTON « Améliorer avec l'IA » (unifie génération + correction + reformulation +
+  //    enrichissement structure). Un seul geste, l'IA décide selon le contexte. ──────────────
+  const [improving, setImproving] = useState(false);
+  const [improveErr, setImproveErr] = useState('');
+  const [improveList, setImproveList] = useState(null); // [{ kind:'correction'|'reformulation'|'ajout', extrait/apres, propositions:[], texte, raison, certitude }]
+  const [improveApplied, setImproveApplied] = useState(new Set());
+  const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -432,6 +504,78 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     if (!seg || reformApplied.has(idx)) return;
     setForm(f => ({ ...f, commentaire: patchHtmlText(f.commentaire, seg.extrait, prop) }));
     setReformApplied(prev => new Set([...prev, idx]));
+    bumpSync();
+  };
+
+  // ── SUPER BOUTON : un seul geste. Champ vide → génère un commentaire structure (photos +
+  //    intitulé). Texte présent → corrige + reformule + enrichit (points de vigilance structure),
+  //    tout en suggestions à valider une par une. Photos envoyées au modèle (vision). ──────────
+  const ameliorer = async () => {
+    if (improving) return;
+    setImproving(true);
+    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null);
+    try {
+      const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, 6).map(p => photoToImageBlock(p.data)))).filter(Boolean);
+      const plain = htmlToPlain(form.commentaire || '');
+      const titre = (form.titre || '').slice(0, 300);
+
+      // CAS 1 — champ vide : génération d'un commentaire structure.
+      if (!plain.trim()) {
+        const content = [...imgs, { type: 'text', text: `Intitulé de l'observation : "${titre || '(non renseigné)'}".\nRédige le commentaire d'observation structure.` }];
+        const d = await callAIProxy({ feature: 'obs-generer', model: 'claude-sonnet-4-6', max_tokens: 1500, system: PROMPT_GENERER, messages: [{ role: 'user', content }], _waitOk: true });
+        const text = (d.content?.[0]?.text || '').trim();
+        if (!text) throw new Error('Réponse vide du modèle');
+        setGenProposal(text);
+        setImproving(false);
+        return;
+      }
+
+      // CAS 2 — texte présent : corrections + reformulations + ajouts structure.
+      const content = [...imgs, { type: 'text', text: `Intitulé : "${titre}".\nTexte de l'observation à analyser :\n${plain}` }];
+      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 4096, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
+      const raw = d.content?.[0]?.text?.trim() || '';
+      let obj;
+      try { obj = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
+      catch { throw new Error('Réponse IA illisible — réessaie'); }
+      const unified = [];
+      for (const c of (obj?.corrections || [])) {
+        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && plain.includes(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
+          unified.push({ kind: 'correction', extrait: c.extrait, propositions: [c.correction.trim()] });
+      }
+      for (const r of (obj?.reformulations || [])) {
+        if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && plain.includes(r.extrait) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
+          unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
+      }
+      for (const a of (obj?.ajouts || [])) {
+        if (a && typeof a.texte === 'string' && a.texte.trim())
+          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || '', raison: a.raison || '' });
+      }
+      if (!unified.length) setImproveErr('Rien à améliorer ✓');
+      else setImproveList(unified);
+    } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
+    setImproving(false);
+  };
+
+  const applyImprove = (idx, prop) => {
+    const seg = improveList?.[idx];
+    if (!seg || improveApplied.has(idx)) return;
+    setForm(f => ({
+      ...f,
+      commentaire: seg.kind === 'ajout'
+        ? insertAfterHtml(f.commentaire, seg.apres, prop)
+        : patchHtmlText(f.commentaire, seg.extrait, prop),
+    }));
+    setImproveApplied(prev => new Set([...prev, idx]));
+    bumpSync();
+  };
+
+  // Champ vide → applique le commentaire généré (chaque ligne = une puce/paragraphe propre).
+  const useGenProposal = () => {
+    if (!genProposal) return;
+    const esc = (l) => l.replace(/[<>&]/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[s]));
+    const html = genProposal.split('\n').map(l => l.trim()).filter(Boolean).map(l => `<div>${esc(l)}</div>`).join('');
+    setForm(f => ({ ...f, commentaire: (f.commentaire && f.commentaire.trim()) ? f.commentaire + html : html }));
+    setGenProposal(null);
     bumpSync();
   };
 
@@ -853,33 +997,79 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               </p>
             )}
 
-            {/* Boutons IA — Reformuler · Corriger · Générer, tous sur une seule ligne.
-                flexWrap permet au volet IA (flexBasis 100%) de passer sous la rangée. */}
+            {/* IA — 2 boutons : le SUPER « Améliorer » (un seul geste, l'IA décide : champ vide →
+                rédige depuis intitulé + photos ; texte présent → corrige + reformule + enrichit
+                structure) + « Corriger » (ortho pure, safe). flexWrap : les volets passent dessous. */}
             <div style={{ display:'flex',gap:8,marginTop:8,flexWrap:'wrap' }}>
-              {form.commentaire?.trim() && (
-                <button onClick={reformulate} disabled={reformulating}
-                  style={{ flex:1,minWidth:120,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:reformulating?0.6:1,whiteSpace:'nowrap' }}>
-                  {reformulating ? <Ic n="spn" s={13}/> : <Ic n="spk" s={13}/>}
-                  {reformulating ? 'Analyse…' : 'Reformuler avec l\'IA'}
-                </button>
-              )}
+              <button onClick={ameliorer} disabled={improving}
+                style={{ flex:2,minWidth:150,padding:'11px 14px',borderRadius:10,border:'none',background: improving ? '#6B7280' : DA.black,color:'white',display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:700,cursor: improving ? 'default':'pointer',whiteSpace:'nowrap' }}>
+                <span style={{ color:'#FCA5A5',lineHeight:0,display:'inline-flex' }}><Ic n={improving ? 'spn' : 'spk'} s={14}/></span>
+                {improving ? 'Analyse…' : (form.commentaire?.trim() ? 'Améliorer avec l\'IA' : 'Rédiger avec l\'IA')}
+              </button>
               {form.commentaire?.trim() && (
                 <button onClick={fixSpelling} disabled={correcting}
-                  style={{ flex:1,minWidth:120,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap' }}>
+                  style={{ flex:1,minWidth:110,padding:'11px 14px',borderRadius:10,border:`1.5px solid ${DA.border}`,background:'white',color:DA.gray,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer',opacity:correcting?0.6:1,whiteSpace:'nowrap' }}>
                   {correcting ? <Ic n="spn" s={13}/> : <Ic n="chk" s={13}/>}
-                  {isDesktop ? "Corriger l'orthographe" : 'Corriger'}
+                  Corriger
                 </button>
               )}
-              <IASug
-                inline
-                content={form.titre}
-                commentaire={form.commentaire}
-                photos={form.photos}
-                onApply={text => { setForm(f => ({ ...f, commentaire: f.commentaire ? f.commentaire + '\n' + text : text })); bumpSync(); }}
-                onApplyTitle={title => setForm(f => ({ ...f, titre: title }))}
-                onApplyUrgence={urgence => setForm(f => ({ ...f, urgence }))}
-              />
             </div>
+
+            {/* Volet « Améliorer » — proposition de rédaction (champ vide) OU suggestions à valider */}
+            {improveErr && (
+              <div style={{ marginTop:6,padding:'7px 10px',background: improveErr.includes('✓') ? '#F0FDF4' : '#FEF2F2',border:`1px solid ${improveErr.includes('✓') ? '#BBF7D0' : '#FECACA'}`,borderRadius:8,fontSize:12,color: improveErr.includes('✓') ? '#15803D' : '#B91C1C' }}>
+                {improveErr}
+              </div>
+            )}
+            {genProposal && (
+              <div style={{ marginTop:8,border:'1px solid #E5E7EB',borderRadius:10,overflow:'hidden' }}>
+                <div style={{ background:'#F9FAFB',padding:'8px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid #E5E7EB',gap:8 }}>
+                  <span style={{ fontWeight:700,color:'#374151',fontSize:11,textTransform:'uppercase',letterSpacing:0.5 }}>Proposition de rédaction</span>
+                  <button onClick={() => setGenProposal(null)} style={{ background:'white',color:'#6B7280',border:'1px solid #D1D5DB',borderRadius:6,padding:'4px 10px',fontSize:11,fontWeight:600,cursor:'pointer' }}>✕</button>
+                </div>
+                <div style={{ padding:'10px 12px',background:'white',fontSize:13,color:'#1e1e2e',lineHeight:1.6,whiteSpace:'pre-wrap' }}>{genProposal}</div>
+                <div style={{ padding:'8px 12px',background:'#F9FAFB',borderTop:'1px solid #E5E7EB' }}>
+                  <button onClick={useGenProposal} style={{ width:'100%',background:DA.black,color:'white',border:'none',borderRadius:8,padding:'9px 0',fontSize:12.5,fontWeight:700,cursor:'pointer' }}>Utiliser ce texte</button>
+                </div>
+              </div>
+            )}
+            {improveList && improveList.length > 0 && (
+              <div style={{ marginTop:8,border:'1px solid #E5E7EB',borderRadius:10,overflow:'hidden',fontSize:12 }}>
+                <div style={{ background:'#F9FAFB',padding:'8px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid #E5E7EB',gap:8 }}>
+                  <span style={{ fontWeight:700,color:'#374151',fontSize:11,textTransform:'uppercase',letterSpacing:0.5 }}>Suggestions de l'IA</span>
+                  <button onClick={() => { setImproveList(null); setImproveApplied(new Set()); }} style={{ background:'white',color:'#6B7280',border:'1px solid #D1D5DB',borderRadius:6,padding:'4px 10px',fontSize:11,fontWeight:600,cursor:'pointer' }}>✕</button>
+                </div>
+                <div style={{ padding:'4px 0',background:'white' }}>
+                  {improveList.map((seg, idx) => {
+                    const done = improveApplied.has(idx);
+                    const tag = seg.kind === 'correction' ? { t:'Faute', c:'#B45309', bg:'#FEF3C7' }
+                      : seg.kind === 'reformulation' ? { t:'Reformulation', c:'#1D4ED8', bg:'#DBEAFE' }
+                      : { t: seg.certitude === 'à vérifier' ? 'À vérifier' : 'Point de vigilance', c:'#059669', bg:'#D1FAE5' };
+                    return (
+                      <div key={idx} style={{ padding:'10px 12px',borderTop: idx>0 ? '1px solid #F3F4F6':'none',opacity: done?0.55:1 }}>
+                        <div style={{ display:'flex',alignItems:'center',gap:6,marginBottom:5 }}>
+                          <span style={{ fontSize:9.5,fontWeight:700,color:tag.c,background:tag.bg,borderRadius:5,padding:'2px 6px',textTransform:'uppercase',letterSpacing:0.3 }}>{tag.t}</span>
+                        </div>
+                        {seg.kind !== 'ajout' && (
+                          <div style={{ fontSize:11,color:'#9CA3AF',textDecoration: done?'none':'line-through',marginBottom:6,lineHeight:1.5 }}>{seg.extrait}</div>
+                        )}
+                        <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                          {(seg.kind === 'ajout' ? [seg.texte] : seg.propositions).map((prop, pi) => (
+                            <div key={pi} style={{ display:'flex',alignItems:'flex-start',gap:8 }}>
+                              <span style={{ flex:1,fontSize:12.5,color:'#1e1e2e',lineHeight:1.5 }}>{prop}</span>
+                              <button onClick={() => applyImprove(idx, prop)} disabled={done}
+                                style={{ flexShrink:0,background: done ? '#9CA3AF' : '#059669',color:'white',border:'none',borderRadius:6,padding:'5px 11px',fontSize:11,fontWeight:600,cursor: done?'default':'pointer',minWidth:64 }}>
+                                {done ? '✓' : (seg.kind === 'ajout' ? 'Ajouter' : 'Choisir')}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Volet REFORMULATION — affiché en premier (au-dessus de l'orthographe) */}
             {reformError && (
