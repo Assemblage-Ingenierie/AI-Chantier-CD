@@ -51,7 +51,7 @@ function renderHtml(html) {
 
   const BLOCK_TAGS = new Set(['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
 
-  const walk = (node, b, it, u, s) => {
+  const walk = (node, b, it, u, s, col) => {
     if (node.nodeType === 3) { // TEXT_NODE — DOM décode les entités automatiquement
       const text = node.textContent;
       if (!text) return;
@@ -63,12 +63,15 @@ function renderHtml(html) {
         if (u) el = <u key={k()}>{el}</u>;
         if (it) el = <em key={k()}>{el}</em>;
         if (b) el = <strong key={k()}>{el}</strong>;
+        if (col) el = <span key={k()} style={{ color: col }}>{el}</span>; // couleur choisie dans l'éditeur
         current.push(el);
       });
       return;
     }
     if (node.nodeType !== 1) return;
     const tag = node.tagName.toLowerCase();
+    // Couleur du texte : style inline (éditeur) ou attribut <font color> — héritée sinon.
+    const nc = (node.style && node.style.color) || (node.getAttribute && node.getAttribute('color')) || col;
 
     // <br> : un saut simple ferme la ligne courante ; un <br> alors que rien n'a été
     // écrit depuis le dernier saut = ligne vide voulue (aération) → on la matérialise.
@@ -102,7 +105,7 @@ function renderHtml(html) {
       flush();
       const beforeCount = blocks.length;
       const beforeLen = current.length;
-      for (const child of node.childNodes) walk(child, b, it, u, s);
+      for (const child of node.childNodes) walk(child, b, it, u, s, nc);
       if (current.length > 0) flush();
       else if (blocks.length === beforeCount && beforeLen === 0 && blocks.length > 0) {
         // Div/p vide (ou contenant seulement <br>) entre du contenu → ligne vide
@@ -117,7 +120,7 @@ function renderHtml(html) {
         if (child.nodeType !== 1 || child.tagName.toLowerCase() !== 'li') continue;
         flush();
         isBullet = true;
-        for (const liChild of child.childNodes) walk(liChild, b, it, u, s);
+        for (const liChild of child.childNodes) walk(liChild, b, it, u, s, nc);
         flush();
       }
       return;
@@ -126,7 +129,7 @@ function renderHtml(html) {
     if (tag === 'li') {
       flush();
       isBullet = true;
-      for (const child of node.childNodes) walk(child, b, it, u, s);
+      for (const child of node.childNodes) walk(child, b, it, u, s, nc);
       flush();
       return;
     }
@@ -135,11 +138,11 @@ function renderHtml(html) {
     const ni = it || tag === 'em' || tag === 'i';
     const nu = u || tag === 'u';
     const ns = s || tag === 's' || tag === 'strike' || tag === 'del';
-    // span et balises inconnues : passage transparent (style ignoré, contenu rendu)
-    for (const child of node.childNodes) walk(child, nb, ni, nu, ns);
+    // span et balises inconnues : passage transparent (couleur propagée via nc)
+    for (const child of node.childNodes) walk(child, nb, ni, nu, ns, nc);
   };
 
-  walk(container, false, false, false, false);
+  walk(container, false, false, false, false, null);
 
   if (!blocks.length) return null;
 

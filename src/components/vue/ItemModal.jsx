@@ -692,6 +692,22 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     { k:'right',   sym:'→', title:'Aligner à droite' },
     { k:'justify', sym:'☰', title:'Justifier' },
   ];
+  // Couleur du texte : sélectionner le texte puis taper une pastille (ou choisir la couleur
+  // avant d'écrire). Palette courte alignée sur l'app (noir par défaut, rouge, orange, vert, bleu).
+  const COLOR_SWATCHES = [
+    { c:'#111111', t:'Noir (défaut)' },
+    { c:'#DC2626', t:'Rouge' },
+    { c:'#EA580C', t:'Orange' },
+    { c:'#16A34A', t:'Vert' },
+    { c:'#2563EB', t:'Bleu' },
+  ];
+  const applyColor = (color) => {
+    const ed = textareaRef.current?.getEditor?.();
+    try { document.execCommand('styleWithCSS', false, true); } catch { /* fallback <font> */ }
+    document.execCommand('foreColor', false, color);
+    try { document.execCommand('styleWithCSS', false, false); } catch { /* laisse G/I en balises normales */ }
+    ed?.focus();
+  };
 
   // Inputs fichiers (hidden)
   const fileInputs = (
@@ -792,6 +808,14 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                     display:'flex',alignItems:'center',justifyContent:'center' }}>
                   {a.sym}
                 </button>
+              ))}
+              <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
+              {/* Couleur du texte : surligner le texte puis taper une pastille (ou avant d'écrire). */}
+              {COLOR_SWATCHES.map(s => (
+                <button key={s.c} type="button" title={`Couleur : ${s.t}`}
+                  onMouseDown={e => { e.preventDefault(); applyColor(s.c); }}
+                  style={{ width:22,height:22,borderRadius:'50%',border:'1.5px solid rgba(0,0,0,0.15)',background:s.c,
+                    cursor:'pointer',flexShrink:0,padding:0,boxShadow:'0 1px 2px rgba(0,0,0,0.12)' }}/>
               ))}
             </div>
 

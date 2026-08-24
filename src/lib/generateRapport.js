@@ -332,6 +332,19 @@ function looksLikeHtml(text) {
 // Parse du HTML riche en segments {text,bold,italic,underline} via le DOM.
 // Le DOM décode automatiquement les entités (&amp;→&, &nbsp;→espace) et tolère
 // les attributs/balises inconnues — plus aucune balise brute ne se retrouve dans le PDF.
+// Couleur CSS/HTML → [r,g,b] (ou null). Gère « rgb(…) » (style inline produit par l'éditeur)
+// et « #RGB »/« #RRGGBB » (attribut <font color>). Sert à conserver la couleur du texte au PDF.
+function parseColor(str) {
+  if (!str) return null;
+  let m = String(str).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  m = String(str).trim().match(/^#?([0-9a-f]{6})$/i);
+  if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+  m = String(str).trim().match(/^#?([0-9a-f]{3})$/i);
+  if (m) return [parseInt(m[1][0] + m[1][0], 16), parseInt(m[1][1] + m[1][1], 16), parseInt(m[1][2] + m[1][2], 16)];
+  return null;
+}
+
 function parseHtmlSegments(html) {
   // Rétrocompat : anciens commentaires dont les balises ont été encodées en entités
   // (&lt;div&gt;) — on les restaure en vraies balises avant de parser via le DOM.
@@ -352,11 +365,11 @@ function parseHtmlSegments(html) {
   const endLine = () => { lines.push(current); current = []; };
   const BLOCK = new Set(['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote']);
 
-  const walk = (node, b, it, u) => {
+  const walk = (node, b, it, u, col) => {
     for (const child of node.childNodes) {
       if (child.nodeType === 3) { // TEXT_NODE
         const txt = child.textContent.replace(/[ \t\r\n]+/g, ' ');
-        if (txt) current.push({ text: txt, bold: b, italic: it, underline: u });
+        if (txt) current.push({ text: txt, bold: b, italic: it, underline: u, color: col });
         continue;
       }
       if (child.nodeType !== 1) continue; // pas un élément
@@ -365,36 +378,38 @@ function parseHtmlSegments(html) {
       const nb = b || tag === 'strong' || tag === 'b';
       const ni = it || tag === 'em' || tag === 'i';
       const nu = u || tag === 'u';
+      // Couleur : style inline (éditeur) ou attribut <font color> — héritée sinon.
+      const nc = parseColor(child.style && child.style.color) || parseColor(child.getAttribute && child.getAttribute('color')) || col;
       if (tag === 'ul' || tag === 'ol') {
         for (const li of child.childNodes) {
           if (li.nodeType !== 1 || li.tagName.toLowerCase() !== 'li') continue;
           if (current.length) endLine();
-          current.push({ text: '• ', bold: false, italic: false, underline: false });
-          walk(li, nb, ni, nu);
+          current.push({ text: '• ', bold: false, italic: false, underline: false, color: null });
+          walk(li, nb, ni, nu, nc);
           endLine();
         }
         continue;
       }
       if (tag === 'li') {
         if (current.length) endLine();
-        current.push({ text: '• ', bold: false, italic: false, underline: false });
-        walk(child, nb, ni, nu);
+        current.push({ text: '• ', bold: false, italic: false, underline: false, color: null });
+        walk(child, nb, ni, nu, nc);
         endLine();
         continue;
       }
       if (BLOCK.has(tag)) {
         if (current.length) endLine();
         const before = lines.length;
-        walk(child, nb, ni, nu);
+        walk(child, nb, ni, nu, nc);
         if (current.length) endLine();
         else if (lines.length === before) lines.push([]); // bloc vide → ligne d'aération
         continue;
       }
-      // inline (span, balises inconnues) : passage transparent
-      walk(child, nb, ni, nu);
+      // inline (span, balises inconnues) : passage transparent (couleur propagée)
+      walk(child, nb, ni, nu, nc);
     }
   };
-  walk(container, false, false, false);
+  walk(container, false, false, false, null);
   if (current.length) endLine();
 
   // Retirer les lignes vides en tête/queue
@@ -456,7 +471,7 @@ function jsPdfRichText(doc, rawText, x, y, maxW, fontSize, lineH, rgbColor, meas
     if (seg.text === '\n') { tokens.push({ br: true }); continue; }
     seg.text.split(' ').forEach((w, i) => {
       if (i > 0) tokens.push({ sp: true });
-      if (w) tokens.push({ w, bold: seg.bold, italic: seg.italic, underline: seg.underline });
+      if (w) tokens.push({ w, bold: seg.bold, italic: seg.italic, underline: seg.underline, color: seg.color });
     });
   }
 
@@ -501,10 +516,11 @@ function jsPdfRichText(doc, rawText, x, y, maxW, fontSize, lineH, rgbColor, meas
       if (tok.sp) { cx += tok.width; continue; }
       const font = tok.bold ? (tok.italic ? 'bolditalic' : 'bold') : tok.italic ? 'italic' : 'normal';
       doc.setFont('helvetica', font);
-      doc.setTextColor(...rgbColor);
+      const col = tok.color || rgbColor; // couleur du texte choisie dans l'éditeur, sinon défaut
+      doc.setTextColor(...col);
       doc.text(tok.w, cx, cy);
       if (tok.underline) {
-        doc.setDrawColor(...rgbColor); doc.setLineWidth(0.15);
+        doc.setDrawColor(...col); doc.setLineWidth(0.15);
         doc.line(cx, cy + 0.8, cx + tok.width, cy + 0.8);
       }
       cx += tok.width;
