@@ -3,7 +3,7 @@ import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
-import { getPlanHd, setPlanHd } from './planThumbCache.js';
+import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf } from './planThumbCache.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -802,6 +802,11 @@ export async function uploadPlanPdf(chantierId, base, pdfDataUrl) {
     const resp = await fetch(pdfDataUrl);
     const blob = await resp.blob();
     const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'application/pdf', upsert: true, cacheControl: '31536000' });
+    if (!error) {
+      // Cache local IMMÉDIAT (IndexedDB) : la visionneuse vectorielle est nette instantanément
+      // et HORS LIGNE dès l'import, sans re-télécharger le gros PDF. Best-effort.
+      try { const key = `${chantierId}|${base}`; setPlanPdf(key, pdfDataUrl); _planPdfCache.set(key, pdfDataUrl); } catch { /* ignore */ }
+    }
     return !error;
   } catch { return false; }
 }
@@ -814,8 +819,14 @@ export async function fetchPlanPdfByBase(chantierId, base) {
   if (!chantierId || !base) return null;
   const key = `${chantierId}|${base}`;
   const cached = _planPdfCache.get(key);
-  if (typeof cached === 'string') return cached; // succès mémorisé
+  if (typeof cached === 'string') return cached; // succès mémorisé (session)
   const promise = (async () => {
+    // 1) Cache local IndexedDB : INSTANTANÉ + HORS LIGNE (le gros PDF n'est téléchargé qu'une fois).
+    try {
+      const local = await getPlanPdf(key);
+      if (typeof local === 'string' && local.startsWith('data:application/pdf')) { _planPdfCache.set(key, local); return local; }
+    } catch { /* pas de cache local */ }
+    // 2) Réseau (Supabase Storage) — puis on persiste en local pour les prochaines fois.
     try {
       const sb = await getSupabase();
       const path = `plans/${chantierId}/pdf/${slugPlanBase(base)}.pdf`;
@@ -825,7 +836,10 @@ export async function fetchPlanPdfByBase(chantierId, base) {
       if (!resp.ok) return null;
       const blob = await resp.blob();
       const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
-      if (typeof dataUrl === 'string') _planPdfCache.set(key, dataUrl); // ne mémorise QUE les succès
+      if (typeof dataUrl === 'string') {
+        _planPdfCache.set(key, dataUrl);         // ne mémorise QUE les succès
+        try { setPlanPdf(key, dataUrl); } catch { /* best-effort */ } // instantané + hors ligne ensuite
+      }
       return dataUrl;
     } catch { return null; }
   })();

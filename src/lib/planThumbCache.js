@@ -16,7 +16,8 @@
 const DB_NAME = 'chantierai_plans';
 const STORE   = 'thumbs';
 const HD_STORE = 'hd'; // images HD des plans (data URL WebP, 2-5 Mo) — évite le re-fetch réseau à chaque session
-const VERSION = 2;
+const PDF_STORE = 'pdf'; // PDF source vectoriel (data URL, 5-40 Mo) — visionneuse NETTE instantanée + hors ligne
+const VERSION = 3;
 
 let _dbPromise = null;
 
@@ -30,6 +31,7 @@ function openDb() {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
         if (!db.objectStoreNames.contains(HD_STORE)) db.createObjectStore(HD_STORE);
+        if (!db.objectStoreNames.contains(PDF_STORE)) db.createObjectStore(PDF_STORE);
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror   = () => resolve(null);
@@ -109,6 +111,39 @@ export async function setPlanHd(planId, dataUrl) {
   });
 }
 
+// PDF source d'un plan (data URL) — clé = `${chantierId}|${base}`. Retourne la valeur en
+// cache ou null. C'est ce qui rend la visionneuse vectorielle INSTANTANÉE et HORS LIGNE :
+// le gros PDF n'est téléchargé qu'UNE fois, puis lu depuis IndexedDB.
+export async function getPlanPdf(key) {
+  if (!key) return null;
+  const db = await openDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(PDF_STORE, 'readonly');
+      const r = tx.objectStore(PDF_STORE).get(key);
+      r.onsuccess = () => resolve(r.result ?? null);
+      r.onerror   = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+
+// Persiste le PDF source d'un plan (data URL) sous `${chantierId}|${base}`. Ne rejette jamais.
+export async function setPlanPdf(key, dataUrl) {
+  if (!key || typeof dataUrl !== 'string' || !dataUrl) return;
+  const db = await openDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(PDF_STORE, 'readwrite');
+      tx.objectStore(PDF_STORE).put(dataUrl, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
 // Poids approximatif du cache plans (vignettes + HD), en octets. Les valeurs sont des
 // data URL (chaînes) → longueur ≈ octets. Sert à l'affichage dans les Paramètres.
 export async function estimatePlanCacheBytes() {
@@ -122,8 +157,8 @@ export async function estimatePlanCacheBytes() {
       req.onerror   = () => resolve(0);
     } catch { resolve(0); }
   });
-  const [a, b] = await Promise.all([sumStore(STORE), sumStore(HD_STORE)]);
-  return a + b;
+  const [a, b, c] = await Promise.all([sumStore(STORE), sumStore(HD_STORE), sumStore(PDF_STORE)]);
+  return a + b + c;
 }
 
 // Poids du cache plans (vignettes + HD) pour un SOUS-ENSEMBLE d'ids — permet d'afficher
@@ -158,9 +193,10 @@ export async function clearPlanCache() {
   if (!db) return;
   return new Promise((resolve) => {
     try {
-      const tx = db.transaction([STORE, HD_STORE], 'readwrite');
+      const tx = db.transaction([STORE, HD_STORE, PDF_STORE], 'readwrite');
       tx.objectStore(STORE).clear();
       tx.objectStore(HD_STORE).clear();
+      tx.objectStore(PDF_STORE).clear();
       tx.oncomplete = () => resolve();
       tx.onerror    = () => resolve();
       tx.onabort    = () => resolve();
