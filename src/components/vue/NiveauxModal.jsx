@@ -428,18 +428,19 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   // ── LOUPE VECTORIELLE : à la fin d'un geste, re-rend la zone visible depuis le PDF source
   //    à la résolution réelle du zoom → nette « comme le PDF » (mobile compris). Ne s'active
   //    qu'au zoom fort et hors rotation (le repère pivoté fausserait le placement). ─────────
+  // Paliers de zoom : on ne re-rend qu'en CHANGEANT de palier (pas à chaque micro-zoom) → une
+  // seule page nette par palier, mise en cache. Se balader (pan) ne re-rend JAMAIS.
+  const VEC_TIERS = [1.5, 2.5, 4, 6.5, 10, 16];
   const renderVec = async () => {
     const box = boxRef.current, inner = innerRef.current;
     if (!box || !inner || !getPdf) { setVec(null); return; }
-    const { z, x, y } = tRef.current;
-    // S'active dès qu'on zoome un peu au-delà de la vue « page entière ». Désactivé en rotation
-    // manuelle (le repère pivoté fausse le placement en coords contenu).
+    const { z, y } = tRef.current;
     if (rotRef.current || z < Math.max(1.1, minZRef.current * 1.2)) { setVec(null); vecCache.current = {}; return; }
-    const vw = box.clientWidth, vh = box.clientHeight;
-    const pageW = inner.clientWidth || vw;
-    const cx0 = -x / z, cy0 = -y / z, cw = vw / z, ch = vh / z; // fenêtre visible en coords contenu
+    const vh = box.clientHeight;
+    const pageW = inner.clientWidth || box.clientWidth;
+    const cy0 = -y / z, ch = vh / z;
     const cyCenter = cy0 + ch / 2;
-    // Page sous le centre du viewport ; repli sur la 1re page visible si le centre tombe dans une marge.
+    // Page sous le centre du viewport ; repli sur la 1re page visible.
     let focus = null;
     for (const p of (group.pages || [])) {
       const el = pageEls.current.get(p.id); if (!el) continue;
@@ -452,36 +453,27 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
       if (top < cy0 + ch && top + h > cy0) { focus = { p, top, h }; break; }
     }
     if (!focus || focus.h <= 0) { setVec(null); return; }
-    // Rectangle VISIBLE en fractions de la page focalisée (clampé 0..1).
-    const vfx = Math.min(1, Math.max(0, cx0 / pageW));
-    const vfy = Math.min(1, Math.max(0, (cy0 - focus.top) / focus.h));
-    const vfw = Math.min(1 - vfx, cw / pageW);
-    const vfh = Math.min(1 - vfy, ch / focus.h);
-    if (vfw <= 0.001 || vfh <= 0.001) { setVec(null); return; }
-    const zR = Math.round(z * 2) / 2; // palier de zoom
-    const c = vecCache.current;
-    // Déjà couvert (même page, même palier de zoom, zone visible DANS la région rendue) → RIEN
-    // à faire : l'overlay est dans inner, il suit déjà le transform (pan/zoom = zéro re-rendu).
-    if (c.img && c.pageId === focus.p.id && c.zR === zR &&
-        vfx >= c.fx && vfy >= c.fy && vfx + vfw <= c.fx + c.fw && vfy + vfh <= c.fy + c.fh) return;
-    // Nouvelle région = visible + marge (léger dépassement → pans courts sans re-rendu).
-    const mx = Math.min(vfw * 0.5, 0.12), my = Math.min(vfh * 0.5, 0.12);
-    const fx = Math.max(0, vfx - mx), fy = Math.max(0, vfy - my);
-    const fw = Math.min(1 - fx, vfw + 2 * mx), fh = Math.min(1 - fy, vfh + 2 * my);
+    // La PAGE ENTIÈRE focalisée est rendue une fois par (page + palier de zoom) et mise en
+    // cache → l'overlay (dans inner) couvre toute la page : PAN = zéro re-rendu, 100% fluide.
+    const tier = VEC_TIERS.find(t => z <= t) || 16;
+    const key = `${focus.p.id}|${tier}`;
+    const pos = { key, left: 0, top: focus.top, w: pageW, h: focus.h };
+    if (vecCache.current.key === key && vecCache.current.img) {
+      if (!vec || vec.key !== key) setVec({ img: vecCache.current.img, ...pos });
+      return;
+    }
     const req = ++vecReq.current;
     let pdf = null;
     try { pdf = await getPdf(); } catch { pdf = null; }
     if (!pdf || req !== vecReq.current) { if (!pdf) setVec(null); return; }
-    // Résolution = taille écran de la région × densité (cap modéré → rendu RAPIDE, pas de gel).
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const outWidth = Math.min(2600, Math.max(700, Math.round(fw * pageW * z * dpr)));
-    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx, fy, fw, fh, outWidth });
+    const outWidth = Math.min(4000, Math.max(1200, Math.round(pageW * tier * dpr)));
+    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx: 0, fy: 0, fw: 1, fh: 1, outWidth });
     if (!img || req !== vecReq.current) return;
-    vecCache.current = { pageId: focus.p.id, zR, fx, fy, fw, fh, img };
-    // Coords CONTENU (l'overlay est DANS inner → suit translate+scale de lui-même).
-    setVec({ img, left: fx * pageW, top: focus.top + fy * focus.h, w: fw * pageW, h: fh * focus.h });
+    vecCache.current = { key, img };
+    setVec({ img, ...pos }); // coords CONTENU → suit translate+scale de lui-même
   };
-  useEffect(() => { const id = setTimeout(renderVec, 140); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const id = setTimeout(renderVec, 120); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
