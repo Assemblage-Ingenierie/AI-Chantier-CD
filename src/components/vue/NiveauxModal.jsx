@@ -334,26 +334,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   // du raster (qui reste le repli). { img, left, top, w, h } en pixels ÉCRAN (coords du box).
   const [vec, setVec] = useState(null);
   const vecReq = useRef(0);
-  // ANDROID (et tout tactile NON-iOS) : le moteur PDF du navigateur rend le PDF source dans
-  // un <iframe> IN-APP → qualité VECTORIELLE parfaite au zoom, comme sur PC (retour Thomas :
-  // la loupe restait « un chouille » floue). iOS bride le PDF en iframe → il garde la loupe.
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [pdfState, setPdfState] = useState('idle'); // idle | loading | ready | none — DIAG temporaire visible
-  useEffect(() => {
-    if (_IS_IOS || !getPdf) { setPdfState('none'); return; }
-    let url = null, cancelled = false;
-    setPdfState('loading');
-    (async () => {
-      let pdf = null;
-      try { pdf = await getPdf(); } catch { pdf = null; }
-      if (cancelled) return;
-      if (!pdf) { setPdfState('none'); return; }
-      url = pdfToBlobUrl(pdf);
-      if (url && !cancelled) { const pg = (group.pages || [])[0]?._page || 1; setPdfUrl(`${url}#page=${pg}`); setPdfState('ready'); }
-      else { setPdfState('none'); if (url) { URL.revokeObjectURL(url); url = null; } }
-    })();
-    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
-  }, [group]); // eslint-disable-line react-hooks/exhaustive-deps
+  const vecCache = useRef({ key: null, img: null }); // page rendue en cache (clé = page|palier de zoom)
 
   // ── ROTATION MANUELLE (le téléphone peut bloquer la rotation auto) ─────────────
   // Bouton ↻ : la visionneuse entière pivote de 90° (astuce 100vh×100vw centrée).
@@ -451,36 +432,45 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
     const box = boxRef.current, inner = innerRef.current;
     if (!box || !inner || !getPdf) { setVec(null); return; }
     const { z, x, y } = tRef.current;
-    if (rotRef.current || z < Math.max(1.4, minZRef.current * 1.6)) { setVec(null); return; }
-    const req = ++vecReq.current;
-    let pdf = null;
-    try { pdf = await getPdf(); } catch { pdf = null; }
-    if (!pdf) { setVec(null); return; }
-    if (req !== vecReq.current) return;
+    // S'active dès qu'on zoome un peu au-delà de la vue « page entière » (retour Thomas : ça
+    // restait pixelisé). Désactivé en rotation manuelle (le repère pivoté fausse le placement).
+    if (rotRef.current || z < Math.max(1.1, minZRef.current * 1.2)) { setVec(null); return; }
     const vw = box.clientWidth, vh = box.clientHeight;
     const pageW = inner.clientWidth || vw;
-    const cx0 = -x / z, cy0 = -y / z;              // origine visible en coords contenu
-    const cw = vw / z, ch = vh / z;
+    const cy0 = -y / z, ch = vh / z;
     const cyCenter = cy0 + ch / 2;
-    let focus = null;                              // page sous le centre du viewport
+    // Page sous le centre du viewport ; repli sur la 1re page visible si le centre tombe dans une marge.
+    let focus = null;
     for (const p of (group.pages || [])) {
       const el = pageEls.current.get(p.id); if (!el) continue;
       const top = el.offsetTop, h = el.offsetHeight;
       if (cyCenter >= top && cyCenter <= top + h) { focus = { p, top, h }; break; }
     }
+    if (!focus) for (const p of (group.pages || [])) {
+      const el = pageEls.current.get(p.id); if (!el) continue;
+      const top = el.offsetTop, h = el.offsetHeight;
+      if (top < cy0 + ch && top + h > cy0) { focus = { p, top, h }; break; }
+    }
     if (!focus || focus.h <= 0) { setVec(null); return; }
-    const fx = Math.min(1, Math.max(0, cx0 / pageW));
-    const fw = Math.min(1 - fx, cw / pageW);
-    const fy = Math.min(1, Math.max(0, (cy0 - focus.top) / focus.h));
-    const fh = Math.min(1 - fy, ch / focus.h);
-    if (fw <= 0.001 || fh <= 0.001) { setVec(null); return; }
+    const pos = { left: x, top: y + focus.top * z, w: pageW * z, h: focus.h * z };
+    // La PAGE ENTIÈRE est re-rendue depuis le PDF (fx=0..fw=1) → placement trivialement correct
+    // sur toutes les pages (le calcul de région fractionnaire, fragile en multi-pages, est
+    // supprimé). Cache par (page + palier de zoom) : le pan ne fait que repositionner l'image.
+    const zR = Math.round(z * 4) / 4;
+    const key = `${focus.p.id}|${zR}`;
+    if (vecCache.current.key === key && vecCache.current.img) { setVec({ img: vecCache.current.img, ...pos }); return; }
+    const req = ++vecReq.current;
+    let pdf = null;
+    try { pdf = await getPdf(); } catch { pdf = null; }
+    if (!pdf || req !== vecReq.current) { if (!pdf) setVec(null); return; }
     const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const outWidth = Math.min(4096, Math.max(800, Math.round(fw * pageW * z * dpr)));
-    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx, fy, fw, fh, outWidth });
+    const outWidth = Math.min(_IS_IOS ? 3000 : 6000, Math.max(1000, Math.round(pageW * z * dpr)));
+    const img = await renderPdfRegion(pdf, focus.p._page || 1, { fx: 0, fy: 0, fw: 1, fh: 1, outWidth });
     if (!img || req !== vecReq.current) return;
-    setVec({ img, left: x + fx * pageW * z, top: y + (focus.top + fy * focus.h) * z, w: fw * pageW * z, h: fh * focus.h * z });
+    vecCache.current = { key, img };
+    setVec({ img, ...pos });
   };
-  useEffect(() => { const id = setTimeout(renderVec, 130); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const id = setTimeout(renderVec, 120); return () => clearTimeout(id); }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clampT = (nt) => {
     const box = boxRef.current, inner = innerRef.current;
@@ -576,32 +566,8 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
     }
   };
 
-  // Android/non-iOS + PDF source → visionneuse PDF NATIVE plein écran (vectoriel parfait au zoom).
-  if (pdfUrl) return (
-    <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
-      <button onClick={onClose} aria-label="Fermer"
-        style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
-          width:48, height:48, borderRadius:14, border:'none', background:'rgba(20,20,20,0.55)',
-          color:'rgba(255,255,255,0.9)', display:'flex', alignItems:'center', justifyContent:'center',
-          cursor:'pointer', zIndex:5, backdropFilter:'blur(2px)' }}>
-        <Ic n="x" s={22}/>
-      </button>
-      <iframe src={pdfUrl} title="Plan"
-        onError={() => { setPdfUrl(null); setPdfState('none'); }}
-        style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', background:'#111' }}/>
-    </div>
-  );
-
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:80,overflow:'hidden' }}>
-      {/* DIAG TEMPORAIRE (retour Thomas) : dit si le PDF source vectoriel a été trouvé. */}
-      {!_IS_IOS && pdfState !== 'ready' && (
-        <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', left:12, zIndex:6,
-          background: pdfState === 'none' ? 'rgba(180,30,30,0.9)' : 'rgba(20,20,20,0.7)', color:'white',
-          fontSize:11, fontWeight:700, borderRadius:8, padding:'5px 9px', backdropFilter:'blur(2px)' }}>
-          {pdfState === 'loading' ? 'DIAG : PDF source… (chargement)' : 'DIAG : PDF source INTROUVABLE → image seule'}
-        </div>
-      )}
       {/* Interface MINIMALE : croix + rotation flottantes, rien d'autre. */}
       <button onClick={onClose} aria-label="Fermer"
         style={{ position:'absolute', top:'calc(env(safe-area-inset-top, 0px) + 10px)', right:12,
