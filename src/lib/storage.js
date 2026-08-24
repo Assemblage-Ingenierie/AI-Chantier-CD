@@ -852,13 +852,24 @@ export async function fetchPlanPdfByBase(chantierId, base) {
 // URL SIGNÉE https du PDF source (sans le télécharger) — pour l'ouvrir dans le lecteur PDF
 // NATIF du téléphone (Android/iOS affichent une URL PDF https en plein écran, 100% fluide et
 // vectoriel, comme un fichier téléchargé). Renvoie null si aucun PDF stocké pour cette base.
+//
+// STABILITÉ = FLUIDITÉ : on mémorise l'URL par (chantierId|base) et on renvoie TOUJOURS la même
+// pendant la session. Avant, chaque ouverture générait une URL à jeton différent → le navigateur
+// re-téléchargeait tout le PDF à chaque fois (lourd, saccadé). Avec une URL stable, le cache HTTP
+// du navigateur ressert le PDF instantanément dès la 2e ouverture → navigation fluide sur site.
+const _signedUrlCache = new Map(); // `${chantierId}|${base}` → signedUrl
 export async function fetchPlanPdfSignedUrl(chantierId, base) {
   if (!chantierId || !base) return null;
+  const key = `${chantierId}|${base}`;
+  const hit = _signedUrlCache.get(key);
+  if (typeof hit === 'string') return hit; // même URL → cache navigateur réutilisé
   try {
     const sb = await getSupabase();
     const path = `plans/${chantierId}/pdf/${slugPlanBase(base)}.pdf`;
     const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
-    return signed?.signedUrl || null;
+    const url = signed?.signedUrl || null;
+    if (url) _signedUrlCache.set(key, url);
+    return url;
   } catch { return null; }
 }
 
