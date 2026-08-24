@@ -879,7 +879,10 @@ export async function fetchPlanPdfSignedUrl(chantierId, base) {
 export async function downloadPlansOffline(chantierId, bases, onProgress) {
   let done = 0, ok = 0;
   for (const base of (bases || [])) {
-    try { const pdf = await fetchPlanPdfByBase(chantierId, base); if (typeof pdf === 'string') ok++; } catch { /* réseau */ }
+    try {
+      const pdf = await fetchPlanPdfByBase(chantierId, base); // → IndexedDB
+      if (typeof pdf === 'string') { ok++; await ensurePlanPdfServed(chantierId, base); } // → cache SW (lecteur natif hors ligne)
+    } catch { /* réseau */ }
     onProgress?.(++done, bases.length);
   }
   return ok;
@@ -892,6 +895,44 @@ export async function countOfflinePlans(chantierId, bases) {
     try { const v = await getPlanPdf(`${chantierId}|${base}`); if (typeof v === 'string') n++; } catch { /* ignore */ }
   }
   return n;
+}
+
+// ── PDF servi par le SERVICE WORKER (URL interne /planpdf/…) → lecteur PDF NATIF même HORS
+//    LIGNE (fluide + net). Le SW sert le contenu du cache 'plan-pdfs' ; ces fonctions le
+//    remplissent depuis IndexedDB (hors ligne) ou le réseau (URL signée). ─────────────────
+const PLAN_PDF_CACHE = 'plan-pdfs';
+function planPdfPath(chantierId, base) {
+  return `/planpdf/${encodeURIComponent(chantierId)}/${encodeURIComponent(base)}.pdf`;
+}
+// URL interne SI le PDF est déjà dans le cache SW (sans rien télécharger), sinon null.
+export async function planPdfCachedUrl(chantierId, base) {
+  if (typeof caches === 'undefined' || !chantierId || !base) return null;
+  try {
+    const path = planPdfPath(chantierId, base);
+    const c = await caches.open(PLAN_PDF_CACHE);
+    return (await c.match(path)) ? path : null;
+  } catch { return null; }
+}
+// Garantit que le PDF est dans le cache SW et renvoie son URL interne (ou null). Octets :
+// IndexedDB (hors ligne) → réseau (URL signée). Sert le lecteur natif hors ligne.
+export async function ensurePlanPdfServed(chantierId, base) {
+  if (typeof caches === 'undefined' || !chantierId || !base) return null;
+  const path = planPdfPath(chantierId, base);
+  try {
+    const cache = await caches.open(PLAN_PDF_CACHE);
+    if (await cache.match(path)) return path;
+    let blob = null;
+    const local = await getPlanPdf(`${chantierId}|${base}`); // IndexedDB (data URL) → hors ligne
+    if (typeof local === 'string' && local.startsWith('data:application/pdf')) {
+      blob = await (await fetch(local)).blob(); // data URL = local, pas de réseau
+    } else {
+      const su = await fetchPlanPdfSignedUrl(chantierId, base); // réseau
+      if (su) { const r = await fetch(su); if (r.ok) blob = await r.blob(); }
+    }
+    if (!blob) return null;
+    await cache.put(path, new Response(blob, { headers: { 'Content-Type': 'application/pdf' } }));
+    return path;
+  } catch { return null; }
 }
 
 async function uploadPlanHd(sb, chantierId, planId, base64) {

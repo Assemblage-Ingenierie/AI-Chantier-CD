@@ -5,7 +5,7 @@ import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUti
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { ConsultViewer } from './NiveauxModal.jsx';
-import { fetchPlanPdfSignedUrl } from '../../lib/storage.js';
+import { fetchPlanPdfSignedUrl, planPdfCachedUrl, ensurePlanPdfServed } from '../../lib/storage.js';
 
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N » → base = nom sans le suffixe.
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
@@ -229,10 +229,12 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
       let win = null;
       try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
       (async () => {
-        const su = await fetchPlanPdfSignedUrl(projetId, base);
-        if (su && win && !win.closed) { win.location.href = m ? `${su}#page=${m[1]}` : su; return; }
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        let nativeUrl = await planPdfCachedUrl(projetId, base);
+        if (!nativeUrl) nativeUrl = offline ? await ensurePlanPdfServed(projetId, base) : await fetchPlanPdfSignedUrl(projetId, base);
+        if (nativeUrl && win && !win.closed) { win.location.href = m ? `${nativeUrl}#page=${m[1]}` : nativeUrl; return; }
         if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
-        setConsultGroup(group); // hors ligne / pas d'URL → visionneuse in-app
+        setConsultGroup(group); // repli in-app
       })();
       return;
     }

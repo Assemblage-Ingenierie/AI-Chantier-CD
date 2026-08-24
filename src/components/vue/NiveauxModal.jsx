@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, fetchPlanPdfSignedUrl, downloadPlansOffline, countOfflinePlans, savePlanHdNow } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, fetchPlanPdfSignedUrl, planPdfCachedUrl, ensurePlanPdfServed, downloadPlansOffline, countOfflinePlans, savePlanHdNow } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -682,25 +682,25 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     // par le pop-up natif sur mobile (il sortait de la PWA / était bloqué → repli incohérent).
     // PC inchangé (« parfait ») : pop-up PDF natif, repli visionneuse in-app (iframe vectoriel).
     const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
-    // HORS LIGNE : pas de réseau → directement la visionneuse in-app (lit le PDF stocké en
-    // local), sans ouvrir d'onglet vide inutile.
-    if (coarse && typeof navigator !== 'undefined' && navigator.onLine === false) { setConsultGroup(g); return; }
     // On pré-ouvre l'onglet SYNCHRONE dans le geste (sinon iOS/Android bloquent le pop-up après await).
     let win = null;
     try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
     (async () => {
-      // MOBILE : lecteur PDF NATIF via URL signée https → 100% fluide et net comme le fichier
-      // téléchargé (choix Thomas). L'iframe/blob provoquait un téléchargement ; une URL https
-      // s'affiche inline dans le lecteur natif. Repli visionneuse in-app si hors ligne.
+      // MOBILE : lecteur PDF NATIF (fluide + net). URL locale servie par le service worker si le
+      // plan est déjà en cache (rapide + MARCHE HORS LIGNE) ; sinon en ligne = URL signée https
+      // (streaming natif) ; hors ligne non téléchargé = on tente de servir depuis IndexedDB.
+      // Repli visionneuse in-app en tout dernier recours.
       if (coarse) {
-        const su = await fetchPlanPdfSignedUrl(projetId, g.nom);
-        if (su && win && !win.closed) {
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        let nativeUrl = await planPdfCachedUrl(projetId, g.nom);
+        if (!nativeUrl) nativeUrl = offline ? await ensurePlanPdfServed(projetId, g.nom) : await fetchPlanPdfSignedUrl(projetId, g.nom);
+        if (nativeUrl && win && !win.closed) {
           const pg = (g.pages || [])[0]?._page;
-          win.location.href = pg ? `${su}#page=${pg}` : su;
+          win.location.href = pg ? `${nativeUrl}#page=${pg}` : nativeUrl;
           return;
         }
         if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
-        setConsultGroup(g); // hors ligne / pas d'URL → visionneuse in-app (repli)
+        setConsultGroup(g); // hors ligne non téléchargé / pas d'URL → visionneuse in-app (repli)
         return;
       }
       // PC (inchangé, « parfait ») : PDF natif en pop-up via blob, repli visionneuse in-app.

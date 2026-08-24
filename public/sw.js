@@ -1,4 +1,5 @@
-const CACHE = 'aichantier-v6';
+const CACHE = 'aichantier-v7';
+const PLAN_PDF_CACHE = 'plan-pdfs'; // PDF de plans servis en local (mode hors ligne + lecteur natif)
 
 // Ressources connues à pré-cacher au premier install
 const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
@@ -18,7 +19,7 @@ self.addEventListener('message', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== PLAN_PDF_CACHE).map(k => caches.delete(k))))
       .then(() => clients.claim())
   );
 });
@@ -32,6 +33,16 @@ self.addEventListener('fetch', e => {
   const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (!isSameOrigin && !isFont) return;
   if (url.pathname.startsWith('/api/')) return;
+
+  // PDF de plans (URL interne /planpdf/…) : servis depuis le cache dédié → le lecteur PDF
+  // NATIF du téléphone affiche le plan MÊME HORS LIGNE (fluide + net, pas de rendu maison).
+  // L'app remplit ce cache (bouton « Hors ligne » / consultation). Cache-only : jamais de réseau.
+  if (url.pathname.startsWith('/planpdf/')) {
+    e.respondWith(
+      caches.open(PLAN_PDF_CACHE).then(c => c.match(e.request)).then(r => r || new Response('', { status: 404 }))
+    );
+    return;
+  }
 
   // Assets immutables (hashes Vite) → cache-first : si en cache, on sert directement
   if (url.pathname.startsWith('/assets/')) {
