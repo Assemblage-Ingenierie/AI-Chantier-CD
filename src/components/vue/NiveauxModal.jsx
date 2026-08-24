@@ -654,6 +654,12 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // monté…). On pré-ouvre l'onglet de façon SYNCHRONE dans le geste — sinon iOS bloque le pop-up
   // après l'await du fetch. (Demande Thomas : « le PDF natif est super fluide, garder que le top ».)
   const openPlanConsult = (g) => {
+    // MOBILE : visionneuse IN-APP (loupe vectorielle) — exactement comme le plan annoté, qui
+    // est net (retour Thomas : la consultation multi-pages pixelisait à mort). On NE passe PLUS
+    // par le pop-up natif sur mobile (il sortait de la PWA / était bloqué → repli incohérent).
+    // PC inchangé (« parfait ») : pop-up PDF natif, repli visionneuse in-app (iframe vectoriel).
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+    if (coarse) { setConsultGroup(g); return; }
     let win = null;
     try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
     (async () => {
