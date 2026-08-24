@@ -849,6 +849,19 @@ export async function fetchPlanPdfByBase(chantierId, base) {
   return promise;
 }
 
+// URL SIGNÉE https du PDF source (sans le télécharger) — pour l'ouvrir dans le lecteur PDF
+// NATIF du téléphone (Android/iOS affichent une URL PDF https en plein écran, 100% fluide et
+// vectoriel, comme un fichier téléchargé). Renvoie null si aucun PDF stocké pour cette base.
+export async function fetchPlanPdfSignedUrl(chantierId, base) {
+  if (!chantierId || !base) return null;
+  try {
+    const sb = await getSupabase();
+    const path = `plans/${chantierId}/pdf/${slugPlanBase(base)}.pdf`;
+    const { data: signed } = await sb.storage.from('photos').createSignedUrl(path, SIGNED_URL_TTL);
+    return signed?.signedUrl || null;
+  } catch { return null; }
+}
+
 async function uploadPlanHd(sb, chantierId, planId, base64) {
   const path = `plans/${chantierId}/${planId}.webp`;
   // Une tentative + un retry : l'upload HD est la source de qualité du rapport ; un échec

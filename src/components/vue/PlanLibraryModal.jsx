@@ -5,6 +5,7 @@ import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUti
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { ConsultViewer } from './NiveauxModal.jsx';
+import { fetchPlanPdfSignedUrl } from '../../lib/storage.js';
 
 // Pages issues d'un import PDF : nommées « NomDuPdf — Page N » → base = nom sans le suffixe.
 const PDF_PAGE_RE = /\s*—\s*Page\s*(\d+)\s*$/i;
@@ -221,10 +222,21 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
   const openLibraryPlan = (pl) => {
     const m = PDF_PAGE_RE.exec(pl.nom || '');
     const base = (pl.nom || '').replace(PDF_PAGE_RE, '').trim() || (pl.nom || 'Plan');
-    setConsultGroup({
-      nom: base,
-      pages: [{ id: pl.id, bg: pl.bg, _page: m ? Number(m[1]) : 1, data: pl.data ?? null }],
-    });
+    const group = { nom: base, pages: [{ id: pl.id, bg: pl.bg, _page: m ? Number(m[1]) : 1, data: pl.data ?? null }] };
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
+    // MOBILE : lecteur PDF NATIF via URL signée https (100% fluide, choix Thomas) ; repli in-app.
+    if (coarse && projetId) {
+      let win = null;
+      try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
+      (async () => {
+        const su = await fetchPlanPdfSignedUrl(projetId, base);
+        if (su && win && !win.closed) { win.location.href = m ? `${su}#page=${m[1]}` : su; return; }
+        if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
+        setConsultGroup(group); // hors ligne / pas d'URL → visionneuse in-app
+      })();
+      return;
+    }
+    setConsultGroup(group); // PC : visionneuse in-app (iframe vectoriel, « parfait »)
   };
 
   const handleRepairFile = e => {

@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import EditTitle from '../ui/EditTitle.jsx';
 import { renderPdfPage, renderPdfPageHQ, renderPdfRegion } from '../../lib/pdfUtils.js';
-import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, savePlanHdNow } from '../../lib/storage.js';
+import { fetchPlanHdDataUrl, fetchPlanData, fetchPlanPdfByBase, fetchPlanPdfSignedUrl, savePlanHdNow } from '../../lib/storage.js';
 import { setPlanHd } from '../../lib/planThumbCache.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 
@@ -679,11 +679,26 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     // est net (retour Thomas : la consultation multi-pages pixelisait à mort). On NE passe PLUS
     // par le pop-up natif sur mobile (il sortait de la PWA / était bloqué → repli incohérent).
     // PC inchangé (« parfait ») : pop-up PDF natif, repli visionneuse in-app (iframe vectoriel).
-    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
-    if (coarse) { setConsultGroup(g); return; }
+    // On pré-ouvre l'onglet SYNCHRONE dans le geste (sinon iOS/Android bloquent le pop-up après await).
     let win = null;
     try { win = window.open('', '_blank'); } catch { /* pop-up bloqué */ }
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)')?.matches;
     (async () => {
+      // MOBILE : lecteur PDF NATIF via URL signée https → 100% fluide et net comme le fichier
+      // téléchargé (choix Thomas). L'iframe/blob provoquait un téléchargement ; une URL https
+      // s'affiche inline dans le lecteur natif. Repli visionneuse in-app si hors ligne.
+      if (coarse) {
+        const su = await fetchPlanPdfSignedUrl(projetId, g.nom);
+        if (su && win && !win.closed) {
+          const pg = (g.pages || [])[0]?._page;
+          win.location.href = pg ? `${su}#page=${pg}` : su;
+          return;
+        }
+        if (win && !win.closed) { try { win.close(); } catch { /* ignore */ } }
+        setConsultGroup(g); // hors ligne / pas d'URL → visionneuse in-app (repli)
+        return;
+      }
+      // PC (inchangé, « parfait ») : PDF natif en pop-up via blob, repli visionneuse in-app.
       const pdf = await getGroupSourcePdf(g, projetId);
       const url = pdf ? pdfToBlobUrl(pdf) : null;
       if (url && win && !win.closed) {
