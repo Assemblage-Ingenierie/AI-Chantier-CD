@@ -92,9 +92,13 @@ function renderHtml(html) {
         const wAttr = parseFloat(node.getAttribute('data-w'));
         const width = Number.isFinite(wAttr) ? `${Math.max(10, Math.min(100, wAttr))}%` : '60%';
         const justify = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+        const cap = (node.getAttribute('data-cap') || '').trim(); // légende sous l'image
         blocks.push({ items: [
           <span key={k()} style={{ display: 'flex', justifyContent: justify, margin: '6px 0' }}>
-            <img src={src} alt="" style={{ width, maxWidth: '100%', height: 'auto', borderRadius: 4, display: 'block' }}/>
+            <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', width, maxWidth: '100%' }}>
+              <img src={src} alt="" style={{ width: '100%', height: 'auto', borderRadius: 4, display: 'block' }}/>
+              {cap && <span style={{ marginTop: 4, fontSize: '0.85em', fontStyle: 'italic', color: '#6B7280', textAlign: 'center', lineHeight: 1.3 }}>{cap}</span>}
+            </span>
           </span>
         ], isBullet: false });
       }

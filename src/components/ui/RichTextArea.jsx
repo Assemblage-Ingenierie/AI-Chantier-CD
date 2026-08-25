@@ -126,6 +126,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   const [selImg, setSelImg] = useState(null);   // <img> collée sélectionnée (barre flottante)
   const [imgBox, setImgBox] = useState(null);   // position de la barre flottante {top,left,width}
   const [selImgW, setSelImgW] = useState(60);   // largeur % live de l'image sélectionnée (curseur fluide)
+  const [selImgCap, setSelImgCap] = useState(''); // légende (data-cap) de l'image sélectionnée
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -256,6 +257,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (e.target?.tagName === 'IMG' && e.target.getAttribute('data-cimg') != null) {
       setSelImg(e.target);
       setSelImgW(parseFloat(e.target.getAttribute('data-w')) || 60);
+      setSelImgCap(e.target.getAttribute('data-cap') || '');
       refreshImgBox(e.target);
     } else if (selImg) {
       setSelImg(null);
@@ -275,6 +277,14 @@ const RichTextArea = forwardRef(function RichTextArea(
   const resizeCommit = () => { if (selImg) handleInput(); };
   const deleteImg = () => { if (!selImg) return; const next = selImg.nextSibling; if (next && next.tagName === 'BR') next.remove(); selImg.remove(); setSelImg(null); handleInput(); };
   const annotateImg = () => { if (!selImg || !onAnnotateImage) return; const p = selImg.getAttribute('data-cimg'); setSelImg(null); onAnnotateImage(p); };
+  // Légende de l'image (data-cap) : stockée sur l'<img>, rendue sous l'image dans l'aperçu.
+  const setCaption = (v) => {
+    setSelImgCap(v);
+    if (!selImg) return;
+    if (v && v.trim()) selImg.setAttribute('data-cap', v);
+    else selImg.removeAttribute('data-cap');
+    handleInput();
+  };
 
   // Glisser-déposer pour DÉPLACER une image collée dans le texte. On n'intercepte QUE le drag
   // d'une de nos images (data-cimg) ; le glissé de texte natif de contentEditable reste intact.
@@ -330,26 +340,33 @@ const RichTextArea = forwardRef(function RichTextArea(
       {/* Barre flottante d'une image collée sélectionnée */}
       {selImg && imgBox && (
         <div style={{ position:'absolute', top:imgBox.top, left:imgBox.left, zIndex:30,
-          display:'flex', alignItems:'center', gap:8, background:'#1f1f1f', color:'#fff',
-          borderRadius:6, padding:'5px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, whiteSpace:'nowrap' }}>
-          {/* Taille — curseur fin (pas de 1 %), valeur affichée, persisté au relâché */}
-          <span style={{ opacity:0.65, fontWeight:600 }}>Taille</span>
-          <input type="range" min="15" max="100" step="1" value={selImgW}
-            onChange={e => resizeLive(parseFloat(e.target.value))}
-            onPointerUp={resizeCommit} onMouseUp={resizeCommit} onKeyUp={resizeCommit}
-            style={{ width:130, accentColor:'#E30513', cursor:'pointer' }}/>
-          <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selImgW)}%</span>
-          <span style={{ width:1, height:18, background:'#444' }}/>
-          {onAnnotateImage && (
-            <button title="Annoter l'image" onClick={annotateImg}
-              style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
-              ✎ Annoter
+          display:'flex', flexDirection:'column', gap:6, background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'6px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(320px, 90vw)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap' }}>
+            {/* Taille — curseur fin (pas de 1 %), valeur affichée, persisté au relâché */}
+            <span style={{ opacity:0.65, fontWeight:600 }}>Taille</span>
+            <input type="range" min="15" max="100" step="1" value={selImgW}
+              onChange={e => resizeLive(parseFloat(e.target.value))}
+              onPointerUp={resizeCommit} onMouseUp={resizeCommit} onKeyUp={resizeCommit}
+              style={{ width:110, accentColor:'#E30513', cursor:'pointer' }}/>
+            <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selImgW)}%</span>
+            <span style={{ width:1, height:18, background:'#444' }}/>
+            {onAnnotateImage && (
+              <button title="Annoter l'image" onClick={annotateImg}
+                style={{ background:'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
+                ✎ Annoter
+              </button>
+            )}
+            <button title="Supprimer l'image" onClick={deleteImg}
+              style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>
+              🗑
             </button>
-          )}
-          <button title="Supprimer l'image" onClick={deleteImg}
-            style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>
-            🗑
-          </button>
+          </div>
+          {/* Légende sous l'image (visible dans l'aperçu du rapport) */}
+          <input type="text" value={selImgCap} onChange={e => setCaption(e.target.value)}
+            placeholder="Légende de l'image (optionnel)…" maxLength={200}
+            style={{ width:'100%', boxSizing:'border-box', background:'#2a2a2a', color:'#fff',
+              border:'1px solid #555', borderRadius:4, padding:'4px 7px', fontSize:11, outline:'none' }}/>
         </div>
       )}
       <div
