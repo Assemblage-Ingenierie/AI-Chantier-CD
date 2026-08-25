@@ -19,9 +19,16 @@ const VXX_DEBUG = typeof window !== 'undefined' && /[?&]vxxdebug=1\b/.test(windo
 // export, ou une photo apparaissant à la fois en récap et en observation, réutilise le résultat.
 const _pdfCompressCache = new Map();
 const _PDF_COMPRESS_CACHE_MAX = 400;
-import { fetchPlanData, fetchPlanHdDataUrl } from '../../lib/storage.js';
+import { fetchPlanData, fetchPlanHdDataUrl, fetchAnnexPdf } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
+import { renderPdfPages } from '../../lib/pdfUtils.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
+
+// Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
+// d'annexe à chaque changement d'onglet serait lent. Clé `${chantierId}|${annexId}`.
+// Largeur bornée = COMPRESSION des annexes (demande Thomas : rester sous 25 Mo par email).
+const _annexImgCache = new Map();
+const ANNEX_PAGE_MAXW = 1400; // ~170 dpi A4 : lisible pour du texte, compact à l'export
 
 function makeIconDataUrl(drawFn) {
   const cv = document.createElement('canvas');
@@ -1991,7 +1998,54 @@ function usePreviewScale(scrollRef) {
 }
 
 // ── Composant principal ─────────────────────────────────────────────────────────────────────────
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+// ── Pages ANNEXES ────────────────────────────────────────────────────────────────────────
+// Page de garde récapitulant les documents joints (demande Thomas : « une page séparative
+// marquée annexe avec le nom des docs pour faire le récap »).
+function AnnexRecapPage({ annexes, projet, pageNum, totalPages }) {
+  return (
+    <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
+      <div style={{ textAlign:'center', marginTop:36 }}>
+        <div style={{ fontSize:9, fontFamily:"'Inter', sans-serif", fontWeight:800, letterSpacing:'0.22em', color:DA.red, textTransform:'uppercase' }}>Documents joints</div>
+        <div style={{ fontSize:30, fontFamily:"'Inter', sans-serif", fontWeight:800, color:'#1a1a1a', margin:'6px 0 0', letterSpacing:'0.04em' }}>ANNEXES</div>
+        <div style={{ width:48, height:3, background:DA.red, borderRadius:2, margin:'12px auto 26px' }}/>
+      </div>
+      <div style={{ maxWidth:440, margin:'0 auto', display:'flex', flexDirection:'column', gap:8 }}>
+        {annexes.map((a, i) => (
+          <div key={a.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', border:`1px solid #E3E7EB`, borderRadius:8, background:'#FAFBFC' }}>
+            <div style={{ width:26, height:26, borderRadius:'50%', background:DA.red, color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, flexShrink:0 }}>{i + 1}</div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#1a1a1a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</div>
+              <div style={{ fontSize:9.5, color:'#8A9199' }}>{Math.max(1, a.pageCount || 1)} page{(a.pageCount || 1) > 1 ? 's' : ''}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </A4Card>
+  );
+}
+
+// Une page d'annexe = une page du PDF joint, rendue en image et contenue dans la page A4.
+function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPages, loading }) {
+  return (
+    <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', fontFamily:"'Open Sans', sans-serif", overflow:'hidden' }}>
+      <div style={{ position:'absolute', left:0, right:0, top:0, bottom:FTR + 4, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }}>
+        {img
+          ? <img src={img} alt="" style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', display:'block', boxShadow:'0 0 0 1px #E3E7EB' }}/>
+          : <div data-print="hide" style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, color:'#B4BBC2' }}>
+              <Ic n="spn" s={22}/><span style={{ fontSize:11 }}>{loading ? "Rendu de l'annexe…" : 'Annexe indisponible'}</span>
+            </div>}
+      </div>
+      <div style={{ position:'absolute', top:PH - FTR - 12, left:MX, fontSize:7, color:'#8A9199' }}>
+        Annexe — {name}{docTotal > 1 ? ` (${docPage}/${docTotal})` : ''}
+      </div>
+      <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
+        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      </div>
+    </div>
+  );
+}
+
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2139,7 +2193,51 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   );
   const coverPageCount = participantChunks.length; // toujours ≥ 1
 
-  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
+  // ── ANNEXES : slots de page connus AVANT le rendu (le nb de pages est en métadonnée) →
+  //    totalPages est correct immédiatement, les images se remplissent en asynchrone. ──────────
+  const annexList = annexes || [];
+  const annexPageList = useMemo(() => {
+    const out = [];
+    annexList.forEach(a => {
+      const pc = Math.max(1, a.pageCount || 1);
+      for (let p = 1; p <= pc; p++) out.push({ annexId: a.id, name: a.name, page: p, pageCount: pc });
+    });
+    return out;
+  }, [annexList]);
+  const annexPageCount = annexList.length ? 1 + annexPageList.length : 0; // 1 = page de garde récap
+  const [annexImages, setAnnexImages] = useState({}); // annexId → [dataURL par page]
+
+  // Rend chaque annexe (PDF → images bornées) une fois, en cache session. Déclenché à
+  // l'affichage du rapport → prêt avant l'export. Largeur bornée = compression (< 25 Mo email).
+  useEffect(() => {
+    if (!annexList.length || !projet.id) return;
+    let cancelled = false;
+    (async () => {
+      for (const a of annexList) {
+        const key = `${projet.id}|${a.id}`;
+        if (_annexImgCache.has(key)) {
+          setAnnexImages(prev => (prev[a.id] ? prev : { ...prev, [a.id]: _annexImgCache.get(key) }));
+          continue;
+        }
+        try {
+          const pdf = await fetchAnnexPdf(projet.id, a.id);
+          if (cancelled) return;
+          if (!pdf) continue;
+          const pc = Math.max(1, a.pageCount || 1);
+          const nums = Array.from({ length: pc }, (_, i) => i + 1);
+          const rendered = await renderPdfPages(pdf, nums, { maxWidth: ANNEX_PAGE_MAXW, quality: 0.7 });
+          if (cancelled) return;
+          const imgs = nums.map(n => rendered.find(r => r.num === n)?.img || null);
+          _annexImgCache.set(key, imgs);
+          setAnnexImages(prev => ({ ...prev, [a.id]: imgs }));
+        } catch { /* annexe ignorée si illisible */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annexList, projet.id]);
+
+  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + annexPageCount;
 
   // Suivi de la page courante via scroll
   useEffect(() => {
@@ -2630,6 +2728,36 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             </React.Fragment>
           );
         })}
+
+        {/* ── ANNEXES : page de garde récap + une page par page de PDF joint ── */}
+        {annexPageCount > 0 && (() => {
+          const base = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
+          return (
+            <React.Fragment key="annexes">
+              {/* Page de garde « Annexes » (récap des noms) */}
+              <PageSepBanner pageNum={base + 1} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <div ref={el => { pageRefs.current[base] = el; }}>
+                <AnnexRecapPage annexes={annexList} projet={projet} pageNum={base + 1} totalPages={totalPages}/>
+              </div>
+              {/* Une page par page de chaque PDF joint */}
+              {annexPageList.map((ap, k) => {
+                const pageNum = base + 2 + k;
+                const pageIdx = base + 1 + k;
+                const img = annexImages[ap.annexId]?.[ap.page - 1] || null;
+                const loading = !annexImages[ap.annexId];
+                return (
+                  <React.Fragment key={`annex-${ap.annexId}-${ap.page}`}>
+                    <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+                    <div ref={el => { pageRefs.current[pageIdx] = el; }}>
+                      <AnnexImagePage img={img} name={ap.name} docPage={ap.page} docTotal={ap.pageCount}
+                        pageNum={pageNum} totalPages={totalPages} loading={loading}/>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </React.Fragment>
+          );
+        })()}
 
         <div style={{ height:24 }}/>
         </div>{/* fin conteneur scalé */}

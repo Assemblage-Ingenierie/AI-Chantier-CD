@@ -144,6 +144,23 @@ export async function setPlanPdf(key, dataUrl) {
   });
 }
 
+// Supprime un PDF source du cache (par clé). Utilisé pour libérer l'espace quand une annexe
+// est retirée. Ne rejette jamais.
+export async function delPlanPdf(key) {
+  if (!key) return;
+  const db = await openDb();
+  if (!db) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(PDF_STORE, 'readwrite');
+      tx.objectStore(PDF_STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
 // Poids approximatif du cache plans (vignettes + HD), en octets. Les valeurs sont des
 // data URL (chaînes) → longueur ≈ octets. Sert à l'affichage dans les Paramètres.
 export async function estimatePlanCacheBytes() {

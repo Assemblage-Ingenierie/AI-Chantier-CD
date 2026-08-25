@@ -3,7 +3,7 @@ import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
-import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf } from './planThumbCache.js';
+import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -935,6 +935,75 @@ export async function ensurePlanPdfServed(chantierId, base) {
   } catch { return null; }
 }
 
+// ── ANNEXES PDF (documents joints au rapport) ────────────────────────────────────────────
+// Comme les PDF de plans : les OCTETS vivent dans Storage (bucket photos) — jamais dans le
+// JSON du projet (localStorage/Supabase resteraient légers). Seules les MÉTADONNÉES
+// (id, nom, pageCount, size) sont stockées sur la visite. Cache IndexedDB + session pour un
+// affichage instantané dans l'aperçu et un ré-export sans re-téléchargement.
+const _annexPdfCache = new Map(); // `${chantierId}|${annexId}` → dataURL | null | Promise
+function annexPath(chantierId, annexId) { return `annexes/${chantierId}/${annexId}.pdf`; }
+function annexCacheKey(chantierId, annexId) { return `annex:${chantierId}|${annexId}`; }
+
+// Upload d'un PDF d'annexe (data URL) → Storage. Cache local IMMÉDIAT (aperçu net + hors ligne).
+export async function uploadAnnexPdf(chantierId, annexId, pdfDataUrl) {
+  if (!chantierId || !annexId || typeof pdfDataUrl !== 'string' || !pdfDataUrl.startsWith('data:application/pdf')) return false;
+  try {
+    const sb = await getSupabase();
+    const path = annexPath(chantierId, annexId);
+    const resp = await fetch(pdfDataUrl);
+    const blob = await resp.blob();
+    const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'application/pdf', upsert: true, cacheControl: '31536000' });
+    if (!error) {
+      const key = `${chantierId}|${annexId}`;
+      _annexPdfCache.set(key, pdfDataUrl);
+      try { setPlanPdf(annexCacheKey(chantierId, annexId), pdfDataUrl); } catch { /* best-effort */ }
+    }
+    return !error;
+  } catch { return false; }
+}
+
+// Récupère le PDF d'une annexe (data URL). Cache session → IndexedDB → Storage (URL signée).
+// Ne mémorise QUE les succès (un upload encore en cours doit pouvoir réussir au prochain essai).
+export async function fetchAnnexPdf(chantierId, annexId) {
+  if (!chantierId || !annexId) return null;
+  const key = `${chantierId}|${annexId}`;
+  const cached = _annexPdfCache.get(key);
+  if (typeof cached === 'string') return cached;
+  const promise = (async () => {
+    try {
+      const local = await getPlanPdf(annexCacheKey(chantierId, annexId));
+      if (typeof local === 'string' && local.startsWith('data:application/pdf')) { _annexPdfCache.set(key, local); return local; }
+    } catch { /* pas de cache local */ }
+    try {
+      const sb = await getSupabase();
+      const { data: signed } = await sb.storage.from('photos').createSignedUrl(annexPath(chantierId, annexId), SIGNED_URL_TTL);
+      if (!signed?.signedUrl) return null;
+      const resp = await fetch(signed.signedUrl);
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
+      if (typeof dataUrl === 'string') {
+        _annexPdfCache.set(key, dataUrl);
+        try { setPlanPdf(annexCacheKey(chantierId, annexId), dataUrl); } catch { /* best-effort */ }
+      }
+      return dataUrl;
+    } catch { return null; }
+  })();
+  return promise;
+}
+
+// Supprime définitivement une annexe : Storage + caches (session + IndexedDB).
+export async function deleteAnnexPdf(chantierId, annexId) {
+  if (!chantierId || !annexId) return;
+  const key = `${chantierId}|${annexId}`;
+  _annexPdfCache.delete(key);
+  try { await delPlanPdf(annexCacheKey(chantierId, annexId)); } catch { /* ignore */ }
+  try {
+    const sb = await getSupabase();
+    await sb.storage.from('photos').remove([annexPath(chantierId, annexId)]);
+  } catch { /* best-effort — la métadonnée est déjà retirée côté projet */ }
+}
+
 async function uploadPlanHd(sb, chantierId, planId, base64) {
   const path = `plans/${chantierId}/${planId}.webp`;
   // Une tentative + un retry : l'upload HD est la source de qualité du rapport ; un échec
@@ -1131,6 +1200,7 @@ async function saveRemote(ps, dirtyIds = null) {
       includeConclusion: v.includeConclusion ?? false,
       conclusion: v.conclusion ?? '',
       conclusionAlign: v.conclusionAlign ?? 'left',
+      annexes: v.annexes ?? [], // métadonnées uniquement (octets PDF dans Storage) — cf. uploadAnnexPdf
     }));
 
     const firstVisit = p.visites?.[0];

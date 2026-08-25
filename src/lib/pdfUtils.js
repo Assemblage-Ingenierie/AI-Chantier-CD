@@ -173,6 +173,25 @@ export function renderPdfPageHQ(pdfData, pageNum) {
   return _renderPage(pdfData, pageNum, 10.0, 3600, 0.85);
 }
 
+// Nombre de pages d'un PDF (data URL) — pour les annexes : slots de page connus AVANT le
+// rendu (aperçu/impression), sans re-parser à chaque re-rendu. Renvoie 0 si illisible.
+export async function getPdfPageCount(pdfData) {
+  try {
+    await ensurePdfJs();
+    if (!window.pdfjsLib || !pdfData) return 0;
+    const buf = pdfDataToBuffer(pdfData);
+    const pdf = await window.pdfjsLib.getDocument({
+      data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
+    }).promise;
+    const n = pdf.numPages || 0;
+    try { pdf.destroy(); } catch { /* ignore */ }
+    return n;
+  } catch (e) {
+    console.warn('getPdfPageCount:', e);
+    return 0;
+  }
+}
+
 // Cache des documents PDF.js parsés (clé = data URL) — parser un gros PDF coûte plusieurs
 // secondes ; la loupe vectorielle le réutilise à chaque re-rendu de région.
 const _docCache = new Map();

@@ -5,6 +5,7 @@ import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 import Annotator from './Annotator.jsx';
+import AnnexesModal from './AnnexesModal.jsx';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 
@@ -87,6 +88,8 @@ export default function RapportTab({ projet, onUpdate }) {
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [editingPlan, setEditingPlan] = useState(null); // { locId, epIdx, bg, paths }
   const [editingPhoto, setEditingPhoto] = useState(null); // { locId, itemId, photo, bg, paths }
+  const [annexesOpen, setAnnexesOpen] = useState(false);
+  const annexes = projet.annexes || [];
   const [panelW, setPanelW] = useState(() => {
     const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
     return saved >= 220 && saved <= 600 ? saved : 300;
@@ -525,6 +528,28 @@ export default function RapportTab({ projet, onUpdate }) {
               </p>
             )}
           </div>
+
+          {/* Annexes PDF — jointes en fin de rapport (page « Annexes » + PDF à la suite) */}
+          <div>
+            <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
+              Annexes
+            </label>
+            <button
+              onClick={() => setAnnexesOpen(true)}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:9, padding:'10px 12px', borderRadius:10,
+                border:`1px solid ${annexes.length ? DA.red : DA.border}`, background: annexes.length ? DA.redL : 'white', cursor:'pointer', textAlign:'left' }}>
+              <Ic n="fil" s={16} color={annexes.length ? DA.red : DA.gray}/>
+              <span style={{ flex:1, minWidth:0 }}>
+                <span style={{ display:'block', fontSize:12.5, fontWeight:700, color: annexes.length ? DA.red : DA.black }}>
+                  {annexes.length ? `${annexes.length} annexe${annexes.length > 1 ? 's' : ''}` : 'Ajouter des annexes'}
+                </span>
+                <span style={{ display:'block', fontSize:10.5, color:DA.grayL, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {annexes.length ? annexes.map(a => a.name).join(', ') : 'PDF joints à la fin (glisser-déposer ou Drive)'}
+                </span>
+              </span>
+              <span style={{ flexShrink:0, color:DA.grayL, fontSize:16 }}>+</span>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -557,6 +582,7 @@ export default function RapportTab({ projet, onUpdate }) {
         includeConclusion={projet.includeConclusion ?? false}
         conclusion={projet.conclusion ?? ''}
         conclusionAlign={projet.conclusionAlign ?? 'left'}
+        annexes={annexes}
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}
         panelOpen={panelOpen}
@@ -629,6 +655,18 @@ export default function RapportTab({ projet, onUpdate }) {
             }
             setEditingPhoto(null);
           }}
+        />
+      )}
+
+      {/* ── Annexes PDF ── */}
+      {annexesOpen && (
+        <AnnexesModal
+          annexes={annexes}
+          projetNom={projet.nom || ''}
+          projetId={projet.id || null}
+          onAdd={(meta) => onUpdate({ annexes: [...(projet.annexes || []), meta] })}
+          onDelete={(id) => onUpdate({ annexes: (projet.annexes || []).filter(a => a.id !== id) })}
+          onClose={() => setAnnexesOpen(false)}
         />
       )}
     </div>
