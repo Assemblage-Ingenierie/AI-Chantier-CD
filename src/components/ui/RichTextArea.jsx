@@ -95,12 +95,15 @@ export function htmlToPlain(html) {
 
 // Applique le style d'affichage d'une image collée à partir de ses attributs data-w / data-align.
 // Image en BLOC sur sa propre ligne (comme le rendu rapport), alignée à gauche/centre/droite.
-// cursor:grab → indique qu'on peut la glisser pour la déplacer dans le texte.
+// cursor:pointer + infobulle → indique qu'on peut CLIQUER dessus pour redimensionner/légender/
+// supprimer (retour Thomas : « je ne savais pas qu'il fallait sélectionner l'image »).
 function applyCommentImgStyle(img) {
   const w = parseFloat(img.getAttribute('data-w')) || 60;
   const align = img.getAttribute('data-align') || 'center';
   const margin = align === 'left' ? '8px auto 8px 0' : align === 'right' ? '8px 0 8px auto' : '8px auto';
-  img.style.cssText = `width:${Math.max(15, Math.min(100, w))}%;max-width:100%;height:auto;display:block;margin:${margin};border-radius:4px;cursor:grab;`;
+  const uploading = img.getAttribute('data-uploading') === '1';
+  img.style.cssText = `width:${Math.max(15, Math.min(100, w))}%;max-width:100%;height:auto;display:block;margin:${margin};border-radius:4px;cursor:pointer;outline:1px dashed rgba(227,5,19,0.5);outline-offset:2px;${uploading ? 'opacity:0.55;' : ''}`;
+  img.title = 'Cliquer pour redimensionner, légender ou supprimer — glisser pour déplacer';
 }
 
 // Position d'insertion (caret) sous le point de drop — compatible Chrome/Firefox.
@@ -195,7 +198,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   // Insère une <img> collée à la position du curseur (ou en fin si pas de sélection).
   const insertCommentImage = (url, path, savedRange) => {
     const el = editorRef.current;
-    if (!el) return;
+    if (!el) return null;
     const img = document.createElement('img');
     img.src = url;
     img.setAttribute('data-cimg', path);
@@ -217,9 +220,12 @@ const RichTextArea = forwardRef(function RichTextArea(
     range.setStartAfter(br); range.collapse(true);
     sel.removeAllRanges(); sel.addRange(range);
     handleInput();
+    return img;
   };
 
-  // Coller : image (capture d'écran) → upload bucket + insertion ; sinon mise en forme simple.
+  // Coller : image (capture d'écran). AFFICHAGE INSTANTANÉ : on insère tout de suite l'aperçu
+  // local (data URL), puis on remplace en arrière-plan par l'URL du bucket quand l'upload répond
+  // (retour Thomas : « l'image met du temps à apparaître »). Repli : upload KO → on retire l'aperçu.
   const handlePaste = (e) => {
     const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
     const imgItem = items.find(it => it.kind === 'file' && it.type.startsWith('image/'));
@@ -233,10 +239,21 @@ const RichTextArea = forwardRef(function RichTextArea(
         ? sel.getRangeAt(0).cloneRange() : null;
       const reader = new FileReader();
       reader.onload = async () => {
+        const localUrl = reader.result;
+        const tempPath = `__pending_${Date.now().toString(36)}_${Math.round(Math.random() * 1e9).toString(36)}`;
+        const img = insertCommentImage(localUrl, tempPath, savedRange); // aperçu immédiat
+        if (img) { img.setAttribute('data-uploading', '1'); applyCommentImgStyle(img); }
         try {
-          const res = await onPasteImage(reader.result);
-          if (res?.url && res?.path) insertCommentImage(res.url, res.path, savedRange);
-        } catch { /* upload KO : on n'insère rien */ }
+          const res = await onPasteImage(localUrl);
+          if (!img || !img.isConnected) return; // image retirée entre-temps
+          if (res?.url && res?.path) {
+            img.setAttribute('src', res.url);        // remplace l'aperçu local par l'URL bucket (léger)
+            img.setAttribute('data-cimg', res.path);
+            img.removeAttribute('data-uploading');
+            applyCommentImgStyle(img);
+            handleInput();
+          } else { img.remove(); handleInput(); }     // upload KO → on retire l'aperçu
+        } catch { if (img && img.isConnected) { img.remove(); handleInput(); } }
       };
       reader.readAsDataURL(file);
       return;
