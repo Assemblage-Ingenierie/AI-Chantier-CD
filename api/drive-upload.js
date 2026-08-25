@@ -161,6 +161,9 @@ function extractProjetNum(nom) {
 async function findProjetFolder(token, driveId, projetNom, projetNum) {
   const num = (projetNum || '').trim().toUpperCase() || extractProjetNum(projetNom);
   if (num) {
+    // Le numéro ne doit pas être collé à d'autres chiffres (« 504 » ≠ « 1504 »/« 5049 »).
+    let numRe = null;
+    try { numRe = new RegExp('(?<![0-9])' + String(num).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![0-9])', 'i'); } catch { numRe = null; }
     const params = new URLSearchParams({
       q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`,
       fields: 'files(id,name)',
@@ -173,7 +176,14 @@ async function findProjetFolder(token, driveId, projetNom, projetNum) {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (data.files?.length) return data.files[0].id;
+    const files = data.files || [];
+    if (files.length) {
+      const exact = numRe ? files.find(f => numRe.test(f.name)) : null;
+      if (exact) return exact.id;             // numéro isolé → dossier sûr
+      if (!numRe) return files[0].id;          // pas de regex dispo → ancien comportement
+      // résultats présents mais numéro non isolé (ex. 504 dans « 1504 ») → NE PAS y déposer les
+      // photos (risque de mauvais dossier) : on crée/retrouve le dossier au nom du projet.
+    }
   }
   // Fallback: create a folder with the project name
   return findOrCreateFolder(token, slugFolder(projetNom || 'Projet inconnu'), driveId, driveId);

@@ -90,25 +90,44 @@ function extractProjetNum(nom) {
 
 // Dossier de l'affaire : par numéro (A696…) à la racine d'Affaires, sinon recherche
 // dans tout le Drive. Renvoie { id, name } ou null (PAS de création ici : lecture seule).
+// Le numéro ne doit pas être COLLÉ à d'autres chiffres (« 504 » ≠ « 1504 » / « 5049 ») : on
+// exige des bords non-chiffres. Les séparateurs (_, espace, tiret) et les bords conviennent →
+// « 2026_504_Pavillon » matche bien. Réduit le risque de tomber sur un mauvais dossier.
+function numBoundaryRe(num) {
+  if (!num) return null;
+  const esc = String(num).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try { return new RegExp('(?<![0-9])' + esc + '(?![0-9])', 'i'); } catch { return null; }
+}
+
 async function findProjetFolder(token, driveId, projetNom) {
   const num = extractProjetNum(projetNom);
+  const numRe = numBoundaryRe(num);
   const searches = [];
   if (num) {
-    searches.push(`name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`);
-    searches.push(`name contains '${num}' and mimeType = '${FOLDER_MIME}' and trashed = false`);
+    searches.push({ q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`, byNum: true });
+    searches.push({ q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and trashed = false`, byNum: true });
   }
   const firstWord = (projetNom || '').split(/[\s_-]+/).filter(w => w.length > 3)[0];
-  if (firstWord) searches.push(`name contains ${JSON.stringify(firstWord)} and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`);
-  for (const q of searches) {
+  if (firstWord) searches.push({ q: `name contains ${JSON.stringify(firstWord)} and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`, byNum: false });
+  let fallback = null; // meilleur candidat « approximatif » si aucun match propre du numéro
+  for (const { q, byNum } of searches) {
     const params = new URLSearchParams({
       q, fields: 'files(id,name)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
       driveId, corpora: 'drive', pageSize: '5',
     });
     const res = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
-    if (data.files?.length) return data.files[0];
+    const files = data.files || [];
+    if (!files.length) continue;
+    if (byNum && numRe) {
+      const exact = files.find(f => numRe.test(f.name));
+      if (exact) return exact;                 // numéro isolé → match sûr
+      if (!fallback) fallback = files[0];       // sinon on garde en repli mais on continue à chercher
+      continue;
+    }
+    if (!fallback) return files[0];             // recherche par mot (n'écrase pas un repli numéro)
   }
-  return null;
+  return fallback;
 }
 
 // Contenu d'UN niveau de dossier — navigation « comme dans le Drive » (demande Thomas :
