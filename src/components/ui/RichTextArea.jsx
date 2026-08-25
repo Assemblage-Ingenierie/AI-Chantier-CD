@@ -182,8 +182,35 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (!el) return;
     const ta = textAlign || 'left';
     el.style.textAlign = ta;
-    el.querySelectorAll('div,p,li,h1,h2,h3,h4,h5,h6').forEach(b => { b.style.textAlign = ta; });
+    el.querySelectorAll('div,p,li,h1,h2,h3,h4,h5,h6').forEach(b => { if (b.getAttribute('data-cap-view') == null) b.style.textAlign = ta; });
   }, [textAlign, value, syncKey]);
+
+  // ── Légende affichée SOUS l'image DANS l'éditeur (retour Thomas). Nœud d'AFFICHAGE seul
+  //    (contenteditable=false, data-cap-view) synchronisé depuis data-cap ; RETIRÉ à la
+  //    sérialisation → le stockage ne garde QUE data-cap sur l'<img> (aucun doublon). ─────────
+  const CAP_VIEW_ATTR = 'data-cap-view';
+  const syncCaptionView = (img) => {
+    if (!img) return;
+    const cap = (img.getAttribute('data-cap') || '').trim();
+    const sib = img.nextElementSibling;
+    let view = (sib && sib.getAttribute && sib.getAttribute(CAP_VIEW_ATTR) != null) ? sib : null;
+    if (cap) {
+      if (!view) { view = document.createElement('div'); view.setAttribute(CAP_VIEW_ATTR, '1'); view.setAttribute('contenteditable', 'false'); img.after(view); }
+      view.textContent = cap;
+      view.style.cssText = 'font-size:12px;font-style:italic;color:#6B7280;text-align:center;margin:-2px 0 6px;user-select:none;';
+    } else if (view) { view.remove(); }
+  };
+  const rebuildCaptionViews = (el) => {
+    if (!el) return;
+    el.querySelectorAll(`[${CAP_VIEW_ATTR}]`).forEach(n => n.remove());
+    el.querySelectorAll('img[data-cimg]').forEach(img => syncCaptionView(img));
+  };
+  // innerHTML SANS les nœuds d'affichage de légende → base de sérialisation ET de comparaison.
+  const strippedHtml = (el) => {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll(`[${CAP_VIEW_ATTR}]`).forEach(n => n.remove());
+    return clone.innerHTML;
+  };
 
   // Init: convertir markdown → HTML une seule fois au montage
   useEffect(() => {
@@ -191,6 +218,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (!el) return;
     const html = normalizeToHtml(value);
     if (el.innerHTML !== html) el.innerHTML = html;
+    rebuildCaptionViews(el); // affiche les légendes sous les images (data-cap)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Si value change depuis l'extérieur (IA, dictaphone, changement de visite) → resynchroniser.
@@ -205,14 +233,14 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (el.innerHTML !== html) { el.innerHTML = html; setSelImg(null); if (forced) el.blur(); }
+    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
     if (isComposing.current) return;
     const el = editorRef.current;
     isTyping.current = true;
-    if (el) onChange(normalizeHtmlOutput(el.innerHTML));
+    if (el) onChange(normalizeHtmlOutput(strippedHtml(el)));
   };
 
   // Insère une <img> collée à la position du curseur (ou en fin si pas de sélection).
@@ -312,7 +340,15 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (selImg) { selImg.setAttribute('data-w', String(w)); applyCommentImgStyle(selImg); }
   };
   const resizeCommit = () => { if (selImg) handleInput(); };
-  const deleteImg = () => { if (!selImg) return; const next = selImg.nextSibling; if (next && next.tagName === 'BR') next.remove(); selImg.remove(); setSelImg(null); handleInput(); };
+  const deleteImg = () => {
+    if (!selImg) return;
+    const sib = selImg.nextElementSibling;
+    const view = (sib && sib.getAttribute && sib.getAttribute(CAP_VIEW_ATTR) != null) ? sib : null; // légende affichée
+    const brAfter = view ? view.nextSibling : selImg.nextSibling;
+    if (view) view.remove();
+    if (brAfter && brAfter.tagName === 'BR') brAfter.remove();
+    selImg.remove(); setSelImg(null); handleInput();
+  };
   const annotateImg = () => { if (!selImg || !onAnnotateImage) return; const p = selImg.getAttribute('data-cimg'); setSelImg(null); onAnnotateImage(p); };
   // Légende de l'image (data-cap) : stockée sur l'<img>, rendue sous l'image dans l'aperçu.
   const setCaption = (v) => {
@@ -320,6 +356,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (!selImg) return;
     if (v && v.trim()) selImg.setAttribute('data-cap', v);
     else selImg.removeAttribute('data-cap');
+    syncCaptionView(selImg); // met à jour la légende sous l'image EN DIRECT dans l'éditeur
     handleInput();
   };
 
@@ -350,6 +387,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (br) img.after(br);
     else if (!(img.nextSibling && img.nextSibling.tagName === 'BR')) img.after(document.createElement('br'));
     setSelImg(null);
+    rebuildCaptionViews(el); // la légende suit l'image déplacée (retire l'orpheline, recrée au bon endroit)
     handleInput();
   };
 
@@ -424,7 +462,7 @@ const RichTextArea = forwardRef(function RichTextArea(
         onFocus={onFocus}
         onBlur={e => {
           isTyping.current = false;
-          if (editorRef.current) onChange(normalizeHtmlOutput(editorRef.current.innerHTML));
+          if (editorRef.current) onChange(normalizeHtmlOutput(strippedHtml(editorRef.current)));
           onBlur?.(e);
         }}
         style={{
