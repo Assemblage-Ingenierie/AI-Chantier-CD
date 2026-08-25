@@ -84,7 +84,20 @@ export default function LoginScreen({ onLogin }) {
         {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 32 }}>
           {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie" style={{ height: 48, objectFit: 'contain' }} />}
-          <div style={{ color: 'white', fontWeight: 900, fontSize: 18, letterSpacing: -0.5 }}>AI Chantier</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'white', fontWeight: 900, fontSize: 18, letterSpacing: -0.5 }}>AI Chantier</span>
+            {/* Petite grue (marque Assemblage) juste après le nom */}
+            <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true" style={{ display: 'block', flexShrink: 0 }}>
+              <path d="M15.5 4V28" fill="none" stroke={RED} strokeWidth="2.4" />
+              <path d="M4 8.6H29" fill="none" stroke={RED} strokeWidth="2.4" />
+              <path d="M15.5 4.6L28.4 8.4" fill="none" stroke={RED} strokeWidth="1.6" />
+              <path d="M15.5 4.6L5.2 8.4" fill="none" stroke={RED} strokeWidth="1.6" />
+              <path d="M4 9.8h4v3.2h-4z" fill={RED} />
+              <path d="M25 9.8V16.6" fill="none" stroke={RED} strokeWidth="1.6" />
+              <path d="M23.3 16.6h3.4v2.8h-3.4z" fill={RED} />
+              <path d="M9.5 28H21.5" fill="none" stroke={RED} strokeWidth="2.4" />
+            </svg>
+          </div>
         </div>
 
         {/* Tabs */}
