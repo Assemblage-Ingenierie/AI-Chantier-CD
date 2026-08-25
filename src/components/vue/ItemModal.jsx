@@ -233,10 +233,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
-  const [reformulating, setReformulating] = useState(false);
-  const [reformError, setReformError] = useState('');
-  const [reformList, setReformList] = useState(null); // [{ extrait, propositions:[], raison }]
-  const [reformApplied, setReformApplied] = useState(new Set());
   // ── SUPER BOUTON « Améliorer avec l'IA » (unifie génération + correction + reformulation +
   //    enrichissement structure). Un seul geste, l'IA décide selon le contexte. ──────────────
   const [improving, setImproving] = useState(false);
@@ -468,49 +464,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);
-  };
-
-  // Propositions de reformulation — distinct de la correction ortho (qui reste intacte).
-  // L'IA repère les passages lourds/répétitifs/maladroits et propose des réécritures à sens
-  // strictement préservé, applicables individuellement (même mécanisme que les corrections).
-  const reformulate = async () => {
-    if (!form.commentaire?.trim() || reformulating) return;
-    setReformulating(true);
-    setReformError('');
-    setReformList(null);
-    setReformApplied(new Set());
-    try {
-      const plain = htmlToPlain(form.commentaire);
-      const d = await callAIProxy({
-        feature: 'reformulation',
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        system: 'Tu es un rédacteur expert en français technique (rapports de visite de chantier). Ta mission : améliorer la qualité rédactionnelle du texte — clarté, fluidité, structure, concision, ton professionnel — en allant au-delà d\'une simple retouche de mots (restructurer une phrase, remplacer une tournure maladroite par une formulation nette). MÉTHODE OBLIGATOIRE — COUVERTURE INTÉGRALE : analyse le texte EN ENTIER, du tout début à la toute fin, phrase par phrase et puce par puce. Tu dois parcourir CHAQUE phrase et CHAQUE puce du texte, sans jamais t\'arrêter après les premières lignes : les passages améliorables situés au milieu ou à la fin sont AUSSI importants que ceux du début. PERTINENCE AVANT TOUT : pour chaque phrase/puce, juge honnêtement si elle GAGNE RÉELLEMENT à être réécrite. Si elle est déjà claire, correcte et facile à comprendre → NE propose RIEN pour ce passage (aucune retouche cosmétique ou marginale : on ne change pas ce qui est déjà bien). Mais dès qu\'un passage est lourd, confus, maladroit, répétitif, mal structuré ou fautif, propose une amélioration, OÙ QU\'IL SOIT dans le texte. SEUIL DE PERTINENCE ÉLEVÉ : ne propose une reformulation QUE si le gain est CLAIR et NET (phrase nettement plus claire, plus fluide, plus professionnelle, ou faute corrigée). Un simple synonyme, un changement de style équivalent ou une retouche marginale ne justifient AUCUNE proposition ; dans le doute, ne propose rien. Vise la vraie valeur ajoutée, jamais le nombre de propositions. INTERDICTION DE STYLE : n\'utilise JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – ») comme ponctuation, c\'est une marque d\'écriture IA ; emploie une virgule, un deux-points, une parenthèse ou un point selon le sens. RÈGLE DE QUALITÉ NON NÉGOCIABLE : chaque reformulation doit être dans un français IMPECCABLE — orthographe, grammaire, accords, conjugaison, ponctuation parfaits — et JAMAIS moins correcte que l\'original. Ne JAMAIS ajouter de ponctuation non justifiée : ne transforme JAMAIS une affirmation en question, n\'ajoute aucun point d\'interrogation s\'il n\'y a pas de question. IMPÉRATIF ABSOLU : préserve STRICTEMENT le sens, TOUS les faits techniques, les chiffres, les références et le vocabulaire métier ; n\'ajoute aucune information, n\'en retire aucune, n\'invente rien. IMPÉRATIF DE STRUCTURE : conserve EXACTEMENT le découpage en lignes et en puces — une puce/ligne reste une puce/ligne. Ne FUSIONNE JAMAIS plusieurs puces ou lignes, ne change pas leur nombre, ne transforme pas une liste à puces en paragraphe. Chaque "extrait" doit rester à l\'INTÉRIEUR d\'une SEULE ligne/puce et ne JAMAIS contenir de saut de ligne : pour un texte en puces, l\'unité à reformuler est UNE puce (sa reformulation reste sur une seule ligne). Cible des unités complètes (phrase entière ou puce entière), jamais des bouts de phrase isolés. Pour chaque passage retenu, donne 2 propositions : (1) une version améliorée proche de l\'originale, (2) une réécriture plus aboutie. Les deux doivent être irréprochables. Liste tes propositions dans l\'ORDRE D\'APPARITION dans le texte. Réponds UNIQUEMENT avec un JSON valide, sans aucun texte autour : [{"extrait":"<passage copié MOT POUR MOT depuis le texte original, ponctuation comprise>","propositions":["reformulation 1","reformulation 2"],"raison":"clarté|structure|lourdeur|répétition|correction"}]. L\'extrait doit être recopié à l\'identique depuis le texte fourni, sinon il sera ignoré. Si vraiment rien n\'est à améliorer dans tout le texte, réponds exactement [].',
-        messages: [{ role: 'user', content: plain }],
-      });
-      const raw = d.content?.[0]?.text?.trim() || '';
-      let list;
-      try { list = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
-      catch { throw new Error('Réponse IA illisible — réessaie'); }
-      if (!Array.isArray(list)) list = [];
-      // Ne garder que les extraits réellement présents dans le texte (patch fiable) ET qui ne
-      // traversent PAS un saut de ligne (donc jamais à cheval sur plusieurs puces/lignes) →
-      // garantit que la reformulation respecte la mise en page (puces conservées).
-      list = list.filter(s => s && typeof s.extrait === 'string'
-        && !/\n/.test(s.extrait) && plain.includes(s.extrait)
-        && Array.isArray(s.propositions) && s.propositions.some(p => p && p.trim()));
-      if (!list.length) setReformError('Aucune reformulation pertinente ✓');
-      else setReformList(list);
-    } catch (e) { setReformError(e.message || 'Erreur IA'); }
-    setReformulating(false);
-  };
-
-  const applyReform = (idx, prop) => {
-    const seg = reformList?.[idx];
-    if (!seg || reformApplied.has(idx)) return;
-    setForm(f => ({ ...f, commentaire: patchHtmlText(f.commentaire, seg.extrait, prop) }));
-    setReformApplied(prev => new Set([...prev, idx]));
-    bumpSync();
   };
 
   // ── SUPER BOUTON : un seul geste. Champ vide → génère un commentaire structure (photos +
@@ -1070,46 +1023,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                             </div>
                           ))}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Volet REFORMULATION — affiché en premier (au-dessus de l'orthographe) */}
-            {reformError && (
-              <div style={{ marginTop:6,padding:'7px 10px',background: reformError.includes('✓') ? '#F0FDF4' : '#FEF2F2',border:`1px solid ${reformError.includes('✓') ? '#BBF7D0' : '#FECACA'}`,borderRadius:8,fontSize:12,color:reformError.includes('✓') ? '#15803D' : '#B91C1C' }}>
-                {reformError}
-              </div>
-            )}
-
-            {reformList && reformList.length > 0 && (
-              <div style={{ marginTop:8, border:'1px solid #E5E7EB', borderRadius:10, overflow:'hidden', fontSize:12 }}>
-                <div style={{ background:'#F9FAFB', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #E5E7EB', gap:8 }}>
-                  <span style={{ fontWeight:700, color:'#374151', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Reformulations proposées</span>
-                  <button onClick={() => { setReformList(null); setReformApplied(new Set()); }}
-                    style={{ background:'white', color:'#6B7280', border:'1px solid #D1D5DB', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                    ✕
-                  </button>
-                </div>
-                <div style={{ padding:'4px 0', background:'white' }}>
-                  {reformList.map((seg, idx) => {
-                    const done = reformApplied.has(idx);
-                    return (
-                      <div key={idx} style={{ padding:'10px 12px', borderTop: idx > 0 ? '1px solid #F3F4F6' : 'none', opacity: done ? 0.55 : 1 }}>
-                        <div style={{ fontSize:11, color:'#9CA3AF', textDecoration: done ? 'none' : 'line-through', marginBottom:6, lineHeight:1.5 }}>
-                          {seg.extrait}
-                        </div>
-                        {seg.propositions.filter(p => p && p.trim()).map((prop, pi) => (
-                          <div key={pi} style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:6 }}>
-                            <span style={{ flex:1, fontSize:12, color:'#1F2937', lineHeight:1.5 }}>{prop}</span>
-                            <button onClick={() => applyReform(idx, prop)} disabled={done}
-                              style={{ flexShrink:0, background: done ? '#9CA3AF' : '#059669', color:'white', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:700, cursor: done ? 'default' : 'pointer' }}>
-                              {done ? '✓' : 'Appliquer'}
-                            </button>
-                          </div>
-                        ))}
                       </div>
                     );
                   })}
