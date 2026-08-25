@@ -29,25 +29,34 @@ export default function IngenieursEditor({ value, onChange }) {
     setDraft('');
   };
   const remove = (ini) => onChange(list.filter(x => x !== ini).join(', '));
+  // Champ d'ajout + bouton « + » ÉPINGLÉS à droite (jamais poussés hors écran) ; seules les
+  // puces défilent horizontalement si elles débordent. Avant, tout défilait ensemble → dès
+  // qu'une initiale existait, la case du nouvel ingénieur passait hors cadre sur mobile et
+  // était introuvable (bug remonté par Thomas, Android/iOS).
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:5, height:40, overflowX:'auto', overflowY:'hidden' }}>
-      {list.map(ini => (
-        <button key={ini} onClick={() => remove(ini)} title={`Retirer ${ini}`}
-          style={{ display:'inline-flex', alignItems:'center', gap:4, flexShrink:0, background:DA.redL, color:DA.red,
-            border:'1px solid rgba(185,28,28,0.2)', borderRadius:20, padding:'5px 9px', fontSize:12,
-            fontWeight:800, letterSpacing:0.8, cursor:'pointer' }}>
-          {ini} <Ic n="x" s={10}/>
-        </button>
-      ))}
+    <div style={{ display:'flex', alignItems:'center', gap:5, height:40 }}>
+      {list.length > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:5, flex:1, minWidth:0, height:'100%', overflowX:'auto', overflowY:'hidden' }}>
+          {list.map(ini => (
+            <button key={ini} onClick={() => remove(ini)} title={`Retirer ${ini}`}
+              style={{ display:'inline-flex', alignItems:'center', gap:4, flexShrink:0, background:DA.redL, color:DA.red,
+                border:'1px solid rgba(185,28,28,0.2)', borderRadius:20, padding:'5px 9px', fontSize:12,
+                fontWeight:800, letterSpacing:0.8, cursor:'pointer' }}>
+              {ini} <Ic n="x" s={10}/>
+            </button>
+          ))}
+        </div>
+      )}
       <input
         value={draft}
         onChange={e => setDraft(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
         onBlur={add}
         // Pas de « + » en placeholder : avec le bouton + à côté, on voyait DEUX plus (Thomas).
-        placeholder={list.length ? '' : 'TCM'}
+        placeholder={list.length ? '+' : 'TCM'}
         maxLength={5}
-        style={{ flex:1, minWidth:56, width:56, fontSize:15, fontWeight:800, color:DA.black,
+        style={{ [list.length ? 'width' : 'flex']: list.length ? 62 : 1, minWidth:62, flexShrink:0,
+          fontSize:15, fontWeight:800, color:DA.black,
           border:`1.5px solid ${DA.border}`, borderRadius:8, padding:'7px 6px', outline:'none',
           background:'white', boxSizing:'border-box', textTransform:'uppercase', letterSpacing:2,
           textAlign:'center' }}

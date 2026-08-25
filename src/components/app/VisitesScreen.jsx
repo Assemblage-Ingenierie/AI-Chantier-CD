@@ -40,6 +40,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     finally { setPinningId(null); }
   };
   const [editingId, setEditingId] = useState(null); // visite en mode édition
+  const [dupSource, setDupSource] = useState(null);  // visite à dupliquer (choix photos en attente)
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
 
@@ -182,9 +183,18 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const patchVisite = (visiteId, patch) =>
     onUpdateProjet({ visites: visites.map(v => v.id === visiteId ? { ...v, ...patch } : v) });
 
+  // Clic « Dupliquer » → on demande d'abord AVEC ou SANS les photos (demande Thomas : une
+  // nouvelle visite réutilise souvent la trame mais avec de nouvelles photos).
   const duplicateVisite = (e, sourceId) => {
     e.stopPropagation();
     const source = visites.find(v => v.id === sourceId);
+    if (source) setDupSource(source);
+  };
+
+  // keepPhotos=false → items conservés (intitulé, commentaire, urgence…) mais SANS photos.
+  // On NE navigue PAS dans la copie : on reste sur la liste, la copie s'ouvre en mode édition
+  // pour renommer / ajuster les ingénieurs tout de suite (demande Thomas).
+  const performDuplicate = (source, keepPhotos) => {
     if (!source) return;
     const newId = crypto.randomUUID();
     const today = new Date().toISOString().slice(0, 10);
@@ -196,8 +206,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       items: (loc.items || []).map(item => ({
         ...item,
         id: crypto.randomUUID(),
-        // Nouveaux _id stables pour chaque photo → évite doublon d'ID dans le batch upsert Supabase
-      photos: (item.photos || []).map(ph => ({ ...ph, _id: crypto.randomUUID(), id: undefined })),
+        // Nouveaux _id stables pour chaque photo → évite doublon d'ID dans le batch upsert Supabase.
+        photos: keepPhotos
+          ? (item.photos || []).map(ph => ({ ...ph, _id: crypto.randomUUID(), id: undefined }))
+          : [],
       })),
     }));
     const newVisite = {
@@ -209,7 +221,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       localisations,
     };
     onUpdateProjet({ visites: [...visites, newVisite] });
-    onSelectVisite(newId);
+    setDupSource(null);
+    setEditingId(newId); // reste sur la liste, copie ouverte en édition (renommer / ingénieurs)
   };
 
   const deleteVisite = (e, visiteId) => {
@@ -560,6 +573,46 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
         </div>
       </div>
+
+      {/* ── Duplication : avec ou sans les photos ? ── */}
+      {dupSource && (() => {
+        const nbPhotos = (dupSource.localisations || []).flatMap(l => l.items || [])
+          .reduce((s, it) => s + (it.photos || []).length, 0);
+        return (
+          <div onClick={() => setDupSource(null)}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background:'white', borderRadius:16, padding:'22px 20px', width:'100%', maxWidth:360, boxShadow:'0 12px 40px rgba(0,0,0,0.3)' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:6 }}>
+                <div style={{ width:34, height:34, borderRadius:9, background:DA.redL, color:DA.red, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Ic n="cpy" s={17}/></div>
+                <p style={{ fontSize:15, fontWeight:800, color:DA.black, margin:0 }}>Dupliquer la visite</p>
+              </div>
+              <p style={{ fontSize:12.5, color:DA.gray, margin:'0 0 16px', lineHeight:1.45 }}>
+                « {dupSource.label || 'Visite'} » sera copiée (zones, observations, plans).
+                {nbPhotos > 0
+                  ? ` Gardez-vous les ${nbPhotos} photo${nbPhotos > 1 ? 's' : ''} de la visite ?`
+                  : ' Cette visite ne contient pas de photo.'}
+              </p>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                <button onClick={() => performDuplicate(dupSource, true)}
+                  style={{ width:'100%', minHeight:52, padding:'12px', background:DA.red, color:'white', border:'none', borderRadius:11, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <Ic n="chk" s={15}/> {nbPhotos > 0 ? 'Dupliquer avec les photos' : 'Dupliquer'}
+                </button>
+                {nbPhotos > 0 && (
+                  <button onClick={() => performDuplicate(dupSource, false)}
+                    style={{ width:'100%', minHeight:52, padding:'12px', background:'white', color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:11, fontSize:14, fontWeight:700, cursor:'pointer' }}>
+                    Dupliquer sans les photos
+                  </button>
+                )}
+                <button onClick={() => setDupSource(null)}
+                  style={{ width:'100%', padding:'9px', background:'none', color:DA.grayL, border:'none', borderRadius:11, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
