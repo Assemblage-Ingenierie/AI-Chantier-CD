@@ -126,11 +126,14 @@ async function photoToImageBlock(url) {
         const cv = document.createElement('canvas');
         cv.width = Math.round(img.naturalWidth * scale); cv.height = Math.round(img.naturalHeight * scale);
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-        try { res(cv.toDataURL('image/jpeg', 0.75)); } catch { res(base); }
+        try { res(cv.toDataURL('image/jpeg', 0.75)); } catch { res(null); }
       };
-      img.onerror = () => res(base);
+      img.onerror = () => res(null); // échec décodage → on SAUTE cette photo (ne pas casser l'appel entier)
       img.src = base;
     });
+    // Uniquement des JPEG/PNG/WebP valides pour l'API vision : un format non supporté (HEIC…)
+    // ou un échec de ré-encodage → on saute la photo (return null) plutôt que faire échouer la requête.
+    if (typeof dataUrl !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(dataUrl)) return null;
     const [hdr, b64] = dataUrl.split(',');
     const mt = hdr.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
     return { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } };
@@ -507,7 +510,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
       for (const a of (obj?.ajouts || [])) {
         if (a && typeof a.texte === 'string' && a.texte.trim())
-          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || '', raison: a.raison || '' });
+          // apres doit tenir sur UNE ligne (comme extrait) : un ancrage multi-lignes ferait
+          // que patchHtmlText fusionne plusieurs puces → on l'ignore et l'ajout ira en fin.
+          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || '', raison: a.raison || '' });
       }
       if (!unified.length) setImproveErr('Rien à améliorer ✓');
       else setImproveList(unified);
