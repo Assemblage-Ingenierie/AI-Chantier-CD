@@ -141,10 +141,16 @@ async function findAffairesFolder(token) {
   throw new Error(`Dossier "Affaires" introuvable. ${hint} — Ajoutez GOOGLE_AFFAIRES_DRIVE_ID dans les variables Vercel.`);
 }
 
-// Extract project number like A696, A700, A1234 from project name
+// Numéro d'affaire depuis le nom : ancien format « A696 », ou NUMÉRIQUE seul (ex. « 504 »).
+// Le format numérique n'était pas reconnu → dossiers Drive « 504 » introuvables (retour Thomas).
+// Années (19xx/20xx) ignorées pour ne pas confondre un millésime avec un numéro d'affaire.
 function extractProjetNum(nom) {
-  const match = (nom || '').match(/[Aa]\d{3,4}/);
-  return match ? match[0].toUpperCase() : null;
+  const s = nom || '';
+  const a = s.match(/[Aa]\d{3,4}/);
+  if (a) return a[0].toUpperCase();
+  const nums = s.match(/\b\d{3,4}\b/g) || [];
+  const cand = nums.find(n => !/^(19|20)\d{2}$/.test(n));
+  return cand || null;
 }
 
 // Find an existing project folder by number (e.g. A696 matches "2026_A696_PEGUY_...")
