@@ -105,6 +105,23 @@ function renderHtml(html) {
       return;
     }
 
+    // « Tableau » (cases côte à côte) inséré dans le commentaire : rendu en flex, chaque case
+    // rendue récursivement (texte, images légendées, couleurs…). Sans bordure dans le rapport.
+    if (node.getAttribute && node.getAttribute('data-grid') != null) {
+      flush();
+      const cells = Array.from(node.children).filter(c => c.getAttribute && c.getAttribute('data-cell') != null);
+      if (cells.length) {
+        blocks.push({ items: [
+          <span key={k()} style={{ display: 'flex', gap: 8, margin: '8px 0', alignItems: 'flex-start' }}>
+            {cells.map((c, ci) => (
+              <span key={ci} style={{ flex: 1, minWidth: 0 }}>{renderHtml(c.innerHTML)}</span>
+            ))}
+          </span>
+        ], isBullet: false });
+      }
+      return;
+    }
+
     if (BLOCK_TAGS.has(tag)) {
       flush();
       const beforeCount = blocks.length;

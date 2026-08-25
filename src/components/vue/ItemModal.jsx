@@ -714,6 +714,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     try { document.execCommand('styleWithCSS', false, false); } catch { /* laisse G/I en balises normales */ }
     ed?.focus();
   };
+  // Insère un « tableau » : une rangée de N cases côte à côte (demande Thomas). Chaque case peut
+  // recevoir une image collée OU du texte. Rendu en flex (éditeur + aperçu rapport).
+  const insertGrid = (cols) => {
+    const cell = '<div data-cell="1" style="flex:1;min-width:0;min-height:64px;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 8px;box-sizing:border-box;"></div>';
+    const html = `<div data-grid="1" style="display:flex;gap:8px;margin:8px 0;align-items:stretch;">${cell.repeat(cols)}</div><div><br></div>`;
+    textareaRef.current?.insertHtml?.(html);
+  };
 
   // Inputs fichiers (hidden)
   const fileInputs = (
@@ -822,6 +829,16 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                   onMouseDown={e => { e.preventDefault(); applyColor(s.c); }}
                   style={{ width:22,height:22,borderRadius:'50%',border:'1.5px solid rgba(0,0,0,0.15)',background:s.c,
                     cursor:'pointer',flexShrink:0,padding:0,boxShadow:'0 1px 2px rgba(0,0,0,0.12)' }}/>
+              ))}
+              <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
+              {/* Insérer un tableau (cases côte à côte) : 2 ou 3 colonnes. Chaque case = image ou texte. */}
+              {[2, 3].map(n => (
+                <button key={n} type="button" title={`Insérer un tableau de ${n} cases côte à côte`}
+                  onMouseDown={e => { e.preventDefault(); insertGrid(n); }}
+                  style={{ height:24,padding:'0 7px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',
+                    color:DA.gray,cursor:'pointer',flexShrink:0,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:3 }}>
+                  <span style={{ fontSize:13,lineHeight:1 }}>▦</span>{n}
+                </button>
               ))}
             </div>
 

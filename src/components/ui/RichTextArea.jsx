@@ -136,6 +136,26 @@ const RichTextArea = forwardRef(function RichTextArea(
     focus: () => editorRef.current?.focus(),
     getEditor: () => editorRef.current,
     resetTyping: () => { isTyping.current = false; },
+    // Insère du HTML à la position du curseur (ou en fin si pas de sélection dans l'éditeur).
+    // Utilisé pour insérer un « tableau » (rangée de cases côte à côte) depuis la barre d'outils.
+    insertHtml: (html) => {
+      const el = editorRef.current;
+      if (!el) return;
+      el.focus();
+      const sel = window.getSelection();
+      let range = (sel && sel.rangeCount && el.contains(sel.anchorNode)) ? sel.getRangeAt(0) : null;
+      if (!range) { range = document.createRange(); range.selectNodeContents(el); range.collapse(false); }
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const frag = document.createDocumentFragment();
+      let node; while ((node = tmp.firstChild)) frag.appendChild(node);
+      const last = frag.lastChild;
+      range.deleteContents();
+      range.insertNode(frag);
+      if (last) { range.setStartAfter(last); range.collapse(true); }
+      sel.removeAllRanges(); sel.addRange(range);
+      handleInput();
+    },
   }));
 
   // Position de la barre d'outils image, relative au conteneur (position:relative).
@@ -345,6 +365,8 @@ const RichTextArea = forwardRef(function RichTextArea(
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
+      {/* Placeholder des cases de tableau vides (« insérer un tableau ») — CSS ::before, non éditable. */}
+      <style>{`[data-cell]:empty::before{content:'Coller une image ou écrire ici';color:#b8c0cc;font-size:12px;font-style:italic;}`}</style>
       {isEmpty && (
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, padding: style?.padding ?? '12px 14px',
