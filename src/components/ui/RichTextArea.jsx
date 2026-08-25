@@ -106,6 +106,22 @@ function applyCommentImgStyle(img) {
   img.title = 'Cliquer pour redimensionner, légender ou supprimer — glisser pour déplacer';
 }
 
+// Garantit qu'une image DANS l'éditeur est « gérée » : largeur bornée à la page + cliquable
+// (sélection → redimensionner / légender / supprimer). Filet de sécurité pour les images
+// arrivées SANS passer par le collage géré — glisser-déposer d'un fichier externe ou collage
+// natif du navigateur : sans data-cimg ni style, elles s'affichaient en pleine résolution →
+// débordaient du cadre ET le clic restait sans effet (bug remonté par GAB). Renvoie true si
+// l'image a dû être (ré)initialisée.
+function ensureImgManaged(img) {
+  if (!img || img.tagName !== 'IMG') return false;
+  let changed = false;
+  if (img.getAttribute('data-cimg') == null) { img.setAttribute('data-cimg', ''); changed = true; }
+  if (img.getAttribute('data-w') == null)     { img.setAttribute('data-w', '60'); changed = true; }
+  if (img.getAttribute('data-align') == null) { img.setAttribute('data-align', 'center'); changed = true; }
+  applyCommentImgStyle(img); // borne la largeur (max 100 %) + curseur + contour, quoi qu'il arrive
+  return changed;
+}
+
 // Position d'insertion (caret) sous le point de drop — compatible Chrome/Firefox.
 function caretRangeFromPoint(x, y) {
   if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
@@ -211,6 +227,12 @@ const RichTextArea = forwardRef(function RichTextArea(
     clone.querySelectorAll(`[${CAP_VIEW_ATTR}]`).forEach(n => n.remove());
     return clone.innerHTML;
   };
+  // Reprend en main toute image « sauvage » (sans data-cimg) : bornée + cliquable. Filet pour
+  // les images déposées/collées hors de notre flux géré (bug GAB : débordement + clic inopérant).
+  const normalizeStrayImages = (el) => {
+    if (!el) return;
+    el.querySelectorAll('img:not([data-cimg])').forEach(ensureImgManaged);
+  };
 
   // Init: convertir markdown → HTML une seule fois au montage
   useEffect(() => {
@@ -218,6 +240,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (!el) return;
     const html = normalizeToHtml(value);
     if (el.innerHTML !== html) el.innerHTML = html;
+    normalizeStrayImages(el); // borne + rend cliquable toute image sauvage déjà enregistrée
     rebuildCaptionViews(el); // affiche les légendes sous les images (data-cap)
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -233,14 +256,14 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); rebuildCaptionViews(el); if (forced) el.blur(); }
+    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
     if (isComposing.current) return;
     const el = editorRef.current;
     isTyping.current = true;
-    if (el) onChange(normalizeHtmlOutput(strippedHtml(el)));
+    if (el) { normalizeStrayImages(el); onChange(normalizeHtmlOutput(strippedHtml(el))); }
   };
 
   // Insère une <img> collée à la position du curseur (ou en fin si pas de sélection).
@@ -271,9 +294,34 @@ const RichTextArea = forwardRef(function RichTextArea(
     return img;
   };
 
-  // Coller : image (capture d'écran). AFFICHAGE INSTANTANÉ : on insère tout de suite l'aperçu
-  // local (data URL), puis on remplace en arrière-plan par l'URL du bucket quand l'upload répond
-  // (retour Thomas : « l'image met du temps à apparaître »). Repli : upload KO → on retire l'aperçu.
+  // Insère un FICHIER image (collage OU glisser-déposer externe) : AFFICHAGE INSTANTANÉ de
+  // l'aperçu local (data URL), puis remplacement en arrière-plan par l'URL du bucket quand
+  // l'upload répond (retour Thomas : « l'image met du temps à apparaître »). Repli : upload KO
+  // → on retire l'aperçu. La largeur est bornée dès l'insertion (jamais de débordement).
+  const insertImageFromFile = (file, savedRange) => {
+    if (!file || !onPasteImage) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const localUrl = reader.result;
+      const tempPath = `__pending_${Date.now().toString(36)}_${Math.round(Math.random() * 1e9).toString(36)}`;
+      const img = insertCommentImage(localUrl, tempPath, savedRange); // aperçu immédiat
+      if (img) { img.setAttribute('data-uploading', '1'); applyCommentImgStyle(img); }
+      try {
+        const res = await onPasteImage(localUrl);
+        if (!img || !img.isConnected) return; // image retirée entre-temps
+        if (res?.url && res?.path) {
+          img.setAttribute('src', res.url);        // remplace l'aperçu local par l'URL bucket (léger)
+          img.setAttribute('data-cimg', res.path);
+          img.removeAttribute('data-uploading');
+          applyCommentImgStyle(img);
+          handleInput();
+        } else { img.remove(); handleInput(); }     // upload KO → on retire l'aperçu
+      } catch { if (img && img.isConnected) { img.remove(); handleInput(); } }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Coller : image (capture d'écran).
   const handlePaste = (e) => {
     const items = e.clipboardData?.items ? Array.from(e.clipboardData.items) : [];
     const imgItem = items.find(it => it.kind === 'file' && it.type.startsWith('image/'));
@@ -285,25 +333,7 @@ const RichTextArea = forwardRef(function RichTextArea(
       const sel = window.getSelection();
       const savedRange = sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)
         ? sel.getRangeAt(0).cloneRange() : null;
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const localUrl = reader.result;
-        const tempPath = `__pending_${Date.now().toString(36)}_${Math.round(Math.random() * 1e9).toString(36)}`;
-        const img = insertCommentImage(localUrl, tempPath, savedRange); // aperçu immédiat
-        if (img) { img.setAttribute('data-uploading', '1'); applyCommentImgStyle(img); }
-        try {
-          const res = await onPasteImage(localUrl);
-          if (!img || !img.isConnected) return; // image retirée entre-temps
-          if (res?.url && res?.path) {
-            img.setAttribute('src', res.url);        // remplace l'aperçu local par l'URL bucket (léger)
-            img.setAttribute('data-cimg', res.path);
-            img.removeAttribute('data-uploading');
-            applyCommentImgStyle(img);
-            handleInput();
-          } else { img.remove(); handleInput(); }     // upload KO → on retire l'aperçu
-        } catch { if (img && img.isConnected) { img.remove(); handleInput(); } }
-      };
-      reader.readAsDataURL(file);
+      insertImageFromFile(file, savedRange);
       return;
     }
     e.preventDefault();
@@ -319,7 +349,11 @@ const RichTextArea = forwardRef(function RichTextArea(
 
   // Sélection d'une image collée au clic → barre flottante (redimensionner / aligner / annoter / supprimer).
   const handleEditorClick = (e) => {
-    if (e.target?.tagName === 'IMG' && e.target.getAttribute('data-cimg') != null) {
+    if (e.target?.tagName === 'IMG') {
+      // Toute image de l'éditeur est sélectionnable — y compris une image « sauvage » pas encore
+      // reprise en main (déposée à l'instant) : on la borne + on la rend gérée AVANT de la
+      // sélectionner, pour qu'elle soit toujours redimensionnable/supprimable (bug GAB).
+      if (ensureImgManaged(e.target)) handleInput();
       setSelImg(e.target);
       setSelImgW(parseFloat(e.target.getAttribute('data-w')) || 60);
       setSelImgCap(e.target.getAttribute('data-cap') || '');
@@ -376,7 +410,20 @@ const RichTextArea = forwardRef(function RichTextArea(
   };
   const handleDrop = (e) => {
     const img = draggedImgRef.current;
-    if (!img) return; // glissé de texte → laisser le comportement natif
+    if (!img) {
+      // Glisser-déposer d'un FICHIER image externe : le navigateur insérerait sinon une image
+      // brute (pleine résolution, non gérée) qui déborde et reste non cliquable (bug GAB). On
+      // route par notre flux → largeur bornée + upload bucket + sélectionnable.
+      const files = e.dataTransfer?.files ? Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/')) : [];
+      if (files.length && onPasteImage) {
+        e.preventDefault();
+        const el = editorRef.current;
+        let savedRange = caretRangeFromPoint(e.clientX, e.clientY);
+        if (!el || !savedRange || !el.contains(savedRange.startContainer)) savedRange = null;
+        files.forEach(f => insertImageFromFile(f, savedRange ? savedRange.cloneRange() : null));
+      }
+      return; // sinon (glissé de texte) → laisser le comportement natif
+    }
     e.preventDefault();
     draggedImgRef.current = null;
     const el = editorRef.current;
@@ -403,8 +450,11 @@ const RichTextArea = forwardRef(function RichTextArea(
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
-      {/* Placeholder des cases de tableau vides (« insérer un tableau ») — CSS ::before, non éditable. */}
-      <style>{`[data-cell]:empty::before{content:'Coller une image ou écrire ici';color:#b8c0cc;font-size:12px;font-style:italic;}`}</style>
+      {/* Placeholder des cases de tableau vides (« insérer un tableau ») — CSS ::before, non éditable.
+          + Garde-fou LARGEUR : aucune image de l'éditeur ne peut déborder du cadre, quelle que soit
+          la façon dont elle a été insérée (collage natif, glisser-déposer externe) — bug GAB. */}
+      <style>{`[data-cell]:empty::before{content:'Coller une image ou écrire ici';color:#b8c0cc;font-size:12px;font-style:italic;}
+.rte-ce img{max-width:100%!important;height:auto!important;}`}</style>
       {isEmpty && (
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, padding: style?.padding ?? '12px 14px',
@@ -448,6 +498,7 @@ const RichTextArea = forwardRef(function RichTextArea(
       )}
       <div
         ref={editorRef}
+        className="rte-ce"
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
