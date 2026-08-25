@@ -46,8 +46,19 @@ export default function Dashboard({ projets, profile = null, remoteLoaded, stale
       {/* En-tête */}
       <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between' }}>
         <div>
-          <h1 style={{ fontSize:25,fontWeight:900,color:DA.black,margin:0,letterSpacing:-0.5 }}>
-            <span style={{ color:DA.red }}>AI</span> chantier
+          <h1 style={{ fontSize:25,fontWeight:900,color:DA.black,margin:0,letterSpacing:-0.5,display:'inline-flex',alignItems:'center',gap:8 }}>
+            <span><span style={{ color:DA.red }}>AI</span> chantier</span>
+            {/* Petite grue (marque Assemblage) après le titre */}
+            <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true" style={{ display:'block', flexShrink:0 }}>
+              <path d="M15.5 4V28" fill="none" stroke={DA.red} strokeWidth="2.4"/>
+              <path d="M4 8.6H29" fill="none" stroke={DA.red} strokeWidth="2.4"/>
+              <path d="M15.5 4.6L28.4 8.4" fill="none" stroke={DA.red} strokeWidth="1.6"/>
+              <path d="M15.5 4.6L5.2 8.4" fill="none" stroke={DA.red} strokeWidth="1.6"/>
+              <path d="M4 9.8h4v3.2h-4z" fill={DA.red}/>
+              <path d="M25 9.8V16.6" fill="none" stroke={DA.red} strokeWidth="1.6"/>
+              <path d="M23.3 16.6h3.4v2.8h-3.4z" fill={DA.red}/>
+              <path d="M9.5 28H21.5" fill="none" stroke={DA.red} strokeWidth="2.4"/>
+            </svg>
           </h1>
           <p style={{ fontSize:13,color:DA.grayL,margin:'3px 0 0' }}>
             {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}
