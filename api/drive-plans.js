@@ -75,9 +75,17 @@ async function findAffairesFolder(token) {
   throw new Error('Dossier "Affaires" introuvable — ajoutez GOOGLE_AFFAIRES_DRIVE_ID dans Vercel.');
 }
 
+// Numéro d'affaire depuis le nom du projet. Deux conventions Drive : ancien format « A696 »,
+// et format NUMÉRIQUE seul (ex. « 504 ») — c'est ce dernier qui n'était pas reconnu, donc les
+// dossiers dont le Drive ne porte QUE le numéro (« 504 ») restaient introuvables (retour Thomas).
+// On ignore les années (19xx/20xx) pour ne pas confondre un millésime avec un numéro d'affaire.
 function extractProjetNum(nom) {
-  const match = (nom || '').match(/[Aa]\d{3,4}/);
-  return match ? match[0].toUpperCase() : null;
+  const s = nom || '';
+  const a = s.match(/[Aa]\d{3,4}/);
+  if (a) return a[0].toUpperCase();
+  const nums = s.match(/\b\d{3,4}\b/g) || [];
+  const cand = nums.find(n => !/^(19|20)\d{2}$/.test(n));
+  return cand || null;
 }
 
 // Dossier de l'affaire : par numéro (A696…) à la racine d'Affaires, sinon recherche
