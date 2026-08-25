@@ -1,8 +1,8 @@
-const CACHE = 'aichantier-v7';
+const CACHE = 'aichantier-v8';
 const PLAN_PDF_CACHE = 'plan-pdfs'; // PDF de plans servis en local (mode hors ligne + lecteur natif)
 
 // Ressources connues à pré-cacher au premier install
-const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png', '/favicon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
