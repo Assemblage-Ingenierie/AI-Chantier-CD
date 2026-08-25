@@ -14,12 +14,18 @@ import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
 // Strips leading words of txt that overlap with the tail of already-committed text.
-// Guards against iOS SpeechRecognition resending previously-heard audio on auto-restart.
+// Guards against SpeechRecognition resending previously-heard audio on auto-restart, ET contre
+// la DUPLICATION en dictée longue (Android renvoie souvent TOUTE la phrase accumulée comme un
+// nouveau résultat « final » → doublons qui s'empilent). Le plafond de 12 mots empêchait de
+// retirer un chevauchement plus long que 12 mots (ex. « la terre était emblée à 5 cm il est
+// nécessaire pour enfiler le ordi » ≈ 14 mots) → le doublon repassait. On retire le plafond :
+// on strip le PLUS LONG préfixe de `txt` identique au suffixe déjà committé (séquences EXACTES
+// uniquement → jamais de perte de texte réel, un vrai discours ne répète pas 13+ mots à l'identique).
 function stripLeadingOverlap(txt, committed) {
   if (!committed || !txt) return txt;
   const nw = txt.split(/\s+/).filter(Boolean);
   const sw = committed.split(/\s+/).filter(Boolean);
-  const cap = Math.min(nw.length, sw.length, 12);
+  const cap = Math.min(nw.length, sw.length);
   for (let len = cap; len >= 1; len--) {
     let ok = true;
     for (let i = 0; i < len; i++) {
