@@ -659,6 +659,10 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   // Cible de REGROUPEMENT survolée (centre d'une tuile → créer une case ; centre d'une case
   // → y ranger). Coexiste avec insertIdx : centre = grouper, bords/gaps = réordonner.
   const [dropTarget, setDropTarget] = useState(null); // { kind:'tile'|'folder', id }
+  // Barre d'insertion À L'INTÉRIEUR d'une case : { targetBase, after }. Avant, réordonner dans
+  // une case marchait au lâcher mais SANS aucun aperçu → on ne savait pas où ça tomberait
+  // (« je n'y arrive pas » — Thomas). On affiche désormais la même barre rouge que le niveau haut.
+  const [folderInsert, setFolderInsert] = useState(null);
   const gridRef = useRef(null);
   // Groupes de « Plans importés » dépliés (TOUT est replié par défaut — demande Thomas).
   const [openImported, setOpenImported] = useState(() => new Set());
@@ -933,7 +937,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     s.moved = true;
     e.preventDefault();
     const d = computeDrop(e.clientX, e.clientY);
-    if (d.group) { setDropTarget(d.group); setInsertIdx(null); } else { setInsertIdx(d.insert); setDropTarget(null); }
+    if (d.reorderInFolder) { setFolderInsert(d.reorderInFolder); setInsertIdx(null); setDropTarget(null); }
+    else if (d.group) { setDropTarget(d.group); setInsertIdx(null); setFolderInsert(null); }
+    else { setInsertIdx(d.insert); setDropTarget(null); setFolderInsert(null); }
     setTouchDrag({ base: s.base || null, x: e.clientX, y: e.clientY });
   };
   const onGripTouchEnd = (e) => {
@@ -954,7 +960,13 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
   const renderPdfTile = (g) => {
     const tileActive = movePdf === g.nom || renamePdf?.base === g.nom || confirmDelPdf === g.nom;
     const isGroupTgt = dropTarget?.kind === 'tile' && dropTarget.base === g.nom; // « déposer ici = créer une case »
+    // Barre d'insertion (réordonner DANS la case) : montre où la tuile glissée va tomber.
+    const insBar = <div style={{ width:4, alignSelf:'stretch', minHeight:40, borderRadius:2, background:DA.red, boxShadow:`0 0 6px ${DA.red}` }}/>;
+    const insBefore = folderInsert?.targetBase === g.nom && !folderInsert.after;
+    const insAfter  = folderInsert?.targetBase === g.nom && folderInsert.after;
     return (
+      <>
+      {insBefore && insBar}
       <div data-item data-base={g.nom}
         draggable={dragArmBase === g.nom}
         // GARDE : sans armement par la poignée, on TUE le dragstart (sélection de texte…).
@@ -1062,6 +1074,8 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
           </div>
         )}
       </div>
+      {insAfter && insBar}
+      </>
     );
   };
 
@@ -1255,7 +1269,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
     } else applyInsert(d.insert);
   };
 
-  const endDrag = () => { setDragBase(null); setDragArmBase(null); setDragFolder(null); setDragArmFolder(null); setInsertIdx(null); setDropTarget(null); setTouchDrag(null); };
+  const endDrag = () => { setDragBase(null); setDragArmBase(null); setDragFolder(null); setDragArmFolder(null); setInsertIdx(null); setDropTarget(null); setTouchDrag(null); setFolderInsert(null); };
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouveau niveau', items: [], planId: null, planBg: null, planData: null, planAnnotations: null, extraPlans: [] };
@@ -1394,7 +1408,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
               {/* Réorganisation : on glisse une tuile OU une case, une BARRE D'INSERTION
                   rouge montre où ça tombera, on lâche. Simple et prévisible (demande Thomas). */}
               <div ref={gridRef} data-unfiled
-                onDragOver={e => { if (dragBase || dragFolder) { e.preventDefault(); const d = computeDrop(e.clientX, e.clientY); if (d.group) { setDropTarget(d.group); setInsertIdx(null); } else { setInsertIdx(d.insert); setDropTarget(null); } } }}
+                onDragOver={e => { if (dragBase || dragFolder) { e.preventDefault(); const d = computeDrop(e.clientX, e.clientY); if (d.reorderInFolder) { setFolderInsert(d.reorderInFolder); setInsertIdx(null); setDropTarget(null); } else if (d.group) { setDropTarget(d.group); setInsertIdx(null); setFolderInsert(null); } else { setInsertIdx(d.insert); setDropTarget(null); setFolderInsert(null); } } }}
                 onDrop={e => { e.preventDefault(); if (dragBase || dragFolder) { applyDrop(e.clientX, e.clientY); endDrag(); } }}
                 style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'stretch' }}>
                 {unifiedItems.map((it, i) => (
