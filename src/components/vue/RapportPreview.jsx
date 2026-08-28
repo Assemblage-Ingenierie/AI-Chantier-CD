@@ -13,12 +13,6 @@ import { computeVpNumbering, dedupPlanPaths, photoVpKey, debugVpNumbering } from
 // pour comprendre pourquoi un badge ne se pose pas. Sans effet en utilisation normale.
 const VXX_DEBUG = typeof window !== 'undefined' && /[?&]vxxdebug=1\b/.test(window.location.search);
 
-// Mémoïsation de la compression PDF (audit point 2 — egress). Chaque export PDF re-fetchait
-// TOUTES les photos du rapport à résolution capteur. Ce cache (clé = URL signée source) évite
-// de re-télécharger + re-compresser une photo déjà traitée dans la même session — un second
-// export, ou une photo apparaissant à la fois en récap et en observation, réutilise le résultat.
-const _pdfCompressCache = new Map();
-const _PDF_COMPRESS_CACHE_MAX = 400;
 import { fetchPlanData, fetchPlanHdDataUrl, fetchAnnexPdf } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
@@ -1076,7 +1070,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
   const maxH = isPortrait ? PLAN_PORTRAIT_MAXH : 340;
   return (
     <div style={{ borderTop:`1px solid ${DA.border}`, background:'#f9f9f9', maxHeight:maxH, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <img src={renderedImg} alt={alt || 'Plan'}
+      <img src={renderedImg} alt={alt || 'Plan'} data-role="plan"
         style={{ width:'100%', maxHeight:maxH, objectFit:'contain', display:'block' }}/>
     </div>
   );
@@ -2030,7 +2024,7 @@ function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPages, loa
     <div style={{ width:PW, height:PH, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', fontFamily:"'Open Sans', sans-serif", overflow:'hidden' }}>
       <div style={{ position:'absolute', left:0, right:0, top:0, bottom:FTR + 4, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }}>
         {img
-          ? <img src={img} alt="" style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', display:'block', boxShadow:'0 0 0 1px #E3E7EB' }}/>
+          ? <img src={img} alt="" data-role="plan" style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', display:'block', boxShadow:'0 0 0 1px #E3E7EB' }}/>
           : <div data-print="hide" style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, color:'#B4BBC2' }}>
               <Ic n="spn" s={22}/><span style={{ fontSize:11 }}>{loading ? "Rendu de l'annexe…" : 'Annexe indisponible'}</span>
             </div>}
@@ -2287,101 +2281,102 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       const win = window.open('', '_blank');
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
-      // Compresse les images avant inclusion dans le PDF imprimé. C'est ICI que se joue le
-      // poids du PDF : sans ça, le navigateur (« Enregistrer en PDF ») embarque chaque photo
-      // en pleine résolution capteur (~4000px) → PDF de 100+ Mo.
-      // ⚠️ Les photos d'observation sont des URL signées Supabase (https://…), PAS des data URL.
-      // On doit donc aussi traiter les URL distantes : fetch → blob → object URL (canvas non
-      // « tainté ») → redessin réduit → JPEG compact. Les data URL volumineux sont aussi réduits.
-      const compressIfNeeded = async (src) => {
-        if (!src) return src;
-        const isData = src.startsWith('data:image/');
-        if (isData && src.length < 400000) return src;        // petit data URL → on garde
-        if (!isData && !/^https?:/i.test(src)) return src;     // blob:/autre → on ne touche pas
-        // Cache de session : une URL signée déjà compressée n'est pas re-téléchargée.
-        // (uniquement les URL distantes — un data URL n'a pas d'egress à économiser.)
-        if (!isData && _pdfCompressCache.has(src)) return _pdfCompressCache.get(src);
-        let objUrl = null;
-        try {
+      // ── Encodage des images + BUDGET DE POIDS (cible < 5 Mo — exigence Thomas) ─────────────
+      // C'est ICI que se joue le poids du PDF : sans réduction, le navigateur embarque chaque
+      // photo en pleine résolution capteur → PDF de 100+ Mo.
+      //  • PHOTOS : compressées, et RÉDUITES EN PREMIER si on dépasse le budget.
+      //  • PLANS / ANNEXES (data-role="plan") : gardés NETS (haute résolution, « comme le PDF »),
+      //    réduits seulement EN DERNIER RECOURS. Chaque source n'est décodée qu'UNE fois → le
+      //    ré-encodage par palier (budget) est bon marché. URL distantes (photos Supabase) :
+      //    fetch → blob → object URL (canvas non « tainté »).
+      const TARGET_BYTES = Math.round(5 * 1024 * 1024 * 0.92); // ~4,6 Mo d'images → marge sous 5 Mo
+      const PHOTO_TIERS = [[1280, 0.72], [1040, 0.68], [880, 0.62], [740, 0.56], [620, 0.5]];
+      const PLAN_TIERS  = [[3000, 0.85], [2400, 0.82], [1900, 0.76], [1500, 0.7], [1200, 0.66]];
+      const objUrls = [];
+      const imgCache = new Map(); // src → Promise<HTMLImageElement> décodé UNE fois
+      const loadImg = (src) => {
+        if (imgCache.has(src)) return imgCache.get(src);
+        const p = (async () => {
           let loadSrc = src;
-          if (!isData) {
-            const resp = await fetch(src);
-            if (!resp.ok) return src;
-            const blob = await resp.blob();
-            objUrl = URL.createObjectURL(blob);
-            loadSrc = objUrl;
+          if (!src.startsWith('data:')) {
+            const resp = await fetch(src); if (!resp.ok) throw new Error('fetch');
+            const blob = await resp.blob(); const u = URL.createObjectURL(blob); objUrls.push(u); loadSrc = u;
           }
-          const result = await new Promise(resolve => {
-            const img = new window.Image();
-            img.onload = () => {
-              try {
-                // Petites images (logos, sigles, icônes < 1000px) : on NE touche à rien — sinon
-                // l'aplatissement JPEG sur fond blanc détruit leur transparence (logo Assemblage
-                // sur la page de garde sombre → vilain rectangle blanc). Elles sont déjà légères.
-                if (img.naturalWidth < 1000 && img.naturalHeight < 1000) { resolve(src); return; }
-                const maxW = 1200;
-                const scale = Math.min(1, maxW / img.naturalWidth);
-                const W = Math.max(1, Math.round(img.naturalWidth * scale));
-                const H = Math.max(1, Math.round(img.naturalHeight * scale));
-                const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-                const ctx = cv.getContext('2d');
-                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); // JPEG sans alpha (photos opaques)
-                ctx.drawImage(img, 0, 0, W, H);
-                const out = cv.toDataURL('image/jpeg', 0.7);
-                cv.width = 0; cv.height = 0;
-                resolve(out && out.length > 50 ? out : src);
-              } catch { resolve(src); }
-            };
-            img.onerror = () => resolve(src);
-            img.src = loadSrc;
-          });
-          if (!isData) {
-            if (_pdfCompressCache.size >= _PDF_COMPRESS_CACHE_MAX) _pdfCompressCache.clear();
-            _pdfCompressCache.set(src, result);
-          }
-          return result;
+          return await new Promise((res, rej) => { const im = new window.Image(); im.onload = () => res(im); im.onerror = rej; im.src = loadSrc; });
+        })();
+        imgCache.set(src, p);
+        return p;
+      };
+      const encodeAt = async (src, maxW, q) => {
+        try {
+          const im = await loadImg(src);
+          // Logos/sigles (< 1000px) : intacts (l'aplatissement JPEG casserait leur transparence).
+          if (im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
+          const scale = Math.min(1, maxW / im.naturalWidth);
+          const W = Math.max(1, Math.round(im.naturalWidth * scale));
+          const H = Math.max(1, Math.round(im.naturalHeight * scale));
+          const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+          ctx.drawImage(im, 0, 0, W, H);
+          const out = cv.toDataURL('image/jpeg', q); cv.width = 0; cv.height = 0;
+          return out && out.length > 50 ? out : src;
         } catch { return src; }
-        finally { if (objUrl) URL.revokeObjectURL(objUrl); }
       };
 
-      const pagesHtml = (await Promise.all(pages.map(async el => {
-        // Capturer le contenu des canvas sur l'ORIGINAL avant clonage —
-        // cloneNode(true) copie la structure DOM mais pas les pixels des canvas.
+      // 1) Construire les clones + inventorier chaque image (photo vs plan).
+      const clones = [];
+      const imgJobs = []; // { el, src, role }
+      for (const el of pages) {
         const origCanvases = Array.from(el.querySelectorAll('canvas'));
-        const canvasData = origCanvases.map(c => {
-          try { return { src: c.toDataURL(), cssText: c.style.cssText }; } catch { return null; }
-        });
+        const canvasData = origCanvases.map(c => { try { return { src: c.toDataURL(), cssText: c.style.cssText }; } catch { return null; } });
         origCanvases.forEach((c, i) => { c.dataset._pi = String(i); });
-
         const clone = el.cloneNode(true);
-
-        // Nettoyer les marqueurs temporaires sur l'original
         origCanvases.forEach(c => { delete c.dataset._pi; });
-
-        // Supprimer les éléments UI non imprimables
         clone.querySelectorAll('[data-print="hide"]').forEach(e => e.remove());
-
-        // Remplacer les canvas clonés (vides) par les images capturées depuis l'original
         clone.querySelectorAll('canvas').forEach(canvas => {
           const i = parseInt(canvas.dataset._pi ?? '-1');
           const data = i >= 0 ? canvasData[i] : null;
           if (!data?.src) { canvas.parentNode?.removeChild(canvas); return; }
-          try {
-            const img = document.createElement('img');
-            img.src = data.src;
-            img.style.cssText = data.cssText;
-            canvas.parentNode?.replaceChild(img, canvas);
-          } catch {}
+          try { const img = document.createElement('img'); img.src = data.src; img.style.cssText = data.cssText; canvas.parentNode?.replaceChild(img, canvas); } catch {}
         });
-
-        // Compresser les photos non-annotées (data URL bruts, potentiellement très lourds)
-        await Promise.all(Array.from(clone.querySelectorAll('img[src]')).map(async img => {
-          img.src = await compressIfNeeded(img.src);
-        }));
-
         clone.style.marginTop = '0';
-        return `<div class="pdf-page">${clone.innerHTML}</div>`;
-      }))).join('\n');
+        Array.from(clone.querySelectorAll('img[src]')).forEach(img => {
+          const src = img.getAttribute('src');
+          if (!src) return;
+          if (!src.startsWith('data:image/') && !/^https?:/i.test(src)) return; // blob:/autre → intact
+          imgJobs.push({ el: img, src, role: img.getAttribute('data-role') === 'plan' ? 'plan' : 'photo' });
+        });
+        clones.push(clone);
+      }
+
+      // 2) Encodage initial (plans nets, photos compressées) puis budget itératif.
+      let photoTier = 0, planTier = 0;
+      const bytesOf = (s) => (s && s.startsWith('data:')) ? Math.round(s.length * 0.75) : 0;
+      const encoded = new Map(); // el → dataURL courant
+      const reencode = async (role) => {
+        const [pMaxW, pQ] = PHOTO_TIERS[photoTier];
+        const [lMaxW, lQ] = PLAN_TIERS[planTier];
+        await Promise.all(imgJobs.filter(j => role == null || j.role === role).map(async j => {
+          const [mw, q] = j.role === 'plan' ? [lMaxW, lQ] : [pMaxW, pQ];
+          encoded.set(j.el, await encodeAt(j.src, mw, q));
+        }));
+      };
+      await reencode(null);
+      const measure = () => imgJobs.reduce((s, j) => s + bytesOf(encoded.get(j.el)), 0);
+      let total = measure(), guard = 0;
+      while (total > TARGET_BYTES && guard++ < 12) {
+        if (photoTier < PHOTO_TIERS.length - 1) { photoTier++; await reencode('photo'); }
+        else if (planTier < PLAN_TIERS.length - 1) { planTier++; await reencode('plan'); }
+        else break;
+        total = measure();
+      }
+      console.log(`[PDF] Images ~${(total / 1048576).toFixed(1)} Mo (photos palier ${photoTier + 1}/${PHOTO_TIERS.length}, plans palier ${planTier + 1}/${PLAN_TIERS.length}) — avant impression navigateur`);
+      // 3) Appliquer les sources encodées + libérer les object URLs.
+      imgJobs.forEach(j => { j.el.setAttribute('src', encoded.get(j.el) || j.src); });
+      objUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
+
+      const pagesHtml = clones.map(c => `<div class="pdf-page">${c.innerHTML}</div>`).join('\n');
 
       // CSS : 1px CSS = 1/96 inch, 1mm = 3.7795px → PW=630px = 166.7mm.
       // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.

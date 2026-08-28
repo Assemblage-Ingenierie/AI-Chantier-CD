@@ -215,13 +215,14 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 
 ## 🔴 EXPORT PDF — POIDS TOUJOURS ENVOYABLE PAR EMAIL (exigence Thomas)
 
-**Tout PDF exporté par l'app DOIT rester envoyable par email — cible < 25 Mo, idéalement quelques Mo — SANS EXCEPTION.** Un rapport à 45 Mo est inadmissible (rejeté par la plupart des messageries).
+**Tout PDF exporté par l'app DOIT rester envoyable par email — cible MAX 5 Mo (exigence Thomas), tout en conservant une bonne qualité photo ET des plans NETS — SANS EXCEPTION.** Un rapport à 14 Mo (ou pire, 45 Mo) est inadmissible (rejeté par la plupart des messageries).
 
-- Le rendu PDF est centralisé dans `src/lib/generateRapport.js > exportPdf` — c'est le SEUL chemin d'export, donc toute garantie de poids doit y vivre.
-- **Budget de poids OBLIGATOIRE** (déjà en place) : après encodage des images, on mesure le poids cumulé ; s'il dépasse ~22 Mo, on réduit d'abord les PHOTOS (paliers résolution/qualité), puis en dernier recours on recompresse les PLANS. Ne JAMAIS retirer ce budget.
-- Ne jamais embarquer une image en pleine résolution capteur sans la ré-encoder (`downscaleDataUrl`). Les plans par observation peuvent multiplier le nombre d'images embarquées → le budget doit rester le garde-fou.
+- ⚠️ Le chemin d'export RÉEL est `src/components/vue/RapportPreview.jsx > useImperativeHandle > print()` (impression navigateur du DOM de l'aperçu → « Enregistrer en PDF »). `generateRapport.js > exportPdf` (moteur jsPDF vectoriel) existe encore mais n'est PLUS branché. Toute garantie de poids/qualité doit vivre dans `print()`.
+- **Budget de poids OBLIGATOIRE** (dans `print()`) : après encodage des images, on mesure le poids cumulé ; tant qu'il dépasse la cible (~4,6 Mo d'images pour rester < 5 Mo), on réduit d'ABORD les PHOTOS (paliers résolution/qualité `PHOTO_TIERS`), puis EN DERNIER RECOURS les PLANS (`PLAN_TIERS`). Ne JAMAIS retirer ce budget.
+- **Plans NETS** : les images `data-role="plan"` (plans + annexes) sont encodées en HAUTE résolution (palier initial 3000px q0.85) pour rester nettes « comme le PDF » ; elles ne sont dégradées que si le budget l'exige, après les photos.
+- Ne jamais embarquer une image en pleine résolution capteur sans la ré-encoder. Les plans par observation peuvent multiplier le nombre d'images embarquées → le budget doit rester le garde-fou.
 - Si on ajoute un nouveau type d'export PDF, il doit passer par le même budget.
-- Log de contrôle : `[PDF] Fichier final : X Mo` à chaque export (console).
+- Log de contrôle : `[PDF] Images ~X Mo …` à chaque export (console). Le poids FINAL dépend ensuite du moteur d'impression du navigateur (qui peut encore ré-échantillonner) — calibrer la cible d'après le retour terrain.
 
 ---
 
