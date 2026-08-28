@@ -6,6 +6,12 @@ import { drawAnnotationPaths } from './Annotator.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
+// Charge de drag d'une photo PARTAGÉE entre instances de SortList (une par zone). Le
+// dataTransfer 'text/photo' ne se relit pas toujours au drop d'une AUTRE zone (getData renvoie
+// '' selon le navigateur), et le ref local est nul dans l'instance cible → le dépôt était ignoré
+// (« ça ne me la met pas », Thomas). Ce payload module-level survit à la traversée des zones.
+let _photoDragPayload = null;
+
 // Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe. Sinon,
 // si la photo porte des annotations (paths) mais que le composite manque (upload jamais abouti),
 // on superpose un CANVAS qui dessine UNIQUEMENT les annotations (pas l'image) par-dessus la photo
@@ -365,6 +371,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                         onDragOver={onMovePhotoAcross ? (e => { if (e.dataTransfer.types.includes('text/photo')) e.preventDefault(); }) : undefined}
                         onDrop={onMovePhotoAcross ? (e => {
                           let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
+                          if (!d) d = _photoDragPayload; // fallback cross-zone
                           if (!d || d.fromItemId === item.id) return;
                           e.preventDefault();
                           onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
@@ -383,6 +390,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               e.stopPropagation(); clearTimeout(photoLP.current.timer);
                               const payload = { fromLocId: locId, fromItemId: item.id, fromPhotoIdx: realIdx };
                               photoDragRef.current = payload;
+                              _photoDragPayload = payload; // partagé entre zones (fallback robuste au drop)
                               // dataTransfer = canal qui survit au passage d'une zone (SortList) à l'autre.
                               try { e.dataTransfer.setData('text/photo', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'move'; } catch {}
                               window.dispatchEvent(new Event('ai-photo-drag-start')); // révèle les cadres vides
@@ -392,13 +400,13 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               e.preventDefault(); e.stopPropagation();
                               let d = null;
                               try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
-                              if (!d) d = photoDragRef.current;
+                              if (!d) d = photoDragRef.current || _photoDragPayload;
                               if (!d) return;
                               if (d.fromItemId === item.id) reorderPhotos(item, d.fromPhotoIdx, realIdx);
                               else onMovePhotoAcross?.(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
                               photoDragRef.current = null;
                             }) : undefined}
-                            onDragEnd={canDrag ? (() => { photoDragRef.current = null; window.dispatchEvent(new Event('ai-photo-drag-end')); }) : undefined}
+                            onDragEnd={canDrag ? (() => { photoDragRef.current = null; _photoDragPayload = null; window.dispatchEvent(new Event('ai-photo-drag-end')); }) : undefined}
                             style={{ position:'relative', flexShrink:0 }}>
                             <AnnotatedThumb
                               photo={ph}
@@ -448,10 +456,11 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                         onDragOver={e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); setOverEmptyId(item.id); } }}
                         onDragLeave={() => setOverEmptyId(prev => prev === item.id ? null : prev)}
                         onDrop={e => {
-                          e.preventDefault();
+                          e.preventDefault(); e.stopPropagation();
                           let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
-                          if (!d) d = photoDragRef.current;
+                          if (!d) d = photoDragRef.current || _photoDragPayload;
                           setOverEmptyId(null);
+                          _photoDragPayload = null;
                           window.dispatchEvent(new Event('ai-photo-drag-end'));
                           if (!d || d.fromItemId === item.id) return;
                           onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
