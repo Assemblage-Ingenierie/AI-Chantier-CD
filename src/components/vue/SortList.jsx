@@ -12,6 +12,49 @@ const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 // (« ça ne me la met pas », Thomas). Ce payload module-level survit à la traversée des zones.
 let _photoDragPayload = null;
 
+// ── AUTO-SCROLL pendant un glisser de photo (demande Thomas : « si ma photo est en haut/bas
+//    hors écran, ça scrolle tout seul »). Une SEULE boucle module-level quel que soit le nombre
+//    d'instances de SortList, active uniquement pendant un glisser de photo (_photoDragPayload).
+//    Le dragover HTML5 ne se répète pas curseur immobile → on entretient le défilement en rAF. ──
+if (typeof window !== 'undefined') {
+  let dragY = 0, dragX = 0, rafId = null, scroller = null;
+  const EDGE = 90, MAXV = 24; // px : zone sensible et vitesse max
+  const findScroller = (x, y) => {
+    let el = document.elementFromPoint(x, y);
+    while (el && el !== document.body) {
+      const s = getComputedStyle(el);
+      if (/(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 4) return el;
+      el = el.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  };
+  const isRoot = (el) => el === document.scrollingElement || el === document.documentElement || el === document.body;
+  const step = () => {
+    if (!_photoDragPayload || !scroller) { rafId = null; return; }
+    const top = isRoot(scroller) ? 0 : scroller.getBoundingClientRect().top;
+    const bottom = isRoot(scroller) ? window.innerHeight : scroller.getBoundingClientRect().bottom;
+    let v = 0;
+    if (dragY < top + EDGE) v = -MAXV * Math.min(1, (top + EDGE - dragY) / EDGE);
+    else if (dragY > bottom - EDGE) v = MAXV * Math.min(1, (dragY - (bottom - EDGE)) / EDGE);
+    if (v) { if (isRoot(scroller)) window.scrollBy(0, v); else scroller.scrollBy(0, v); }
+    rafId = requestAnimationFrame(step);
+  };
+  const stop = () => { if (rafId != null) cancelAnimationFrame(rafId); rafId = null; scroller = null; };
+  window.addEventListener('dragover', (e) => {
+    if (!_photoDragPayload) return;
+    e.preventDefault(); // autorise le survol partout (sinon certains navigateurs bloquent le drag hors cible)
+    dragY = e.clientY; dragX = e.clientX;
+    // Re-cherche la zone scrollable sous le curseur à chaque mouvement : on suit le curseur
+    // même s'il passe d'une zone à l'autre (plus robuste qu'un cache figé).
+    const s = findScroller(dragX, dragY);
+    if (s) scroller = s;
+    if (rafId == null) rafId = requestAnimationFrame(step);
+  });
+  window.addEventListener('ai-photo-drag-end', stop);
+  window.addEventListener('dragend', stop);
+  window.addEventListener('drop', stop);
+}
+
 // Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe. Sinon,
 // si la photo porte des annotations (paths) mais que le composite manque (upload jamais abouti),
 // on superpose un CANVAS qui dessine UNIQUEMENT les annotations (pas l'image) par-dessus la photo
