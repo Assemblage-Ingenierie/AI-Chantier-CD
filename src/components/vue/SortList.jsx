@@ -67,6 +67,19 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
   const [photoZoom, setPhotoZoom]       = useState(null); // src de l'aperçu plein écran (appui long)
   const photoDragRef = useRef(null);                      // { itemId, from } réordonnancement photos
   const photoLP      = useRef({ timer: null, fired: false }); // appui long sur une photo
+  // Un glisser de photo est-il en cours ? (n'importe où dans la visite) → révèle une zone de
+  // dépôt sur les observations SANS photo, pour pouvoir y déposer une photo (demande Thomas :
+  // « déposer dans un cadre vide ne marchait pas »). Signalé par événement window car il y a
+  // une instance de SortList PAR zone → le drag traverse les instances.
+  const [photoDragging, setPhotoDragging] = useState(false);
+  const [overEmptyId, setOverEmptyId] = useState(null); // cadre vide survolé pendant le glisser
+  useEffect(() => {
+    const on = () => setPhotoDragging(true);
+    const off = () => setPhotoDragging(false);
+    window.addEventListener('ai-photo-drag-start', on);
+    window.addEventListener('ai-photo-drag-end', off);
+    return () => { window.removeEventListener('ai-photo-drag-start', on); window.removeEventListener('ai-photo-drag-end', off); };
+  }, []);
 
   // Réordonne les photos d'un item (déplace from → to) puis remonte au parent.
   const reorderPhotos = (item, from, to) => {
@@ -372,6 +385,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               photoDragRef.current = payload;
                               // dataTransfer = canal qui survit au passage d'une zone (SortList) à l'autre.
                               try { e.dataTransfer.setData('text/photo', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'move'; } catch {}
+                              window.dispatchEvent(new Event('ai-photo-drag-start')); // révèle les cadres vides
                             }) : undefined}
                             onDragOver={canDrag ? (e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); e.stopPropagation(); } }) : undefined}
                             onDrop={canDrag ? (e => {
@@ -384,7 +398,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                               else onMovePhotoAcross?.(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
                               photoDragRef.current = null;
                             }) : undefined}
-                            onDragEnd={canDrag ? (() => { photoDragRef.current = null; }) : undefined}
+                            onDragEnd={canDrag ? (() => { photoDragRef.current = null; window.dispatchEvent(new Event('ai-photo-drag-end')); }) : undefined}
                             style={{ position:'relative', flexShrink:0 }}>
                             <AnnotatedThumb
                               photo={ph}
@@ -425,6 +439,31 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                       ))}
                     </div>
                   );
+                  // Observation SANS photo : cadre de dépôt révélé PENDANT un glisser de photo
+                  // → on peut y déposer une photo venue d'une autre observation (demande Thomas).
+                  if (onMovePhotoAcross && photoDragging) {
+                    const over = overEmptyId === item.id;
+                    return (
+                      <div
+                        onDragOver={e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); setOverEmptyId(item.id); } }}
+                        onDragLeave={() => setOverEmptyId(prev => prev === item.id ? null : prev)}
+                        onDrop={e => {
+                          e.preventDefault();
+                          let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
+                          if (!d) d = photoDragRef.current;
+                          setOverEmptyId(null);
+                          window.dispatchEvent(new Event('ai-photo-drag-end'));
+                          if (!d || d.fromItemId === item.id) return;
+                          onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
+                        }}
+                        style={{ marginTop: isDesktop ? 14 : 10, border:`2px dashed ${over ? DA.red : '#C9CDD2'}`,
+                          background: over ? DA.redL : '#FAFBFC', borderRadius: isDesktop ? 10 : 8,
+                          padding: isDesktop ? '18px 12px' : '14px 10px', display:'flex', alignItems:'center', justifyContent:'center',
+                          gap:8, color: over ? DA.red : DA.grayL, fontSize:12.5, fontWeight:700, transition:'all 0.1s' }}>
+                        <Ic n="img" s={16}/> Déposer la photo ici
+                      </div>
+                    );
+                  }
                   return null;
                 })()}
 
