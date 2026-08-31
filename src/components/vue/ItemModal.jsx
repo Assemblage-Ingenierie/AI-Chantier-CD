@@ -525,9 +525,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     setImproving(true);
     setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null);
     try {
-      const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, 6).map(p => photoToImageBlock(p.data)))).filter(Boolean);
       const plain = htmlToPlain(form.commentaire || '');
       const titre = (form.titre || '').slice(0, 300);
+      // Vitesse : l'analyse « vision » des photos est le principal coût de latence. Texte court →
+      // moins de photos (3) ; sinon 4 max (au lieu de 6). Demande Thomas : que ce soit rapide,
+      // surtout sur un petit texte.
+      const maxImgs = plain.trim().length < 250 ? 3 : 4;
+      const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, maxImgs).map(p => photoToImageBlock(p.data)))).filter(Boolean);
 
       // CAS 1 — champ vide : génération d'un commentaire structure.
       if (!plain.trim()) {

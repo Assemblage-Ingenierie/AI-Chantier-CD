@@ -62,14 +62,26 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
 const GEMINI_MODEL = 'gemini-3.6-flash'; // modèle Flash stable = repli si le modèle demandé est indisponible
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
+// Convertit un contenu de message (string OU tableau de blocs texte/image façon Anthropic) en
+// "parts" Gemini. IMPORTANT : les blocs image ({type:'image',source:{base64}}) sont mappés en
+// inline_data → Gemini VOIT les photos (avant, elles étaient perdues → analyse aveugle).
+function toGeminiParts(content) {
+  if (typeof content === 'string') return [{ text: content }];
+  if (Array.isArray(content)) {
+    return content.map(c => {
+      if (typeof c === 'string') return { text: c };
+      if (c?.type === 'text') return { text: c.text || '' };
+      if (c?.type === 'image' && c.source?.type === 'base64' && c.source?.data)
+        return { inline_data: { mime_type: c.source.media_type || 'image/jpeg', data: c.source.data } };
+      if (c?.text) return { text: c.text };
+      return null;
+    }).filter(Boolean);
+  }
+  return [{ text: String(content ?? '') }];
+}
+
 function toGeminiContents(messages) {
-  return (messages || []).map(m => {
-    let text = '';
-    if (typeof m.content === 'string') text = m.content;
-    else if (Array.isArray(m.content)) text = m.content.map(c => (typeof c === 'string' ? c : (c?.text || ''))).join('\n');
-    else text = String(m.content ?? '');
-    return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text }] };
-  });
+  return (messages || []).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: toGeminiParts(m.content) }));
 }
 
 async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000) {
