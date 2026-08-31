@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { logEvent } from '../../lib/logger.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
@@ -332,6 +333,13 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
   const handleSave = () => {
     try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
+    // DIAGNOSTIC image collée absente (bug Thomas) : trace ce qui est réellement enregistré.
+    try {
+      const c = form.commentaire || '';
+      if (c.includes('data-cimg') || c.includes('__pending')) {
+        logEvent('comment.save', { itemId: form.id, len: c.length, imgs: (c.match(/<img/g) || []).length, cimg: (c.match(/data-cimg/g) || []).length, pending: c.includes('__pending'), uploading: c.includes('data-uploading') });
+      }
+    } catch { /* ignore */ }
     onSave(form);
     onClose();
   };
@@ -681,21 +689,22 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         onSave={async (paths, exported) => {
           const oldPath = annotatingCommentImg.path;
           setAnnotatingCommentImg(null);
-          if (!exported) return;
+          if (!exported) { logEvent('comment.annot', { step: 'no-exported' }); return; }
           const newPath = await uploadCommentImage(exported, form.id);
-          if (!newPath) return;
+          if (!newPath) { logEvent('comment.annot', { step: 'upload-failed' }); return; }
           const map = await signCommentPaths([newPath]);
           const url = map[newPath];
-          if (!url) return;
+          if (!url) { logEvent('comment.annot', { step: 'sign-failed', newPath }); return; }
           setForm(f => {
             try {
               const doc = new DOMParser().parseFromString(f.commentaire || '', 'text/html');
               const img = doc.querySelector(`img[data-cimg="${oldPath}"]`);
+              logEvent('comment.annot', { step: img ? 'applied' : 'img-not-found', oldPath, newPath });
               if (!img) return f;
               img.setAttribute('src', url);
               img.setAttribute('data-cimg', newPath);
               return { ...f, commentaire: doc.body.innerHTML };
-            } catch { return f; }
+            } catch (e) { logEvent('comment.annot', { step: 'parse-error', msg: String(e?.message || e) }); return f; }
           });
           bumpSync();
         }}

@@ -411,7 +411,12 @@ const RichTextArea = forwardRef(function RichTextArea(
       if (img) { img.setAttribute('data-uploading', '1'); applyCommentImgStyle(img); }
       try {
         const res = await onPasteImage(localUrl);
-        if (!img || !img.isConnected) return; // image retirée entre-temps
+        // GARDE ANTI-RACE : ne toucher l'image QUE si elle est ENCORE celle en attente (même
+        // tempPath). Si l'utilisateur l'a annotée entre-temps (data-cimg devenu un vrai chemin),
+        // ce callback tardif NE DOIT PAS l'écraser ni la SUPPRIMER — sinon l'image annotée
+        // disparaît à l'enregistrement (bug Thomas : « image annotée absente », réseau de chantier
+        // lent → l'upload du collage se termine après l'annotation).
+        if (!img || !img.isConnected || img.getAttribute('data-cimg') !== tempPath) return;
         if (res?.url && res?.path) {
           img.setAttribute('src', res.url);        // remplace l'aperçu local par l'URL bucket (léger)
           img.setAttribute('data-cimg', res.path);
@@ -419,7 +424,7 @@ const RichTextArea = forwardRef(function RichTextArea(
           applyCommentImgStyle(img);
           handleInput();
         } else { img.remove(); handleInput(); }     // upload KO → on retire l'aperçu
-      } catch { if (img && img.isConnected) { img.remove(); handleInput(); } }
+      } catch { if (img && img.isConnected && img.getAttribute('data-cimg') === tempPath) { img.remove(); handleInput(); } }
     };
     reader.readAsDataURL(file);
   };
