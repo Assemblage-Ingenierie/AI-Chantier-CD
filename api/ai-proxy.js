@@ -59,7 +59,7 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
 // ── Gemini (Google) — activé si la requête demande provider:'gemini' ────────────
 // Variable d'env Vercel requise : GEMINI_API_KEY. La réponse est normalisée au MÊME
 // format que Claude ({ content:[{type:'text',text}] }) → aucun changement côté app.
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-3.6-flash'; // modèle Flash stable = repli si le modèle demandé est indisponible
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 function toGeminiContents(messages) {
