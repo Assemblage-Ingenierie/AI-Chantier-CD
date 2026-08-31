@@ -88,9 +88,13 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    // Les modèles Gemini récents « réfléchissent » (thinking) par défaut → lenteur / timeout.
+    // On DÉSACTIVE la réflexion (thinkingBudget: 0) → réponse quasi immédiate. Sur les modèles où
+    // ce réglage n'est pas permis, Google renvoie une erreur claire (pas un hang) → visible côté app.
+    const genCfg = { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } };
     const body = {
       contents: toGeminiContents(payload.messages),
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: genCfg,
     };
     if (payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
     const res = await fetch(`${GEMINI_API(model)}?key=${encodeURIComponent(apiKey)}`, {
