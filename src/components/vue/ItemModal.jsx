@@ -816,6 +816,32 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     try { document.execCommand('styleWithCSS', false, false); } catch { /* laisse G/I en balises normales */ }
     ed?.focus();
   };
+  // Surlignage (fond) : demande Thibaud — MÊMES pastilles, un bouton en plus pour basculer en
+  // mode « surligneur ». On applique un fond TRANSLUCIDE de la couleur (comme un vrai surligneur)
+  // → le texte reste lisible. La pastille « noir/défaut » RETIRE le surlignage.
+  const [hlMode, setHlMode] = useState(false);
+  const hexToHl = (hex) => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex);
+    if (!m) return hex;
+    const n = parseInt(m[1], 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.30)`;
+  };
+  const applyHighlight = (bg) => {
+    const ed = textareaRef.current?.getEditor?.();
+    try { document.execCommand('styleWithCSS', false, true); } catch { /* ok */ }
+    // hiliteColor (Chrome/Firefox avec styleWithCSS) ; repli backColor si non supporté.
+    let ok = false;
+    try { ok = document.execCommand('hiliteColor', false, bg); } catch { /* ok */ }
+    if (!ok) { try { document.execCommand('backColor', false, bg); } catch { /* ok */ } }
+    try { document.execCommand('styleWithCSS', false, false); } catch { /* ok */ }
+    ed?.focus();
+  };
+  // Clic sur une pastille : couleur du texte, OU surlignage si le mode surligneur est actif.
+  const onSwatch = (c) => {
+    if (!hlMode) { applyColor(c); return; }
+    if (c === '#111111') applyHighlight('transparent'); // pastille défaut = retirer le surlignage
+    else applyHighlight(hexToHl(c));
+  };
   // Insère un « tableau » : une rangée de N cases côte à côte (demande Thomas). Chaque case peut
   // recevoir une image collée OU du texte. Rendu en flex (éditeur + aperçu rapport).
   const insertGrid = (cols) => {
@@ -925,12 +951,21 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 </button>
               ))}
               <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
-              {/* Couleur du texte : surligner le texte puis taper une pastille (ou avant d'écrire). */}
+              {/* Bouton SURLIGNEUR : bascule les pastilles entre couleur du TEXTE et SURLIGNAGE
+                  (fond translucide, mêmes couleurs) — demande Thibaud. */}
+              <button type="button" title={hlMode ? 'Surligneur actif — cliquez une couleur pour surligner (pastille noire = retirer)' : 'Surligner le texte (fond de couleur)'}
+                onMouseDown={e => { e.preventDefault(); setHlMode(v => !v); }}
+                style={{ width:30,height:28,borderRadius:5,cursor:'pointer',flexShrink:0,fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',
+                  border:`1.5px solid ${hlMode ? DA.red : DA.border}`, background: hlMode ? DA.redL : 'white', color: hlMode ? DA.red : DA.gray }}>
+                🖍
+              </button>
+              {/* Pastilles : couleur du texte, OU surlignage si le mode surligneur est actif. */}
               {COLOR_SWATCHES.map(s => (
-                <button key={s.c} type="button" title={`Couleur : ${s.t}`}
-                  onMouseDown={e => { e.preventDefault(); applyColor(s.c); }}
-                  style={{ width:22,height:22,borderRadius:'50%',border:'1.5px solid rgba(0,0,0,0.15)',background:s.c,
-                    cursor:'pointer',flexShrink:0,padding:0,boxShadow:'0 1px 2px rgba(0,0,0,0.12)' }}/>
+                <button key={s.c} type="button" title={hlMode ? `Surligner : ${s.t}` : `Couleur : ${s.t}`}
+                  onMouseDown={e => { e.preventDefault(); onSwatch(s.c); }}
+                  style={{ width:22,height:22,borderRadius:'50%',flexShrink:0,padding:0,cursor:'pointer',
+                    border: hlMode ? `2px solid ${DA.red}` : '1.5px solid rgba(0,0,0,0.15)',
+                    background:s.c, boxShadow:'0 1px 2px rgba(0,0,0,0.12)' }}/>
               ))}
               <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
               {/* Insérer un tableau (cases côte à côte) : 2 ou 3 colonnes. Chaque case = image ou texte. */}
