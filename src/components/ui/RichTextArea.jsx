@@ -149,6 +149,8 @@ const RichTextArea = forwardRef(function RichTextArea(
   const [selGrid, setSelGrid] = useState(null);   // tableau (data-grid) sélectionné → barre redimensionnement
   const [gridBox, setGridBox] = useState(null);   // position de la barre du tableau {top,left}
   const [selGridW, setSelGridW] = useState(100);  // largeur % live du tableau
+  const [selGridAlign, setSelGridAlign] = useState('left');  // left | center
+  const [selGridBorder, setSelGridBorder] = useState('none'); // none|all|top|bottom|left|right
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -214,6 +216,38 @@ const RichTextArea = forwardRef(function RichTextArea(
   };
   const resizeGridCommit = () => { if (selGrid) handleInput(); };
   const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); handleInput(); };
+  // Centrer / aligner à gauche le tableau (data-align + marges auto).
+  const toggleGridAlign = () => {
+    if (!selGrid) return;
+    const next = selGridAlign === 'center' ? 'left' : 'center';
+    selGrid.setAttribute('data-align', next);
+    selGrid.style.marginLeft = next === 'center' ? 'auto' : '0';
+    selGrid.style.marginRight = next === 'center' ? 'auto' : '0';
+    setSelGridAlign(next); refreshGridBox(selGrid); handleInput();
+  };
+  // Applique un mode de bordure aux cases (DOM éditeur : WYSIWYG). 'none' = pointillé d'édition.
+  const applyGridBorderDom = (grid, mode) => {
+    const BC = '1px solid #B8C0CC';
+    grid.querySelectorAll('[data-cell]').forEach(c => {
+      c.style.border = ''; c.style.borderTop = ''; c.style.borderBottom = ''; c.style.borderLeft = ''; c.style.borderRight = '';
+      c.style.padding = mode === 'none' ? '6px 8px' : '6px 8px';
+      if (mode === 'none') c.style.border = '1px dashed #cbd5e1';
+      else if (mode === 'all') c.style.border = BC;
+      else if (mode === 'top') c.style.borderTop = BC;
+      else if (mode === 'bottom') c.style.borderBottom = BC;
+      else if (mode === 'left') c.style.borderLeft = BC;
+      else if (mode === 'right') c.style.borderRight = BC;
+    });
+    grid.setAttribute('data-border', mode);
+  };
+  const GRID_BORDERS = ['none', 'all', 'top', 'bottom', 'left', 'right'];
+  const GRID_BORDER_LBL = { none: 'Aucune', all: 'Toutes', top: 'Haut', bottom: 'Bas', left: 'Gauche', right: 'Droite' };
+  const cycleGridBorder = () => {
+    if (!selGrid) return;
+    const next = GRID_BORDERS[(GRID_BORDERS.indexOf(selGridBorder) + 1) % GRID_BORDERS.length];
+    applyGridBorderDom(selGrid, next);
+    setSelGridBorder(next); handleInput();
+  };
 
   // Alignement : appliqué IMPÉRATIVEMENT sur le contentEditable (le style React seul ne
   // suffisait pas selon le contenu déjà saisi → les boutons gauche/centre/droite/justifier
@@ -394,6 +428,8 @@ const RichTextArea = forwardRef(function RichTextArea(
       if (grid && wrapperRef.current?.contains(grid)) {
         setSelGrid(grid);
         setSelGridW(parseFloat(grid.getAttribute('data-w')) || 100);
+        setSelGridAlign(grid.getAttribute('data-align') === 'center' ? 'center' : 'left');
+        setSelGridBorder(grid.getAttribute('data-border') || 'none');
         refreshGridBox(grid);
       } else if (selGrid) {
         setSelGrid(null);
@@ -537,14 +573,25 @@ const RichTextArea = forwardRef(function RichTextArea(
       {/* Barre flottante d'un tableau sélectionné : largeur + suppression (demande Thomas). */}
       {selGrid && gridBox && (
         <div style={{ position:'absolute', top:gridBox.top, left:gridBox.left, zIndex:30,
-          display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap', background:'#1f1f1f', color:'#fff',
-          borderRadius:6, padding:'6px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(320px, 90vw)' }}>
+          display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'6px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(380px, 92vw)' }}>
           <span style={{ opacity:0.65, fontWeight:600 }}>Tableau</span>
           <input type="range" min="30" max="100" step="1" value={selGridW}
             onChange={e => resizeGridLive(parseFloat(e.target.value))}
             onPointerUp={resizeGridCommit} onMouseUp={resizeGridCommit} onKeyUp={resizeGridCommit}
             style={{ width:110, accentColor:'#E30513', cursor:'pointer' }}/>
           <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selGridW)}%</span>
+          <span style={{ width:1, height:18, background:'#444' }}/>
+          <button title={selGridAlign === 'center' ? 'Aligner à gauche' : 'Centrer le tableau'}
+            onMouseDown={e => { e.preventDefault(); toggleGridAlign(); }}
+            style={{ background: selGridAlign === 'center' ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:12, fontWeight:700 }}>
+            ⇔
+          </button>
+          <button title="Bordures des cases (cliquer pour changer)"
+            onMouseDown={e => { e.preventDefault(); cycleGridBorder(); }}
+            style={{ background: selGridBorder !== 'none' ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+            ▦ {GRID_BORDER_LBL[selGridBorder]}
+          </button>
           <span style={{ width:1, height:18, background:'#444' }}/>
           <button title="Supprimer le tableau" onMouseDown={e => { e.preventDefault(); deleteGrid(); }}
             style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>

@@ -119,10 +119,18 @@ function renderHtml(html) {
         const cols = Math.max(1, parseInt(node.getAttribute('data-cols')) || cells.length);
         const wAttr = parseFloat(node.getAttribute('data-w'));
         const width = Number.isFinite(wAttr) ? `${Math.max(20, Math.min(100, wAttr))}%` : '100%';
+        const margin = node.getAttribute('data-align') === 'center' ? '8px auto' : '8px 0';
+        // Largeurs de colonnes variables (data-widths = ratios « 2,1,1 »), sinon égales.
+        const ws = (node.getAttribute('data-widths') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0);
+        const template = ws.length === cols ? ws.map(w => `${w}fr`).join(' ') : `repeat(${cols}, 1fr)`;
+        // Bordures de case : aucune / toutes / un seul côté (haut, bas, gauche, droite).
+        const bm = node.getAttribute('data-border') || 'none';
+        const BC = '1px solid #B8C0CC';
+        const cellBorder = bm === 'all' ? { border: BC } : bm === 'top' ? { borderTop: BC } : bm === 'bottom' ? { borderBottom: BC } : bm === 'left' ? { borderLeft: BC } : bm === 'right' ? { borderRight: BC } : {};
         blocks.push({ items: [
-          <span key={k()} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 8, margin: '8px 0', width, maxWidth: '100%', alignItems: 'start' }}>
+          <span key={k()} style={{ display: 'grid', gridTemplateColumns: template, gap: 8, margin, width, maxWidth: '100%', alignItems: 'start' }}>
             {cells.map((c, ci) => (
-              <span key={ci} style={{ minWidth: 0 }}>{renderHtml(c.innerHTML)}</span>
+              <span key={ci} style={{ minWidth: 0, ...(bm !== 'none' ? { padding: '4px 6px' } : {}), ...cellBorder }}>{renderHtml(c.innerHTML)}</span>
             ))}
           </span>
         ], isBullet: false });
