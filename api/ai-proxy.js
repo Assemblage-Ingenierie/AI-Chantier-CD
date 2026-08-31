@@ -84,13 +84,17 @@ function toGeminiContents(messages) {
   return (messages || []).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: toGeminiParts(m.content) }));
 }
 
-async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000) {
+async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, disableThinking = false) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    const genCfg = { maxOutputTokens: maxTokens };
+    // Coupe la « réflexion » (thinking) → réponse rapide. Valide sur Flash (budget 0), refusé par
+    // Pro (400) → le handler réessaie alors sans ce réglage. N'activer que quand demandé (Flash).
+    if (disableThinking) genCfg.thinkingConfig = { thinkingBudget: 0 };
     const body = {
       contents: toGeminiContents(payload.messages),
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: genCfg,
     };
     if (payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
     const res = await fetch(`${GEMINI_API(model)}?key=${encodeURIComponent(apiKey)}`, {
@@ -155,10 +159,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Gemini non configuré (GEMINI_API_KEY manquante dans Vercel). Repasse sur Claude dans les Paramètres.' });
     }
     let gModel = (typeof payload.model === 'string' && (payload.model.startsWith('gemini-') || payload.model.startsWith('gemma-'))) ? payload.model : GEMINI_MODEL;
-    let { res: gUp, timedOut: gTimedOut } = await callGemini(gModel, payload, geminiKey, maxTokens);
+    // Flash → on tente de COUPER la réflexion (rapide). Pro ne le permet pas → on ne le tente pas.
+    const wantFast = /flash/i.test(gModel);
+    let { res: gUp, timedOut: gTimedOut } = await callGemini(gModel, payload, geminiKey, maxTokens, 55000, wantFast);
     if (gTimedOut) return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
     let gData;
     try { gData = await gUp.json(); } catch { return res.status(502).json({ error: 'Réponse invalide du modèle Gemini' }); }
+    // Si la coupure de réflexion est refusée (400 « invalid argument »), on RÉESSAIE sans ce réglage.
+    if (wantFast && gUp.status === 400 && /invalid.?argument/i.test(JSON.stringify(gData?.error || ''))) {
+      const rt = await callGemini(gModel, payload, geminiKey, maxTokens, 55000, false);
+      if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); gUp = rt.res; gData = d2; } catch { /* garde l'erreur d'origine */ } }
+    }
     // Repli automatique : si le modèle demandé (ex. Pro) est introuvable/indisponible (404), on
     // réessaie avec le modèle Flash stable → l'IA répond quand même au lieu d'échouer.
     if ((gUp.status === 404 || (gUp.status === 400 && /not found|not supported|unavailable/i.test(JSON.stringify(gData?.error || '')))) && gModel !== GEMINI_MODEL) {
