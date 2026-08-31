@@ -489,6 +489,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
   const [bgVersion,        setBgVersion]        = useState(0);   // incrémenté pour forcer redraw après swap HQ
   const [photoStripBig,    setPhotoStripBig]    = useState(false); // agrandir les miniatures de la bande "Vues"
+  const [dispSize,         setDispSize]         = useState(null); // taille d'affichage CSS ajustée à la fenêtre (small→agrandi, big→réduit)
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -1004,6 +1005,31 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
     img.src = hqImage;
   }, [hqImage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Taille d'affichage ADAPTATIVE : le canvas garde sa résolution (cv.width/height = pixels image),
+  // mais on ajuste sa taille CSS pour qu'il REMPLISSE l'espace dispo tout en gardant le ratio.
+  // Une petite image (miniature de commentaire) devient assez grande pour être annotée confortablement,
+  // une grande reste contenue. getXY() lit getBoundingClientRect() → le mapping des coords reste exact
+  // quelle que soit la taille CSS (aucun impact sur les hit-tests ni sur l'export).
+  const fitCanvas = useCallback(() => {
+    const cv = cvRef.current, wrap = canvasWrapRef.current;
+    if (!cv || !wrap || !cv.width || !cv.height) return;
+    const cs = getComputedStyle(wrap);
+    const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    if (availW <= 0 || availH <= 0) return;
+    const scale = Math.min(availW / cv.width, availH / cv.height);
+    setDispSize({ w: Math.round(cv.width * scale), h: Math.round(cv.height * scale) });
+  }, []);
+  useEffect(() => { fitCanvas(); }, [bgOk, bgVersion, fitCanvas]);
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap || typeof ResizeObserver === 'undefined') { window.addEventListener('resize', fitCanvas); return () => window.removeEventListener('resize', fitCanvas); }
+    const ro = new ResizeObserver(() => fitCanvas());
+    ro.observe(wrap);
+    window.addEventListener('resize', fitCanvas);
+    return () => { ro.disconnect(); window.removeEventListener('resize', fitCanvas); };
+  }, [fitCanvas]);
 
   const getXY = (e, cv) => {
     const r = cv.getBoundingClientRect(), sx = cv.width / r.width, sy = cv.height / r.height;
@@ -2315,7 +2341,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
+              style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
               onContextMenu={e => e.preventDefault()}/>

@@ -641,14 +641,14 @@ const RichTextArea = forwardRef(function RichTextArea(
       {/* Barre flottante d'un tableau sélectionné : largeur + suppression (demande Thomas). */}
       {selGrid && gridBox && (
         <div style={{ position:'absolute', top:gridBox.top, left:gridBox.left, zIndex:30,
-          display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', background:'#1f1f1f', color:'#fff',
-          borderRadius:6, padding:'6px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(380px, 92vw)' }}>
+          display:'flex', alignItems:'center', gap:5, flexWrap:'nowrap', whiteSpace:'nowrap', background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'6px 8px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(430px, 94vw)' }}>
           <span style={{ opacity:0.65, fontWeight:600 }}>Tableau</span>
           <input type="range" min="30" max="100" step="1" value={selGridW}
             onChange={e => resizeGridLive(parseFloat(e.target.value))}
             onPointerUp={resizeGridCommit} onMouseUp={resizeGridCommit} onKeyUp={resizeGridCommit}
-            style={{ width:110, accentColor:'#E30513', cursor:'pointer' }}/>
-          <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selGridW)}%</span>
+            style={{ width:72, accentColor:'#E30513', cursor:'pointer', flexShrink:0 }}/>
+          <span style={{ width:30, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selGridW)}%</span>
           <span style={{ width:1, height:18, background:'#444' }}/>
           <button title={selGridAlign === 'center' ? 'Aligner à gauche' : 'Centrer le tableau'}
             onMouseDown={e => { e.preventDefault(); toggleGridAlign(); }}
