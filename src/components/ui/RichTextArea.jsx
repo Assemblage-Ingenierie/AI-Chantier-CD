@@ -151,6 +151,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   const [selGridW, setSelGridW] = useState(100);  // largeur % live du tableau
   const [selGridAlign, setSelGridAlign] = useState('left');  // left | center
   const [selGridBorder, setSelGridBorder] = useState('none'); // none|all|top|bottom|left|right
+  const [gridDividers, setGridDividers] = useState([]); // poignées entre colonnes {j,x,top,height}
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -204,7 +205,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   };
   useEffect(() => {
     if (!selGrid) return;
-    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setSelGrid(null); };
+    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) { setSelGrid(null); setGridDividers([]); } };
     document.addEventListener('mousedown', onDocDown);
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [selGrid]);
@@ -214,8 +215,51 @@ const RichTextArea = forwardRef(function RichTextArea(
     setSelGridW(w);
     if (selGrid) { selGrid.style.width = `${w}%`; selGrid.setAttribute('data-w', String(w)); }
   };
-  const resizeGridCommit = () => { if (selGrid) handleInput(); };
-  const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); handleInput(); };
+  const resizeGridCommit = () => { if (selGrid) { handleInput(); computeGridDividers(selGrid); } };
+  const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); setGridDividers([]); handleInput(); };
+
+  // Largeurs de colonnes VARIABLES : poignées glissables entre colonnes (data-widths = ratios fr).
+  const gridColCount = (grid) => Math.max(1, parseInt(grid.getAttribute('data-cols')) || grid.querySelectorAll('[data-cell]').length);
+  const computeGridDividers = (grid) => {
+    if (!grid || !wrapperRef.current) { setGridDividers([]); return; }
+    const cols = gridColCount(grid);
+    const cells = Array.from(grid.querySelectorAll('[data-cell]')).slice(0, cols);
+    if (cols < 2 || cells.length < cols) { setGridDividers([]); return; }
+    const wr = wrapperRef.current.getBoundingClientRect();
+    const gr = grid.getBoundingClientRect();
+    const divs = [];
+    for (let j = 0; j < cols - 1; j++) {
+      const a = cells[j].getBoundingClientRect(), b = cells[j + 1].getBoundingClientRect();
+      divs.push({ j, x: (a.right + b.left) / 2 - wr.left, top: gr.top - wr.top, height: gr.height });
+    }
+    setGridDividers(divs);
+  };
+  const startColDrag = (e, j) => {
+    e.preventDefault(); e.stopPropagation();
+    const grid = selGrid; if (!grid) return;
+    const cols = gridColCount(grid);
+    const cells = Array.from(grid.querySelectorAll('[data-cell]')).slice(0, cols);
+    if (cells.length < cols) return;
+    const a = cells[j].getBoundingClientRect(), b = cells[j + 1].getBoundingClientRect();
+    let widths = (grid.getAttribute('data-widths') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0);
+    if (widths.length !== cols) widths = Array(cols).fill(1);
+    const combined = widths[j] + widths[j + 1];
+    const leftX = a.left, rightX = b.right;
+    const onMove = (ev) => {
+      const frac = Math.max(0.12, Math.min(0.88, (ev.clientX - leftX) / Math.max(1, rightX - leftX)));
+      const nw = [...widths];
+      nw[j] = +(combined * frac).toFixed(3); nw[j + 1] = +(combined * (1 - frac)).toFixed(3);
+      grid.setAttribute('data-widths', nw.join(','));
+      grid.style.gridTemplateColumns = nw.map(w => `${w}fr`).join(' ');
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      handleInput(); computeGridDividers(grid);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  };
   // Centrer / aligner à gauche le tableau (data-align + marges auto).
   const toggleGridAlign = () => {
     if (!selGrid) return;
@@ -223,7 +267,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     selGrid.setAttribute('data-align', next);
     selGrid.style.marginLeft = next === 'center' ? 'auto' : '0';
     selGrid.style.marginRight = next === 'center' ? 'auto' : '0';
-    setSelGridAlign(next); refreshGridBox(selGrid); handleInput();
+    setSelGridAlign(next); refreshGridBox(selGrid); computeGridDividers(selGrid); handleInput();
   };
   // Applique un mode de bordure aux cases (DOM éditeur : WYSIWYG). 'none' = pointillé d'édition.
   const applyGridBorderDom = (grid, mode) => {
@@ -246,7 +290,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (!selGrid) return;
     const next = GRID_BORDERS[(GRID_BORDERS.indexOf(selGridBorder) + 1) % GRID_BORDERS.length];
     applyGridBorderDom(selGrid, next);
-    setSelGridBorder(next); handleInput();
+    setSelGridBorder(next); computeGridDividers(selGrid); handleInput();
   };
 
   // Alignement : appliqué IMPÉRATIVEMENT sur le contentEditable (le style React seul ne
@@ -315,7 +359,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
+    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); setGridDividers([]); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
@@ -431,8 +475,9 @@ const RichTextArea = forwardRef(function RichTextArea(
         setSelGridAlign(grid.getAttribute('data-align') === 'center' ? 'center' : 'left');
         setSelGridBorder(grid.getAttribute('data-border') || 'none');
         refreshGridBox(grid);
+        computeGridDividers(grid);
       } else if (selGrid) {
-        setSelGrid(null);
+        setSelGrid(null); setGridDividers([]);
       }
     }
   };
@@ -599,6 +644,14 @@ const RichTextArea = forwardRef(function RichTextArea(
           </button>
         </div>
       )}
+      {/* Poignées de redimensionnement des COLONNES (glisser pour des largeurs différentes). */}
+      {selGrid && gridDividers.map((d) => (
+        <div key={d.j} onPointerDown={e => startColDrag(e, d.j)}
+          title="Glisser pour ajuster la largeur des colonnes"
+          style={{ position:'absolute', left:d.x - 5, top:d.top, width:10, height:d.height, zIndex:29, cursor:'col-resize', touchAction:'none' }}>
+          <div style={{ position:'absolute', left:4, top:0, width:2, height:'100%', background:'rgba(227,5,19,0.55)', borderRadius:1 }}/>
+        </div>
+      ))}
       <div
         ref={editorRef}
         className="rte-ce"
