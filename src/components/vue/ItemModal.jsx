@@ -523,7 +523,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const ameliorer = async () => {
     if (improving) return;
     setImproving(true);
-    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null);
+    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null);
     try {
       const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, 6).map(p => photoToImageBlock(p.data)))).filter(Boolean);
       const plain = htmlToPlain(form.commentaire || '');
@@ -547,11 +547,19 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       let obj;
       try { obj = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
       catch { throw new Error('Réponse IA illisible — réessaie'); }
-      const unified = [];
+      // CORRECTIONS d'ortho → affichage DIFF GLOBAL (comme le bouton « Corriger », demande Thomas) :
+      // on reconstruit le texte corrigé et on montre le diff surligné. L'application patche chaque
+      // mot dans le HTML (patchHtmlText via applyDiff) → puces/couleurs/images PRÉSERVÉES.
+      let correctedPlain = plain;
       for (const c of (obj?.corrections || [])) {
-        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && plain.includes(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
-          unified.push({ kind: 'correction', extrait: c.extrait, propositions: [c.correction.trim()] });
+        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && correctedPlain.includes(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
+          correctedPlain = correctedPlain.replace(c.extrait, c.correction.trim());
       }
+      const hasOrtho = correctedPlain !== plain;
+      if (hasOrtho) setSpellDiff({ original: plain, segments: buildDiffSegments(plain, correctedPlain) });
+
+      // REFORMULATIONS + AJOUTS → cartes à valider une par une.
+      const unified = [];
       for (const r of (obj?.reformulations || [])) {
         if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && plain.includes(r.extrait) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
           unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
@@ -562,8 +570,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
           // que patchHtmlText fusionne plusieurs puces → on l'ignore et l'ajout ira en fin.
           unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || '', raison: a.raison || '' });
       }
-      if (!unified.length) setImproveErr('Rien à améliorer ✓');
-      else setImproveList(unified);
+      if (unified.length) setImproveList(unified);
+      if (!unified.length && !hasOrtho) setImproveErr('Rien à améliorer ✓');
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
     setImproving(false);
   };
