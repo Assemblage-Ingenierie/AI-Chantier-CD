@@ -971,9 +971,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (cancelled) return;
         const cv = cvRef.current;
         if (!cv) return;
-        cv.width = img.naturalWidth;
-        cv.height = img.naturalHeight;
+        const nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+        // Suréchantillonnage des petites images : on agrandit le BACKING STORE du canvas (résolution
+        // interne) pour que les tracés/annotations restent NETS une fois l'image affichée en grand.
+        // Avant, une miniature ~300px était dessinée en basse résolution puis étirée → pixelisé et
+        // traits fins/« transparents ». Facteur borné (≤3, cible ~1400px de côté long) : le fond
+        // reste un peu doux (limite de la source) mais les annotations vectorielles sont nettes.
+        // baseScale = cv.width/1400 étant LINÉAIRE en cv.width, la taille RELATIVE des symboles/textes
+        // reste identique. hqScaleRef mémorise le facteur → getAnnotation redivise → les paths sont
+        // stockés en espace image naturel (persistance/rapport inchangés).
+        const f = Math.min(3, Math.max(1, 1400 / Math.max(nw, nh)));
+        cv.width = Math.round(nw * f);
+        cv.height = Math.round(nh * f);
         bgRef.current = img;
+        if (f !== 1) {
+          hqScaleRef.current = f;
+          setPaths(prev => scalePaths(prev, f, f));
+        }
         setBgOk(true);
       };
       img.onerror = () => { if (!cancelled) setBgOk(true); };
@@ -991,12 +1005,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     img.onload = () => {
       const cv = cvRef.current;
       if (!cv || !bgRef.current || bgRef.current.naturalWidth === 0) return;
-      const sx = img.naturalWidth  / bgRef.current.naturalWidth;
-      const sy = img.naturalHeight / bgRef.current.naturalHeight;
+      // Échelle relative au canvas COURANT (cv.width/height) et non à l'image naturelle : le canvas
+      // peut déjà être suréchantillonné (petites images). On COMPOSE le facteur dans hqScaleRef pour
+      // que la sauvegarde redivise correctement. Sans suréchantillonnage, cv.width === naturalWidth
+      // → comportement identique à avant.
+      const sx = img.naturalWidth  / cv.width;
+      const sy = img.naturalHeight / cv.height;
       cv.width  = img.naturalWidth;
       cv.height = img.naturalHeight;
       bgRef.current = img;
-      hqScaleRef.current = sx;
+      hqScaleRef.current *= sx;
       // Mise à l'échelle des paths existants + forçage du redraw
       if (sx !== 1 || sy !== 1) {
         setPaths(prev => scalePaths(prev, sx, sy));
