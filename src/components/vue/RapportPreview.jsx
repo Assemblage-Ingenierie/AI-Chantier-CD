@@ -1477,7 +1477,8 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
               </div>
             </div>
             {participants.map((pt, i) => {
-              const isPresent = !pt.presence || pt.presence === 'present';
+              // 3 états : présent / absent / neutre ('na' = non précisé → pas de pastille).
+              const presState = pt.presence === 'absent' ? 'absent' : pt.presence === 'na' ? 'na' : 'present';
               return (
                 <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', borderBottom:`1px solid #DFE4E8` }}>
                   <div style={{ width:20, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -1496,12 +1497,14 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
                     <div style={{ flex:'0 0 22%', fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
                     <div style={{ flex:'0 0 28%', fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
                     <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
-                      <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600,
-                        color: isPresent ? '#16A34A' : DA.red,
-                        background: isPresent ? '#DCFCE7' : '#FEE2E2',
-                        borderRadius:3, padding:'1px 5px' }}>
-                        {isPresent ? 'Présent' : 'Absent'}
-                      </span>
+                      {presState !== 'na' && (
+                        <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600,
+                          color: presState === 'present' ? '#16A34A' : DA.red,
+                          background: presState === 'present' ? '#DCFCE7' : '#FEE2E2',
+                          borderRadius:3, padding:'1px 5px' }}>
+                          {presState === 'present' ? 'Présent' : 'Absent'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1538,7 +1541,7 @@ function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
           </div>
         </div>
         {participants.map((pt) => {
-          const isPresent = !pt.presence || pt.presence === 'present';
+          const presState = pt.presence === 'absent' ? 'absent' : pt.presence === 'na' ? 'na' : 'present';
           return (
             <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', borderBottom:`1px solid #DFE4E8` }}>
               <div style={{ width:20, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -1557,12 +1560,14 @@ function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
                 <div style={{ flex:'0 0 22%', fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.tel || '—'}</div>
                 <div style={{ flex:'0 0 28%', fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D', paddingRight:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pt.email || '—'}</div>
                 <div style={{ flex:'0 0 14%', textAlign:'right', paddingRight:6 }}>
+                  {presState !== 'na' && (
                   <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600,
-                    color: isPresent ? '#16A34A' : DA.red,
-                    background: isPresent ? '#DCFCE7' : '#FEE2E2',
+                    color: presState === 'present' ? '#16A34A' : DA.red,
+                    background: presState === 'present' ? '#DCFCE7' : '#FEE2E2',
                     borderRadius:3, padding:'1px 5px' }}>
-                    {isPresent ? 'Présent' : 'Absent'}
+                    {presState === 'present' ? 'Présent' : 'Absent'}
                   </span>
+                  )}
                 </div>
               </div>
             </div>

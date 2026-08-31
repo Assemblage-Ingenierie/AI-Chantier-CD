@@ -32,7 +32,9 @@ const BADGE_W = 24;
 
 // ── Ligne participant ──────────────────────────────────────────────────────────
 function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
-  const isPresent = !p.presence || p.presence === 'present';
+  // 3 états : présent / absent / NEUTRE (« na » = non précisé, ex. pas convoqué — demande Thomas).
+  // Rétrocompat : ancien participant sans champ presence (null/'') = présent (ne pas régresser).
+  const state = p.presence === 'absent' ? 'absent' : p.presence === 'na' ? 'na' : 'present';
   return (
     <div style={{ display:'flex', alignItems:'center', gap:0, background:DA.grayXL, borderRadius:8,
       border:`1px solid ${DA.border}`, padding:'5px 8px 5px 0' }}>
@@ -65,11 +67,12 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
             cursor: onMoveDown ? 'pointer' : 'default' }}>↓</button>
       </div>
       <button onClick={onToggle}
-        title={isPresent ? 'Marquer absent' : 'Marquer présent'}
-        style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:6, border:'none', cursor:'pointer', flexShrink:0, marginLeft:6,
-          background: isPresent ? '#DCFCE7' : '#FEE2E2',
-          color: isPresent ? '#16A34A' : DA.red }}>
-        {isPresent ? '✓ Présent' : '✗ Absent'}
+        title="Cliquer pour changer : présent → absent → non précisé"
+        style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:6, cursor:'pointer', flexShrink:0, marginLeft:6, minWidth:64, textAlign:'center',
+          border: state === 'na' ? `1px dashed ${DA.border}` : 'none',
+          background: state === 'present' ? '#DCFCE7' : state === 'absent' ? '#FEE2E2' : 'transparent',
+          color: state === 'present' ? '#16A34A' : state === 'absent' ? DA.red : DA.grayL }}>
+        {state === 'present' ? '✓ Présent' : state === 'absent' ? '✗ Absent' : '— Présence'}
       </button>
       <button onClick={onRemove} style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px', marginLeft:4 }}>
         <Ic n="x" s={12}/>
@@ -199,10 +202,14 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
     if (changed) onChange(next);
   }, [contacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'present' }]);
+  // Nouveaux intervenants : présence NEUTRE (« na ») par défaut — pas de « Présent/Absent »
+  // imposé (demande Thomas : parfois juste pas convoqué). On clique pour préciser si besoin.
+  const add    = (p) => onChange([...participants, { ...p, id: crypto.randomUUID(), presence: 'na' }]);
   const remove = (id) => onChange(participants.filter(p => p.id !== id));
+  // Cycle : présent → absent → non précisé → présent (un ancien participant sans champ = présent).
+  const cyclePresence = (cur) => (cur === 'absent' ? 'na' : cur === 'na' ? 'present' : 'absent');
   const toggle = (id) => onChange(participants.map(p =>
-    p.id === id ? { ...p, presence: p.presence === 'absent' ? 'present' : 'absent' } : p
+    p.id === id ? { ...p, presence: cyclePresence(p.presence === 'na' ? 'na' : (p.presence || 'present')) } : p
   ));
   const move = (id, dir) => {
     const idx = participants.findIndex(p => p.id === id);
@@ -222,7 +229,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
       setEditingId(null);
       // if it was a new external contact, also add to participants
       if (!contact.id) {
-        onChange([...participants, { ...contact, id: savedId, isAssemblage: false, presence: 'present' }]);
+        onChange([...participants, { ...contact, id: savedId, isAssemblage: false, presence: 'na' }]);
         setForm(EMPTY_FORM);
         setShowForm(false);
       }
