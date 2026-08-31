@@ -3,6 +3,7 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { drawAnnotationPaths } from './Annotator.jsx';
+import { resolveCommentHtml } from '../../lib/storage.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -122,6 +123,29 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
   // une instance de SortList PAR zone → le drag traverse les instances.
   const [photoDragging, setPhotoDragging] = useState(false);
   const [overEmptyId, setOverEmptyId] = useState(null); // cadre vide survolé pendant le glisser
+
+  // Images COLLÉES dans les commentaires : leur URL signée expire → on la RE-SIGNE pour
+  // l'affichage (comme l'éditeur le fait). Sans ça, une image collée (surtout d'une session
+  // précédente) ne se chargeait pas dans la liste → « l'image n'apparaît pas » (Thomas).
+  const [resolvedComments, setResolvedComments] = useState({}); // { itemId: { src, html } }
+  useEffect(() => {
+    const toResolve = (items || []).filter(it => it.commentaire && it.commentaire.includes('data-cimg'));
+    if (!toResolve.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const it of toResolve) {
+        if (resolvedComments[it.id]?.src === it.commentaire) continue; // déjà résolu pour ce contenu
+        try {
+          const html = await resolveCommentHtml(it.commentaire);
+          if (cancelled) return;
+          setResolvedComments(prev => ({ ...prev, [it.id]: { src: it.commentaire, html } }));
+        } catch { /* garde le brut en repli */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+  const commentFor = (it) => (resolvedComments[it.id]?.src === it.commentaire ? resolvedComments[it.id].html : it.commentaire);
   useEffect(() => {
     const on = () => setPhotoDragging(true);
     const off = () => setPhotoDragging(false);
@@ -393,7 +417,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                   </div>
                 </div>
                 {item.commentaire && (
-                  <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(item.commentaire)}</p>
+                  <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(commentFor(item))}</p>
                 )}
 
                 {/* Photos — toujours en dessous du texte (mobile + desktop) */}
