@@ -36,7 +36,9 @@ export async function callAIProxy(params) {
     const engine = getAIProvider();
     if (engine === 'gemini-flash' || engine === 'gemini-pro') {
       params.provider = 'gemini';
-      if (!params.model) params.model = GEMINI_MODEL_FOR[engine];
+      // Remplace tout modèle Claude passé en dur par le modèle Gemini choisi (sinon le proxy
+      // ignore ce nom et retombe sur le Flash par défaut → « Pro » ne serait jamais utilisé).
+      if (!params.model || !String(params.model).startsWith('gemini-')) params.model = GEMINI_MODEL_FOR[engine];
     }
   }
 
