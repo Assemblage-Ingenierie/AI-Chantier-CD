@@ -120,9 +120,13 @@ function renderHtml(html) {
         const wAttr = parseFloat(node.getAttribute('data-w'));
         const width = Number.isFinite(wAttr) ? `${Math.max(20, Math.min(100, wAttr))}%` : '100%';
         const margin = node.getAttribute('data-align') === 'center' ? '8px auto' : '8px 0';
-        // Largeurs de colonnes variables (data-widths = ratios « 2,1,1 »), sinon égales.
+        // Largeurs de colonnes variables. Nouveau format (data-widths = % des N-1 premières
+        // colonnes, la DERNIÈRE remplit le reste → le tableau occupe toujours toute la page).
+        // Ancien format (ratios fr de longueur = cols) encore lu pour rétrocompat.
         const ws = (node.getAttribute('data-widths') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0);
-        const template = ws.length === cols ? ws.map(w => `${w}fr`).join(' ') : `repeat(${cols}, 1fr)`;
+        const template = (cols >= 2 && ws.length === cols - 1)
+          ? ws.map(w => `${w}%`).join(' ') + ' minmax(0, 1fr)'
+          : ws.length === cols ? ws.map(w => `${w}fr`).join(' ') : `repeat(${cols}, 1fr)`;
         // Bordures de case : aucune / toutes / un seul côté (haut, bas, gauche, droite).
         const bm = node.getAttribute('data-border') || 'none';
         const BC = '1px solid #B8C0CC';

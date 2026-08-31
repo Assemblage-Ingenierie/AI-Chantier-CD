@@ -234,23 +234,25 @@ const RichTextArea = forwardRef(function RichTextArea(
     }
     setGridDividers(divs);
   };
+  // Modèle « dernière colonne remplit » : on stocke le % des N-1 premières colonnes ; la
+  // dernière prend le reste (minmax(0,1fr)) → le tableau occupe TOUJOURS toute la largeur.
+  // Glisser un séparateur redimensionne UNIQUEMENT la colonne à sa gauche (les autres ne
+  // bougent pas, seule la dernière absorbe) — demande Thomas.
   const startColDrag = (e, j) => {
     e.preventDefault(); e.stopPropagation();
     const grid = selGrid; if (!grid) return;
     const cols = gridColCount(grid);
     const cells = Array.from(grid.querySelectorAll('[data-cell]')).slice(0, cols);
-    if (cells.length < cols) return;
-    const a = cells[j].getBoundingClientRect(), b = cells[j + 1].getBoundingClientRect();
-    let widths = (grid.getAttribute('data-widths') || '').split(',').map(x => parseFloat(x)).filter(x => x > 0);
-    if (widths.length !== cols) widths = Array(cols).fill(1);
-    const combined = widths[j] + widths[j + 1];
-    const leftX = a.left, rightX = b.right;
+    if (cells.length < cols || j >= cols - 1) return;
+    const gridW = grid.getBoundingClientRect().width || 1;
+    // Largeurs % ACTUELLES des N-1 premières colonnes (mesurées) → on ne change QUE la colonne j.
+    const widths = [];
+    for (let i = 0; i < cols - 1; i++) widths.push(cells[i].getBoundingClientRect().width / gridW * 100);
+    const leftX = cells[j].getBoundingClientRect().left;
     const onMove = (ev) => {
-      const frac = Math.max(0.12, Math.min(0.88, (ev.clientX - leftX) / Math.max(1, rightX - leftX)));
-      const nw = [...widths];
-      nw[j] = +(combined * frac).toFixed(3); nw[j + 1] = +(combined * (1 - frac)).toFixed(3);
-      grid.setAttribute('data-widths', nw.join(','));
-      grid.style.gridTemplateColumns = nw.map(w => `${w}fr`).join(' ');
+      widths[j] = +Math.max(8, Math.min(85, (ev.clientX - leftX) / gridW * 100)).toFixed(2);
+      grid.setAttribute('data-widths', widths.map(w => +w.toFixed(2)).join(','));
+      grid.style.gridTemplateColumns = widths.map(w => `${w}%`).join(' ') + ' minmax(0, 1fr)';
     };
     const onUp = () => {
       document.removeEventListener('pointermove', onMove);
