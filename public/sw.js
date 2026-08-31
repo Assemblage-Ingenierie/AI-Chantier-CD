@@ -1,12 +1,20 @@
-const CACHE = 'aichantier-v29';
+const CACHE = 'aichantier-v30';
 const PLAN_PDF_CACHE = 'plan-pdfs'; // PDF de plans servis en local (mode hors ligne + lecteur natif)
 
 // Ressources connues à pré-cacher au premier install
 const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png', '/favicon.svg'];
 
 self.addEventListener('install', e => {
+  // Pré-cache TOLÉRANT aux échecs : addAll() est tout-ou-rien → sur un réseau mobile de chantier
+  // instable, un seul fichier qui échoue faisait échouer TOUTE l'install → le nouveau SW ne
+  // s'activait jamais et le mobile restait bloqué sur l'ancien (écran blanc si son cache a été
+  // vidé entre-temps). On met chaque ressource en cache indépendamment (allSettled) et on
+  // s'active QUOI QU'IL ARRIVE : le pré-cache n'est qu'un confort hors-ligne, pas un prérequis.
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(c => Promise.allSettled(PRECACHE.map(u => c.add(u))))
+      .catch(() => {})
+      .then(() => self.skipWaiting())
   );
 });
 
