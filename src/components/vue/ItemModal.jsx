@@ -145,19 +145,26 @@ async function photoToImageBlock(url) {
 //    zéro bruit sécurité/EHS/autres corps d'état, 100% structure). ─────────────────────────
 const SCOPE_STRUCTURE = `PÉRIMÈTRE STRICT — STRUCTURE SEULEMENT : béton armé, coffrage, ferraillage (sections, recouvrements, enrobage), fondations, reprises de bétonnage, fissuration structurelle, étaiement, descentes de charges, réservations, appuis, joints, scellements, aciers en attente, planéité/verticalité des ouvrages porteurs. N'ÉMETS JAMAIS de remarque sur la sécurité chantier / EHS, l'organisation, la propreté, ni les autres corps d'état (plomberie, élec, cloisons, finitions…). Si un point n'apporte pas de valeur STRUCTURE claire, ne le mentionne pas.`;
 
-// Cas « texte présent » : corrige + reformule + enrichit (points de vigilance structure), en
-// JSON, tout à valider une par une. Enrichissement fondé sur photos + texte ; « à vérifier »
-// quand ce n'est pas certain (anti-invention), affirmation quand c'est clairement visible.
-const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'études structure, en visite de chantier. Tu analyses une observation (texte rédigé par l'ingénieur + photos jointes) et proposes des améliorations, UNIQUEMENT sous l'angle STRUCTURE.
+// Cas « texte présent » — analyse TEXTE (rapide, sans photos) : corrige + reformule. Les points
+// de vigilance issus des PHOTOS sont produits séparément et en parallèle par PROMPT_VIGILANCE.
+const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'études structure, en visite de chantier. Tu analyses le TEXTE d'une observation rédigé par l'ingénieur et proposes des améliorations, UNIQUEMENT sous l'angle STRUCTURE.
 ${SCOPE_STRUCTURE}
-TON ANALYSE PRODUIT 3 CHOSES :
+TON ANALYSE PRODUIT 2 CHOSES :
 1) CORRECTIONS : uniquement fautes d'orthographe/grammaire. Même sens, même longueur, mêmes mots (hors faute).
 2) REFORMULATIONS : ADAPTATIF, SANS PLAFOND. Propose une reformulation pour CHAQUE passage réellement lourd/confus/maladroit — qu'il y en ait 0, 2, 5 ou plus : autant que réellement nécessaire, jamais bridé à un nombre fixe. Le seuil élevé porte sur la PERTINENCE (ne propose RIEN pour un passage déjà clair), PAS sur le nombre : s'il y a 5 passages vraiment à retravailler, propose les 5. Sens, faits, chiffres, références et vocabulaire métier STRICTEMENT préservés. Conserve le découpage en puces/lignes (une puce reste une puce, jamais de fusion). 1 à 2 propositions (variantes) par passage.
-3) AJOUTS (points de vigilance / approfondissements) STRUCTURE : fondés UNIQUEMENT sur ce qui est visible sur les photos ou déductible du texte. Si l'élément est clairement VISIBLE sur une photo → formulation AFFIRMATIVE ; si c'est une hypothèse ou un contrôle à faire → commence par « À vérifier : » ou « À confirmer : ». N'invente JAMAIS une cote, une cause ou une préconisation non fondée. Chaque ajout est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) pour être inséré au bon endroit ; si aucun ancrage logique, laisse "apres" vide. Concis et ADAPTATIF : autant d'ajouts que réellement pertinent, ni remplissage ni liste à rallonge.
 STYLE : français technique impeccable. N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – ») ; emploie virgule, deux-points, parenthèse ou point. Ne transforme jamais une affirmation en question.
 Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
-{"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}],"ajouts":[{"apres":"<phrase/puce existante copiée mot pour mot, ou vide>","texte":"<ajout>","certitude":"sûr|à vérifier","raison":"vigilance|approfondissement"}]}
-Chaque "extrait"/"apres" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
+{"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}]}
+Chaque "extrait" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
+
+// Analyse PHOTOS (parallèle) : points de vigilance / à vérifier STRUCTURE fondés sur ce qui est
+// VISIBLE sur les photos et pas déjà dans le texte. Renvoie uniquement des "ajouts".
+const PROMPT_VIGILANCE = `Tu es un INGÉNIEUR STRUCTURE SENIOR en visite de chantier. On te donne le TEXTE d'une observation ET des PHOTOS. Sur la seule base de ce qui est CLAIREMENT VISIBLE sur les photos (angle STRUCTURE uniquement), propose des POINTS DE VIGILANCE / à vérifier PERTINENTS qui ne sont pas déjà dans le texte.
+${SCOPE_STRUCTURE}
+Si l'élément est clairement VISIBLE sur une photo → formulation AFFIRMATIVE ; si c'est une hypothèse ou un contrôle à faire → commence par « À vérifier : » ou « À confirmer : ». N'invente JAMAIS une cote, une cause ou une préconisation non fondée. NE RÉPÈTE PAS ce qui est déjà écrit dans le texte. ADAPTATIF : autant de points que réellement pertinent, ni remplissage ni liste à rallonge. Chaque point est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) ou "apres" vide.
+STYLE : français technique impeccable, jamais de tiret cadratin ni demi-cadratin.
+Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
+{"ajouts":[{"apres":"<phrase/puce existante copiée mot pour mot, ou vide>","texte":"<point>","certitude":"sûr|à vérifier","raison":"vigilance|approfondissement"}]}`;
 
 // Cas « champ vide » : rédige un commentaire structure depuis l'intitulé + photos.
 const PROMPT_GENERER = `Tu es un INGÉNIEUR STRUCTURE SENIOR en visite de chantier. À partir de l'intitulé de l'observation et des photos jointes, rédige un commentaire d'observation STRUCTURE, factuel et professionnel.
@@ -283,6 +290,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const [improveErr, setImproveErr] = useState('');
   const [improveList, setImproveList] = useState(null); // [{ kind:'correction'|'reformulation'|'ajout', extrait/apres, propositions:[], texte, raison, certitude }]
   const [improveApplied, setImproveApplied] = useState(new Set());
+  const [vigilanceLoading, setVigilanceLoading] = useState(false); // analyse photos (à vérifier) en cours en //
+  const vigilanceAddedRef = useRef(false); // l'analyse photos a-t-elle déjà ajouté des « à vérifier » ?
   const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
   const gallRef = useRef();
   const camRef = useRef();
@@ -523,18 +532,15 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const ameliorer = async () => {
     if (improving) return;
     setImproving(true);
-    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null);
+    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null); setVigilanceLoading(false); vigilanceAddedRef.current = false;
     try {
       const plain = htmlToPlain(form.commentaire || '');
       const titre = (form.titre || '').slice(0, 300);
-      // Vitesse : l'analyse « vision » des photos est le principal coût de latence. Texte court →
-      // moins de photos (3) ; sinon 4 max (au lieu de 6). Demande Thomas : que ce soit rapide,
-      // surtout sur un petit texte.
-      const maxImgs = plain.trim().length < 250 ? 3 : 4;
-      const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, maxImgs).map(p => photoToImageBlock(p.data)))).filter(Boolean);
 
-      // CAS 1 — champ vide : génération d'un commentaire structure.
+      // CAS 1 — champ vide : génération d'un commentaire structure. Les PHOTOS sont indispensables
+      // ici (l'IA décrit ce qu'elle voit) → on ne les charge/n'envoie QUE dans ce cas.
       if (!plain.trim()) {
+        const imgs = (await Promise.all((form.photos || []).filter(p => p.data).slice(0, 4).map(p => photoToImageBlock(p.data)))).filter(Boolean);
         const content = [...imgs, { type: 'text', text: `Intitulé de l'observation : "${titre || '(non renseigné)'}".\nRédige le commentaire d'observation structure.` }];
         const d = await callAIProxy({ feature: 'obs-generer', model: 'claude-sonnet-4-6', max_tokens: 1500, system: PROMPT_GENERER, messages: [{ role: 'user', content }], _waitOk: true });
         const text = (d.content?.[0]?.text || '').trim();
@@ -544,16 +550,46 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         return;
       }
 
-      // CAS 2 — texte présent : corrections + reformulations + ajouts structure.
-      const content = [...imgs, { type: 'text', text: `Intitulé : "${titre}".\nTexte de l'observation à analyser :\n${plain}` }];
-      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 4096, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
+      // CAS 2 — texte présent. DEUX analyses EN PARALLÈLE (demande Thomas, pour la vitesse) :
+      //   (a) TEXTE (rapide, sans photos) → ortho (diff) + reformulations (cartes), affiché tout de suite ;
+      //   (b) PHOTOS (en parallèle) → points « à vérifier », ajoutés dès qu'ils arrivent.
+      const content = `Intitulé : "${titre}".\nTexte de l'observation à analyser :\n${plain}`;
+
+      // (b) Analyse PHOTOS lancée SANS attendre (les photos = le coût de latence → hors chemin critique).
+      const photoRows = (form.photos || []).filter(p => p.data).slice(0, 4);
+      if (photoRows.length) {
+        setVigilanceLoading(true);
+        (async () => {
+          try {
+            const imgs = (await Promise.all(photoRows.map(p => photoToImageBlock(p.data)))).filter(Boolean);
+            if (!imgs.length) return;
+            const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true });
+            const rawv = dv.content?.[0]?.text?.trim() || '';
+            let ov; try { ov = JSON.parse(rawv.replace(/```json\n?|\n?```/g, '').trim()); } catch { return; }
+            const cards = [];
+            for (const a of (ov?.ajouts || [])) {
+              if (a && typeof a.texte === 'string' && a.texte.trim())
+                cards.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
+            }
+            if (cards.length) {
+              vigilanceAddedRef.current = true;
+              setImproveErr('');
+              setImproveList(prev => {
+                const seen = new Set((prev || []).filter(x => x.kind === 'ajout').map(x => x.texte));
+                return [...(prev || []), ...cards.filter(c => !seen.has(c.texte))];
+              });
+            }
+          } catch { /* silencieux : les photos sont un bonus, elles ne doivent jamais bloquer */ }
+        })().finally(() => setVigilanceLoading(false));
+      }
+
+      // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
+      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 3000, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
       const raw = d.content?.[0]?.text?.trim() || '';
       let obj;
       try { obj = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
       catch { throw new Error('Réponse IA illisible — réessaie'); }
-      // CORRECTIONS d'ortho → affichage DIFF GLOBAL (comme le bouton « Corriger », demande Thomas) :
-      // on reconstruit le texte corrigé et on montre le diff surligné. L'application patche chaque
-      // mot dans le HTML (patchHtmlText via applyDiff) → puces/couleurs/images PRÉSERVÉES.
+      // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
       let correctedPlain = plain;
       for (const c of (obj?.corrections || [])) {
         if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && correctedPlain.includes(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
@@ -561,21 +597,16 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
       const hasOrtho = correctedPlain !== plain;
       if (hasOrtho) setSpellDiff({ original: plain, segments: buildDiffSegments(plain, correctedPlain) });
-
-      // REFORMULATIONS + AJOUTS → cartes à valider une par une.
+      // Reformulations → cartes (placées AVANT d'éventuels « à vérifier » photos déjà arrivés).
       const unified = [];
       for (const r of (obj?.reformulations || [])) {
         if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && plain.includes(r.extrait) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
           unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
       }
-      for (const a of (obj?.ajouts || [])) {
-        if (a && typeof a.texte === 'string' && a.texte.trim())
-          // apres doit tenir sur UNE ligne (comme extrait) : un ancrage multi-lignes ferait
-          // que patchHtmlText fusionne plusieurs puces → on l'ignore et l'ajout ira en fin.
-          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || '', raison: a.raison || '' });
-      }
-      if (unified.length) setImproveList(unified);
-      if (!unified.length && !hasOrtho) setImproveErr('Rien à améliorer ✓');
+      if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
+      // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de
+      // « à vérifier ». Si l'analyse photos en ajoute ENSUITE, elle efface ce message (setImproveErr('')).
+      if (!unified.length && !hasOrtho && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
     setImproving(false);
   };
@@ -1113,6 +1144,11 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 <div style={{ padding:'8px 12px',background:'#F9FAFB',borderTop:'1px solid #E5E7EB' }}>
                   <button onClick={useGenProposal} style={{ width:'100%',background:DA.black,color:'white',border:'none',borderRadius:8,padding:'9px 0',fontSize:12.5,fontWeight:700,cursor:'pointer' }}>Utiliser ce texte</button>
                 </div>
+              </div>
+            )}
+            {vigilanceLoading && (
+              <div style={{ marginTop:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#6B7280',border:'1px solid #E5E7EB',borderRadius:10,background:'#F9FAFB' }}>
+                <Ic n="spn" s={13}/> Analyse des photos pour les points à vérifier…
               </div>
             )}
             {improveList && improveList.length > 0 && (
