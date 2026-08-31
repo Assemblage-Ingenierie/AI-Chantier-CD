@@ -564,6 +564,12 @@ const RichTextArea = forwardRef(function RichTextArea(
 
   // Ctrl+B/I/U → execCommand (natif, WYSIWYG)
   const handleKeyDown = (e) => {
+    // Suppr / Retour arrière quand une image (ou un tableau) est sélectionnée → la supprime
+    // (demande Thomas). Sinon le comportement clavier normal reste inchangé.
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selImg) { e.preventDefault(); deleteImg(); return; }
+      if (selGrid) { e.preventDefault(); deleteGrid(); return; }
+    }
     if (!e.ctrlKey && !e.metaKey) return;
     if (e.key === 'b' || e.key === 'B') { e.preventDefault(); document.execCommand('bold'); }
     else if (e.key === 'i' || e.key === 'I') { e.preventDefault(); document.execCommand('italic'); }
