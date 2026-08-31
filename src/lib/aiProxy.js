@@ -3,6 +3,17 @@ import { getSupabase } from '../supabase.js';
 const _lastCall = {};
 const THROTTLE_MS = 15000; // 15s entre deux appels par feature pour ménager le quota free
 
+// ── Choix du MOTEUR IA (réversible) ─────────────────────────────────────────────
+// 'claude' (défaut) ou 'gemini'. Stocké en localStorage, réglable via le switch des
+// Paramètres. Envoyé au proxy à chaque appel ; le proxy route en conséquence.
+const AI_PROVIDER_KEY = 'chantierai_ai_provider';
+export function getAIProvider() {
+  try { return localStorage.getItem(AI_PROVIDER_KEY) === 'gemini' ? 'gemini' : 'claude'; } catch { return 'claude'; }
+}
+export function setAIProvider(p) {
+  try { localStorage.setItem(AI_PROVIDER_KEY, p === 'gemini' ? 'gemini' : 'claude'); } catch { /* mode privé */ }
+}
+
 export async function callAIProxy(params) {
   const feature = params.feature || 'default';
   const now = Date.now();
@@ -16,6 +27,9 @@ export async function callAIProxy(params) {
     }
   }
   _lastCall[feature] = Date.now();
+
+  // Moteur IA choisi dans les Paramètres (défaut Claude) — le proxy route en conséquence.
+  if (!params.provider) params.provider = getAIProvider();
 
   const sb = await getSupabase();
   const { data: { session } } = await sb.auth.getSession();

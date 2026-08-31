@@ -6,6 +6,7 @@ import { estimateSnapshotBytes } from '../../lib/backupVault.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
+import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -45,6 +46,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [pendingCount, setPendingCount] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
+  const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
 
   const refreshSizes = async () => {
     const [plans, snapshots, pending, byProject] = await Promise.all([
@@ -206,6 +208,27 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               {pendingCount > 0
                 ? `Indisponible : ${pendingCount} photo${pendingCount > 1 ? 's' : ''} en attente d'envoi. Reconnectez-vous pour les synchroniser d'abord.`
                 : 'Libère de l\'espace. Les plans se retéléchargent automatiquement à la prochaine ouverture d\'un projet. Vos données, photos et observations ne sont pas touchées.'}
+            </p>
+          </div>
+
+          {/* ── Moteur IA (réversible) ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Moteur IA</p>
+            <div style={{ display:'flex', gap:8 }}>
+              {[{ k:'claude', l:'Claude' }, { k:'gemini', l:'Gemini' }].map(o => {
+                const active = aiProvider === o.k;
+                return (
+                  <button key={o.k} onClick={() => { setAIProvider(o.k); setAiProviderState(o.k); }}
+                    style={{ flex:1, padding:'11px', borderRadius:9, fontSize:13, fontWeight:700, cursor:'pointer',
+                      border:`1.5px solid ${active ? DA.red : DA.border}`,
+                      background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, transition:'background 0.15s, border-color 0.15s' }}>
+                    {o.l}
+                  </button>
+                );
+              })}
+            </div>
+            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+              Moteur utilisé pour générer et améliorer les textes (rédaction, correction). <strong>Claude</strong> par défaut. Changement immédiat et réversible à tout moment.
             </p>
           </div>
 

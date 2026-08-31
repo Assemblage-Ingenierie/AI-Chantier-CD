@@ -56,6 +56,45 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
   }
 }
 
+// ── Gemini (Google) — activé si la requête demande provider:'gemini' ────────────
+// Variable d'env Vercel requise : GEMINI_API_KEY. La réponse est normalisée au MÊME
+// format que Claude ({ content:[{type:'text',text}] }) → aucun changement côté app.
+const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+function toGeminiContents(messages) {
+  return (messages || []).map(m => {
+    let text = '';
+    if (typeof m.content === 'string') text = m.content;
+    else if (Array.isArray(m.content)) text = m.content.map(c => (typeof c === 'string' ? c : (c?.text || ''))).join('\n');
+    else text = String(m.content ?? '');
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text }] };
+  });
+}
+
+async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const body = {
+      contents: toGeminiContents(payload.messages),
+      generationConfig: { maxOutputTokens: maxTokens },
+    };
+    if (payload.system) body.system_instruction = { parts: [{ text: payload.system }] };
+    const res = await fetch(`${GEMINI_API(model)}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    return { res, timedOut: false };
+  } catch (e) {
+    clearTimeout(t);
+    return { res: null, timedOut: true, err: e.message };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -88,11 +127,6 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Trop de requêtes — réessaie dans une minute' });
   }
 
-  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!anthropicKey) {
-    return res.status(500).json({ error: 'Clé API manquante (ANTHROPIC_API_KEY non configurée dans Vercel)' });
-  }
-
   let payload;
   try {
     payload = typeof req.body === 'object' ? req.body : JSON.parse(req.body);
@@ -100,8 +134,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Corps de requête invalide' });
   }
 
-  const model     = resolveModel(payload.model);
   const maxTokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
+
+  // ── Routage MOTEUR : Gemini si demandé, sinon Claude (défaut) ──
+  if (payload.provider === 'gemini') {
+    const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (!geminiKey) {
+      return res.status(500).json({ error: 'Gemini non configuré (GEMINI_API_KEY manquante dans Vercel). Repasse sur Claude dans les Paramètres.' });
+    }
+    const gModel = (typeof payload.model === 'string' && (payload.model.startsWith('gemini-') || payload.model.startsWith('gemma-'))) ? payload.model : GEMINI_MODEL;
+    const { res: gUp, timedOut: gTimedOut } = await callGemini(gModel, payload, geminiKey, maxTokens);
+    if (gTimedOut) return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
+    let gData;
+    try { gData = await gUp.json(); } catch { return res.status(502).json({ error: 'Réponse invalide du modèle Gemini' }); }
+    if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
+      return res.status(401).json({ error: 'Clé API Gemini invalide. Vérifie GEMINI_API_KEY dans Vercel.' });
+    }
+    if (gUp.status === 429) {
+      return res.status(429).json({ error: 'Quota Gemini dépassé — réessaie dans quelques minutes' });
+    }
+    if (!gUp.ok) {
+      const detail = gData?.error?.message || gUp.status;
+      return res.status(gUp.status || 500).json({ error: `Erreur IA Gemini : ${detail}` });
+    }
+    const gText = (gData.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('') || '';
+    return res.status(200).json({ content: [{ type: 'text', text: gText }], _model: gModel });
+  }
+
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!anthropicKey) {
+    return res.status(500).json({ error: 'Clé API manquante (ANTHROPIC_API_KEY non configurée dans Vercel)' });
+  }
+
+  const model = resolveModel(payload.model);
 
   // Tentative avec le modèle principal
   let { res: upstream, timedOut, err } = await callClaude(model, payload, anthropicKey, maxTokens);
