@@ -142,11 +142,19 @@ export default async function handler(req, res) {
     if (!geminiKey) {
       return res.status(500).json({ error: 'Gemini non configuré (GEMINI_API_KEY manquante dans Vercel). Repasse sur Claude dans les Paramètres.' });
     }
-    const gModel = (typeof payload.model === 'string' && (payload.model.startsWith('gemini-') || payload.model.startsWith('gemma-'))) ? payload.model : GEMINI_MODEL;
-    const { res: gUp, timedOut: gTimedOut } = await callGemini(gModel, payload, geminiKey, maxTokens);
+    let gModel = (typeof payload.model === 'string' && (payload.model.startsWith('gemini-') || payload.model.startsWith('gemma-'))) ? payload.model : GEMINI_MODEL;
+    let { res: gUp, timedOut: gTimedOut } = await callGemini(gModel, payload, geminiKey, maxTokens);
     if (gTimedOut) return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
     let gData;
     try { gData = await gUp.json(); } catch { return res.status(502).json({ error: 'Réponse invalide du modèle Gemini' }); }
+    // Repli automatique : si le modèle demandé (ex. Pro) est introuvable/indisponible (404), on
+    // réessaie avec le modèle Flash stable → l'IA répond quand même au lieu d'échouer.
+    if ((gUp.status === 404 || (gUp.status === 400 && /not found|not supported|unavailable/i.test(JSON.stringify(gData?.error || '')))) && gModel !== GEMINI_MODEL) {
+      const fb = await callGemini(GEMINI_MODEL, payload, geminiKey, maxTokens);
+      if (!fb.timedOut && fb.res) {
+        try { const fbData = await fb.res.json(); gUp = fb.res; gData = fbData; gModel = GEMINI_MODEL; } catch { /* garde l'erreur d'origine */ }
+      }
+    }
     if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
       return res.status(401).json({ error: 'Clé API Gemini invalide. Vérifie GEMINI_API_KEY dans Vercel.' });
     }

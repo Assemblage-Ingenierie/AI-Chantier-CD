@@ -4,14 +4,17 @@ const _lastCall = {};
 const THROTTLE_MS = 15000; // 15s entre deux appels par feature pour ménager le quota free
 
 // ── Choix du MOTEUR IA (réversible) ─────────────────────────────────────────────
-// 'claude' (défaut) ou 'gemini'. Stocké en localStorage, réglable via le switch des
-// Paramètres. Envoyé au proxy à chaque appel ; le proxy route en conséquence.
+// 'claude' (défaut), 'gemini-flash' (rapide) ou 'gemini-pro' (qualité max). Stocké en
+// localStorage, réglable via le switch des Paramètres. La préférence est traduite en
+// provider + modèle et envoyée au proxy à chaque appel ; le proxy route en conséquence.
 const AI_PROVIDER_KEY = 'chantierai_ai_provider';
+const AI_ENGINES = ['claude', 'gemini-flash', 'gemini-pro'];
+const GEMINI_MODEL_FOR = { 'gemini-flash': 'gemini-2.5-flash', 'gemini-pro': 'gemini-2.5-pro' };
 export function getAIProvider() {
-  try { return localStorage.getItem(AI_PROVIDER_KEY) === 'gemini' ? 'gemini' : 'claude'; } catch { return 'claude'; }
+  try { const v = localStorage.getItem(AI_PROVIDER_KEY); return AI_ENGINES.includes(v) ? v : 'claude'; } catch { return 'claude'; }
 }
 export function setAIProvider(p) {
-  try { localStorage.setItem(AI_PROVIDER_KEY, p === 'gemini' ? 'gemini' : 'claude'); } catch { /* mode privé */ }
+  try { localStorage.setItem(AI_PROVIDER_KEY, AI_ENGINES.includes(p) ? p : 'claude'); } catch { /* mode privé */ }
 }
 
 export async function callAIProxy(params) {
@@ -29,7 +32,13 @@ export async function callAIProxy(params) {
   _lastCall[feature] = Date.now();
 
   // Moteur IA choisi dans les Paramètres (défaut Claude) — le proxy route en conséquence.
-  if (!params.provider) params.provider = getAIProvider();
+  if (!params.provider) {
+    const engine = getAIProvider();
+    if (engine === 'gemini-flash' || engine === 'gemini-pro') {
+      params.provider = 'gemini';
+      if (!params.model) params.model = GEMINI_MODEL_FOR[engine];
+    }
+  }
 
   const sb = await getSupabase();
   const { data: { session } } = await sb.auth.getSession();

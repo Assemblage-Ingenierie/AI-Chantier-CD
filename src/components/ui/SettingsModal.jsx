@@ -214,21 +214,22 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
           {/* ── Moteur IA (réversible) ── */}
           <div style={{ marginBottom:22 }}>
             <p style={sectionTitle}>Moteur IA</p>
-            <div style={{ display:'flex', gap:8 }}>
-              {[{ k:'claude', l:'Claude' }, { k:'gemini', l:'Gemini' }].map(o => {
+            <div style={{ display:'flex', gap:6 }}>
+              {[{ k:'claude', l:'Claude', s:'défaut' }, { k:'gemini-flash', l:'Gemini Flash', s:'rapide' }, { k:'gemini-pro', l:'Gemini Pro', s:'précis' }].map(o => {
                 const active = aiProvider === o.k;
                 return (
                   <button key={o.k} onClick={() => { setAIProvider(o.k); setAiProviderState(o.k); }}
-                    style={{ flex:1, padding:'11px', borderRadius:9, fontSize:13, fontWeight:700, cursor:'pointer',
+                    style={{ flex:1, padding:'9px 6px', borderRadius:9, fontSize:12, fontWeight:700, cursor:'pointer', lineHeight:1.25,
                       border:`1.5px solid ${active ? DA.red : DA.border}`,
                       background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, transition:'background 0.15s, border-color 0.15s' }}>
-                    {o.l}
+                    {o.l}<br/><span style={{ fontSize:10, fontWeight:600, opacity:0.85 }}>{o.s}</span>
                   </button>
                 );
               })}
             </div>
             <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
-              Moteur utilisé pour générer et améliorer les textes (rédaction, correction). <strong>Claude</strong> par défaut. Changement immédiat et réversible à tout moment.
+              Moteur utilisé pour générer et améliorer les textes (rédaction, correction). <strong>Claude</strong> par défaut.
+              <strong> Gemini Pro</strong> = meilleure qualité/précision mais plus lent ; <strong>Flash</strong> = rapide. Réversible à tout moment.
             </p>
           </div>
 
