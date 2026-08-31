@@ -152,6 +152,9 @@ const RichTextArea = forwardRef(function RichTextArea(
   const [selGridAlign, setSelGridAlign] = useState('left');  // left | center
   const [selGridBorder, setSelGridBorder] = useState('none'); // none|all|top|bottom|left|right
   const [gridDividers, setGridDividers] = useState([]); // poignées entre colonnes {j,x,top,height}
+  const [selCell, setSelCell] = useState(null); // case (data-cell) cliquée → bordure « cette case »
+  const [borderPanel, setBorderPanel] = useState(false); // petit panneau de bordures ouvert
+  const [borderScope, setBorderScope] = useState('grid'); // 'cell' (case ciblée) | 'grid' (tout)
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -205,7 +208,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   };
   useEffect(() => {
     if (!selGrid) return;
-    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) { setSelGrid(null); setGridDividers([]); } };
+    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) { setSelGrid(null); setGridDividers([]); setSelCell(null); setBorderPanel(false); } };
     document.addEventListener('mousedown', onDocDown);
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [selGrid]);
@@ -216,7 +219,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (selGrid) { selGrid.style.width = `${w}%`; selGrid.setAttribute('data-w', String(w)); }
   };
   const resizeGridCommit = () => { if (selGrid) { handleInput(); computeGridDividers(selGrid); } };
-  const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); setGridDividers([]); handleInput(); };
+  const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); setGridDividers([]); setSelCell(null); setBorderPanel(false); handleInput(); };
 
   // Largeurs de colonnes VARIABLES : poignées glissables entre colonnes (data-widths = ratios fr).
   const gridColCount = (grid) => Math.max(1, parseInt(grid.getAttribute('data-cols')) || grid.querySelectorAll('[data-cell]').length);
@@ -271,28 +274,34 @@ const RichTextArea = forwardRef(function RichTextArea(
     selGrid.style.marginRight = next === 'center' ? 'auto' : '0';
     setSelGridAlign(next); refreshGridBox(selGrid); computeGridDividers(selGrid); handleInput();
   };
-  // Applique un mode de bordure aux cases (DOM éditeur : WYSIWYG). 'none' = pointillé d'édition.
-  const applyGridBorderDom = (grid, mode) => {
-    const BC = '1px solid #B8C0CC';
-    grid.querySelectorAll('[data-cell]').forEach(c => {
-      c.style.border = ''; c.style.borderTop = ''; c.style.borderBottom = ''; c.style.borderLeft = ''; c.style.borderRight = '';
-      c.style.padding = mode === 'none' ? '6px 8px' : '6px 8px';
-      if (mode === 'none') c.style.border = '1px dashed #cbd5e1';
-      else if (mode === 'all') c.style.border = BC;
-      else if (mode === 'top') c.style.borderTop = BC;
-      else if (mode === 'bottom') c.style.borderBottom = BC;
-      else if (mode === 'left') c.style.borderLeft = BC;
-      else if (mode === 'right') c.style.borderRight = BC;
-    });
-    grid.setAttribute('data-border', mode);
-  };
   const GRID_BORDERS = ['none', 'all', 'top', 'bottom', 'left', 'right'];
   const GRID_BORDER_LBL = { none: 'Aucune', all: 'Toutes', top: 'Haut', bottom: 'Bas', left: 'Gauche', right: 'Droite' };
-  const cycleGridBorder = () => {
-    if (!selGrid) return;
-    const next = GRID_BORDERS[(GRID_BORDERS.indexOf(selGridBorder) + 1) % GRID_BORDERS.length];
-    applyGridBorderDom(selGrid, next);
-    setSelGridBorder(next); computeGridDividers(selGrid); handleInput();
+  const GRID_BORDER_SYM = { none: '▢', all: '▦', top: '⎺', bottom: '⎵', left: '▏', right: '▕' };
+  // Applique un mode de bordure à UNE case (DOM éditeur, WYSIWYG). data-cb = mémoire par case ;
+  // null → repli sur le réglage GLOBAL du tableau (pointillé d'édition si global 'none').
+  const applyCellBorderDom = (cell, mode, gridMode) => {
+    const BC = '1px solid #B8C0CC';
+    cell.style.border = ''; cell.style.borderTop = ''; cell.style.borderBottom = ''; cell.style.borderLeft = ''; cell.style.borderRight = '';
+    cell.style.padding = '6px 8px';
+    if (mode) cell.setAttribute('data-cb', mode); else cell.removeAttribute('data-cb');
+    const eff = mode || gridMode || 'none';
+    if (eff === 'none') cell.style.border = '1px dashed #cbd5e1';
+    else if (eff === 'all') cell.style.border = BC;
+    else if (eff === 'top') cell.style.borderTop = BC;
+    else if (eff === 'bottom') cell.style.borderBottom = BC;
+    else if (eff === 'left') cell.style.borderLeft = BC;
+    else if (eff === 'right') cell.style.borderRight = BC;
+  };
+  // Applique un mode : à la case cliquée (« cette case ») OU à tout le tableau.
+  const setBorders = (mode, scope) => {
+    const grid = selGrid; if (!grid) return;
+    if (scope === 'cell' && selCell && grid.contains(selCell)) {
+      applyCellBorderDom(selCell, mode, grid.getAttribute('data-border') || 'none');
+    } else {
+      grid.setAttribute('data-border', mode); setSelGridBorder(mode);
+      grid.querySelectorAll('[data-cell]').forEach(c => applyCellBorderDom(c, null, mode)); // réinit par-case → global
+    }
+    handleInput();
   };
 
   // Alignement : appliqué IMPÉRATIVEMENT sur le contentEditable (le style React seul ne
@@ -361,7 +370,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); setGridDividers([]); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
+    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); setGridDividers([]); setSelCell(null); setBorderPanel(false); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
@@ -481,10 +490,11 @@ const RichTextArea = forwardRef(function RichTextArea(
         setSelGridW(parseFloat(grid.getAttribute('data-w')) || 100);
         setSelGridAlign(grid.getAttribute('data-align') === 'center' ? 'center' : 'left');
         setSelGridBorder(grid.getAttribute('data-border') || 'none');
+        setSelCell(e.target?.closest?.('[data-cell]') || null); // case cliquée (pour « cette case »)
         refreshGridBox(grid);
         computeGridDividers(grid);
       } else if (selGrid) {
-        setSelGrid(null); setGridDividers([]);
+        setSelGrid(null); setGridDividers([]); setSelCell(null); setBorderPanel(false);
       }
     }
   };
@@ -645,11 +655,52 @@ const RichTextArea = forwardRef(function RichTextArea(
             style={{ background: selGridAlign === 'center' ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:12, fontWeight:700 }}>
             ⇔
           </button>
-          <button title="Bordures des cases (cliquer pour changer)"
-            onMouseDown={e => { e.preventDefault(); cycleGridBorder(); }}
-            style={{ background: selGridBorder !== 'none' ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
-            ▦ {GRID_BORDER_LBL[selGridBorder]}
-          </button>
+          <div style={{ position:'relative' }}>
+            <button title="Bordures des cases"
+              onMouseDown={e => { e.preventDefault(); setBorderPanel(v => { const nv = !v; if (nv) setBorderScope(selCell ? 'cell' : 'grid'); return nv; }); }}
+              style={{ background: borderPanel ? '#E30513' : 'transparent', color:'#fff', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:11, fontWeight:700, whiteSpace:'nowrap' }}>
+              ▦ Bordures ▾
+            </button>
+            {borderPanel && (() => {
+              const scope = borderScope === 'cell' && selCell ? 'cell' : 'grid';
+              const current = scope === 'cell' ? (selCell?.getAttribute('data-cb') || 'none') : selGridBorder;
+              return (
+              <div onMouseDown={e => e.stopPropagation()}
+                style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:40, background:'#1f1f1f', border:'1px solid #555',
+                  borderRadius:8, padding:8, boxShadow:'0 6px 20px rgba(0,0,0,0.4)', width:186 }}>
+                {/* Portée : cette case (si une case est ciblée) ou tout le tableau. */}
+                <div style={{ fontSize:9, color:'#aaa', fontWeight:700, textTransform:'uppercase', letterSpacing:0.4, margin:'0 0 5px' }}>Appliquer à</div>
+                <div style={{ display:'flex', gap:5, marginBottom:8 }}>
+                  {[{ k:'cell', l:'Cette case' }, { k:'grid', l:'Tout le tableau' }].map(s => {
+                    const disabled = s.k === 'cell' && !selCell;
+                    const active = scope === s.k;
+                    return (
+                    <button key={s.k} disabled={disabled}
+                      onMouseDown={e => { e.preventDefault(); if (!disabled) setBorderScope(s.k); }}
+                      style={{ flex:1, textAlign:'center', fontSize:10, fontWeight:700, cursor: disabled ? 'default' : 'pointer',
+                        color: disabled ? '#666' : '#fff', background: active ? '#E30513' : '#2a2a2a',
+                        border:`1px solid ${active ? '#E30513' : '#444'}`, borderRadius:5, padding:'3px 0' }}>{s.l}</button>
+                  ); })}
+                </div>
+                <div style={{ fontSize:9, color:'#aaa', fontWeight:700, textTransform:'uppercase', letterSpacing:0.4, margin:'0 0 5px' }}>Bordure</div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:5 }}>
+                  {GRID_BORDERS.map(m => (
+                    <button key={m}
+                      onMouseDown={e => { e.preventDefault(); setBorders(m, scope); }}
+                      title={scope === 'cell' ? `${GRID_BORDER_LBL[m]} — cette case` : `${GRID_BORDER_LBL[m]} — tout le tableau`}
+                      style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, padding:'6px 2px', cursor:'pointer',
+                        background:'#2a2a2a', color:'#fff', border:`1px solid ${current === m ? '#E30513' : '#444'}`, borderRadius:5, fontSize:9, fontWeight:700 }}>
+                      <span style={{ fontSize:14, lineHeight:1 }}>{GRID_BORDER_SYM[m]}</span>{GRID_BORDER_LBL[m]}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize:9, color:'#888', marginTop:7, lineHeight:1.3 }}>
+                  {selCell ? 'Astuce : clique une case du tableau pour la cibler.' : 'Clique une case du tableau pour la cibler individuellement.'}
+                </div>
+              </div>
+              );
+            })()}
+          </div>
           <span style={{ width:1, height:18, background:'#444' }}/>
           <button title="Supprimer le tableau" onMouseDown={e => { e.preventDefault(); deleteGrid(); }}
             style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>

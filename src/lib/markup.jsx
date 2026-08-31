@@ -127,15 +127,17 @@ function renderHtml(html) {
         const template = (cols >= 2 && ws.length === cols - 1)
           ? ws.map(w => `${w}%`).join(' ') + ' minmax(0, 1fr)'
           : ws.length === cols ? ws.map(w => `${w}fr`).join(' ') : `repeat(${cols}, 1fr)`;
-        // Bordures de case : aucune / toutes / un seul côté (haut, bas, gauche, droite).
-        const bm = node.getAttribute('data-border') || 'none';
+        // Bordures : par CASE (attribut data-cb sur la case) avec repli sur le réglage GLOBAL du
+        // tableau (data-border). Modes : aucune / toutes / un côté (haut, bas, gauche, droite).
+        const gridBm = node.getAttribute('data-border') || 'none';
         const BC = '1px solid #B8C0CC';
-        const cellBorder = bm === 'all' ? { border: BC } : bm === 'top' ? { borderTop: BC } : bm === 'bottom' ? { borderBottom: BC } : bm === 'left' ? { borderLeft: BC } : bm === 'right' ? { borderRight: BC } : {};
+        const borderStyle = (m) => m === 'all' ? { border: BC } : m === 'top' ? { borderTop: BC } : m === 'bottom' ? { borderBottom: BC } : m === 'left' ? { borderLeft: BC } : m === 'right' ? { borderRight: BC } : {};
         blocks.push({ items: [
           <span key={k()} style={{ display: 'grid', gridTemplateColumns: template, gap: 8, margin, width, maxWidth: '100%', alignItems: 'start' }}>
-            {cells.map((c, ci) => (
-              <span key={ci} style={{ minWidth: 0, ...(bm !== 'none' ? { padding: '4px 6px' } : {}), ...cellBorder }}>{renderHtml(c.innerHTML)}</span>
-            ))}
+            {cells.map((c, ci) => {
+              const m = c.getAttribute('data-cb') || gridBm;
+              return <span key={ci} style={{ minWidth: 0, ...(m !== 'none' ? { padding: '4px 6px' } : {}), ...borderStyle(m) }}>{renderHtml(c.innerHTML)}</span>;
+            })}
           </span>
         ], isBullet: false });
       }
