@@ -489,6 +489,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
   const [bgVersion,        setBgVersion]        = useState(0);   // incrémenté pour forcer redraw après swap HQ
   const [photoStripBig,    setPhotoStripBig]    = useState(false); // agrandir les miniatures de la bande "Vues"
+  const [dispSize,         setDispSize]         = useState(null); // taille d'affichage CSS ajustée à la fenêtre (petite image → agrandie)
 
   const allSymbols = useMemo(() => [...SYMBOLS, ...customSyms], [customSyms]);
 
@@ -970,9 +971,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (cancelled) return;
         const cv = cvRef.current;
         if (!cv) return;
-        cv.width = img.naturalWidth;
-        cv.height = img.naturalHeight;
+        const nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+        // Suréchantillonnage des petites images : on agrandit le BACKING STORE (résolution interne)
+        // pour que les ANNOTATIONS (texte, traits, symboles) restent NETTES même quand la photo est
+        // affichée en grand. La photo, elle, redevient un peu douce (limite de la source) — accepté.
+        // Cible calculée d'après la DENSITÉ de l'écran (devicePixelRatio) : sur un écran Retina/mobile
+        // haute densité il faut ~2× plus de pixels, sinon même le texte reste flou (bug du 1er essai).
+        // Facteur borné (≤4) pour ne pas exploser la mémoire sur une source minuscule.
+        const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+        const target = Math.min(2800, Math.round(Math.max(1500, 1400 * dpr)));
+        const f = Math.min(4, Math.max(1, target / Math.max(nw, nh)));
+        cv.width = Math.round(nw * f);
+        cv.height = Math.round(nh * f);
         bgRef.current = img;
+        if (f !== 1) {
+          hqScaleRef.current = f;                    // getAnnotation redivise → paths stockés en espace naturel
+          setPaths(prev => scalePaths(prev, f, f));  // paths existants → espace canvas suréchantillonné
+        }
         setBgOk(true);
       };
       img.onerror = () => { if (!cancelled) setBgOk(true); };
@@ -990,12 +1005,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     img.onload = () => {
       const cv = cvRef.current;
       if (!cv || !bgRef.current || bgRef.current.naturalWidth === 0) return;
-      const sx = img.naturalWidth  / bgRef.current.naturalWidth;
-      const sy = img.naturalHeight / bgRef.current.naturalHeight;
+      // Échelle relative au canvas COURANT (qui peut déjà être suréchantillonné) et non à l'image
+      // naturelle → on COMPOSE dans hqScaleRef pour que la sauvegarde redivise correctement.
+      // Sans suréchantillonnage, cv.width === naturalWidth → identique à avant.
+      const sx = img.naturalWidth  / cv.width;
+      const sy = img.naturalHeight / cv.height;
       cv.width  = img.naturalWidth;
       cv.height = img.naturalHeight;
       bgRef.current = img;
-      hqScaleRef.current = sx;
+      hqScaleRef.current *= sx;
       // Mise à l'échelle des paths existants + forçage du redraw
       if (sx !== 1 || sy !== 1) {
         setPaths(prev => scalePaths(prev, sx, sy));
@@ -1004,6 +1022,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
     img.src = hqImage;
   }, [hqImage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Taille d'AFFICHAGE : on agrandit l'image pour remplir l'espace dispo (une petite miniature devient
+  // confortable à annoter). Le backing store étant suréchantillonné (cf. img.onload), les annotations
+  // restent NETTES ; seule la photo devient un peu douce. getXY() lit getBoundingClientRect() → le
+  // mapping des coordonnées reste exact quelle que soit la taille CSS (hit-tests + export inchangés).
+  const fitCanvas = useCallback(() => {
+    const cv = cvRef.current, wrap = canvasWrapRef.current;
+    if (!cv || !wrap || !cv.width || !cv.height) return;
+    const cs = getComputedStyle(wrap);
+    const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    if (availW <= 0 || availH <= 0) return;
+    const scale = Math.min(availW / cv.width, availH / cv.height);
+    setDispSize({ w: Math.round(cv.width * scale), h: Math.round(cv.height * scale) });
+  }, []);
+  useEffect(() => { fitCanvas(); }, [bgOk, bgVersion, fitCanvas]);
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap || typeof ResizeObserver === 'undefined') { window.addEventListener('resize', fitCanvas); return () => window.removeEventListener('resize', fitCanvas); }
+    const ro = new ResizeObserver(() => fitCanvas());
+    ro.observe(wrap);
+    window.addEventListener('resize', fitCanvas);
+    return () => { ro.disconnect(); window.removeEventListener('resize', fitCanvas); };
+  }, [fitCanvas]);
 
   const getXY = (e, cv) => {
     const r = cv.getBoundingClientRect(), sx = cv.width / r.width, sy = cv.height / r.height;
@@ -2315,7 +2357,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
+              style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
               onContextMenu={e => e.preventDefault()}/>
