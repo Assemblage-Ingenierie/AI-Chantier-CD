@@ -108,16 +108,21 @@ function renderHtml(html) {
       return;
     }
 
-    // « Tableau » (cases côte à côte) inséré dans le commentaire : rendu en flex, chaque case
-    // rendue récursivement (texte, images légendées, couleurs…). Sans bordure dans le rapport.
+    // « Tableau » (cases) inséré dans le commentaire : grille R×C, chaque case rendue
+    // récursivement (texte, images légendées, couleurs…). Sans bordure dans le rapport.
+    // data-cols = nb de colonnes (multi-lignes) ; ancien format sans data-cols = 1 ligne.
+    // data-w = largeur du tableau en % (redimensionnement).
     if (node.getAttribute && node.getAttribute('data-grid') != null) {
       flush();
       const cells = Array.from(node.children).filter(c => c.getAttribute && c.getAttribute('data-cell') != null);
       if (cells.length) {
+        const cols = Math.max(1, parseInt(node.getAttribute('data-cols')) || cells.length);
+        const wAttr = parseFloat(node.getAttribute('data-w'));
+        const width = Number.isFinite(wAttr) ? `${Math.max(20, Math.min(100, wAttr))}%` : '100%';
         blocks.push({ items: [
-          <span key={k()} style={{ display: 'flex', gap: 8, margin: '8px 0', alignItems: 'flex-start' }}>
+          <span key={k()} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 8, margin: '8px 0', width, maxWidth: '100%', alignItems: 'start' }}>
             {cells.map((c, ci) => (
-              <span key={ci} style={{ flex: 1, minWidth: 0 }}>{renderHtml(c.innerHTML)}</span>
+              <span key={ci} style={{ minWidth: 0 }}>{renderHtml(c.innerHTML)}</span>
             ))}
           </span>
         ], isBullet: false });

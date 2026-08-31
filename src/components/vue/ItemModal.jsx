@@ -164,6 +164,41 @@ ${SCOPE_STRUCTURE}
 Décris ce qui est réellement VISIBLE sur les photos. N'invente aucune cote ni cause ; formule les incertitudes en « À vérifier : … ». Concis, en puces si plusieurs points distincts. Français impeccable, jamais de « — » ni « – ».
 Réponds UNIQUEMENT avec le texte du commentaire, sans titre, sans guillemets, sans explication.`;
 
+// Sélecteur de taille de tableau (façon Word) : survoler pour choisir lignes × colonnes,
+// cliquer pour insérer. Max 4 lignes × 5 colonnes (suffisant + reste joli sur A4).
+function TableSizePicker({ onPick, onClose }) {
+  const [hov, setHov] = useState({ r: 0, c: 0 });
+  const MAXR = 4, MAXC = 5;
+  useEffect(() => {
+    const onDoc = () => onClose();
+    // Fermeture au clic extérieur (léger différé pour ne pas se fermer sur le clic d'ouverture).
+    const t = setTimeout(() => document.addEventListener('mousedown', onDoc), 0);
+    return () => { clearTimeout(t); document.removeEventListener('mousedown', onDoc); };
+  }, [onClose]);
+  return (
+    <div onMouseDown={e => e.stopPropagation()}
+      style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:40, background:'white',
+        border:`1px solid ${DA.border}`, borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,0.16)', padding:10 }}>
+      <div style={{ display:'grid', gridTemplateColumns:`repeat(${MAXC}, 20px)`, gap:4 }}>
+        {Array.from({ length: MAXR * MAXC }).map((_, i) => {
+          const r = Math.floor(i / MAXC) + 1, c = (i % MAXC) + 1;
+          const on = r <= hov.r && c <= hov.c;
+          return (
+            <div key={i}
+              onMouseEnter={() => setHov({ r, c })}
+              onMouseDown={e => { e.preventDefault(); onPick(r, c); }}
+              style={{ width:20, height:20, borderRadius:3, cursor:'pointer',
+                border:`1.5px solid ${on ? DA.red : DA.border}`, background: on ? DA.redL : '#FAFBFC' }}/>
+          );
+        })}
+      </div>
+      <p style={{ margin:'8px 0 0', fontSize:11, fontWeight:700, color:DA.gray, textAlign:'center' }}>
+        {hov.r > 0 ? `${hov.r} ligne${hov.r > 1 ? 's' : ''} × ${hov.c} colonne${hov.c > 1 ? 's' : ''}` : 'Choisir la taille'}
+      </p>
+    </div>
+  );
+}
+
 export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
   const [form, setForm] = useState(() => {
     // id stable dès le départ : sert d'ORIGINE aux marqueurs Vxx posés sur les plans de
@@ -199,6 +234,11 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   const lpFiredRef = useRef(false); // true si l'appui long (zoom) s'est déclenché → tap simple = annoter
   const [compressing, setCompressing] = useState(false);
   const [editorSyncKey, setEditorSyncKey] = useState(0);
+  // ⚠️ Ces états DOIVENT être déclarés AVANT tout return conditionnel (« if (showPlan) return »
+  // plus bas) — sinon hooks appelés conditionnellement → crash React #300 (bug remonté par Thomas :
+  // C/C d'une photo + « Annoter » ouvrait le mode plan → plantage). NE PAS les redescendre.
+  const [hlMode, setHlMode] = useState(false);        // surligneur (fond) actif
+  const [tablePicker, setTablePicker] = useState(false); // sélecteur de taille de tableau ouvert
   const bumpSync = () => setEditorSyncKey(k => k + 1);
 
   // ── Images collées dans le commentaire (feature « comme Word ») ──────────────────────────
@@ -819,7 +859,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   // Surlignage (fond) : demande Thibaud — MÊMES pastilles, un bouton en plus pour basculer en
   // mode « surligneur ». On applique un fond TRANSLUCIDE de la couleur (comme un vrai surligneur)
   // → le texte reste lisible. La pastille « noir/défaut » RETIRE le surlignage.
-  const [hlMode, setHlMode] = useState(false);
+  // (hlMode est déclaré plus haut, avant le return conditionnel — cf. crash React #300.)
   const hexToHl = (hex) => {
     const m = /^#([0-9a-f]{6})$/i.exec(hex);
     if (!m) return hex;
@@ -842,12 +882,15 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     if (c === '#111111') applyHighlight('transparent'); // pastille défaut = retirer le surlignage
     else applyHighlight(hexToHl(c));
   };
-  // Insère un « tableau » : une rangée de N cases côte à côte (demande Thomas). Chaque case peut
-  // recevoir une image collée OU du texte. Rendu en flex (éditeur + aperçu rapport).
-  const insertGrid = (cols) => {
-    const cell = '<div data-cell="1" style="flex:1;min-width:0;min-height:64px;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 8px;box-sizing:border-box;"></div>';
-    const html = `<div data-grid="1" style="display:flex;gap:8px;margin:8px 0;align-items:stretch;">${cell.repeat(cols)}</div><div><br></div>`;
+  // Insère un « tableau » LIBRE de rows×cols cases (demande Thomas). Chaque case peut recevoir
+  // une image collée OU du texte. Grille CSS (éditeur + aperçu rapport). data-cols = nb de
+  // colonnes ; data-w = largeur % (redimensionnable ensuite).
+  // (tablePicker est déclaré plus haut, avant le return conditionnel — cf. crash React #300.)
+  const insertGrid = (rows, cols) => {
+    const cell = '<div data-cell="1" style="min-width:0;min-height:64px;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 8px;box-sizing:border-box;"></div>';
+    const html = `<div data-grid="1" data-cols="${cols}" data-w="100" style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin:8px 0;width:100%;box-sizing:border-box;">${cell.repeat(rows * cols)}</div><div><br></div>`;
     textareaRef.current?.insertHtml?.(html);
+    setTablePicker(false);
   };
 
   // Inputs fichiers (hidden)
@@ -968,15 +1011,17 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                     background:s.c, boxShadow:'0 1px 2px rgba(0,0,0,0.12)' }}/>
               ))}
               <div style={{ width:1,height:20,background:DA.border,margin:'0 4px',flexShrink:0 }}/>
-              {/* Insérer un tableau (cases côte à côte) : 2 ou 3 colonnes. Chaque case = image ou texte. */}
-              {[2, 3].map(n => (
-                <button key={n} type="button" title={`Insérer un tableau de ${n} cases côte à côte`}
-                  onMouseDown={e => { e.preventDefault(); insertGrid(n); }}
-                  style={{ height:24,padding:'0 7px',borderRadius:6,border:`1px solid ${DA.border}`,background:'white',
-                    color:DA.gray,cursor:'pointer',flexShrink:0,fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:3 }}>
-                  <span style={{ fontSize:13,lineHeight:1 }}>▦</span>{n}
+              {/* Insérer un tableau LIBRE : sélecteur de taille (lignes × colonnes). Chaque case = image ou texte. */}
+              <div style={{ position:'relative', flexShrink:0 }}>
+                <button type="button" title="Insérer un tableau (choisir lignes × colonnes)"
+                  onMouseDown={e => { e.preventDefault(); setTablePicker(v => !v); }}
+                  style={{ height:24,padding:'0 8px',borderRadius:6,border:`1px solid ${tablePicker ? DA.red : DA.border}`,
+                    background: tablePicker ? DA.redL : 'white', color: tablePicker ? DA.red : DA.gray,
+                    cursor:'pointer',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:4 }}>
+                  <span style={{ fontSize:13,lineHeight:1 }}>▦</span> Tableau
                 </button>
-              ))}
+                {tablePicker && <TableSizePicker onPick={insertGrid} onClose={() => setTablePicker(false)}/>}
+              </div>
             </div>
 
             {/* Éditeur + bouton dictaphone flottant (cercle, push-to-talk) — posé en bas à droite

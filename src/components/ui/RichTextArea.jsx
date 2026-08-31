@@ -146,6 +146,9 @@ const RichTextArea = forwardRef(function RichTextArea(
   const [imgBox, setImgBox] = useState(null);   // position de la barre flottante {top,left,width}
   const [selImgW, setSelImgW] = useState(60);   // largeur % live de l'image sélectionnée (curseur fluide)
   const [selImgCap, setSelImgCap] = useState(''); // légende (data-cap) de l'image sélectionnée
+  const [selGrid, setSelGrid] = useState(null);   // tableau (data-grid) sélectionné → barre redimensionnement
+  const [gridBox, setGridBox] = useState(null);   // position de la barre du tableau {top,left}
+  const [selGridW, setSelGridW] = useState(100);  // largeur % live du tableau
 
   // Expose focus() to parent via ref
   useImperativeHandle(ref, () => ({
@@ -189,6 +192,28 @@ const RichTextArea = forwardRef(function RichTextArea(
     document.addEventListener('mousedown', onDocDown);
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [selImg]);
+
+  // Barre de redimensionnement d'un tableau : position + désélection au clic extérieur.
+  const refreshGridBox = (grid) => {
+    if (!grid || !wrapperRef.current) return;
+    const wr = wrapperRef.current.getBoundingClientRect();
+    const gr = grid.getBoundingClientRect();
+    setGridBox({ top: Math.max(0, gr.top - wr.top - 34), left: gr.left - wr.left });
+  };
+  useEffect(() => {
+    if (!selGrid) return;
+    const onDocDown = (e) => { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setSelGrid(null); };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [selGrid]);
+  // Redimensionnement FLUIDE : on ne touche que le DOM du tableau pendant le glissé du curseur,
+  // on persiste une seule fois au relâché (comme le redimensionnement d'image).
+  const resizeGridLive = (w) => {
+    setSelGridW(w);
+    if (selGrid) { selGrid.style.width = `${w}%`; selGrid.setAttribute('data-w', String(w)); }
+  };
+  const resizeGridCommit = () => { if (selGrid) handleInput(); };
+  const deleteGrid = () => { if (!selGrid) return; selGrid.remove(); setSelGrid(null); handleInput(); };
 
   // Alignement : appliqué IMPÉRATIVEMENT sur le contentEditable (le style React seul ne
   // suffisait pas selon le contenu déjà saisi → les boutons gauche/centre/droite/justifier
@@ -256,7 +281,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
     const html = normalizeToHtml(value);
-    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
+    if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleInput = () => {
@@ -358,8 +383,21 @@ const RichTextArea = forwardRef(function RichTextArea(
       setSelImgW(parseFloat(e.target.getAttribute('data-w')) || 60);
       setSelImgCap(e.target.getAttribute('data-cap') || '');
       refreshImgBox(e.target);
+      setSelGrid(null);
     } else if (selImg) {
       setSelImg(null);
+    }
+    // Sélection d'un tableau (data-grid) au clic → barre de redimensionnement (n'empêche pas
+    // d'écrire dans les cases). Une image dans une case reste prioritaire (gérée au-dessus).
+    if (e.target?.tagName !== 'IMG') {
+      const grid = e.target?.closest?.('[data-grid]');
+      if (grid && wrapperRef.current?.contains(grid)) {
+        setSelGrid(grid);
+        setSelGridW(parseFloat(grid.getAttribute('data-w')) || 100);
+        refreshGridBox(grid);
+      } else if (selGrid) {
+        setSelGrid(null);
+      }
     }
   };
 
@@ -494,6 +532,24 @@ const RichTextArea = forwardRef(function RichTextArea(
             placeholder="Légende de l'image (optionnel)…" maxLength={200}
             style={{ width:'100%', boxSizing:'border-box', background:'#2a2a2a', color:'#fff',
               border:'1px solid #555', borderRadius:4, padding:'4px 7px', fontSize:11, outline:'none' }}/>
+        </div>
+      )}
+      {/* Barre flottante d'un tableau sélectionné : largeur + suppression (demande Thomas). */}
+      {selGrid && gridBox && (
+        <div style={{ position:'absolute', top:gridBox.top, left:gridBox.left, zIndex:30,
+          display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap', background:'#1f1f1f', color:'#fff',
+          borderRadius:6, padding:'6px 9px', boxShadow:'0 2px 10px rgba(0,0,0,0.35)', fontSize:11, maxWidth:'min(320px, 90vw)' }}>
+          <span style={{ opacity:0.65, fontWeight:600 }}>Tableau</span>
+          <input type="range" min="30" max="100" step="1" value={selGridW}
+            onChange={e => resizeGridLive(parseFloat(e.target.value))}
+            onPointerUp={resizeGridCommit} onMouseUp={resizeGridCommit} onKeyUp={resizeGridCommit}
+            style={{ width:110, accentColor:'#E30513', cursor:'pointer' }}/>
+          <span style={{ width:32, textAlign:'right', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{Math.round(selGridW)}%</span>
+          <span style={{ width:1, height:18, background:'#444' }}/>
+          <button title="Supprimer le tableau" onMouseDown={e => { e.preventDefault(); deleteGrid(); }}
+            style={{ background:'transparent', color:'#ff8a8a', border:'1px solid #555', borderRadius:4, padding:'3px 8px', cursor:'pointer', fontSize:13 }}>
+            🗑
+          </button>
         </div>
       )}
       <div
