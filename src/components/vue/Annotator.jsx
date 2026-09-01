@@ -1344,6 +1344,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         textDragRef.current = { mode: 'box', origX: paths[existIdx].x, origY: paths[existIdx].y, tapX: pos.x, tapY: pos.y, moved: false, textVal: paths[existIdx].text || '', wasSelected };
         return;
       }
+      // Tap dans le vide ALORS qu'un texte est sélectionné = on FERME le panneau d'édition
+      // (retour Thomas : « je clique à côté, ça devrait fermer et repasser en sélection »).
+      // On ne crée PAS un nouveau texte sur ce tap-là ; on revient à l'outil Sélection.
+      if (selTextIdx !== null) { setSelTextIdx(null); setTool('select'); return; }
       setSelTextIdx(null);
       if (textMode === 'arrow') {
         // Mode flèche : le start = pointe, drag = position boîte
@@ -2367,6 +2371,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#B91C1C', color:'white', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Ic n="del" s={17}/>
             </button>
+          </div>
+          {/* Rangée 3 : taille du texte EN DIRECT (retour Thomas : « je ne peux pas changer
+              l'échelle en direct »). Le curseur agit tout de suite sur le texte sélectionné. */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, background:'#111', borderRadius:10, padding:'6px 12px' }}>
+            <span style={{ fontSize:12, color:'#bbb', fontWeight:800, flexShrink:0 }}>A</span>
+            <input type="range" min="0.5" max="14" step="0.5" value={selText.size ?? 3}
+              onChange={e => { const v = parseFloat(e.target.value); setSize(v); setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,size:v} : p)); }}
+              style={{ flex:1, accentColor:DA.red, cursor:'pointer', height:26 }}/>
+            <span style={{ fontSize:20, color:'#eee', fontWeight:800, flexShrink:0, lineHeight:1 }}>A</span>
           </div>
         </div>
       )}
