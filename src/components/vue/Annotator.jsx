@@ -158,7 +158,9 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
           wrapped.push(cur);
         }
         lines = wrapped.length ? wrapped : [''];
-        tw = p.textW;
+        // Le cadre colle à la LIGNE réelle la plus large, PAS à textW (qui ne fait que fixer le point
+        // de retour à la ligne). Sinon la boîte reste énorme même avec un texte court (retour Thomas).
+        tw = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
       } else {
         tw = lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
       }
@@ -731,7 +733,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               wrapped.push(cur);
             }
             _lines = wrapped.length ? wrapped : [''];
-            twU = p.textW;
+            twU = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0); // colle à la ligne réelle, pas à textW
           } else {
             twU = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
           }
