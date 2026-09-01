@@ -677,19 +677,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Poignées des textes (visibles en mode Texte ET Sélect. → on peut bouger cadre + flèche)
     if (tool === 'text' || tool === 'select') {
       resizeHandleRef.current = null; // recalculé ci-dessous si un texte encadré est sélectionné
+      // zH = zoom courant : les poignées sont dessinées dans le canvas puis AGRANDIES par le
+      // transform CSS scale(vt.z). On divise par zH pour qu'elles gardent une taille ~constante à
+      // l'écran quel que soit le zoom (sinon, zoomé ×5, la pastille bleue devient énorme).
+      const zH = vtRef.current.z || 1;
       paths.forEach((p, i) => {
         if (p.type !== 'text') return;
         const isSel = i === selTextIdx;
-        const hr = (isSel ? 10 : 7) * ratio; // scaled to screen pixels
+        const hr = (isSel ? 10 : 7) * ratio / zH; // taille écran ~constante (indépendante du zoom)
         ctx.save();
-        ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = (isSel ? 2.5 : 1.5) * ratio;
+        ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = (isSel ? 2.5 : 1.5) * ratio / zH;
         // Boîte de texte : fond blanc + bordure bleue (visible)
         ctx.fillStyle = 'white'; ctx.globalAlpha = 0.9;
         ctx.beginPath(); ctx.arc(p.x, p.y, hr, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1; ctx.fillStyle = isSel ? 'rgba(74,158,255,0.7)' : 'rgba(74,158,255,0.35)';
         ctx.beginPath(); ctx.arc(p.x, p.y, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         if (p.textMode === 'arrow' && p.arrowX != null) {
-          ctx.strokeStyle = '#FF9500'; ctx.lineWidth = (isSel ? 2.5 : 1.5) * ratio;
+          ctx.strokeStyle = '#FF9500'; ctx.lineWidth = (isSel ? 2.5 : 1.5) * ratio / zH;
           // Décaler le centre du cercle en arrière de hr px pour que son bord avant
           // coïncide exactement avec la pointe de la flèche (arrowX/arrowY)
           const ta = Math.atan2(p.arrowY - p.y, p.arrowX - p.x);
@@ -728,15 +732,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           const pad = 10 * sText;
           const bx = p.x - pad, by = p.y - fs - 4 * sText;
           const bw = tw + pad * 2, bh = fs + (_lines.length - 1) * _lh + pad + 6 * sText;
-          ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
+          ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio / zH; ctx.setLineDash([4 * ratio / zH, 3 * ratio / zH]);
           ctx.strokeRect(bx, by, bw, bh);
           ctx.setLineDash([]);
           if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-            const rhs = 8 * ratio;
+            const rhs = 8 * ratio / zH;
             const hrX = bx + bw, hrY = by;
             // Mémorise la position EXACTE du carré pour le hit-test (twU = largeur non scalée).
             resizeHandleRef.current = { idx: i, x: hrX, y: hrY, twU };
-            ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
+            ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio / zH;
             ctx.beginPath(); ctx.rect(hrX - rhs, hrY - rhs, rhs * 2, rhs * 2); ctx.fill(); ctx.stroke();
           }
         }
@@ -839,6 +843,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
 
   useEffect(() => { redraw(); }, [redraw]);
+  // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
+  // taille correcte à l'écran (sinon, zoomé, la pastille bleue reste géante). Pan (px/py) exclu.
+  useEffect(() => { redraw(); }, [vt.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+Z — undo dernière annotation / Delete — supprimer sélection
   // Deps [] : les refs pathsRef/selTextIdxRef/selAnnotRef sont toujours à jour, pas de closure stale.
