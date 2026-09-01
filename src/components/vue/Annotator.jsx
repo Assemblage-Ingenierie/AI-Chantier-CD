@@ -207,15 +207,19 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.translate(p.x, p.y); ctx.scale(sT, sT); ctx.translate(-p.x, -p.y);
       }
       ctx.font = `bold ${fs}px Arial`;
+      // Épaisseur du trait (cadre + contour) PROPORTIONNELLE à la police (retour Thomas : « la
+      // largeur de la ligne ne suit pas la taille du texte »). Normalisée sur la taille par défaut
+      // (fs=32 à size 3), bornée pour éviter les extrêmes.
+      const _lwF = Math.min(3, Math.max(0.45, fs / 32));
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
         const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = textH + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
-        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT;
+        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT * _lwF;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
         ctx.fillStyle = p.color;
         lines.forEach((ln, i) => ctx.fillText(ln, p.x, p.y + i * lh));
       } else {
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sT;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * ss / sT * _lwF;
         ctx.fillStyle = p.color;
         lines.forEach((ln, i) => { ctx.strokeText(ln, p.x, p.y + i * lh); ctx.fillText(ln, p.x, p.y + i * lh); });
       }
