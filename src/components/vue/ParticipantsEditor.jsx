@@ -5,6 +5,7 @@ import {
   loadContacts, upsertContact, deleteContact,
   seedAssemblageContacts, migrateLocalContacts,
 } from '../../lib/contacts.js';
+import ContactsImporter from './ContactsImporter.jsx';
 
 // Hardcoded Assemblage team — used only for the first-time seeding into Supabase.
 const ASSEMBLAGE_TEAM_SEED = [
@@ -611,6 +612,19 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           <Ic n="usr" s={10}/>
           Externe {externalContacts.length > 0 && <span style={{ fontSize:9, background: showExt ? DA.red : DA.border, color: showExt ? 'white' : DA.gray, borderRadius:10, padding:'0 5px', marginLeft:2 }}>{externalContacts.length}</span>}
         </button>
+      </div>
+
+      {/* Import IA depuis un PDF (CR d'archi) ou une capture d'écran → ajoute AU CARNET *et*
+          directement à la page de garde (demande Thomas : « que ça se pré-rentre, sans tout recliquer »). */}
+      <div style={{ marginTop:6 }}>
+        <ContactsImporter
+          existingContacts={contacts}
+          label="Importer depuis PDF / capture"
+          onImported={async (list) => {
+            for (const c of list) { try { await upsertContact(c); } catch { /* le carnet peut échouer, on garde la page de garde */ } }
+            await reloadContacts();
+            onChange([...participants, ...list.map(c => ({ ...c, id: crypto.randomUUID(), presence: 'na' }))]);
+          }}/>
       </div>
     </div>
   );

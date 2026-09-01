@@ -4,20 +4,8 @@ import { Ic } from '../ui/Icons.jsx';
 import {
   loadContacts, upsertContact, deleteContact,
   contactsToCsv, parseContactsCsv, previewImport, importContacts,
-  classifyPdfImport,
 } from '../../lib/contacts.js';
-import { getPdfText } from '../../lib/pdfUtils.js';
-import { callAIProxy } from '../../lib/aiProxy.js';
-
-// Lit un File en data URL (base64) pour le passer à PDF.js.
-function fileToDataUrl(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-}
+import ContactsImporter from './ContactsImporter.jsx';
 
 // Projets sur lesquels chaque contact est tagué (participant d'au moins une visite).
 // Clé de correspondance : email (fiable), repli nom. Renvoie Map(cleContact → [noms projets]).
@@ -89,11 +77,6 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
   const [saving, setSaving] = useState(false);
   const [importPreview, setImportPreview] = useState(null); // { parsed, stats }
   const fileRef = useRef();
-  // Import depuis PDF (CR d'archi) → extraction IA + dédup floue.
-  const pdfRef = useRef();
-  const [pdfBusy, setPdfBusy] = useState('');      // message d'étape ('' = inactif)
-  const [pdfErr, setPdfErr] = useState('');
-  const [pdfResult, setPdfResult] = useState(null); // { toAdd:[{sel,contact}], review:[{sel,parsed,match}], present:[...] }
 
   const reload = async () => {
     setLoading(true); setErr('');
@@ -160,54 +143,6 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
     setSaving(false);
   };
 
-  // ── Import depuis un PDF (compte-rendu d'architecte) : texte → IA → dédup floue ──────────
-  const handlePdf = async (file) => {
-    if (!file) return;
-    setPdfErr(''); setPdfResult(null);
-    try {
-      setPdfBusy('Lecture du PDF…');
-      const dataUrl = await fileToDataUrl(file);
-      const text = await getPdfText(dataUrl);
-      if (!text || text.length < 20) { setPdfErr('PDF illisible ou sans texte (scan image ?).'); setPdfBusy(''); return; }
-      setPdfBusy('Analyse des intervenants par l’IA…');
-      const prompt = `Extrais TOUS les intervenants (personnes) cités dans ce compte-rendu de chantier : nom complet, poste/rôle, entreprise/société, e-mail, téléphone. Ignore les lignes qui ne sont pas des personnes. Si un champ est absent, mets une chaîne vide.\nRéponds UNIQUEMENT avec un JSON valide de cette forme, sans texte autour :\n{"contacts":[{"nom":"","poste":"","entreprise":"","email":"","tel":""}]}\n\nTEXTE DU COMPTE-RENDU :\n${text}`;
-      const r = await callAIProxy({ feature: 'pdf_contacts', json: true, max_tokens: 2000, messages: [{ role: 'user', content: prompt }] });
-      const raw = r.content?.[0]?.text || '';
-      let parsed;
-      try { parsed = JSON.parse((raw.match(/\{[\s\S]*\}/) || [''])[0]); } catch { parsed = null; }
-      const list = Array.isArray(parsed?.contacts) ? parsed.contacts : [];
-      const clean = list
-        .map(c => ({ nom:(c.nom||'').trim(), poste:(c.poste||'').trim(), entreprise:(c.entreprise||'').trim(), email:(c.email||'').trim(), tel:(c.tel||'').trim() }))
-        .filter(c => c.nom);
-      if (!clean.length) { setPdfErr('Aucun intervenant détecté dans ce PDF.'); setPdfBusy(''); return; }
-      const { toAdd, present, review } = classifyPdfImport(clean, contacts);
-      // Liste UNIFIÉE, chaque personne avec son statut clair (demande Thomas : « déjà enregistré /
-      // pas enregistré / nom proche », et je valide au cas par cas). Défauts SÛRS pour ne jamais
-      // créer de doublon par accident : nouveau = coché, nom proche = décoché, déjà là = verrouillé.
-      const rows = [
-        ...toAdd.map(c => ({ status:'new', sel:true, contact:c, match:null })),
-        ...review.map(rv => ({ status:'near', sel:false, contact:rv.parsed, match:rv.match })),
-        ...present.map(pr => ({ status:'present', sel:false, contact:pr.parsed, match:pr.match })),
-      ];
-      setPdfResult({ rows });
-      setPdfBusy('');
-    } catch (e) {
-      setPdfErr(e?.message || 'Échec de l’analyse du PDF'); setPdfBusy('');
-    }
-  };
-  const confirmPdfImport = async () => {
-    if (!pdfResult) return;
-    setSaving(true);
-    try {
-      // On n'ajoute QUE les lignes cochées ET jamais un « déjà enregistré » (verrou anti-doublon).
-      const chosen = pdfResult.rows.filter(x => x.sel && x.status !== 'present').map(x => x.contact);
-      for (const c of chosen) await upsertContact(c);
-      setPdfResult(null);
-      await reload();
-    } catch (e) { setPdfErr(e.message); }
-    setSaving(false);
-  };
-
   const th = { textAlign:'left', padding:'11px 12px', color:'white', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' };
   const td = { padding:'10px 12px', fontSize:13, color:DA.black, verticalAlign:'middle' };
   const inp = { width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:7, padding:'8px 10px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' };
@@ -254,12 +189,10 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
           </button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}/>
-          <button onClick={() => pdfRef.current?.click()} disabled={!!pdfBusy} title="Importer les intervenants depuis un compte-rendu PDF (IA)"
-            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, padding:'8px 12px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color: pdfBusy ? DA.grayL : '#6D28D9', cursor: pdfBusy ? 'default' : 'pointer' }}>
-            <Ic n="fil" s={14}/> {pdfBusy ? '…' : 'PDF (CR)'}
-          </button>
-          <input ref={pdfRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handlePdf(f); e.target.value = ''; }}/>
+          <ContactsImporter
+            existingContacts={contacts}
+            label="PDF / Photo"
+            onImported={async (list) => { for (const c of list) await upsertContact(c); await reload(); }}/>
           <button onClick={() => setEditing({ ...EMPTY })}
             style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:800, padding:'8px 14px', borderRadius:8, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
             <Ic n="plus" s={14}/> Nouveau
@@ -371,84 +304,6 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
         </div>
       )}
 
-      {/* Étape en cours / erreur de l'import PDF */}
-      {(pdfBusy || pdfErr) && !pdfResult && (
-        <div className="modal-overlay-dark" style={{ zIndex:10000 }} onClick={() => { if (!pdfBusy) setPdfErr(''); }}>
-          <div className="modal-sheet" style={{ maxWidth:380, padding:22, textAlign:'center' }} onClick={e => e.stopPropagation()}>
-            {pdfBusy ? (
-              <>
-                <div style={{ marginBottom:10 }}><Ic n="spn" s={26} color="#6D28D9"/></div>
-                <p style={{ fontSize:14, color:DA.black, fontWeight:700, margin:0 }}>{pdfBusy}</p>
-              </>
-            ) : (
-              <>
-                <p style={{ fontSize:14, color:DA.red, fontWeight:700, margin:'0 0 14px' }}>{pdfErr}</p>
-                <button onClick={() => setPdfErr('')} style={{ padding:'10px 18px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>OK</button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Écran de revue de l'import PDF — UNE liste, chaque personne avec son statut clair et une
-          case à cocher. Rien n'est ajouté sans validation ; « déjà enregistré » est verrouillé. */}
-      {pdfResult && (() => {
-        const BADGE = {
-          new:     { bg:'#ECFDF5', bd:'#A7F3D0', fg:'#065F46', label:'Nouveau' },
-          near:    { bg:'#FFFBEB', bd:'#FCD34D', fg:'#92400E', label:'Nom proche' },
-          present: { bg:'#F3F4F6', bd:'#E5E7EB', fg:'#6B7280', label:'Déjà enregistré' },
-        };
-        const rows = pdfResult.rows;
-        const nNew = rows.filter(r => r.status === 'new').length;
-        const nNear = rows.filter(r => r.status === 'near').length;
-        const nPres = rows.filter(r => r.status === 'present').length;
-        const nSel = rows.filter(r => r.sel && r.status !== 'present').length;
-        const toggle = (i) => setPdfResult(r => ({ ...r, rows: r.rows.map((y, j) => j === i && y.status !== 'present' ? { ...y, sel: !y.sel } : y) }));
-        return (
-        <div className="modal-overlay-dark" style={{ zIndex:10000 }} onClick={() => setPdfResult(null)}>
-          <div className="modal-sheet" style={{ maxWidth:560, padding:20, maxHeight:'90vh', display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
-            <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:'0 0 4px' }}>{rows.length} intervenant{rows.length > 1 ? 's' : ''} trouvé{rows.length > 1 ? 's' : ''}</p>
-            <p style={{ fontSize:12, color:DA.gray, margin:'0 0 6px' }}>
-              <span style={{ color:'#065F46', fontWeight:700 }}>{nNew} nouveau{nNew > 1 ? 'x' : ''}</span> · <span style={{ color:'#92400E', fontWeight:700 }}>{nNear} nom{nNear > 1 ? 's' : ''} proche{nNear > 1 ? 's' : ''}</span> · <span style={{ color:'#6B7280', fontWeight:700 }}>{nPres} déjà là</span>
-            </p>
-            <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 12px' }}>Coche qui tu veux ajouter. Les « déjà enregistré » sont verrouillés (aucun doublon possible).</p>
-            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:6 }}>
-              {rows.map((x, i) => {
-                const b = BADGE[x.status];
-                const locked = x.status === 'present';
-                return (
-                  <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'8px 10px', borderRadius:9,
-                    border:`1px solid ${b.bd}`, background:b.bg, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.7 : 1 }}>
-                    <input type="checkbox" checked={x.sel} disabled={locked} onChange={() => toggle(i)}
-                      style={{ marginTop:3, accentColor:DA.red, width:17, height:17, flexShrink:0 }}/>
-                    <div style={{ minWidth:0, flex:1 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
-                        <span style={{ fontSize:13.5, fontWeight:800, color:DA.black }}>{x.contact.nom}</span>
-                        <span style={{ fontSize:10, fontWeight:800, color:b.fg, background:'white', border:`1px solid ${b.bd}`, borderRadius:5, padding:'1px 7px', textTransform:'uppercase', letterSpacing:0.3 }}>{b.label}</span>
-                      </div>
-                      <div style={{ fontSize:11.5, color:DA.gray, marginTop:1 }}>{[x.contact.poste, x.contact.entreprise, x.contact.email, x.contact.tel].filter(Boolean).join(' · ') || '—'}</div>
-                      {x.match && (
-                        <div style={{ fontSize:11, color:b.fg, marginTop:2 }}>
-                          {x.status === 'present' ? '● identique à ' : '≈ ressemble à '}<strong>{x.match.nom}</strong>{x.match.entreprise ? ` (${x.match.entreprise})` : ''}
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-            {pdfErr && <div style={{ fontSize:12, color:DA.red, marginTop:8 }}>{pdfErr}</div>}
-            <div style={{ display:'flex', gap:8, marginTop:14 }}>
-              <button onClick={() => setPdfResult(null)} style={{ flex:1, padding:'11px', borderRadius:9, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, fontSize:13, fontWeight:600, cursor:'pointer' }}>Annuler</button>
-              <button onClick={confirmPdfImport} disabled={saving || nSel === 0}
-                style={{ flex:2, padding:'11px', borderRadius:9, border:'none', background: nSel === 0 ? DA.grayL : DA.red, color:'white', fontSize:13, fontWeight:800, cursor: nSel === 0 ? 'default' : 'pointer' }}>
-                {saving ? 'Ajout…' : nSel === 0 ? 'Rien de sélectionné' : `Ajouter ${nSel} intervenant${nSel > 1 ? 's' : ''}`}
-              </button>
-            </div>
-          </div>
-        </div>
-        );
-      })()}
     </div>
   );
 }
