@@ -2155,30 +2155,33 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
              Se replie automatiquement dès qu'on touche le plan. ── */}
       {isMob && showPalette && (
         <div style={{ background:DA.black,padding:'6px 12px 8px',display:'flex',flexDirection:'column',gap:7,flexShrink:0,borderBottom:'1px solid #333' }}>
-          <div style={{ display:'flex',gap:7,alignItems:'center',overflowX:'auto',scrollbarWidth:'none' }}>
+          <div style={{ display:'flex',gap:9,alignItems:'center',overflowX:'auto',scrollbarWidth:'none' }}>
             {ANNOT_COLORS.map(cl => (
               <button key={cl} onClick={() => recolorSelection(cl)}
-                style={{ width:28,height:28,borderRadius:'50%',background:cl,
+                style={{ width:34,height:34,borderRadius:'50%',background:cl,
                   border:`3px solid ${color===cl?'white':'transparent'}`,
-                  boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',cursor:'pointer',flexShrink:0 }}/>
+                  boxShadow:color===cl?`0 0 0 2px ${cl}`:'none',cursor:'pointer',flexShrink:0 }}/>
             ))}
-            <div style={{ width:1,height:20,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+            <div style={{ width:1,height:26,background:'#333',flexShrink:0,margin:'0 3px' }}/>
+            {/* Épaisseur : boutons carrés 40px (grosse cible tactile) avec un point interne
+                proportionnel au trait — bien plus lisible/cliquable que les mini-cercles. */}
             {[1,3,6].map(sz => (
-              <button key={sz} onClick={() => resizeSelection(sz)} title="Épaisseur"
-                style={{ width:sz*3+16,height:sz*3+16,borderRadius:'50%',
-                  background:size===sz?'white':'#555',border:`2px solid ${size===sz?'white':'#444'}`,
-                  cursor:'pointer',flexShrink:0 }}/>
+              <button key={sz} onClick={() => resizeSelection(sz)} title="Épaisseur du trait"
+                style={{ width:40,height:40,borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,cursor:'pointer',
+                  background:size===sz?DA.red:'#2a2a2a',border:'none' }}>
+                <span style={{ width:sz*2+6,height:sz*2+6,borderRadius:'50%',background:size===sz?'white':'#bbb',display:'block' }}/>
+              </button>
             ))}
           </div>
           {/* Curseurs Texte/Formes/Symboles TOUJOURS visibles dans la palette (retour Thomas :
               le bouton « Tailles ▾ » les cachait trop). La palette entière se replie au toucher du plan. */}
           {scaleCtls.map(s => (
-            <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:8 }}>
-              <span style={{ fontSize:10,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
+            <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:10 }}>
+              <span style={{ fontSize:11,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:66 }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
                 onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
-                style={{ flex:1,accentColor:DA.red,cursor:'pointer',height:22 }}/>
-              <span style={{ color:'#fff',fontSize:12,fontWeight:800,minWidth:30,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+                style={{ flex:1,accentColor:DA.red,cursor:'pointer',height:26 }}/>
+              <span style={{ color:'#fff',fontSize:13,fontWeight:800,minWidth:32,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
           ))}
         </div>
