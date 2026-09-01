@@ -52,6 +52,25 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
     setSavingId(null);
   };
 
+  // Édition d'un champ de profil par l'admin (RLS : UPDATE via is_admin()). Mise à jour optimiste
+  // locale → l'affichage se met à jour partout où le profil est lu (initiales « Mes projets », etc.).
+  const updateField = async (id, field, value) => {
+    const sb = await getSupabase();
+    const clean = field === 'initials' ? (value || '').toUpperCase().trim() : (value || '').trim();
+    const { error } = await sb.from('aichantier_profiles').update({ [field]: clean || null }).eq('id', id);
+    if (error) { setErr(error.message); return; }
+    setProfiles(prev => prev.map(p => p.id === id ? { ...p, [field]: clean || null } : p));
+  };
+
+  // Champ éditable inline (FONCTION, pas composant → pas de remontage au refresh 20 s, la saisie
+  // en cours n'est jamais perdue). Bordure visible = on comprend qu'on peut écrire. Sauve au blur.
+  const editCell = (p, field, { placeholder = '', maxLength, style } = {}) => (
+    <input defaultValue={p[field] || ''} placeholder={placeholder} maxLength={maxLength}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      onBlur={e => { if ((e.target.value || '').trim() !== (p[field] || '')) updateField(p.id, field, e.target.value); }}
+      style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${DA.border}`, borderRadius:6, padding:'5px 7px', fontSize:13, fontFamily:'inherit', background:'white', outline:'none', ...style }}/>
+  );
+
   const deleteProfile = async (id, email) => {
     if (!window.confirm(`Supprimer définitivement le compte « ${email} » ? Cette action est irréversible.`)) return;
     setSavingId(id);
@@ -159,14 +178,10 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
                 <tbody>
                   {approved.map((p, idx) => (
                     <tr key={p.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
-                      <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.first_name || '—'}</td>
-                      <td style={{ padding:'11px 14px', fontWeight:700, color:DA.black }}>{p.last_name || ''}</td>
-                      <td style={{ padding:'11px 14px' }}>
-                        {p.initials
-                          ? <span style={{ display:'inline-block', background:DA.redL, color:DA.red, fontWeight:800, letterSpacing:1, fontSize:12, borderRadius:6, padding:'3px 8px' }}>{p.initials}</span>
-                          : <span style={{ color:DA.grayL }}>—</span>}
-                      </td>
-                      <td style={{ padding:'11px 14px', color:DA.red }}>{p.job_title || '—'}</td>
+                      <td style={{ padding:'8px 10px' }}>{editCell(p, 'first_name', { placeholder:'Prénom', style:{ fontWeight:700, color:DA.black } })}</td>
+                      <td style={{ padding:'8px 10px' }}>{editCell(p, 'last_name', { placeholder:'Nom', style:{ fontWeight:700, color:DA.black } })}</td>
+                      <td style={{ padding:'8px 10px' }}>{editCell(p, 'initials', { placeholder:'—', maxLength:4, style:{ fontWeight:800, letterSpacing:1, color:DA.red, textAlign:'center', textTransform:'uppercase', maxWidth:70 } })}</td>
+                      <td style={{ padding:'8px 10px' }}>{editCell(p, 'job_title', { placeholder:'Poste', style:{ color:DA.red } })}</td>
                       <td style={{ padding:'11px 14px', color:DA.gray }}>{p.email}</td>
                       <td style={{ padding:'11px 14px', textAlign:'right', whiteSpace:'nowrap' }}>
                         {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL, marginRight:8 }}>(vous)</span>}
@@ -185,12 +200,18 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
           {/* Mobile : cartes empilées */}
           {!loading && !isDesktop && approved.map(p => (
             <div key={p.id} style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'12px', marginBottom:8, background:'white' }}>
-              <div style={{ display:'flex', alignItems:'baseline', gap:6, flexWrap:'wrap' }}>
-                <span style={{ fontSize:14, fontWeight:800, color:DA.black }}>{fullName(p) || '—'}</span>
-                {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL }}>(vous)</span>}
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:7 }}>
+                <span style={{ fontSize:12, color:DA.gray, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{p.email}</span>
+                {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL, flexShrink:0 }}>(vous)</span>}
               </div>
-              {p.job_title && <div style={{ fontSize:12, color:DA.red, marginTop:1 }}>{p.job_title}</div>}
-              <div style={{ fontSize:12, color:DA.gray, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.email}</div>
+              <div style={{ display:'flex', gap:6, marginBottom:6 }}>
+                {editCell(p, 'first_name', { placeholder:'Prénom', style:{ flex:1, fontWeight:700 } })}
+                {editCell(p, 'last_name', { placeholder:'Nom', style:{ flex:1, fontWeight:700 } })}
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                {editCell(p, 'initials', { placeholder:'Init.', maxLength:4, style:{ width:70, flexShrink:0, textAlign:'center', textTransform:'uppercase', color:DA.red, fontWeight:800 } })}
+                {editCell(p, 'job_title', { placeholder:'Poste', style:{ flex:1, color:DA.red } })}
+              </div>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
                 <RoleSelect p={p}/>
                 <div style={{ flex:1 }}/>
