@@ -2022,11 +2022,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Toolbar (2 rangées fixes) ── */}
       <div style={{ background:DA.black,padding:'7px 12px 6px',display:'flex',flexDirection:'column',gap:6,flexShrink:0 }}>
 
-        {/* Rangée 1 : outils + undo + sauvegarder */}
-        <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-          {/* Outils — scrollables sur mobile si écran trop étroit */}
-          <div style={{ flex:1,overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
-            <div style={{ display:'flex',gap:2,background:'#333',padding:3,borderRadius:10,width:'max-content' }}>
+        {/* Rangée 1 : outils + undo + sauvegarder. Sur MOBILE, flex-wrap → les outils prennent une
+            ligne PLEINE (tous visibles avec label, pas de scroll caché) et les actions passent
+            sur la ligne suivante. (retour Thomas : ergonomie téléphone) */}
+        <div style={{ display:'flex',alignItems:'center',gap:8,flexWrap:isMob?'wrap':'nowrap' }}>
+          {/* Outils */}
+          <div style={{ flex:isMob?'1 1 100%':1,overflowX:isMob?'visible':'auto',scrollbarWidth:'none',minWidth:0 }}>
+            <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10,width:isMob?'100%':'max-content' }}>
               {[
                 // « Sélect. » est le mode PAR DÉFAUT : pas de bouton sur desktop (on en sort en
                 // choisissant un outil, on y revient avec Échap). Conservé sur mobile (pas d'Échap).
@@ -2047,9 +2049,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                     if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                     setSelAnnot(null); annotDragRef.current = null;
                   }}
-                  style={{ padding:isMob?'8px 10px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
-                    color:tool===t.k?'white':'#aaa',transition:'all 0.15s',
-                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?54:52 }}>
+                  style={{ padding:isMob?'9px 4px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                    color:tool===t.k?'white':'#aaa',transition:'all 0.15s',flex:isMob?1:'none',
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?0:52 }}>
                   <Ic n={t.n} s={26}/>
                   <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
                 </button>
@@ -2057,9 +2059,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               {/* Palette — dans le groupe sur mobile */}
               {isMob && (
                 <button onClick={() => { setShowPalette(v => !v); setShowSyms(false); }}
-                  style={{ padding:'8px 10px',borderRadius:8,background:showPalette?DA.red:'transparent',
-                    color:showPalette?'white':color,transition:'all 0.15s',
-                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:54 }}
+                  style={{ padding:'9px 4px',borderRadius:8,background:showPalette?DA.red:'transparent',
+                    color:showPalette?'white':color,transition:'all 0.15s',flex:1,
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:0 }}
                   title="Couleurs et épaisseur">
                   <Ic n="pal" s={26}/>
                   <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>Couleurs</span>
@@ -2067,8 +2069,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               )}
             </div>
           </div>
-          {/* Actions fixes — toujours visibles même si les outils débordent */}
-          <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+          {/* Actions — sur mobile, sur leur PROPRE ligne (flex-wrap) et alignées à droite. */}
+          <div style={{ display:'flex',gap:6,flexShrink:0,flex:isMob?'1 1 100%':'0 0 auto',justifyContent:'flex-end' }}>
             <button onClick={onClose}
               style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
