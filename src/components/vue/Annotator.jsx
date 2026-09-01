@@ -136,7 +136,10 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
     } else if (p.type === 'text') {
       const fs = 20 + p.size * 4;
       const lh = fs * 1.2;            // hauteur de ligne (texte multi-ligne)
-      const pad = Math.max(8, fs * 0.32); // marge du cadre PROPORTIONNELLE à la police (Thomas : « le cadre doit être en adéquation avec la taille du texte »)
+      // Marges du cadre PROPORTIONNELLES à la police. Horizontale FINE (Thomas : « la boîte est trop
+      // large, faut que ce soit fin pour être classe »), verticale un peu plus généreuse pour respirer.
+      const padX = Math.max(4, fs * 0.16);
+      const pad  = Math.max(6, fs * 0.24);
       ctx.save();
       ctx.font = `bold ${fs}px Arial`;
       let lines = String(p.text ?? '').split('\n');
@@ -167,8 +170,8 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       //    du cadre ET de la taille du texte (avant, elle était dans la transformée d'échelle
       //    du texte → elle bougeait au déplacement du cadre et à l'agrandissement). ──
       if (p.textMode === 'arrow' && p.x != null) {
-        const absBx = p.x - sT * pad, absBy = p.y - sT * (fs + 4);
-        const absBw = sT * (tw + pad * 2), absBh = sT * (textH + pad + 6);
+        const absBx = p.x - sT * padX, absBy = p.y - sT * (fs + 4);
+        const absBw = sT * (tw + padX * 2), absBh = sT * (textH + pad + 6);
         const bcx = absBx + absBw / 2, bcy = absBy + absBh / 2;
         const tipX = p.arrowX ?? (p.x + tw / 2);
         const tipY = p.arrowY ?? (absBy + absBh + 16 * ss);
@@ -212,7 +215,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       // (fs=32 à size 3), bornée pour éviter les extrêmes.
       const _lwF = Math.min(3, Math.max(0.45, fs / 32));
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-        const bx = p.x - pad, by = p.y - fs - 4, bw = tw + pad * 2, bh = textH + pad + 6;
+        const bx = p.x - padX, by = p.y - fs - 4, bw = tw + padX * 2, bh = textH + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
         ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT * _lwF;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
@@ -733,9 +736,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             twU = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
           }
           const tw = twU * sText;
-          const pad = Math.max(8, fsU * 0.32) * sText; // même proportion que le cadre dessiné (drawAnnotationPaths)
-          const bx = p.x - pad, by = p.y - fs - 4 * sText;
-          const bw = tw + pad * 2, bh = fs + (_lines.length - 1) * _lh + pad + 6 * sText;
+          const padX = Math.max(4, fsU * 0.16) * sText; // mêmes proportions que le cadre dessiné (drawAnnotationPaths)
+          const pad  = Math.max(6, fsU * 0.24) * sText;
+          const bx = p.x - padX, by = p.y - fs - 4 * sText;
+          const bw = tw + padX * 2, bh = fs + (_lines.length - 1) * _lh + pad + 6 * sText;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio / zH; ctx.setLineDash([4 * ratio / zH, 3 * ratio / zH]);
           ctx.strokeRect(bx, by, bw, bh);
           ctx.setLineDash([]);
@@ -2345,12 +2349,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Panneau édition texte sélectionné — REFONTE MOBILE : 2 rangées, grosses cibles ── */}
       {selText && (
         <div style={{ background:'#1a1a1a', padding:'8px 10px', borderBottom:'1px solid #333', display:'flex', flexDirection:'column', gap:8, flexShrink:0 }}>
-          {/* Rangée 1 : champ texte pleine largeur (fontSize 16 → pas de zoom iOS) + fermer */}
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <input
-              value={selText.text || ''} placeholder="Votre texte…"
+          {/* Rangée 1 : zone de texte multi-ligne (Entrée = nouvelle ligne, la boîte s'adapte) +
+              fermer. fontSize 16 → pas de zoom iOS ; hauteur auto jusqu'à ~5 lignes. */}
+          <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+            <textarea
+              value={selText.text || ''} placeholder="Votre texte…  (Entrée = nouvelle ligne)"
+              rows={Math.min(5, Math.max(1, String(selText.text || '').split('\n').length))}
               onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
-              style={{ flex:1, minWidth:0, fontSize:16, padding:'9px 12px', borderRadius:9, border:'1px solid #555', background:'#222', color:'white', outline:'none', fontFamily:'inherit' }}/>
+              style={{ flex:1, minWidth:0, fontSize:16, padding:'9px 12px', borderRadius:9, border:'1px solid #555', background:'#222', color:'white', outline:'none', fontFamily:'inherit', resize:'none', lineHeight:1.3 }}/>
             <button onClick={() => setSelTextIdx(null)} title="Fermer"
               style={{ width:40, height:40, flexShrink:0, borderRadius:9, background:'#333', color:'#ccc', border:'none', fontSize:16, cursor:'pointer' }}>✕</button>
           </div>
