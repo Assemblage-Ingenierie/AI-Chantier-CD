@@ -362,7 +362,8 @@ export default function RapportTab({ projet, onUpdate }) {
         }
       }
     }
-    const bytes = totalPhotos * 165000 + plans * 560000;
+    // Coefficients calibrés sur des exports réels (photo ~1280px q0.72, plan net ~3000px q0.85).
+    const bytes = totalPhotos * 250000 + plans * 820000;
     const mo = bytes / 1048576;
     return { mo, over: mo > 4.6 };
   }, [localisations, totalPhotos]);
