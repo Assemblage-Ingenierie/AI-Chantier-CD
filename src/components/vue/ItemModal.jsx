@@ -595,7 +595,10 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       let obj;
       // Extraction TOLÉRANTE : on isole le 1er objet { … } (Gemini enrobe parfois de texte/balises).
       try { obj = JSON.parse((raw.match(/\{[\s\S]*\}/) || [''])[0]); }
-      catch { throw new Error('Réponse IA illisible — réessaie'); }
+      catch {
+        console.warn('[AI illisible] réponse brute:', raw);
+        throw new Error('Illisible → ' + (raw ? raw.slice(0, 180) : '(réponse VIDE)'));
+      }
       // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
       let correctedPlain = plain;
       for (const c of (obj?.corrections || [])) {
