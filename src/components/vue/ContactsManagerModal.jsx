@@ -181,11 +181,15 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
         .filter(c => c.nom);
       if (!clean.length) { setPdfErr('Aucun intervenant détecté dans ce PDF.'); setPdfBusy(''); return; }
       const { toAdd, present, review } = classifyPdfImport(clean, contacts);
-      setPdfResult({
-        toAdd: toAdd.map(c => ({ sel:true, contact:c })),
-        review: review.map(rv => ({ sel:false, parsed:rv.parsed, match:rv.match })),
-        present,
-      });
+      // Liste UNIFIÉE, chaque personne avec son statut clair (demande Thomas : « déjà enregistré /
+      // pas enregistré / nom proche », et je valide au cas par cas). Défauts SÛRS pour ne jamais
+      // créer de doublon par accident : nouveau = coché, nom proche = décoché, déjà là = verrouillé.
+      const rows = [
+        ...toAdd.map(c => ({ status:'new', sel:true, contact:c, match:null })),
+        ...review.map(rv => ({ status:'near', sel:false, contact:rv.parsed, match:rv.match })),
+        ...present.map(pr => ({ status:'present', sel:false, contact:pr.parsed, match:pr.match })),
+      ];
+      setPdfResult({ rows });
       setPdfBusy('');
     } catch (e) {
       setPdfErr(e?.message || 'Échec de l’analyse du PDF'); setPdfBusy('');
@@ -195,10 +199,8 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
     if (!pdfResult) return;
     setSaving(true);
     try {
-      const chosen = [
-        ...pdfResult.toAdd.filter(x => x.sel).map(x => x.contact),
-        ...pdfResult.review.filter(x => x.sel).map(x => x.parsed),
-      ];
+      // On n'ajoute QUE les lignes cochées ET jamais un « déjà enregistré » (verrou anti-doublon).
+      const chosen = pdfResult.rows.filter(x => x.sel && x.status !== 'present').map(x => x.contact);
       for (const c of chosen) await upsertContact(c);
       setPdfResult(null);
       await reload();
@@ -388,64 +390,65 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
         </div>
       )}
 
-      {/* Aperçu de l'import PDF : à ajouter (auto) / à vérifier (ressemblance) / déjà présents */}
-      {pdfResult && (
+      {/* Écran de revue de l'import PDF — UNE liste, chaque personne avec son statut clair et une
+          case à cocher. Rien n'est ajouté sans validation ; « déjà enregistré » est verrouillé. */}
+      {pdfResult && (() => {
+        const BADGE = {
+          new:     { bg:'#ECFDF5', bd:'#A7F3D0', fg:'#065F46', label:'Nouveau' },
+          near:    { bg:'#FFFBEB', bd:'#FCD34D', fg:'#92400E', label:'Nom proche' },
+          present: { bg:'#F3F4F6', bd:'#E5E7EB', fg:'#6B7280', label:'Déjà enregistré' },
+        };
+        const rows = pdfResult.rows;
+        const nNew = rows.filter(r => r.status === 'new').length;
+        const nNear = rows.filter(r => r.status === 'near').length;
+        const nPres = rows.filter(r => r.status === 'present').length;
+        const nSel = rows.filter(r => r.sel && r.status !== 'present').length;
+        const toggle = (i) => setPdfResult(r => ({ ...r, rows: r.rows.map((y, j) => j === i && y.status !== 'present' ? { ...y, sel: !y.sel } : y) }));
+        return (
         <div className="modal-overlay-dark" style={{ zIndex:10000 }} onClick={() => setPdfResult(null)}>
-          <div className="modal-sheet" style={{ maxWidth:540, padding:20, maxHeight:'88vh', display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
-            <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:'0 0 4px' }}>Intervenants trouvés dans le PDF</p>
-            <p style={{ fontSize:12, color:DA.gray, margin:'0 0 12px' }}>
-              {pdfResult.toAdd.length} nouveau{pdfResult.toAdd.length > 1 ? 'x' : ''} · {pdfResult.review.length} à vérifier · {pdfResult.present.length} déjà présent{pdfResult.present.length > 1 ? 's' : ''}
+          <div className="modal-sheet" style={{ maxWidth:560, padding:20, maxHeight:'90vh', display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
+            <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:'0 0 4px' }}>{rows.length} intervenant{rows.length > 1 ? 's' : ''} trouvé{rows.length > 1 ? 's' : ''}</p>
+            <p style={{ fontSize:12, color:DA.gray, margin:'0 0 6px' }}>
+              <span style={{ color:'#065F46', fontWeight:700 }}>{nNew} nouveau{nNew > 1 ? 'x' : ''}</span> · <span style={{ color:'#92400E', fontWeight:700 }}>{nNear} nom{nNear > 1 ? 's' : ''} proche{nNear > 1 ? 's' : ''}</span> · <span style={{ color:'#6B7280', fontWeight:700 }}>{nPres} déjà là</span>
             </p>
-            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:14 }}>
-              {pdfResult.toAdd.length > 0 && (
-                <div>
-                  <div style={{ fontSize:11, fontWeight:800, color:DA.urgGrn, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>À ajouter</div>
-                  {pdfResult.toAdd.map((x, i) => (
-                    <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:9, padding:'7px 9px', borderRadius:8, border:`1px solid ${DA.border}`, marginBottom:5, cursor:'pointer' }}>
-                      <input type="checkbox" checked={x.sel} style={{ marginTop:2, accentColor:DA.red }}
-                        onChange={() => setPdfResult(r => ({ ...r, toAdd: r.toAdd.map((y, j) => j === i ? { ...y, sel: !y.sel } : y) }))}/>
-                      <div style={{ minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:700, color:DA.black }}>{x.contact.nom}</div>
-                        <div style={{ fontSize:11, color:DA.gray }}>{[x.contact.poste, x.contact.entreprise, x.contact.email, x.contact.tel].filter(Boolean).join(' · ') || '—'}</div>
+            <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 12px' }}>Coche qui tu veux ajouter. Les « déjà enregistré » sont verrouillés (aucun doublon possible).</p>
+            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:6 }}>
+              {rows.map((x, i) => {
+                const b = BADGE[x.status];
+                const locked = x.status === 'present';
+                return (
+                  <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'8px 10px', borderRadius:9,
+                    border:`1px solid ${b.bd}`, background:b.bg, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.7 : 1 }}>
+                    <input type="checkbox" checked={x.sel} disabled={locked} onChange={() => toggle(i)}
+                      style={{ marginTop:3, accentColor:DA.red, width:17, height:17, flexShrink:0 }}/>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
+                        <span style={{ fontSize:13.5, fontWeight:800, color:DA.black }}>{x.contact.nom}</span>
+                        <span style={{ fontSize:10, fontWeight:800, color:b.fg, background:'white', border:`1px solid ${b.bd}`, borderRadius:5, padding:'1px 7px', textTransform:'uppercase', letterSpacing:0.3 }}>{b.label}</span>
                       </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {pdfResult.review.length > 0 && (
-                <div>
-                  <div style={{ fontSize:11, fontWeight:800, color:'#92400E', textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>À vérifier (ressemble à un existant)</div>
-                  {pdfResult.review.map((x, i) => (
-                    <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:9, padding:'7px 9px', borderRadius:8, border:'1px solid #FCD34D', background:'#FFFBEB', marginBottom:5, cursor:'pointer' }}>
-                      <input type="checkbox" checked={x.sel} style={{ marginTop:2, accentColor:DA.red }}
-                        onChange={() => setPdfResult(r => ({ ...r, review: r.review.map((y, j) => j === i ? { ...y, sel: !y.sel } : y) }))}/>
-                      <div style={{ minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:700, color:DA.black }}>{x.parsed.nom}</div>
-                        <div style={{ fontSize:11, color:DA.gray }}>{[x.parsed.poste, x.parsed.entreprise, x.parsed.email, x.parsed.tel].filter(Boolean).join(' · ') || '—'}</div>
-                        <div style={{ fontSize:11, color:'#92400E', marginTop:2 }}>≈ déjà : <strong>{x.match.nom}</strong>{x.match.entreprise ? ` (${x.match.entreprise})` : ''} — coche pour ajouter quand même</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-              {pdfResult.present.length > 0 && (
-                <div>
-                  <div style={{ fontSize:11, fontWeight:800, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>Déjà présents (ignorés)</div>
-                  <div style={{ fontSize:12, color:DA.gray, lineHeight:1.5 }}>{pdfResult.present.map(p => p.parsed.nom).join(', ')}</div>
-                </div>
-              )}
+                      <div style={{ fontSize:11.5, color:DA.gray, marginTop:1 }}>{[x.contact.poste, x.contact.entreprise, x.contact.email, x.contact.tel].filter(Boolean).join(' · ') || '—'}</div>
+                      {x.match && (
+                        <div style={{ fontSize:11, color:b.fg, marginTop:2 }}>
+                          {x.status === 'present' ? '● identique à ' : '≈ ressemble à '}<strong>{x.match.nom}</strong>{x.match.entreprise ? ` (${x.match.entreprise})` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
             {pdfErr && <div style={{ fontSize:12, color:DA.red, marginTop:8 }}>{pdfErr}</div>}
             <div style={{ display:'flex', gap:8, marginTop:14 }}>
               <button onClick={() => setPdfResult(null)} style={{ flex:1, padding:'11px', borderRadius:9, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, fontSize:13, fontWeight:600, cursor:'pointer' }}>Annuler</button>
-              <button onClick={confirmPdfImport} disabled={saving}
-                style={{ flex:2, padding:'11px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
-                {saving ? 'Ajout…' : `Ajouter ${pdfResult.toAdd.filter(x => x.sel).length + pdfResult.review.filter(x => x.sel).length} intervenant(s)`}
+              <button onClick={confirmPdfImport} disabled={saving || nSel === 0}
+                style={{ flex:2, padding:'11px', borderRadius:9, border:'none', background: nSel === 0 ? DA.grayL : DA.red, color:'white', fontSize:13, fontWeight:800, cursor: nSel === 0 ? 'default' : 'pointer' }}>
+                {saving ? 'Ajout…' : nSel === 0 ? 'Rien de sélectionné' : `Ajouter ${nSel} intervenant${nSel > 1 ? 's' : ''}`}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
