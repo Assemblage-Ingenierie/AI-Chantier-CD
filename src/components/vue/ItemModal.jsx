@@ -4,7 +4,7 @@ import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { logEvent } from '../../lib/logger.js';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
-import { callAIProxy } from '../../lib/aiProxy.js';
+import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
@@ -145,17 +145,19 @@ async function photoToImageBlock(url) {
 //    zéro bruit sécurité/EHS/autres corps d'état, 100% structure). ─────────────────────────
 const SCOPE_STRUCTURE = `PÉRIMÈTRE STRICT — STRUCTURE SEULEMENT : béton armé, coffrage, ferraillage (sections, recouvrements, enrobage), fondations, reprises de bétonnage, fissuration structurelle, étaiement, descentes de charges, réservations, appuis, joints, scellements, aciers en attente, planéité/verticalité des ouvrages porteurs. N'ÉMETS JAMAIS de remarque sur la sécurité chantier / EHS, l'organisation, la propreté, ni les autres corps d'état (plomberie, élec, cloisons, finitions…). Si un point n'apporte pas de valeur STRUCTURE claire, ne le mentionne pas.`;
 
-// Cas « texte présent » — analyse TEXTE (rapide, sans photos) : corrige + reformule. Les points
-// de vigilance issus des PHOTOS sont produits séparément et en parallèle par PROMPT_VIGILANCE.
+// Cas « texte présent » — analyse TEXTE (rapide, sans photos) : corrige + reformule + propose des
+// AJOUTS/points de vigilance déduits du texte. Les points de vigilance issus des PHOTOS sont
+// produits en plus, séparément (PROMPT_VIGILANCE), uniquement sur Claude / Gemini Pro.
 const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'études structure, en visite de chantier. Tu analyses le TEXTE d'une observation rédigé par l'ingénieur et proposes des améliorations, UNIQUEMENT sous l'angle STRUCTURE.
 ${SCOPE_STRUCTURE}
-TON ANALYSE PRODUIT 2 CHOSES :
+TON ANALYSE PRODUIT 3 CHOSES :
 1) CORRECTIONS : uniquement fautes d'orthographe/grammaire. Même sens, même longueur, mêmes mots (hors faute).
 2) REFORMULATIONS : ADAPTATIF, SANS PLAFOND. Propose une reformulation pour CHAQUE passage réellement lourd/confus/maladroit — qu'il y en ait 0, 2, 5 ou plus : autant que réellement nécessaire, jamais bridé à un nombre fixe. Le seuil élevé porte sur la PERTINENCE (ne propose RIEN pour un passage déjà clair), PAS sur le nombre : s'il y a 5 passages vraiment à retravailler, propose les 5. Sens, faits, chiffres, références et vocabulaire métier STRICTEMENT préservés. Conserve le découpage en puces/lignes (une puce reste une puce, jamais de fusion). 1 à 2 propositions (variantes) par passage.
+3) AJOUTS (points de vigilance / compléments) STRUCTURE fondés sur ce qui est DÉCRIT ou clairement déductible du texte : propose des points d'attention pertinents que l'ingénieur pourrait ajouter (ex. « Attention : … », « À vérifier : … », « À confirmer : … », « Penser à … »). Formulation PRUDENTE : commence par « À vérifier : » ou « À confirmer : » dès que ce n'est pas explicitement affirmé dans le texte. N'invente JAMAIS une cote, une cause ou une préconisation non fondée. Chaque ajout est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) ou "apres" vide. ADAPTATIF : autant que réellement pertinent, ni remplissage ni liste à rallonge.
 STYLE : français technique impeccable. N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – ») ; emploie virgule, deux-points, parenthèse ou point. Ne transforme jamais une affirmation en question.
 Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
-{"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}]}
-Chaque "extrait" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
+{"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}],"ajouts":[{"apres":"<phrase/puce existante copiée mot pour mot, ou vide>","texte":"<ajout>","certitude":"sûr|à vérifier","raison":"vigilance|approfondissement"}]}
+Chaque "extrait"/"apres" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
 
 // Analyse PHOTOS (parallèle) : points de vigilance / à vérifier STRUCTURE fondés sur ce qui est
 // VISIBLE sur les photos et pas déjà dans le texte. Renvoie uniquement des "ajouts".
@@ -554,16 +556,20 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       //   (a) TEXTE (rapide, sans photos) → ortho (diff) + reformulations (cartes), affiché tout de suite ;
       //   (b) PHOTOS (en parallèle) → points « à vérifier », ajoutés dès qu'ils arrivent.
       const content = `Intitulé : "${titre}".\nTexte de l'observation à analyser :\n${plain}`;
+      // Analyse PHOTOS uniquement sur Claude / Gemini Pro (demande Thomas). Sur Gemini FLASH (défaut)
+      // = texte seul (fautes + reformulations) → rapide et économe en quota.
+      const engine = getAIProvider();
+      const usePhotos = engine !== 'gemini-flash';
 
-      // (b) Analyse PHOTOS lancée SANS attendre (les photos = le coût de latence → hors chemin critique).
-      const photoRows = (form.photos || []).filter(p => p.data).slice(0, 4);
+      // (b) Analyse PHOTOS lancée SANS attendre (hors chemin critique) — seulement si le moteur le permet.
+      const photoRows = usePhotos ? (form.photos || []).filter(p => p.data).slice(0, 4) : [];
       if (photoRows.length) {
         setVigilanceLoading(true);
         (async () => {
           try {
             const imgs = (await Promise.all(photoRows.map(p => photoToImageBlock(p.data)))).filter(Boolean);
             if (!imgs.length) return;
-            const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true });
+            const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, json: true, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true });
             const rawv = dv.content?.[0]?.text?.trim() || '';
             let ov; try { ov = JSON.parse((rawv.match(/\{[\s\S]*\}/) || [''])[0]); } catch { return; }
             const cards = [];
@@ -584,7 +590,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
 
       // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
-      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 3000, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
+      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 3000, json: true, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
       const raw = d.content?.[0]?.text?.trim() || '';
       let obj;
       // Extraction TOLÉRANTE : on isole le 1er objet { … } (Gemini enrobe parfois de texte/balises).
@@ -598,11 +604,15 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       }
       const hasOrtho = correctedPlain !== plain;
       if (hasOrtho) setSpellDiff({ original: plain, segments: buildDiffSegments(plain, correctedPlain) });
-      // Reformulations → cartes (placées AVANT d'éventuels « à vérifier » photos déjà arrivés).
+      // Reformulations + AJOUTS déduits du texte → cartes (AVANT d'éventuels « à vérifier » photos).
       const unified = [];
       for (const r of (obj?.reformulations || [])) {
         if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && plain.includes(r.extrait) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
           unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
+      }
+      for (const a of (obj?.ajouts || [])) {
+        if (a && typeof a.texte === 'string' && a.texte.trim())
+          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
       }
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de

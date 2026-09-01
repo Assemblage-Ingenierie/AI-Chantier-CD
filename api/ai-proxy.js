@@ -92,6 +92,9 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, 
     // Coupe la « réflexion » (thinking) → réponse rapide. Valide sur Flash (budget 0), refusé par
     // Pro (400) → le handler réessaie alors sans ce réglage. N'activer que quand demandé (Flash).
     if (disableThinking) genCfg.thinkingConfig = { thinkingBudget: 0 };
+    // JSON garanti : Gemini sort parfois du texte autour du JSON → « Réponse illisible ». Avec
+    // responseMimeType, la sortie est un JSON valide. Demandé par la requête (payload.json).
+    if (payload.json) genCfg.responseMimeType = 'application/json';
     const body = {
       contents: toGeminiContents(payload.messages),
       generationConfig: genCfg,
@@ -166,8 +169,9 @@ export default async function handler(req, res) {
     let gData;
     try { gData = await gUp.json(); } catch { return res.status(502).json({ error: 'Réponse invalide du modèle Gemini' }); }
     // Si la coupure de réflexion est refusée (400 « invalid argument »), on RÉESSAIE sans ce réglage.
-    if (wantFast && gUp.status === 400 && /invalid.?argument/i.test(JSON.stringify(gData?.error || ''))) {
-      const rt = await callGemini(gModel, payload, geminiKey, maxTokens, 55000, false);
+    if (gUp.status === 400 && /invalid.?argument/i.test(JSON.stringify(gData?.error || ''))) {
+      // Un réglage (thinking et/ou responseMimeType) a été refusé → on réessaie sans les extras.
+      const rt = await callGemini(gModel, { ...payload, json: false }, geminiKey, maxTokens, 55000, false);
       if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); gUp = rt.res; gData = d2; } catch { /* garde l'erreur d'origine */ } }
     }
     // Repli automatique : si le modèle demandé (ex. Pro) est introuvable/indisponible (404), on
