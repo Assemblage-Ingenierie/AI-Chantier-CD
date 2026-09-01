@@ -258,7 +258,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
     onChange(arr);
   };
   // ── Séparateurs de section (MOE / Entreprises…) ──
-  const addSeparator = () => onChange([...participants, { id: crypto.randomUUID(), type: 'separator', label: 'Entreprises', on: true }]);
+  const addSeparator = (label = 'Entreprises') => onChange([...participants, { id: crypto.randomUUID(), type: 'separator', label, on: true }]);
   const setSepLabel  = (id, label) => onChange(participants.map(p => p.id === id ? { ...p, label } : p));
   const toggleSep    = (id) => onChange(participants.map(p => p.id === id ? { ...p, on: p.on === false } : p));
   const peopleCount  = participants.filter(p => p.type !== 'separator').length;
@@ -439,14 +439,19 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
         </div>
       )}
 
-      {/* Ajouter un séparateur de section (MOE / Entreprises…) — révélé dès qu'il y a des intervenants */}
+      {/* Séparateurs de section préremplis (MOE / Entreprises) — révélés dès qu'il y a des intervenants.
+          Le libellé reste éditable, et on peut en ajouter d'autres en renommant. */}
       {participants.length > 0 && (
-        <button onClick={addSeparator}
-          style={{ width:'100%', fontSize:10, fontWeight:600, padding:'5px 0', borderRadius:8, marginBottom:8,
-            border:`1px dashed ${DA.border}`, background:'transparent', color:DA.gray, cursor:'pointer',
-            display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-          <span style={{ fontWeight:900, letterSpacing:1 }}>—</span> Ajouter un séparateur de section
-        </button>
+        <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+          {[{ l:'Maîtrise d’œuvre', v:'Équipe de maîtrise d’œuvre' }, { l:'Entreprises', v:'Entreprises' }].map(s => (
+            <button key={s.v} onClick={() => addSeparator(s.v)}
+              style={{ flex:1, fontSize:10, fontWeight:600, padding:'5px 4px', borderRadius:8,
+                border:`1px dashed ${DA.border}`, background:'transparent', color:DA.gray, cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:4, whiteSpace:'nowrap' }}>
+              <span style={{ fontWeight:900 }}>—</span> {s.l}
+            </button>
+          ))}
+        </div>
       )}
 
       {/* ── Picker Assemblage ── */}
