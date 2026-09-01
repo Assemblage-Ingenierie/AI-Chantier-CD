@@ -7,8 +7,10 @@ const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD
 
 // ── Viewpoint (œil + cône de vue) ────────────────────────────────────────────
 export function drawVP(ctx, { x, y, angle = 0, label = '', size = 3, color = '#E30513' }) {
-  const r  = 10 + size;
-  const L  = 40 + size * 4;
+  // Marqueur photo (repère de vue) RÉDUIT par défaut — il éclipsait les symboles techniques
+  // (fissures, danger…). Réglable ensuite via l'échelle Symboles comme avant. (retour Thomas)
+  const r  = 7 + size * 0.8;
+  const L  = 26 + size * 3;
   const sp = 0.62; // demi-angle du cône (~35°)
   ctx.save();
   ctx.beginPath();
@@ -2211,8 +2213,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                     <SymMiniCanvas sm={sm} color={color} />
                     {/* NOM COMPLET — zone COMPACTE (2 lignes max) pour garder la bande basse
                         et laisser le plan visible (retour Thomas : « je vois plus rien sur le plan »). */}
-                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.1, textAlign:'center',
-                      height:19, overflow:'hidden', display:'block' }}>
+                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>
                       {sm.label}
                     </span>
                   </button>
@@ -2230,8 +2231,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                       border:`2px solid ${isActive ? DA.red : 'transparent'}`,
                       background:'#2a2a2a' }}>
                     <SymMiniCanvas sm={sm} color={color} />
-                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.1, textAlign:'center',
-                      height:19, overflow:'hidden', display:'block' }}>{sm.label}</span>
+                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>{sm.label}</span>
                   </button>
                   <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
                     style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>×</button>
