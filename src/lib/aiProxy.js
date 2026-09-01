@@ -11,7 +11,8 @@ const AI_PROVIDER_KEY = 'chantierai_ai_provider';
 const AI_ENGINES = ['claude', 'gemini-flash', 'gemini-pro'];
 const GEMINI_MODEL_FOR = { 'gemini-flash': 'gemini-3.6-flash', 'gemini-pro': 'gemini-3.6-pro' };
 export function getAIProvider() {
-  try { const v = localStorage.getItem(AI_PROVIDER_KEY); return AI_ENGINES.includes(v) ? v : 'claude'; } catch { return 'claude'; }
+  // Défaut = gemini-flash (rapide, fiable). Claude n'a plus de crédit → n'est plus le défaut.
+  try { const v = localStorage.getItem(AI_PROVIDER_KEY); return AI_ENGINES.includes(v) ? v : 'gemini-flash'; } catch { return 'gemini-flash'; }
 }
 export function setAIProvider(p) {
   try { localStorage.setItem(AI_PROVIDER_KEY, AI_ENGINES.includes(p) ? p : 'claude'); } catch { /* mode privé */ }

@@ -508,7 +508,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       const plain = htmlToPlain(form.commentaire);
       const d = await callAIProxy({
         feature: 'spell-correction',
-        model: 'gemini-2.0-flash-lite',
+        model: 'gemini-3.6-flash',
         max_tokens: 2000,
         system: 'Tu es un correcteur orthographique et grammatical français. Corrige UNIQUEMENT les fautes d\'orthographe et de grammaire, sans rien reformuler, sans résumer, sans couper le texte. Le texte corrigé doit avoir exactement la même longueur et le même contenu que l\'original. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
         messages: [{ role: 'user', content: plain }],
@@ -565,7 +565,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             if (!imgs.length) return;
             const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true });
             const rawv = dv.content?.[0]?.text?.trim() || '';
-            let ov; try { ov = JSON.parse(rawv.replace(/```json\n?|\n?```/g, '').trim()); } catch { return; }
+            let ov; try { ov = JSON.parse((rawv.match(/\{[\s\S]*\}/) || [''])[0]); } catch { return; }
             const cards = [];
             for (const a of (ov?.ajouts || [])) {
               if (a && typeof a.texte === 'string' && a.texte.trim())
@@ -587,7 +587,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 3000, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
       const raw = d.content?.[0]?.text?.trim() || '';
       let obj;
-      try { obj = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
+      // Extraction TOLÉRANTE : on isole le 1er objet { … } (Gemini enrobe parfois de texte/balises).
+      try { obj = JSON.parse((raw.match(/\{[\s\S]*\}/) || [''])[0]); }
       catch { throw new Error('Réponse IA illisible — réessaie'); }
       // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
       let correctedPlain = plain;
