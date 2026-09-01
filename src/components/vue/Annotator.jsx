@@ -136,7 +136,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
     } else if (p.type === 'text') {
       const fs = 20 + p.size * 4;
       const lh = fs * 1.2;            // hauteur de ligne (texte multi-ligne)
-      const pad = 10;
+      const pad = Math.max(8, fs * 0.32); // marge du cadre PROPORTIONNELLE à la police (Thomas : « le cadre doit être en adéquation avec la taille du texte »)
       ctx.save();
       ctx.font = `bold ${fs}px Arial`;
       let lines = String(p.text ?? '').split('\n');
@@ -729,7 +729,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             twU = _lines.reduce((m, l) => Math.max(m, ctx.measureText(l).width), 0);
           }
           const tw = twU * sText;
-          const pad = 10 * sText;
+          const pad = Math.max(8, fsU * 0.32) * sText; // même proportion que le cadre dessiné (drawAnnotationPaths)
           const bx = p.x - pad, by = p.y - fs - 4 * sText;
           const bw = tw + pad * 2, bh = fs + (_lines.length - 1) * _lh + pad + 6 * sText;
           ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio / zH; ctx.setLineDash([4 * ratio / zH, 3 * ratio / zH]);
@@ -2356,7 +2356,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               {[{ k:'plain', g:'T', lbl:'Simple' },{ k:'boxed', g:'⬚', lbl:'Encadré' },{ k:'arrow', g:'↗', lbl:'Flèche' }].map(m => {
                 const active = (selText.textMode||'plain')===m.k;
                 return (
-                  <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,textMode:m.k} : p))}
+                  <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => {
+                      if (i !== selTextIdx) return p;
+                      const np = { ...p, textMode: m.k };
+                      // Passer en « Flèche » APRÈS coup : (re)créer la pointe si absente pour que le
+                      // point orange DÉPLAÇABLE réapparaisse (retour Thomas : « le point orange a disparu »).
+                      if (m.k === 'arrow' && np.arrowX == null) { np.arrowX = (np.x ?? 0) + 70; np.arrowY = (np.y ?? 0) + 70; }
+                      return np;
+                    }))}
                     style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:1, padding:'8px 0', borderRadius:8, border:'none', cursor:'pointer',
                       background: active?DA.red:'transparent', color: active?'white':'#bbb', fontWeight:700 }}>
                     <span style={{ fontSize:16, lineHeight:1 }}>{m.g}</span>
