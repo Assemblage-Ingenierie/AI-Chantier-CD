@@ -212,14 +212,13 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.translate(p.x, p.y); ctx.scale(sT, sT); ctx.translate(-p.x, -p.y);
       }
       ctx.font = `bold ${fs}px Arial`;
-      // Épaisseur du trait (cadre + contour) PROPORTIONNELLE à la police (retour Thomas : « la
-      // largeur de la ligne ne suit pas la taille du texte »). Normalisée sur la taille par défaut
-      // (fs=32 à size 3), bornée pour éviter les extrêmes.
-      const _lwF = Math.min(3, Math.max(0.45, fs / 32));
+      // Épaisseur du trait du cadre : FINE et élégante (retour Thomas : « le contour est trop épais,
+      // ça doit être beaucoup plus fin »). Légèrement proportionnelle à la police mais bornée bas.
+      const _lwF = Math.min(1.8, Math.max(0.5, fs / 40));
       if (p.textMode === 'boxed' || p.textMode === 'arrow') {
         const bx = p.x - padX, by = p.y - fs - 4, bw = tw + padX * 2, bh = textH + pad + 6;
         ctx.fillStyle = 'rgba(255,255,255,0.96)';
-        ctx.strokeStyle = p.color; ctx.lineWidth = 2.5 * ss / sT * _lwF;
+        ctx.strokeStyle = p.color; ctx.lineWidth = 1.2 * ss / sT * _lwF;
         ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
         ctx.fillStyle = p.color;
         lines.forEach((ln, i) => ctx.fillText(ln, p.x, p.y + i * lh));
