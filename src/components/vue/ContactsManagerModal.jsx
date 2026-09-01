@@ -4,7 +4,20 @@ import { Ic } from '../ui/Icons.jsx';
 import {
   loadContacts, upsertContact, deleteContact,
   contactsToCsv, parseContactsCsv, previewImport, importContacts,
+  classifyPdfImport,
 } from '../../lib/contacts.js';
+import { getPdfText } from '../../lib/pdfUtils.js';
+import { callAIProxy } from '../../lib/aiProxy.js';
+
+// Lit un File en data URL (base64) pour le passer à PDF.js.
+function fileToDataUrl(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
 
 // Projets sur lesquels chaque contact est tagué (participant d'au moins une visite).
 // Clé de correspondance : email (fiable), repli nom. Renvoie Map(cleContact → [noms projets]).
@@ -76,6 +89,11 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
   const [saving, setSaving] = useState(false);
   const [importPreview, setImportPreview] = useState(null); // { parsed, stats }
   const fileRef = useRef();
+  // Import depuis PDF (CR d'archi) → extraction IA + dédup floue.
+  const pdfRef = useRef();
+  const [pdfBusy, setPdfBusy] = useState('');      // message d'étape ('' = inactif)
+  const [pdfErr, setPdfErr] = useState('');
+  const [pdfResult, setPdfResult] = useState(null); // { toAdd:[{sel,contact}], review:[{sel,parsed,match}], present:[...] }
 
   const reload = async () => {
     setLoading(true); setErr('');
@@ -142,6 +160,52 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
     setSaving(false);
   };
 
+  // ── Import depuis un PDF (compte-rendu d'architecte) : texte → IA → dédup floue ──────────
+  const handlePdf = async (file) => {
+    if (!file) return;
+    setPdfErr(''); setPdfResult(null);
+    try {
+      setPdfBusy('Lecture du PDF…');
+      const dataUrl = await fileToDataUrl(file);
+      const text = await getPdfText(dataUrl);
+      if (!text || text.length < 20) { setPdfErr('PDF illisible ou sans texte (scan image ?).'); setPdfBusy(''); return; }
+      setPdfBusy('Analyse des intervenants par l’IA…');
+      const prompt = `Extrais TOUS les intervenants (personnes) cités dans ce compte-rendu de chantier : nom complet, poste/rôle, entreprise/société, e-mail, téléphone. Ignore les lignes qui ne sont pas des personnes. Si un champ est absent, mets une chaîne vide.\nRéponds UNIQUEMENT avec un JSON valide de cette forme, sans texte autour :\n{"contacts":[{"nom":"","poste":"","entreprise":"","email":"","tel":""}]}\n\nTEXTE DU COMPTE-RENDU :\n${text}`;
+      const r = await callAIProxy({ feature: 'pdf_contacts', json: true, max_tokens: 2000, messages: [{ role: 'user', content: prompt }] });
+      const raw = r.content?.[0]?.text || '';
+      let parsed;
+      try { parsed = JSON.parse((raw.match(/\{[\s\S]*\}/) || [''])[0]); } catch { parsed = null; }
+      const list = Array.isArray(parsed?.contacts) ? parsed.contacts : [];
+      const clean = list
+        .map(c => ({ nom:(c.nom||'').trim(), poste:(c.poste||'').trim(), entreprise:(c.entreprise||'').trim(), email:(c.email||'').trim(), tel:(c.tel||'').trim() }))
+        .filter(c => c.nom);
+      if (!clean.length) { setPdfErr('Aucun intervenant détecté dans ce PDF.'); setPdfBusy(''); return; }
+      const { toAdd, present, review } = classifyPdfImport(clean, contacts);
+      setPdfResult({
+        toAdd: toAdd.map(c => ({ sel:true, contact:c })),
+        review: review.map(rv => ({ sel:false, parsed:rv.parsed, match:rv.match })),
+        present,
+      });
+      setPdfBusy('');
+    } catch (e) {
+      setPdfErr(e?.message || 'Échec de l’analyse du PDF'); setPdfBusy('');
+    }
+  };
+  const confirmPdfImport = async () => {
+    if (!pdfResult) return;
+    setSaving(true);
+    try {
+      const chosen = [
+        ...pdfResult.toAdd.filter(x => x.sel).map(x => x.contact),
+        ...pdfResult.review.filter(x => x.sel).map(x => x.parsed),
+      ];
+      for (const c of chosen) await upsertContact(c);
+      setPdfResult(null);
+      await reload();
+    } catch (e) { setPdfErr(e.message); }
+    setSaving(false);
+  };
+
   const th = { textAlign:'left', padding:'11px 12px', color:'white', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, whiteSpace:'nowrap' };
   const td = { padding:'10px 12px', fontSize:13, color:DA.black, verticalAlign:'middle' };
   const inp = { width:'100%', fontSize:16, border:`1px solid ${DA.border}`, borderRadius:7, padding:'8px 10px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' };
@@ -188,6 +252,12 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
           </button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display:'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}/>
+          <button onClick={() => pdfRef.current?.click()} disabled={!!pdfBusy} title="Importer les intervenants depuis un compte-rendu PDF (IA)"
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, padding:'8px 12px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color: pdfBusy ? DA.grayL : '#6D28D9', cursor: pdfBusy ? 'default' : 'pointer' }}>
+            <Ic n="fil" s={14}/> {pdfBusy ? '…' : 'PDF (CR)'}
+          </button>
+          <input ref={pdfRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handlePdf(f); e.target.value = ''; }}/>
           <button onClick={() => setEditing({ ...EMPTY })}
             style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:800, padding:'8px 14px', borderRadius:8, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
             <Ic n="plus" s={14}/> Nouveau
@@ -293,6 +363,84 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
               <button onClick={confirmImport} disabled={saving}
                 style={{ flex:2, padding:'11px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
                 {saving ? 'Import…' : 'Confirmer l\'import'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Étape en cours / erreur de l'import PDF */}
+      {(pdfBusy || pdfErr) && !pdfResult && (
+        <div className="modal-overlay-dark" style={{ zIndex:10000 }} onClick={() => { if (!pdfBusy) setPdfErr(''); }}>
+          <div className="modal-sheet" style={{ maxWidth:380, padding:22, textAlign:'center' }} onClick={e => e.stopPropagation()}>
+            {pdfBusy ? (
+              <>
+                <div style={{ marginBottom:10 }}><Ic n="spn" s={26} color="#6D28D9"/></div>
+                <p style={{ fontSize:14, color:DA.black, fontWeight:700, margin:0 }}>{pdfBusy}</p>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize:14, color:DA.red, fontWeight:700, margin:'0 0 14px' }}>{pdfErr}</p>
+                <button onClick={() => setPdfErr('')} style={{ padding:'10px 18px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>OK</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Aperçu de l'import PDF : à ajouter (auto) / à vérifier (ressemblance) / déjà présents */}
+      {pdfResult && (
+        <div className="modal-overlay-dark" style={{ zIndex:10000 }} onClick={() => setPdfResult(null)}>
+          <div className="modal-sheet" style={{ maxWidth:540, padding:20, maxHeight:'88vh', display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
+            <p style={{ fontWeight:800, fontSize:16, color:DA.black, margin:'0 0 4px' }}>Intervenants trouvés dans le PDF</p>
+            <p style={{ fontSize:12, color:DA.gray, margin:'0 0 12px' }}>
+              {pdfResult.toAdd.length} nouveau{pdfResult.toAdd.length > 1 ? 'x' : ''} · {pdfResult.review.length} à vérifier · {pdfResult.present.length} déjà présent{pdfResult.present.length > 1 ? 's' : ''}
+            </p>
+            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:14 }}>
+              {pdfResult.toAdd.length > 0 && (
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:DA.urgGrn, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>À ajouter</div>
+                  {pdfResult.toAdd.map((x, i) => (
+                    <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:9, padding:'7px 9px', borderRadius:8, border:`1px solid ${DA.border}`, marginBottom:5, cursor:'pointer' }}>
+                      <input type="checkbox" checked={x.sel} style={{ marginTop:2, accentColor:DA.red }}
+                        onChange={() => setPdfResult(r => ({ ...r, toAdd: r.toAdd.map((y, j) => j === i ? { ...y, sel: !y.sel } : y) }))}/>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:DA.black }}>{x.contact.nom}</div>
+                        <div style={{ fontSize:11, color:DA.gray }}>{[x.contact.poste, x.contact.entreprise, x.contact.email, x.contact.tel].filter(Boolean).join(' · ') || '—'}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {pdfResult.review.length > 0 && (
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:'#92400E', textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>À vérifier (ressemble à un existant)</div>
+                  {pdfResult.review.map((x, i) => (
+                    <label key={i} style={{ display:'flex', alignItems:'flex-start', gap:9, padding:'7px 9px', borderRadius:8, border:'1px solid #FCD34D', background:'#FFFBEB', marginBottom:5, cursor:'pointer' }}>
+                      <input type="checkbox" checked={x.sel} style={{ marginTop:2, accentColor:DA.red }}
+                        onChange={() => setPdfResult(r => ({ ...r, review: r.review.map((y, j) => j === i ? { ...y, sel: !y.sel } : y) }))}/>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:DA.black }}>{x.parsed.nom}</div>
+                        <div style={{ fontSize:11, color:DA.gray }}>{[x.parsed.poste, x.parsed.entreprise, x.parsed.email, x.parsed.tel].filter(Boolean).join(' · ') || '—'}</div>
+                        <div style={{ fontSize:11, color:'#92400E', marginTop:2 }}>≈ déjà : <strong>{x.match.nom}</strong>{x.match.entreprise ? ` (${x.match.entreprise})` : ''} — coche pour ajouter quand même</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {pdfResult.present.length > 0 && (
+                <div>
+                  <div style={{ fontSize:11, fontWeight:800, color:DA.grayL, textTransform:'uppercase', letterSpacing:0.5, marginBottom:6 }}>Déjà présents (ignorés)</div>
+                  <div style={{ fontSize:12, color:DA.gray, lineHeight:1.5 }}>{pdfResult.present.map(p => p.parsed.nom).join(', ')}</div>
+                </div>
+              )}
+            </div>
+            {pdfErr && <div style={{ fontSize:12, color:DA.red, marginTop:8 }}>{pdfErr}</div>}
+            <div style={{ display:'flex', gap:8, marginTop:14 }}>
+              <button onClick={() => setPdfResult(null)} style={{ flex:1, padding:'11px', borderRadius:9, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, fontSize:13, fontWeight:600, cursor:'pointer' }}>Annuler</button>
+              <button onClick={confirmPdfImport} disabled={saving}
+                style={{ flex:2, padding:'11px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
+                {saving ? 'Ajout…' : `Ajouter ${pdfResult.toAdd.filter(x => x.sel).length + pdfResult.review.filter(x => x.sel).length} intervenant(s)`}
               </button>
             </div>
           </div>

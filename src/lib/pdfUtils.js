@@ -192,6 +192,31 @@ export async function getPdfPageCount(pdfData) {
   }
 }
 
+// Extrait le TEXTE d'un PDF (toutes les pages, dans l'ordre) — pour l'analyse IA d'un
+// compte-rendu (extraction d'intervenants). Renvoie une chaîne ; borne le nombre de pages
+// et la taille pour rester raisonnable.
+export async function getPdfText(pdfData, { maxPages = 30, maxChars = 60000 } = {}) {
+  await ensurePdfJs();
+  if (!window.pdfjsLib || !pdfData) return '';
+  const buf = pdfDataToBuffer(pdfData);
+  const pdf = await window.pdfjsLib.getDocument({
+    data: buf, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true,
+  }).promise;
+  const nPages = Math.min(pdf.numPages || 0, maxPages);
+  let out = '';
+  for (let p = 1; p <= nPages; p++) {
+    try {
+      const pg = await pdf.getPage(p);
+      const tc = await pg.getTextContent();
+      const pageTxt = (tc.items || []).map(it => (it.str || '')).join(' ');
+      out += pageTxt + '\n';
+      if (out.length >= maxChars) { out = out.slice(0, maxChars); break; }
+    } catch { /* page illisible → on continue */ }
+  }
+  try { pdf.destroy(); } catch { /* ignore */ }
+  return out.trim();
+}
+
 // Cache des documents PDF.js parsés (clé = data URL) — parser un gros PDF coûte plusieurs
 // secondes ; la loupe vectorielle le réutilise à chaque re-rendu de région.
 const _docCache = new Map();

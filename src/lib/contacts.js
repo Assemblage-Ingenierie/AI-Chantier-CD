@@ -176,6 +176,52 @@ export async function importContacts(parsed, existing) {
   return { created, updated };
 }
 
+// ── Dédup FLOUE pour l'import depuis un PDF (CR d'archi) — demande Thomas ────────────────
+// Tolère accents, casse, ponctuation ET fautes de frappe légères dans le nom, pour ne pas
+// ré-ajouter un intervenant déjà présent (« erreur de métier, faute d'ortho »). Classe chaque
+// contact extrait en : déjà présent (match sûr) / à vérifier (ressemblance) / à ajouter (aucun).
+function _stripAccents(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function _normKey(s) { return _stripAccents(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function _lev(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function _nameSimilar(a, b) {
+  const na = _normKey(a), nb = _normKey(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (_lev(na, nb) <= 2) return true;
+  // Sous-ensemble de mots (à 1 faute près) : « J. Dupont » ~ « Jean Dupont Martin ».
+  const ta = na.split(' '), tb = nb.split(' ');
+  const [short, longer] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const matched = short.filter(w => w.length >= 3 && longer.some(x => x === w || _lev(x, w) <= 1));
+  return matched.length >= 2 || (short.length === 1 && matched.length === 1);
+}
+export function classifyPdfImport(parsed, existing) {
+  const byEmail = new Map(existing.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
+  const toAdd = [], present = [], review = [];
+  for (const p of parsed) {
+    if (!p.nom || !p.nom.trim()) continue;
+    let strong = (p.email && byEmail.get(p.email.toLowerCase())) || null;
+    if (!strong) strong = existing.find(c => _normKey(c.nom) === _normKey(p.nom)) || null;
+    if (strong) { present.push({ parsed: p, match: strong }); continue; }
+    const fuzzy = existing.find(c => _nameSimilar(c.nom, p.nom));
+    if (fuzzy) { review.push({ parsed: p, match: fuzzy }); continue; }
+    toAdd.push(p);
+  }
+  return { toAdd, present, review };
+}
+
 // Pré-calcul de l'aperçu d'import (sans écrire) — pour l'écran de confirmation.
 export function previewImport(parsed, existing) {
   const byEmail = new Map(existing.filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
