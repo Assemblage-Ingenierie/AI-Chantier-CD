@@ -421,6 +421,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const vpRotateDragRef   = useRef(null); // { idx, cx, cy } rotation en cours
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
+  const oneFingerPanRef = useRef(null); // zoomé + 1 doigt : glisser = déplacer la vue (tap = placer)
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
   const gvByVpIdRef    = useRef(new Map()); // _vpId → numéro Vxx global résolu au chargement (survit la migration)
 
@@ -1074,6 +1075,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (gestureRef.current) return;
 
+    // Zoomé + UN doigt : on prépare un PAN possible. Il ne s'active que si le doigt GLISSE
+    // (cf. onMove) → un simple tap continue de placer/dessiner normalement. Demande Thomas :
+    // se déplacer d'un doigt sur un plan zoomé sans devoir re-pincher.
+    if (e.touches?.length === 1 && vtRef.current.z > 1.05) {
+      const t0 = e.touches[0];
+      oneFingerPanRef.current = { startMx: t0.clientX, startMy: t0.clientY, startPx: vtRef.current.px, startPy: vtRef.current.py, panning: false };
+    } else {
+      oneFingerPanRef.current = null;
+    }
+
     // Clic-droit ou molette enfoncée → pan (bureau uniquement)
     if (!e.touches && (e.button === 2 || e.button === 1)) {
       e.preventDefault();
@@ -1463,6 +1474,33 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       setVt({ z: newZ, px: Math.max(-maxPx, Math.min(maxPx, newPx)), py: Math.max(-maxPy, Math.min(maxPy, newPy)) });
       return;
     }
+    // Zoomé + 1 doigt qui GLISSE → PAN (annule le tracé/placement en cours). Un simple tap ne
+    // déclenche jamais ce bloc (aucun mouvement) → le placement se fait normalement à la fin.
+    const ofp = oneFingerPanRef.current;
+    if (ofp && e.touches?.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - ofp.startMx, dy = t.clientY - ofp.startMy;
+      if (!ofp.panning && Math.hypot(dx, dy) > 10) {
+        ofp.panning = true;
+        // Annule tout ce qu'un début de tracé aurait amorcé.
+        if (drawing) setDrawing(false);
+        setCur([]); setPendingVP(null); setPendingShape(null); setPendingPortee(null);
+        setPolyPts([]); setPolyMousePos(null); setPendingArrowLine(null);
+        textDragRef.current = null; shapeStartRef.current = null; annotDragRef.current = null; resizeDragRef.current = null; arrowPlaceRef.current = null;
+        if (touchHoldRef.current) { clearTimeout(touchHoldRef.current); touchHoldRef.current = null; }
+        // Retire un symbole/viewpoint éventuellement posé à l'appui (<500 ms), comme le pinch.
+        if (Date.now() - lastSymPlaceRef.current < 500) setPaths(prev => prev.slice(0, -1));
+      }
+      if (ofp.panning) {
+        const cv = cvRef.current;
+        const nz = vtRef.current.z;
+        const maxPx = cv ? cv.clientWidth  * (nz - 1) / 2 : 9999;
+        const maxPy = cv ? cv.clientHeight * (nz - 1) / 2 : 9999;
+        const next = { z: nz, px: Math.max(-maxPx, Math.min(maxPx, ofp.startPx + dx)), py: Math.max(-maxPy, Math.min(maxPy, ofp.startPy + dy)) };
+        vtRef.current = next; setVt(next);
+        return;
+      }
+    }
     // Pan clic-droit / molette
     if (panRef.current && !e.touches) {
       const { startPx, startPy, startMx, startMy } = panRef.current;
@@ -1575,6 +1613,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const onEnd = e => {
     e.preventDefault();
+    // Fin d'un pan à un doigt (plan zoomé) : si on a réellement glissé, on NE finalise PAS de
+    // tracé/placement. Si c'était un simple tap (jamais passé en pan), on laisse onEnd continuer.
+    if (oneFingerPanRef.current) {
+      const wasPanning = oneFingerPanRef.current.panning;
+      oneFingerPanRef.current = null;
+      if (wasPanning) { setDrawing(false); setCur([]); return; }
+    }
     // Relâchement → on masque l'aperçu photo (affiché pendant l'appui long sur un marqueur).
     if (vpHoldRef.current || vpPreview) { clearTimeout(vpHoldRef.current); vpHoldRef.current = null; setVpPreview(null); }
     if (vpRotateDragRef.current) { vpRotateDragRef.current = null; setDrawing(false); return; }
