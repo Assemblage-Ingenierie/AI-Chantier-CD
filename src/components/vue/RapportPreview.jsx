@@ -1391,11 +1391,21 @@ function computeParticipantChunks(participants, infoRowCount) {
   return chunks;
 }
 
+// Bandeau de section dans le tableau des intervenants (ex : « Entreprises ») — libellé rouge + filet.
+function PartSepBand({ label }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0 3px', margin:'1px 0' }}>
+      <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:'0.08em', whiteSpace:'nowrap' }}>{label || ''}</span>
+      <div style={{ flex:1, height:1, background:'#E3AEAE' }}/>
+    </div>
+  );
+}
+
 // ── Page de garde unifiée (photo/titre + présentation + intervenants) ──────────────────────
 function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
   const logoUrl = useBrandingLogo();
   const sigleUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
-  const allParticipants = projet.participants || [];
+  const allParticipants = (projet.participants || []).filter(p => !(p.type === 'separator' && p.on === false));
   const participants = participantChunk ?? allParticipants;
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
@@ -1464,7 +1474,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
           <div>
             <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
               <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>
-                Intervenants ({participants.length})
+                Intervenants ({participants.filter(p => p.type !== 'separator').length})
               </span>
             </div>
             <div style={{ display:'flex', alignItems:'center', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 0' }}>
@@ -1477,6 +1487,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
               </div>
             </div>
             {participants.map((pt, i) => {
+              if (pt.type === 'separator') return <PartSepBand key={pt.id} label={pt.label} />;
               // 3 états : présent / absent / neutre ('na' = non précisé → pas de pastille).
               const presState = pt.presence === 'absent' ? 'absent' : pt.presence === 'na' ? 'na' : 'present';
               return (
@@ -1541,6 +1552,7 @@ function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
           </div>
         </div>
         {participants.map((pt) => {
+          if (pt.type === 'separator') return <PartSepBand key={pt.id} label={pt.label} />;
           const presState = pt.presence === 'absent' ? 'absent' : pt.presence === 'na' ? 'na' : 'present';
           return (
             <div key={pt.id} style={{ display:'flex', alignItems:'center', padding:'5px 0', borderBottom:`1px solid #DFE4E8` }}>
@@ -2186,7 +2198,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     projet.adresse, projet.dateVisite, projet.maitreOuvrage,
   ].filter(Boolean);
   const participantChunks = useMemo(
-    () => computeParticipantChunks(projet.participants || [], coverInfoRows.length),
+    // On exclut du rapport les séparateurs DÉSACTIVÉS (on:false) ; les personnes et séparateurs
+    // actifs sont paginés normalement.
+    () => computeParticipantChunks((projet.participants || []).filter(p => !(p.type === 'separator' && p.on === false)), coverInfoRows.length),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [projet.participants, coverInfoRows.length]
   );

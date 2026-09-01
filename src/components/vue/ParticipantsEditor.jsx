@@ -81,6 +81,43 @@ function ParticipantRow({ p, onRemove, onToggle, onMoveUp, onMoveDown }) {
   );
 }
 
+// ── Ligne SÉPARATEUR de section (ex : « Entreprises ») ──────────────────────────
+// Élément spécial de la liste des intervenants : un bandeau titré, cochable (affiché
+// ou non dans le rapport), déplaçable (mêmes flèches) pour scinder MOE / Entreprises.
+function SeparatorRow({ p, onLabel, onToggle, onRemove, onMoveUp, onMoveDown }) {
+  const on = p.on !== false;
+  const arrow = (dir, fn) => (
+    <button onClick={fn} disabled={!fn}
+      style={{ fontSize:9, lineHeight:1, padding:'2px 5px', borderRadius:4,
+        border:`1px solid ${fn ? DA.border : 'transparent'}`,
+        background: fn ? 'white' : 'transparent', color: fn ? DA.gray : DA.border,
+        cursor: fn ? 'pointer' : 'default' }}>{dir}</button>
+  );
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6, borderRadius:8, padding:'5px 8px',
+      background: on ? '#FBEBEB' : DA.grayXL, border:`1px solid ${on ? '#F0C4C4' : DA.border}`, opacity: on ? 1 : 0.65 }}>
+      <button onClick={onToggle} title={on ? 'Masquer ce séparateur du rapport' : 'Afficher ce séparateur dans le rapport'}
+        style={{ width:16, height:16, borderRadius:4, flexShrink:0, cursor:'pointer', fontSize:10, fontWeight:900, lineHeight:1,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          border:`1.5px solid ${on ? DA.red : DA.border}`, background: on ? DA.red : 'white', color:'white' }}>
+        {on ? '✓' : ''}
+      </button>
+      <span style={{ fontSize:8, fontWeight:800, color: on ? DA.red : DA.grayL, textTransform:'uppercase', letterSpacing:0.5, flexShrink:0 }}>Section</span>
+      <input value={p.label || ''} onChange={e => onLabel(e.target.value)} placeholder="Ex : Entreprises"
+        draggable={false} onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+        style={{ flex:1, minWidth:0, fontSize:12, fontWeight:700, color:DA.black, fontFamily:'inherit', outline:'none',
+          border:'none', borderBottom:`1px dashed ${on ? '#DDA0A0' : DA.border}`, background:'transparent', padding:'2px' }}/>
+      <div style={{ display:'flex', flexDirection:'column', gap:1, flexShrink:0 }}>
+        {arrow('↑', onMoveUp)}
+        {arrow('↓', onMoveDown)}
+      </div>
+      <button onClick={onRemove} style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:'0 2px' }}>
+        <Ic n="x" s={12}/>
+      </button>
+    </div>
+  );
+}
+
 // ── Formulaire d'édition inline ────────────────────────────────────────────────
 function InlineEditForm({ contact, onSave, onCancel, saving }) {
   const [form, setForm] = useState({ nom: contact.nom, poste: contact.poste || '', entreprise: contact.entreprise || '', email: contact.email || '', tel: contact.tel || '' });
@@ -220,6 +257,11 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
     [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
     onChange(arr);
   };
+  // ── Séparateurs de section (MOE / Entreprises…) ──
+  const addSeparator = () => onChange([...participants, { id: crypto.randomUUID(), type: 'separator', label: 'Entreprises', on: true }]);
+  const setSepLabel  = (id, label) => onChange(participants.map(p => p.id === id ? { ...p, label } : p));
+  const toggleSep    = (id) => onChange(participants.map(p => p.id === id ? { ...p, on: p.on === false } : p));
+  const peopleCount  = participants.filter(p => p.type !== 'separator').length;
 
   const handleSaveContact = async (contact) => {
     setSaving(true);
@@ -368,23 +410,43 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
   return (
     <div>
       <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:0.5 }}>
-        Intervenants {participants.length > 0 && `(${participants.length})`}
+        Intervenants {peopleCount > 0 && `(${peopleCount})`}
       </label>
 
-      {/* Liste des participants ajoutés */}
+      {/* Liste des participants ajoutés (+ séparateurs de section) */}
       {participants.length > 0 && (
-        <div style={{ display:'flex', flexDirection:'column', gap:3, marginBottom:8 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3, marginBottom:6 }}>
           {participants.map((p, i) => (
-            <ParticipantRow
-              key={p.id}
-              p={p}
-              onRemove={() => remove(p.id)}
-              onToggle={() => toggle(p.id)}
-              onMoveUp={i > 0 ? () => move(p.id, -1) : null}
-              onMoveDown={i < participants.length - 1 ? () => move(p.id, 1) : null}
-            />
+            p.type === 'separator'
+              ? <SeparatorRow
+                  key={p.id}
+                  p={p}
+                  onLabel={label => setSepLabel(p.id, label)}
+                  onToggle={() => toggleSep(p.id)}
+                  onRemove={() => remove(p.id)}
+                  onMoveUp={i > 0 ? () => move(p.id, -1) : null}
+                  onMoveDown={i < participants.length - 1 ? () => move(p.id, 1) : null}
+                />
+              : <ParticipantRow
+                  key={p.id}
+                  p={p}
+                  onRemove={() => remove(p.id)}
+                  onToggle={() => toggle(p.id)}
+                  onMoveUp={i > 0 ? () => move(p.id, -1) : null}
+                  onMoveDown={i < participants.length - 1 ? () => move(p.id, 1) : null}
+                />
           ))}
         </div>
+      )}
+
+      {/* Ajouter un séparateur de section (MOE / Entreprises…) — révélé dès qu'il y a des intervenants */}
+      {participants.length > 0 && (
+        <button onClick={addSeparator}
+          style={{ width:'100%', fontSize:10, fontWeight:600, padding:'5px 0', borderRadius:8, marginBottom:8,
+            border:`1px dashed ${DA.border}`, background:'transparent', color:DA.gray, cursor:'pointer',
+            display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+          <span style={{ fontWeight:900, letterSpacing:1 }}>—</span> Ajouter un séparateur de section
+        </button>
       )}
 
       {/* ── Picker Assemblage ── */}
