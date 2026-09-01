@@ -1879,25 +1879,29 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Demande Thomas : dans chaque menu (Symboles/Formes/Texte), une petite case fixe à gauche
   // qui ouvre d'un tap LE curseur correspondant, sans occuper d'espace en permanence.
   const sizeCtlByTool = { symbol: 'Symboles', shape: 'Formes', text: 'Texte' };
-  const renderSizePin = () => (
+  const renderSizePin = () => {
+    const ctl = scaleCtls.find(c => c.lbl === sizeCtlByTool[tool]);
+    return (
     <button onClick={() => setSizeOpen(v => !v)} title="Régler la taille"
-      style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
-        margin:'6px 0 7px 10px', padding:'6px 4px', borderRadius:8, cursor:'pointer', width:54, boxSizing:'border-box',
-        border:`2px solid ${sizeOpen ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
-      <Ic n="sld" s={20}/>
-      <span style={{ fontSize:8.5, fontWeight:600, color:sizeOpen?'white':'#aaa' }}>Taille</span>
+      style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:1,
+        margin:'6px 0 7px 10px', padding:'5px 4px', borderRadius:8, cursor:'pointer', width:56, boxSizing:'border-box', color:'#fff',
+        border:`2px solid ${sizeOpen ? '#fff' : '#8a8a8a'}`, background: sizeOpen ? DA.red : '#4d4d4d' }}>
+      <Ic n="sld" s={18}/>
+      <span style={{ fontSize:8.5, fontWeight:800, color:'#fff', letterSpacing:0.2 }}>Taille</span>
+      {ctl && <span style={{ fontSize:8, fontWeight:800, color: sizeOpen ? '#fff' : '#FFC9C9', lineHeight:1 }}>{ctl.val.toFixed(1)}×</span>}
     </button>
-  );
+    );
+  };
   const renderSizeSlider = () => {
     const ctl = scaleCtls.find(c => c.lbl === sizeCtlByTool[tool]);
     if (!ctl) return null;
     return (
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 12px 8px' }}>
-        <span style={{ fontSize:9, color:'#888', fontWeight:600, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {ctl.lbl.toUpperCase()}</span>
+        <span style={{ fontSize:9, color:'#ddd', fontWeight:700, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {ctl.lbl.toUpperCase()}</span>
         <input type="range" min="0.3" max="5" step="0.1" value={ctl.val}
           onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); localStorage.setItem(ctl.key, String(v)); }}
-          style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
-        <span style={{ color:'#bbb', fontSize:11, fontWeight:700, minWidth:28, textAlign:'right' }}>{ctl.val.toFixed(1)}×</span>
+          style={{ flex:1, accentColor:DA.red, cursor:'pointer', height:22 }}/>
+        <span style={{ color:'#fff', fontSize:12, fontWeight:800, minWidth:30, textAlign:'right' }}>{ctl.val.toFixed(1)}×</span>
       </div>
     );
   };
@@ -2092,11 +2096,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               le bouton « Tailles ▾ » les cachait trop). La palette entière se replie au toucher du plan. */}
           {scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:8 }}>
-              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
+              <span style={{ fontSize:10,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:64 }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
                 onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
-                style={{ flex:1,accentColor:DA.red,cursor:'pointer' }}/>
-              <span style={{ color:'#bbb',fontSize:11,fontWeight:700,minWidth:28,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+                style={{ flex:1,accentColor:DA.red,cursor:'pointer',height:22 }}/>
+              <span style={{ color:'#fff',fontSize:12,fontWeight:800,minWidth:30,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
           ))}
         </div>
