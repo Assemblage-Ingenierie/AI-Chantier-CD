@@ -2383,8 +2383,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               l'échelle en direct »). Le curseur agit tout de suite sur le texte sélectionné. */}
           <div style={{ display:'flex', alignItems:'center', gap:10, background:'#111', borderRadius:10, padding:'6px 12px' }}>
             <span style={{ fontSize:12, color:'#bbb', fontWeight:800, flexShrink:0 }}>A</span>
-            <input type="range" min="0.5" max="14" step="0.5" value={selText.size ?? 3}
-              onChange={e => { const v = parseFloat(e.target.value); setSize(v); setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,size:v} : p)); }}
+            <input type="range" min="-3" max="14" step="0.5" value={selText.size ?? 3}
+              onChange={e => { const v = parseFloat(e.target.value);
+                setPaths(prev => prev.map((p,i) => {
+                  if (i !== selTextIdx) return p;
+                  // Le cadre à largeur figée (word-wrap) doit RÉTRÉCIR avec la police : on met textW à
+                  // l'échelle du rapport de tailles pour qu'il colle toujours au texte (retour Thomas :
+                  // « la case ne bouge pas en fonction de la taille du texte »).
+                  const oldFs = 20 + (p.size ?? 3) * 4, newFs = 20 + v * 4;
+                  const np = { ...p, size: v };
+                  if (p.textW && oldFs > 0) np.textW = Math.max(20, p.textW * (newFs / oldFs));
+                  return np;
+                }));
+              }}
               style={{ flex:1, accentColor:DA.red, cursor:'pointer', height:26 }}/>
             <span style={{ fontSize:20, color:'#eee', fontWeight:800, flexShrink:0, lineHeight:1 }}>A</span>
           </div>
