@@ -1082,10 +1082,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     if (gestureRef.current) return;
 
-    // Zoomé + UN doigt : on prépare un PAN possible. Il ne s'active que si le doigt GLISSE
-    // (cf. onMove) → un simple tap continue de placer/dessiner normalement. Demande Thomas :
-    // se déplacer d'un doigt sur un plan zoomé sans devoir re-pincher.
-    if (e.touches?.length === 1 && vtRef.current.z > 1.05) {
+    // Zoomé + UN doigt + outil SÉLECTION : on prépare un PAN (glisser = déplacer la vue). Dans les
+    // outils de DESSIN, un doigt dessine toujours → pas de pan (on utilise l'outil Sélect. ou deux
+    // doigts pour naviguer). Demande Thomas : « on a laissé un item Select » = c'est là que vit le pan.
+    if (e.touches?.length === 1 && vtRef.current.z > 1.05 && tool === 'select') {
       const t0 = e.touches[0];
       oneFingerPanRef.current = { startMx: t0.clientX, startMy: t0.clientY, startPx: vtRef.current.px, startPy: vtRef.current.py, panning: false };
     } else {

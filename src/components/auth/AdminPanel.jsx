@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabase } from '../../supabase.js';
 import { recoverPhotosFromStorage, cleanupDuplicatePhotos } from '../../lib/storage.js';
+import { loadContacts } from '../../lib/contacts.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 
@@ -25,9 +26,27 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
     setLoading(true); setErr('');
     try {
       const sb = await getSupabase();
-      const { data, error } = await sb.from('aichantier_profiles').select('*').order('created_at', { ascending: false });
+      const [{ data, error }, contacts] = await Promise.all([
+        sb.from('aichantier_profiles').select('*').order('created_at', { ascending: false }),
+        loadContacts().catch(() => []),
+      ]);
       if (error) throw error;
-      setProfiles(data);
+      // Fusion carnet → profils (par email) : ce qu'un intervenant a rempli dans le carnet de
+      // contacts (onglet Rapport) comble les champs VIDES du profil ici (poste, nom). Demande
+      // Thomas : « Margot a rempli sa case, ça devrait être retranscrit dans l'admin ».
+      const byEmail = new Map((contacts || []).filter(c => c.email).map(c => [c.email.toLowerCase(), c]));
+      const enriched = (data || []).map(p => {
+        const c = p.email ? byEmail.get(p.email.toLowerCase()) : null;
+        if (!c) return p;
+        const patch = {};
+        if (!p.job_title && c.poste) patch.job_title = c.poste;
+        if (!p.first_name && !p.last_name && c.nom) {
+          const parts = c.nom.trim().split(/\s+/);
+          patch.first_name = parts[0]; patch.last_name = parts.slice(1).join(' ');
+        }
+        return Object.keys(patch).length ? { ...p, ...patch } : p;
+      });
+      setProfiles(enriched);
       onPendingCountChange?.((data || []).filter(p => !p.is_approved).length);
     } catch (e) { setErr(e.message); }
     setLoading(false);
