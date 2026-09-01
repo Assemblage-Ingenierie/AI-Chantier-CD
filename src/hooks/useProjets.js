@@ -147,8 +147,15 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
           keptLocalIds.add(rp.id);
           keptLocal = true;
         }
+        // Séparateurs de section (type:'separator') : items PUREMENT COSMÉTIQUES ajoutés en local
+        // et pas forcément encore synchronisés. S'il en existe un côté local absent du remote, on
+        // garde la liste LOCALE des participants (positions préservées) → ils ne disparaissent plus
+        // au rechargement juste après ajout. Sinon, le serveur fait autorité (comportement inchangé).
+        const rvPartIds = new Set((rv.participants || []).map(p => p.id));
+        const hasUnsyncedSep = (lv.participants || []).some(p => p.type === 'separator' && !rvPartIds.has(p.id));
         return {
           ...rv,
+          ...(hasUnsyncedSep ? { participants: lv.participants } : {}),
           // Préserver les champs locaux enrichis que le remote peut ne pas avoir encore
           // Chemin NON-DIRTY → le SERVEUR fait autorité sur l'ingénieur de la visite (?? et
           // non || : une chaîne VIDE distante est respectée). L'ancien `lv || rv` faisait
