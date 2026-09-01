@@ -149,7 +149,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
 
   return (
     <div className="modal-overlay-dark">
-      <div className="modal-sheet-flex" style={{ maxWidth:1100 }}>
+      <div className="modal-sheet-flex" style={{ maxWidth:'min(1440px, 96vw)' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 18px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0 }}>
@@ -203,7 +203,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
                   <tr style={{ background:DA.black }}>
-                    <th style={th}>Nom</th><th style={th}>Poste</th><th style={th}>Entreprise</th><th style={th}>E-mail</th>
+                    <th style={{ ...th, minWidth:160 }}>Nom</th><th style={{ ...th, minWidth:170 }}>Poste</th><th style={th}>Entreprise</th><th style={th}>E-mail</th>
                     <th style={th}>Tél.</th><th style={th}>Type</th><th style={th}>Projets</th><th style={{ ...th, textAlign:'right' }}></th>
                   </tr>
                 </thead>
