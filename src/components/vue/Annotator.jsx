@@ -2184,7 +2184,76 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
              sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
       {showSyms && tool === 'symbol' && (
         <div style={{ background:'#1a1a1a', flexShrink:0, borderBottom:'1px solid #333' }}>
-          <div style={{ display:'flex', alignItems:'stretch' }}>
+          {/* ── MOBILE : GRILLE de grosses tuiles (retour Thomas : plus de bande qui défile
+                 horizontalement à l'infini, tout est visible d'un coup, au pouce). ── */}
+          {isMob && (
+            <div style={{ display:'flex', flexDirection:'column' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px 0' }}>
+                {renderSizePin()}
+                <span style={{ fontSize:10, color:'#888', fontWeight:700, letterSpacing:0.3 }}>Choisis un symbole</span>
+              </div>
+              {sizeOpen && renderSizeSlider()}
+              <div style={{ maxHeight:'44vh', overflowY:'auto', padding:'6px 10px 10px' }}>
+                {SYMBOL_CATEGORIES.map(cat => (
+                  <div key={cat.id} style={{ marginBottom:9 }}>
+                    <div style={{ fontSize:9, fontWeight:800, color:'#777', letterSpacing:1, textTransform:'uppercase', margin:'0 0 5px 2px' }}>{cat.label}</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(74px, 1fr))', gap:6 }}>
+                      {cat.ids.map(id => {
+                        const sm = getAllSymbols().find(s => s.id === id);
+                        if (!sm) return null;
+                        const isActive = sym.id === sm.id;
+                        return (
+                          <button key={sm.id} onClick={() => setSym(sm)} title={sm.label}
+                            style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'8px 3px', borderRadius:10, cursor:'pointer', boxSizing:'border-box',
+                              border:`2px solid ${isActive ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
+                            <SymMiniCanvas sm={sm} color={color} />
+                            <span style={{ fontSize:8.5, fontWeight:600, color:isActive?'white':'#bbb', lineHeight:1.15, textAlign:'center', minHeight:20, display:'flex', alignItems:'center', justifyContent:'center' }}>{sm.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div>
+                  <div style={{ fontSize:9, fontWeight:800, color:'#777', letterSpacing:1, textTransform:'uppercase', margin:'0 0 5px 2px' }}>Perso</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(74px, 1fr))', gap:6 }}>
+                    {getCustomSymbolDefs().map(sm => {
+                      const isActive = sym.id === sm.id;
+                      return (
+                        <div key={sm.id} style={{ position:'relative' }}>
+                          <button onClick={() => setSym(sm)}
+                            style={{ width:'100%', display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'8px 3px', borderRadius:10, cursor:'pointer', boxSizing:'border-box',
+                              border:`2px solid ${isActive ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
+                            <SymMiniCanvas sm={sm} color={color} />
+                            <span style={{ fontSize:8.5, fontWeight:600, color:isActive?'white':'#bbb', lineHeight:1.15, textAlign:'center', minHeight:20, display:'flex', alignItems:'center', justifyContent:'center' }}>{sm.label}</span>
+                          </button>
+                          <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
+                            style={{ position:'absolute',top:-4,right:-5,width:16,height:16,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>×</button>
+                        </div>
+                      );
+                    })}
+                    {!showNewSym && (
+                      <button onClick={() => setShowNewSym(true)}
+                        style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, padding:'8px 3px', borderRadius:10, background:'transparent', color:'#4A9EFF', fontSize:11, fontWeight:700, cursor:'pointer', border:'1.5px dashed #4A9EFF', minHeight:64 }}>
+                        + Créer
+                      </button>
+                    )}
+                  </div>
+                  {showNewSym && (
+                    <div style={{ display:'flex',gap:6,alignItems:'center',marginTop:7 }}>
+                      <input autoFocus value={newSymName} onChange={e=>setNewSymName(e.target.value)}
+                        onKeyDown={e=>{if(e.key==='Enter')addCustomSym();if(e.key==='Escape'){setShowNewSym(false);setNewSymName('');}}}
+                        placeholder="Nom du symbole…"
+                        style={{ flex:1,fontSize:16,padding:'8px 10px',borderRadius:8,border:'1px solid #555',background:'#222',color:'white',outline:'none',fontFamily:'inherit' }}/>
+                      <button onClick={addCustomSym} style={{ padding:'8px 14px',background:DA.red,color:'white',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0 }}>OK</button>
+                      <button onClick={() => {setShowNewSym(false);setNewSymName('');}} style={{ padding:'8px 10px',background:'#333',color:'#aaa',borderRadius:8,fontSize:13,cursor:'pointer',flexShrink:0 }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {!isMob && <div style={{ display:'flex', alignItems:'stretch' }}>
           {renderSizePin()}
           <div style={{ flex:1, minWidth:0, display:'flex', gap:6, padding:'6px 10px 7px', overflowX:'auto', alignItems:'stretch' }}>
             {SYMBOL_CATEGORIES.flatMap(cat => ([
@@ -2251,8 +2320,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 </div>
             )}
           </div>
-          </div>
-          {sizeOpen && renderSizeSlider()}
+          </div>}
+          {!isMob && sizeOpen && renderSizeSlider()}
         </div>
       )}
 
