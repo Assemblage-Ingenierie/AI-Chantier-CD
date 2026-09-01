@@ -349,6 +349,24 @@ export default function RapportTab({ projet, onUpdate }) {
     localisations.flatMap(l => l.items || []).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
   [localisations]);
 
+  // ── Estimation POIDS PDF (info, demande Thomas) — heuristique légère, pas d'encodage réel.
+  // Photos = moteur principal du poids ; plans (nets) plus lourds à l'unité. L'export garantit
+  // < 5 Mo (budget dans print()) : si l'estimation dépasse, on l'indique « compressé sous 5 Mo ».
+  const pdfEstimate = useMemo(() => {
+    let plans = 0;
+    for (const l of localisations) {
+      if (l.planAnnotations?.paths?.length || l.planBg || l.planId) plans++;
+      for (const it of (l.items || [])) {
+        for (const ep of (it.plans || [])) {
+          if (ep?.planAnnotations?.paths?.length || ep?.planBg || ep?.planId) plans++;
+        }
+      }
+    }
+    const bytes = totalPhotos * 165000 + plans * 560000;
+    const mo = bytes / 1048576;
+    return { mo, over: mo > 4.6 };
+  }, [localisations, totalPhotos]);
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   return (
@@ -371,6 +389,21 @@ export default function RapportTab({ projet, onUpdate }) {
         )}
 
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+
+          {/* Estimation du poids du PDF (info) — vert si envoyable direct, orange si compression forte */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 11px', borderRadius:9,
+            background: pdfEstimate.over ? '#FFFBEB' : '#ECFDF5',
+            border:`1px solid ${pdfEstimate.over ? '#FCD34D' : '#A7F3D0'}` }}>
+            <Ic n="fil" s={16} color={pdfEstimate.over ? '#92400E' : '#065F46'}/>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:12.5, fontWeight:800, color: pdfEstimate.over ? '#92400E' : '#065F46' }}>
+                PDF ≈ {pdfEstimate.mo < 0.1 ? '<0,1' : pdfEstimate.mo.toFixed(1)} Mo
+              </div>
+              <div style={{ fontSize:10.5, color: pdfEstimate.over ? '#92400E' : '#047857', opacity:0.9 }}>
+                {pdfEstimate.over ? 'Compressé automatiquement sous 5 Mo (photos réduites)' : 'Envoyable par e-mail'}
+              </div>
+            </div>
+          </div>
 
           {/* Intervenants */}
           <ParticipantsEditor
