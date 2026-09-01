@@ -2334,35 +2334,40 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
-      {/* ── Panneau édition texte sélectionné (texte OU sélection) ── */}
+      {/* ── Panneau édition texte sélectionné — REFONTE MOBILE : 2 rangées, grosses cibles ── */}
       {selText && (
-        <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap' }}>
-          <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>Texte :</span>
-          <input
-            value={selText.text || ''}
-            onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
-            style={{ flex:1,minWidth:80,fontSize:12,padding:'4px 8px',borderRadius:6,border:'1px solid #555',background:'#222',color:'white',outline:'none',fontFamily:'inherit' }}
-          />
-          {/* Changer le style du texte sélectionné */}
-          {[{ k:'plain', lbl:'Libre' },{ k:'boxed', lbl:'Cadre' },{ k:'arrow', lbl:'Flèche' }].map(m => (
-            <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,textMode:m.k} : p))}
-              style={{ padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',flexShrink:0,
-                background:(selText.textMode||'plain')===m.k?DA.red:'#333',color:(selText.textMode||'plain')===m.k?'white':'#aaa',border:'none' }}>
-              {m.lbl}
+        <div style={{ background:'#1a1a1a', padding:'8px 10px', borderBottom:'1px solid #333', display:'flex', flexDirection:'column', gap:8, flexShrink:0 }}>
+          {/* Rangée 1 : champ texte pleine largeur (fontSize 16 → pas de zoom iOS) + fermer */}
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <input
+              value={selText.text || ''} placeholder="Votre texte…"
+              onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
+              style={{ flex:1, minWidth:0, fontSize:16, padding:'9px 12px', borderRadius:9, border:'1px solid #555', background:'#222', color:'white', outline:'none', fontFamily:'inherit' }}/>
+            <button onClick={() => setSelTextIdx(null)} title="Fermer"
+              style={{ width:40, height:40, flexShrink:0, borderRadius:9, background:'#333', color:'#ccc', border:'none', fontSize:16, cursor:'pointer' }}>✕</button>
+          </div>
+          {/* Rangée 2 : style (segmenté) + dupliquer + supprimer, gros boutons */}
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ display:'flex', flex:1, gap:4, background:'#111', borderRadius:10, padding:3 }}>
+              {[{ k:'plain', g:'T', lbl:'Simple' },{ k:'boxed', g:'⬚', lbl:'Encadré' },{ k:'arrow', g:'↗', lbl:'Flèche' }].map(m => {
+                const active = (selText.textMode||'plain')===m.k;
+                return (
+                  <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,textMode:m.k} : p))}
+                    style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:1, padding:'8px 0', borderRadius:8, border:'none', cursor:'pointer',
+                      background: active?DA.red:'transparent', color: active?'white':'#bbb', fontWeight:700 }}>
+                    <span style={{ fontSize:16, lineHeight:1 }}>{m.g}</span>
+                    <span style={{ fontSize:9.5 }}>{m.lbl}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }} title="Dupliquer"
+              style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#1d4ed8', color:'white', border:'none', fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>⊕</button>
+            <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }} title="Supprimer"
+              style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#B91C1C', color:'white', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <Ic n="del" s={17}/>
             </button>
-          ))}
-          <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }}
-            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
-            ⊕ Dupliquer
-          </button>
-          <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }}
-            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,lineHeight:0,display:'flex',alignItems:'center' }}>
-            <Ic n="del" s={13}/>
-          </button>
-          <button onClick={() => setSelTextIdx(null)}
-            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
-            ✕
-          </button>
+          </div>
         </div>
       )}
 
