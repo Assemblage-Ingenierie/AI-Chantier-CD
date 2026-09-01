@@ -1429,7 +1429,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
         )}
         <div style={{ position:'absolute', left:0, top:0, bottom:0, width:4, background:DA.red }}/>
         {logoUrl && <img src={logoUrl} alt="Assemblage Ingénierie"
-          style={{ position:'absolute', top:MX, right:MX, height:22, objectFit:'contain', opacity:0.9 }}/>}
+          style={{ position:'absolute', top:MX, right:MX, height:34, objectFit:'contain', opacity:1 }}/>}
         <div style={{ position:'absolute', bottom:MX, left:MX + 10 }}>
           <div style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'rgba(255,255,255,0.45)', letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:8 }}>
             Compte-rendu de visite

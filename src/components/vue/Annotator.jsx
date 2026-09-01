@@ -1484,7 +1484,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Zoomé + 1 doigt qui GLISSE → PAN (annule le tracé/placement en cours). Un simple tap ne
     // déclenche jamais ce bloc (aucun mouvement) → le placement se fait normalement à la fin.
     const ofp = oneFingerPanRef.current;
-    if (ofp && e.touches?.length === 1) {
+    // « Intelligent » : si un DESSIN/PLACEMENT est en cours (flèche de texte, viewpoint, forme,
+    // portée, polygone, déplacement/resize d'un élément…), le glissé DESSINE et ne déplace PAS la
+    // vue. Le pan ne s'arme que sur un glissé LIBRE (aucune action de dessin en cours).
+    const drawBusy = ofp && !ofp.panning && (
+      arrowPlaceRef.current || shapeStartRef.current || pendingShape || porteeStartRef.current ||
+      pendingPortee || polyPts.length > 0 || textDragRef.current || resizeDragRef.current ||
+      vpRotateDragRef.current || annotDragRef.current || vpStart.current || pendingVP
+    );
+    if (ofp && e.touches?.length === 1 && !drawBusy) {
       const t = e.touches[0];
       const dx = t.clientX - ofp.startMx, dy = t.clientY - ofp.startMy;
       if (!ofp.panning && Math.hypot(dx, dy) > 10) {
