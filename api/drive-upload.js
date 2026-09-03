@@ -229,6 +229,22 @@ function slugFolder(str) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Auth : token Supabase obligatoire (même contrôle que api/ai-proxy.js et api/drive-plans.js) —
+  // sinon n'importe qui pourrait déposer des fichiers sur le Drive via le compte de service.
+  const authHeader = req.headers['authorization'];
+  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Non autorisé' });
+  const sbUrl = (process.env.SUPABASE_URL || '').trim();
+  const sbAnonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+  if (sbUrl && sbAnonKey) {
+    let userRes;
+    try {
+      userRes = await fetch(`${sbUrl}/auth/v1/user`, { headers: { Authorization: authHeader, apikey: sbAnonKey } });
+    } catch {
+      return res.status(401).json({ error: 'Impossible de valider le token' });
+    }
+    if (!userRes.ok) return res.status(401).json({ error: 'Token invalide ou expiré' });
+  }
+
   try {
     const { base64, mimeType, fileName, projetNom, projetNum, visiteLabel, visiteDate, ingenieur } = req.body || {};
 

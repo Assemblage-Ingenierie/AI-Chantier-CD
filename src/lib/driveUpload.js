@@ -1,3 +1,5 @@
+import { getSupabase } from '../supabase.js';
+
 const DRIVE_QUEUE_KEY = '_chantierai_drive_queue';
 const MAX_QUEUE = 15;
 
@@ -23,9 +25,13 @@ export function setAffaireNum(projetId, val) {
 async function driveUploadAttempt({ data, name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur }) {
   const [header, base64] = data.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+  // Jeton Supabase (l'endpoint exige désormais un utilisateur connecté). Récupéré à CHAQUE
+  // tentative → toujours frais, y compris lors des retries de la file d'attente.
+  let token = '';
+  try { const sb = await getSupabase(); const { data: { session } } = await sb.auth.getSession(); token = session?.access_token || ''; } catch { /* pas de session → 401 côté serveur, remis en file */ }
   const res = await fetch('/api/drive-upload', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
