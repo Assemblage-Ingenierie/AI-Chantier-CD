@@ -138,7 +138,7 @@ export default function Dashboard({ projets, profile = null, remoteLoaded, stale
           </div>
         ) : (
           <div className="proj-grid">
-            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} stale={staleIds.has(p.id)} dirty={dirtyIds.has(p.id)} syncing={syncStatus === 'saving'} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
+            {actifs.map(p => <ProjectCard key={p.id} p={p} arc={false} stale={staleIds.has(p.id)} dirty={dirtyIds.has(p.id)} syncing={syncStatus === 'saving'} error={syncStatus === 'error' && dirtyIds.has(p.id)} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         )}
       </div>

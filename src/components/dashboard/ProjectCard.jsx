@@ -13,7 +13,7 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
-export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
+export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   const obs = obsCount(p);
@@ -57,7 +57,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
           {/* UNE seule ligne (le saut de ligne « c'est moche » — Thomas) : la taille de police
               s'adapte à la longueur du nom pour qu'il tienne en entier. */}
           <p style={{ fontSize: p.nom?.length > 34 ? 10.5 : p.nom?.length > 26 ? 11.5 : p.nom?.length > 19 ? 13 : 14.5 }}>{p.nom}</p>
-          {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
+          {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale, error })} />}
         </div>
         <div style={{ position:'absolute',bottom:0,left:0,right:0,height:3,background:DA.red }}/>
       </div>
@@ -72,7 +72,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
               apparaissait en double). */}
           <div className="proj-card-titlerow">
             <p className="proj-card-title" style={{ fontWeight:800,fontSize:16,color:DA.black,margin:0, flex:1, minWidth:0 }}>{p.nom}</p>
-            {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale })} />}
+            {!arc && <SyncBadge state={projectSyncState({ dirty, syncing, stale, error })} />}
           </div>
           {/* MO + adresse : tronqués sur mobile (carte compacte), EN ENTIER sur PC. Sur PC chaque
               zone réserve 2 lignes (hauteur FIXE) et la ligne MO est toujours rendue (« — » si
