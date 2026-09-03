@@ -57,6 +57,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   // administratifs/sécurité génériques (« port du casque » = osef). Coupe propre aux mots.
   const RECAP_SKIP = /(casque|\bepi\b|port du|s[ée]curit|propret|nettoyage|balisage|signal[ée]tique|rappel g[ée]n[ée]ral|g[ée]n[ée]ralit|convocation|prochaine r[ée]union)/i;
   const RECAP_KEY  = /(fissur|mur|dalle|poutre|fondation|b[ée]ton|coul[ée]|[ée]tanch|infiltrat|effondr|d[ée]form|corrosion|armature|ferraill|r[ée]seau|vrd|terrass|sout[èe]n|charpente|plancher|structure|appui|charge|d[ée]sordre|affaiss|reprise|[ée]taiement|acrot|linteau)/i;
+  const saveRecap = (id, text) => {
+    const next = { ...loadVRecapCache(), [id]: text };
+    saveVRecapCache(next);
+    setVisitRecaps(next);
+  };
   const genRecap = (v) => {
     if (!v?.id) return;
     setRecapErr(e => { const n = { ...e }; delete n[v.id]; return n; });
@@ -64,19 +69,36 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     const items = zones.flatMap(l => (l.items || []).map(it => ({ zone: l.nom, ...it })));
     if (!items.length) { setRecapErr(e => ({ ...e, [v.id]: 'Aucune observation à résumer' })); return; }
     const urg = items.filter(it => it.urgence === 'haute');
-    // Texte COMPLET (jamais coupé — retour Thomas), juste normalisé sur une ligne logique.
-    const label = (it) => ((it.titre && it.titre.trim()) || stripHtml(it.commentaire || '').trim()).replace(/\s+/g, ' ');
-    // On ÉCARTE seulement le « osef » (rappels sécurité/administratifs génériques, non urgents).
-    const isOsef = (it) => it.urgence !== 'haute' && RECAP_SKIP.test(`${it.titre || ''} ${stripHtml(it.commentaire || '')}`) && !RECAP_KEY.test(`${it.titre || ''} ${stripHtml(it.commentaire || '')}`);
-    let kept = items.filter(it => !isOsef(it) && label(it));
-    if (!kept.length) kept = items.filter(it => label(it)); // filet : ne jamais rendre un récap vide
-    const parts = [];
-    parts.push(`${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`);
-    parts.push(kept.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${label(it)}`).join('\n'));
-    const text = parts.join('\n');
-    const next = { ...loadVRecapCache(), [v.id]: text };
-    saveVRecapCache(next);
-    setVisitRecaps(next);
+    const both = (it) => `${it.titre || ''} ${stripHtml(it.commentaire || '')}`;
+    const isOsef = (it) => it.urgence !== 'haute' && RECAP_SKIP.test(both(it)) && !RECAP_KEY.test(both(it));
+    let kept = items.filter(it => !isOsef(it));
+    if (!kept.length) kept = items;
+    const header = `${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`;
+
+    // 1) SYNTHÈSE LOCALE instantanée : 1 puce = idée principale (titre, sinon 1re phrase, coupée
+    //    proprement aux mots si vraiment longue). Toujours dispo, sans IA.
+    const idea = (it) => {
+      if (it.titre && it.titre.trim()) return it.titre.trim().replace(/\s+/g, ' ');
+      let c = stripHtml(it.commentaire || '').replace(/\s+/g, ' ').trim();
+      if (!c) return '';
+      const m = c.match(/^.*?[.!?](?=\s|$)/);
+      let s = (m ? m[0] : c).trim();
+      if (s.length > 110) { s = s.slice(0, 110); const sp = s.lastIndexOf(' '); if (sp > 60) s = s.slice(0, sp); s += '…'; }
+      return s;
+    };
+    const localBody = kept.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${idea(it)}`).filter(l => l.replace(/[•⚠\s—-]/g, '')).join('\n');
+    saveRecap(v.id, `${header}\n${localBody}`);
+
+    // 2) UPGRADE IA en arrière-plan (silencieux) : vraie synthèse en puces. Remplace le local si ça
+    //    répond ; si quota/erreur, on garde le local (aucune erreur affichée).
+    const lines = kept.slice(0, 45).map(it => `${it.urgence === 'haute' ? '[URGENT] ' : ''}${it.zone ? `(${it.zone}) ` : ''}${(it.titre || '').slice(0, 90)}${stripHtml(it.commentaire || '') ? ' : ' + stripHtml(it.commentaire).slice(0, 240) : ''}`).join('\n');
+    const prompt = `Synthétise cette visite de chantier en 3 à 6 PUCES très courtes (une idée principale par puce, style télégraphique, PAS de phrases complètes). Garde l'essentiel technique (structure, défauts, à suivre). IGNORE le générique (sécurité, port du casque, propreté). Commence CHAQUE puce par « • ». Pas de titre, pas d'intro, pas de conclusion. N'utilise jamais de tiret cadratin (« — ») ni demi-cadratin (« – »).\n\nObservations :\n${lines}`;
+    callAIProxy({ feature: 'visite_recap', max_tokens: 400, messages: [{ role: 'user', content: prompt }] })
+      .then(r => {
+        const body = (r.content?.[0]?.text || '').trim();
+        if (body && /•/.test(body)) saveRecap(v.id, `${header}\n${body}`);
+      })
+      .catch(() => { /* quota/erreur → on garde la synthèse locale */ });
   };
 
   // Auto-génère un résumé thématique par visite (ex: "Étanchéité, démolition, SOGED")
