@@ -64,27 +64,15 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     const items = zones.flatMap(l => (l.items || []).map(it => ({ zone: l.nom, ...it })));
     if (!items.length) { setRecapErr(e => ({ ...e, [v.id]: 'Aucune observation à résumer' })); return; }
     const urg = items.filter(it => it.urgence === 'haute');
-    const label = (it) => {
-      let t = ((it.titre && it.titre.trim()) || stripHtml(it.commentaire || '').trim()).replace(/\s+/g, ' ');
-      if (t.length > 72) { t = t.slice(0, 72); const sp = t.lastIndexOf(' '); if (sp > 40) t = t.slice(0, sp); t += '…'; }
-      return t;
-    };
-    const score = (it) => {
-      const t = `${it.titre || ''} ${stripHtml(it.commentaire || '')}`;
-      let s = 0;
-      if (it.urgence === 'haute') s += 100;
-      if (it.urgence === 'moyenne') s += 25;
-      if (RECAP_KEY.test(t)) s += 30;
-      if (RECAP_SKIP.test(t)) s -= 45;
-      return s;
-    };
-    const ranked = [...items].sort((a, b) => score(b) - score(a));
-    let picked = ranked.filter(it => it.urgence === 'haute' || score(it) >= 0).slice(0, 6);
-    if (!picked.length) picked = ranked.slice(0, 4); // filet : au moins les mieux notés
+    // Texte COMPLET (jamais coupé — retour Thomas), juste normalisé sur une ligne logique.
+    const label = (it) => ((it.titre && it.titre.trim()) || stripHtml(it.commentaire || '').trim()).replace(/\s+/g, ' ');
+    // On ÉCARTE seulement le « osef » (rappels sécurité/administratifs génériques, non urgents).
+    const isOsef = (it) => it.urgence !== 'haute' && RECAP_SKIP.test(`${it.titre || ''} ${stripHtml(it.commentaire || '')}`) && !RECAP_KEY.test(`${it.titre || ''} ${stripHtml(it.commentaire || '')}`);
+    let kept = items.filter(it => !isOsef(it) && label(it));
+    if (!kept.length) kept = items.filter(it => label(it)); // filet : ne jamais rendre un récap vide
     const parts = [];
     parts.push(`${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`);
-    parts.push(picked.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${label(it)}`).join('\n'));
-    if (picked.length < items.length) parts.push(`(+${items.length - picked.length} autre${items.length - picked.length > 1 ? 's' : ''})`);
+    parts.push(kept.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${label(it)}`).join('\n'));
     const text = parts.join('\n');
     const next = { ...loadVRecapCache(), [v.id]: text };
     saveVRecapCache(next);
