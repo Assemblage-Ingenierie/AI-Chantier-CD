@@ -52,23 +52,39 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const [visitRecaps, setVisitRecaps] = useState(() => loadVRecapCache());
   const [recapErr, setRecapErr] = useState({});     // id → message d'erreur (affiché sur la tuile)
 
-  // Récap perso — 100 % LOCAL, sans IA (fiable, instantané, pas de quota — retour Thomas après
-  // les 503 Gemini). Construit un mémo à partir des observations : totaux, urgences, résumé par zone.
+  // Récap perso — 100 % LOCAL, sans IA (fiable, instantané, pas de quota). SÉLECTIF (retour Thomas) :
+  // on met en avant les urgences + les sujets structure/défauts, et on écarte les rappels
+  // administratifs/sécurité génériques (« port du casque » = osef). Coupe propre aux mots.
+  const RECAP_SKIP = /(casque|\bepi\b|port du|s[ée]curit|propret|nettoyage|balisage|signal[ée]tique|rappel g[ée]n[ée]ral|g[ée]n[ée]ralit|convocation|prochaine r[ée]union)/i;
+  const RECAP_KEY  = /(fissur|mur|dalle|poutre|fondation|b[ée]ton|coul[ée]|[ée]tanch|infiltrat|effondr|d[ée]form|corrosion|armature|ferraill|r[ée]seau|vrd|terrass|sout[èe]n|charpente|plancher|structure|appui|charge|d[ée]sordre|affaiss|reprise|[ée]taiement|acrot|linteau)/i;
   const genRecap = (v) => {
     if (!v?.id) return;
     setRecapErr(e => { const n = { ...e }; delete n[v.id]; return n; });
     const zones = (v.localisations || []).filter(l => (l.items || []).length);
     const items = zones.flatMap(l => (l.items || []).map(it => ({ zone: l.nom, ...it })));
     if (!items.length) { setRecapErr(e => ({ ...e, [v.id]: 'Aucune observation à résumer' })); return; }
-    const urg = items.filter(it => it.urgence === 'haute' && it.titre);
+    const urg = items.filter(it => it.urgence === 'haute');
+    const label = (it) => {
+      let t = ((it.titre && it.titre.trim()) || stripHtml(it.commentaire || '').trim()).replace(/\s+/g, ' ');
+      if (t.length > 72) { t = t.slice(0, 72); const sp = t.lastIndexOf(' '); if (sp > 40) t = t.slice(0, sp); t += '…'; }
+      return t;
+    };
+    const score = (it) => {
+      const t = `${it.titre || ''} ${stripHtml(it.commentaire || '')}`;
+      let s = 0;
+      if (it.urgence === 'haute') s += 100;
+      if (it.urgence === 'moyenne') s += 25;
+      if (RECAP_KEY.test(t)) s += 30;
+      if (RECAP_SKIP.test(t)) s -= 45;
+      return s;
+    };
+    const ranked = [...items].sort((a, b) => score(b) - score(a));
+    let picked = ranked.filter(it => it.urgence === 'haute' || score(it) >= 0).slice(0, 6);
+    if (!picked.length) picked = ranked.slice(0, 4); // filet : au moins les mieux notés
     const parts = [];
     parts.push(`${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`);
-    if (urg.length) parts.push(`⚠ Urgent : ${urg.slice(0, 6).map(it => it.titre).join(' · ')}`);
-    const byZone = zones.slice(0, 8).map(l => {
-      const titres = (l.items || []).map(it => it.titre || stripHtml(it.commentaire || '').slice(0, 40)).filter(Boolean).slice(0, 4);
-      return `• ${l.nom || 'Zone'} : ${titres.join(', ') || `${(l.items || []).length} obs`}`;
-    });
-    if (byZone.length) parts.push(byZone.join('\n'));
+    parts.push(picked.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${label(it)}`).join('\n'));
+    if (picked.length < items.length) parts.push(`(+${items.length - picked.length} autre${items.length - picked.length > 1 ? 's' : ''})`);
     const text = parts.join('\n');
     const next = { ...loadVRecapCache(), [v.id]: text };
     saveVRecapCache(next);
