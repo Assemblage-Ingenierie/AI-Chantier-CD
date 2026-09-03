@@ -50,37 +50,29 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
   const [visitRecaps, setVisitRecaps] = useState(() => loadVRecapCache());
-  const [recapBusy, setRecapBusy] = useState(null); // id de la visite dont le récap se génère
   const [recapErr, setRecapErr] = useState({});     // id → message d'erreur (affiché sur la tuile)
 
-  // Récap perso à la demande : résume les points chauds de la visite en 3-4 phrases (mémo local).
-  const genRecap = async (v) => {
-    if (!v?.id || recapBusy) return;
+  // Récap perso — 100 % LOCAL, sans IA (fiable, instantané, pas de quota — retour Thomas après
+  // les 503 Gemini). Construit un mémo à partir des observations : totaux, urgences, résumé par zone.
+  const genRecap = (v) => {
+    if (!v?.id) return;
     setRecapErr(e => { const n = { ...e }; delete n[v.id]; return n; });
-    setRecapBusy(v.id);
-    try {
-      const items = (v.localisations || []).flatMap(l => (l.items || []).map(it => ({ zone: l.nom, ...it })));
-      const lines = items.slice(0, 45).map(it => {
-        const txt = stripHtml(it.commentaire || '').slice(0, 220);
-        const tag = it.urgence === 'haute' ? '[URGENT] ' : '';
-        const zone = it.zone ? `(${it.zone}) ` : '';
-        return `${tag}${zone}${(it.titre || '').slice(0, 90)}${txt ? ' : ' + txt : ''}`;
-      }).filter(Boolean).join('\n');
-      if (!lines) { setRecapBusy(null); return; }
-      const prompt = `Tu es l'assistant d'un ingénieur structure. Résume cette visite de chantier en 3 à 4 phrases COURTES, façon mémo perso pour l'ingénieur (pas pour le client) : les points chauds, les urgences, les sujets à suivre. Style direct. Pas d'introduction ni de conclusion, pas de liste à puces, pas de titre. N'utilise jamais de tiret cadratin (« — ») ni demi-cadratin (« – »).\n\nObservations :\n${lines}`;
-      const r = await callAIProxy({ feature: 'visite_recap', max_tokens: 500, messages: [{ role: 'user', content: prompt }] });
-      const text = (r.content?.[0]?.text || '').trim();
-      if (text) {
-        const next = { ...loadVRecapCache(), [v.id]: text };
-        saveVRecapCache(next);
-        setVisitRecaps(next);
-      } else {
-        setRecapErr(e => ({ ...e, [v.id]: 'Réponse vide, réessaie' }));
-      }
-    } catch (err) {
-      setRecapErr(e => ({ ...e, [v.id]: err?.message || 'Erreur, réessaie' }));
-    }
-    finally { setRecapBusy(null); }
+    const zones = (v.localisations || []).filter(l => (l.items || []).length);
+    const items = zones.flatMap(l => (l.items || []).map(it => ({ zone: l.nom, ...it })));
+    if (!items.length) { setRecapErr(e => ({ ...e, [v.id]: 'Aucune observation à résumer' })); return; }
+    const urg = items.filter(it => it.urgence === 'haute' && it.titre);
+    const parts = [];
+    parts.push(`${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`);
+    if (urg.length) parts.push(`⚠ Urgent : ${urg.slice(0, 6).map(it => it.titre).join(' · ')}`);
+    const byZone = zones.slice(0, 8).map(l => {
+      const titres = (l.items || []).map(it => it.titre || stripHtml(it.commentaire || '').slice(0, 40)).filter(Boolean).slice(0, 4);
+      return `• ${l.nom || 'Zone'} : ${titres.join(', ') || `${(l.items || []).length} obs`}`;
+    });
+    if (byZone.length) parts.push(byZone.join('\n'));
+    const text = parts.join('\n');
+    const next = { ...loadVRecapCache(), [v.id]: text };
+    saveVRecapCache(next);
+    setVisitRecaps(next);
   };
 
   // Auto-génère un résumé thématique par visite (ex: "Étanchéité, démolition, SOGED")
@@ -518,25 +510,23 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                       </div>
                     )}
 
-                    {/* Récap perso IA (à la demande, local — jamais dans le rapport) */}
+                    {/* Récap perso (local, instantané — jamais dans le rapport) */}
                     {obsCount > 0 && (
                       <div onClick={e => e.stopPropagation()} style={{ cursor:'default' }}>
                         {visitRecaps[v.id] ? (
                           <div style={{ background:'#F5F3FF', border:'1px solid #DDD6FE', borderRadius:9, padding:'9px 11px' }}>
                             <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
                               <span style={{ fontSize:11, fontWeight:800, color:'#6D28D9', letterSpacing:0.3 }}>🧠 Mon récap</span>
-                              <button onClick={() => genRecap(v)} disabled={recapBusy === v.id} title="Régénérer"
-                                style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'#6D28D9', fontSize:12, fontWeight:700, padding:'2px 4px', opacity:recapBusy === v.id ? 0.5 : 1 }}>
-                                {recapBusy === v.id ? '…' : '↻'}
-                              </button>
+                              <button onClick={() => genRecap(v)} title="Régénérer"
+                                style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'#6D28D9', fontSize:12, fontWeight:700, padding:'2px 4px' }}>↻</button>
                             </div>
                             <p style={{ margin:0, fontSize:12.5, color:'#4C1D95', lineHeight:1.45, whiteSpace:'pre-line' }}>{visitRecaps[v.id]}</p>
                           </div>
                         ) : (
                           <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-start' }}>
-                            <button onClick={() => genRecap(v)} disabled={recapBusy === v.id}
-                              style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#F5F3FF', border:'1px solid #DDD6FE', color:'#6D28D9', borderRadius:8, padding:'7px 12px', fontSize:12, fontWeight:700, cursor:recapBusy === v.id ? 'default' : 'pointer', opacity:recapBusy === v.id ? 0.6 : 1 }}>
-                              {recapBusy === v.id ? 'Génération…' : '🧠 Générer mon récap'}
+                            <button onClick={() => genRecap(v)}
+                              style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#F5F3FF', border:'1px solid #DDD6FE', color:'#6D28D9', borderRadius:8, padding:'7px 12px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                              🧠 Générer mon récap
                             </button>
                             {recapErr[v.id] && (
                               <span style={{ fontSize:11, color:DA.red, fontWeight:600 }}>{recapErr[v.id]}</span>
