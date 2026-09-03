@@ -2330,7 +2330,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         try {
           const im = await loadImg(src);
           // Logos/sigles (< 1000px) : intacts (l'aplatissement JPEG casserait leur transparence).
-          if (im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
+          // MAIS uniquement si la source est déjà un data: URL — une image blob:/http NON cuite
+          // reste non rendable dans la fenêtre d'impression (blob = document d'origine → photo
+          // BLANCHE dans le PDF). On la cuit donc toujours en data URL.
+          if (src.startsWith('data:') && im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
           const scale = Math.min(1, maxW / im.naturalWidth);
           const W = Math.max(1, Math.round(im.naturalWidth * scale));
           const H = Math.max(1, Math.round(im.naturalHeight * scale));
@@ -2363,7 +2366,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         Array.from(clone.querySelectorAll('img[src]')).forEach(img => {
           const src = img.getAttribute('src');
           if (!src) return;
-          if (!src.startsWith('data:image/') && !/^https?:/i.test(src)) return; // blob:/autre → intact
+          // On traite data:, http(s) ET blob: — un blob: (URL liée au document d'origine) n'est PAS
+          // rendable dans la fenêtre d'impression → il DOIT être cuit en data URL (sinon photo blanche).
+          if (!src.startsWith('data:image/') && !/^https?:/i.test(src) && !src.startsWith('blob:')) return;
           imgJobs.push({ el: img, src, role: img.getAttribute('data-role') === 'plan' ? 'plan' : 'photo' });
         });
         clones.push(clone);
