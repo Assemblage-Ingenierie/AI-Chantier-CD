@@ -76,8 +76,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     if (!kept.length) kept = items;
     const header = `${zones.length} zone${zones.length > 1 ? 's' : ''}, ${items.length} observation${items.length > 1 ? 's' : ''}${urg.length ? `, ${urg.length} urgente${urg.length > 1 ? 's' : ''}` : ''}.`;
 
-    // 1) SYNTHÈSE LOCALE instantanée : 1 puce = idée principale (titre, sinon 1re phrase, coupée
-    //    proprement aux mots si vraiment longue). Toujours dispo, sans IA.
+    // SYNTHÈSE LOCALE, DÉTERMINISTE et FIGÉE : 1 puce = idée principale (titre, sinon 1re phrase,
+    // coupée proprement aux mots si vraiment longue). Générée UNE fois puis gravée (aucune réécriture
+    // IA en arrière-plan — retour Thomas : « ça doit rester gravé dans le marbre, ne plus changer »).
     const idea = (it) => {
       if (it.titre && it.titre.trim()) return it.titre.trim().replace(/\s+/g, ' ');
       let c = stripHtml(it.commentaire || '').replace(/\s+/g, ' ').trim();
@@ -89,17 +90,6 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     };
     const localBody = kept.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${idea(it)}`).filter(l => l.replace(/[•⚠\s—-]/g, '')).join('\n');
     saveRecap(v.id, `${header}\n${localBody}`);
-
-    // 2) UPGRADE IA en arrière-plan (silencieux) : vraie synthèse en puces. Remplace le local si ça
-    //    répond ; si quota/erreur, on garde le local (aucune erreur affichée).
-    const lines = kept.slice(0, 45).map(it => `${it.urgence === 'haute' ? '[URGENT] ' : ''}${it.zone ? `(${it.zone}) ` : ''}${(it.titre || '').slice(0, 90)}${stripHtml(it.commentaire || '') ? ' : ' + stripHtml(it.commentaire).slice(0, 240) : ''}`).join('\n');
-    const prompt = `Synthétise cette visite de chantier en 3 à 6 PUCES très courtes (une idée principale par puce, style télégraphique, PAS de phrases complètes). Garde l'essentiel technique (structure, défauts, à suivre). IGNORE le générique (sécurité, port du casque, propreté). Commence CHAQUE puce par « • ». Pas de titre, pas d'intro, pas de conclusion. N'utilise jamais de tiret cadratin (« — ») ni demi-cadratin (« – »).\n\nObservations :\n${lines}`;
-    callAIProxy({ feature: 'visite_recap', max_tokens: 400, messages: [{ role: 'user', content: prompt }] })
-      .then(r => {
-        const body = (r.content?.[0]?.text || '').trim();
-        if (body && /•/.test(body)) saveRecap(v.id, `${header}\n${body}`);
-      })
-      .catch(() => { /* quota/erreur → on garde la synthèse locale */ });
   };
 
   // Auto-génère un résumé thématique par visite (ex: "Étanchéité, démolition, SOGED")
