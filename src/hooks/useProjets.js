@@ -270,6 +270,25 @@ export function useProjets(onSyncStatus) {
     setPersistedDirtyIds(dirtyIds.current);
   }, [projets]);
 
+  // FLUSH au passage en arrière-plan / fermeture — CRITIQUE iOS (correctif perte de photos, Margaux).
+  // iOS Safari tue les PWA en arrière-plan en quelques secondes → les sauvegardes DIFFÉRÉES (cache
+  // 500 ms, boîte noire 3 s, Supabase ~2 s) seraient perdues si l'utilisateur quitte juste après
+  // avoir pris des photos. On écrit donc le cache SYNCHRONE (localStorage) dès que la page devient
+  // cachée, avant que le système ne tue l'onglet. saveLocalCache a un repli anti-quota (cf. storage.js).
+  useEffect(() => {
+    const flush = () => {
+      if (!userModified.current) return;
+      try { clearTimeout(cacheSaveRef.current); } catch { /* ignore */ }
+      try { saveLocalCache(projetsRef.current); } catch { /* ignore */ }        // SYNCHRONE = filet principal
+      try { setPersistedDirtyIds(dirtyIds.current); } catch { /* ignore */ }
+      try { saveSnapshot(projetsRef.current); } catch { /* ignore */ }          // boîte noire : best-effort
+    };
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
+
   useEffect(() => {
     // Snapshot des IDs remote connus AVANT que loadData() ne les mette à jour.
     // Critique pour distinguer "supprimé ailleurs" de "vraiment unsynced".

@@ -102,7 +102,7 @@ function extractPhotoPath(urlOrPath) {
 }
 
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
-function slimLoc(l) {
+function slimLoc(l, dropPhotoBytes = false) {
   return {
     ...l,
     planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
@@ -122,22 +122,25 @@ function slimLoc(l) {
       // sont PAS persistés ici : ils feraient déborder le quota localStorage et sont
       // re-remplissables depuis IndexedDB (offlineCache) au chargement. Les photos fraîches
       // prises sur place (base64 sans _offlineCached) restent persistées comme avant.
+      // dropPhotoBytes : repli quota (iOS) — on retire AUSSI les octets des photos fraîches
+      // (pas encore _offlineCached). Elles restent récupérables via la file d'upload IndexedDB
+      // → Supabase Storage ; on préserve les RÉFÉRENCES (_id/_uploadId) pour la reconstruction.
       photos: (item.photos || []).map(({ _legacy, ...ph }) =>
-        ph._offlineCached && typeof ph.data === 'string' && ph.data.startsWith('data:')
+        (dropPhotoBytes || ph._offlineCached) && typeof ph.data === 'string' && ph.data.startsWith('data:')
           ? { ...ph, data: null }
           : ph),
     })),
   };
 }
 
-function toSlim(ps) {
+function toSlim(ps, dropPhotoBytes = false) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
     planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null, hd: null })), // garder bg (miniature) pour affichage immédiat — data (PDF brut) et hd (image HD) trop lourds pour le cache
     visites: (p.visites || []).map(v => ({
       ...v,
-      localisations: (v.localisations || []).map(slimLoc),
+      localisations: (v.localisations || []).map(l => slimLoc(l, dropPhotoBytes)),
     })),
   }));
 }
@@ -1763,11 +1766,24 @@ export async function loadData() {
 // Mise à jour du cache local UNIQUEMENT (sans écriture Supabase).
 // Utilisé quand on accepte des données fraîches de Supabase sans modification utilisateur.
 export function saveLocalCache(ps) {
+  const write = (obj) => {
+    const s = JSON.stringify(obj);
+    if (_hasLS) localStorage.setItem(SK, s);
+    _mem[SK] = s;
+  };
   try {
-    const slim = JSON.stringify(toSlim(ps));
-    if (_hasLS) localStorage.setItem(SK, slim);
-    _mem[SK] = slim;
-  } catch {}
+    write(toSlim(ps));
+  } catch (e) {
+    // QUOTA DÉPASSÉ (iOS Safari ~5 Mo, beaucoup de photos fraîches en base64). AVANT : le cache
+    // n'était PAS écrit → au redémarrage on repartait de l'ancien état → PERTE des photos (et de
+    // TOUT le reste du projet). MAINTENANT : on réessaie sans AUCUN octet photo — les octets sont
+    // saufs dans la file d'upload IndexedDB (→ Supabase Storage), et on garde les RÉFÉRENCES
+    // (_id/_uploadId/chemin) qui permettent de tout reconstruire au chargement.
+    try {
+      write(toSlim(ps, true));
+      try { logWarn('saveLocalCache_quota', { msg: 'quota dépassé → cache sauvé SANS octets photo (références conservées)', err: String(e?.name || e) }); } catch { /* log optionnel */ }
+    } catch { /* même le squelette sans photos ne passe pas : rien de mieux à faire ici */ }
+  }
 }
 
 // Sauvegarde immédiate du bg d'un plan en DB — appelée dès l'import ou la réparation,
