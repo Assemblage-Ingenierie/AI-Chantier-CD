@@ -59,8 +59,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const RECAP_KEY  = /(fissur|mur|dalle|poutre|fondation|b[ée]ton|coul[ée]|[ée]tanch|infiltrat|effondr|d[ée]form|corrosion|armature|ferraill|r[ée]seau|vrd|terrass|sout[èe]n|charpente|plancher|structure|appui|charge|d[ée]sordre|affaiss|reprise|[ée]taiement|acrot|linteau)/i;
   const saveRecap = (id, text) => {
     const next = { ...loadVRecapCache(), [id]: text };
-    saveVRecapCache(next);
+    saveVRecapCache(next);      // cache local immédiat (par appareil)
     setVisitRecaps(next);
+    patchVisite(id, { recap: text }); // + persiste SUR la visite (synchro : survit au cache, multi-appareils)
   };
   const genRecap = (v) => {
     if (!v?.id) return;
@@ -412,6 +413,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             const urgCount   = rawItems.filter(it => it.urgence === 'haute').length;
             const zonesCount = (v.localisations || []).length;
             const visitSummary = visitSummaries[v.id] || null;
+            const visitRecap = v.recap || visitRecaps[v.id] || null; // synchro (visite) prioritaire, repli cache local
             const urgentItems = rawItems
               .filter(it => it.urgence === 'haute' && it.suivi !== 'fait' && it.titre)
               .slice(0, 2);
@@ -539,14 +541,14 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                     {/* Récap perso (local, instantané — jamais dans le rapport) */}
                     {obsCount > 0 && (
                       <div onClick={e => e.stopPropagation()} style={{ cursor:'default' }}>
-                        {visitRecaps[v.id] ? (
+                        {visitRecap ? (
                           <div style={{ background:'#F5F3FF', border:'1px solid #DDD6FE', borderRadius:9, padding:'9px 11px' }}>
                             <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
                               <span style={{ fontSize:11, fontWeight:800, color:'#6D28D9', letterSpacing:0.3 }}>🧠 Mon récap</span>
                               <button onClick={() => genRecap(v)} title="Régénérer"
                                 style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:'#6D28D9', fontSize:12, fontWeight:700, padding:'2px 4px' }}>↻</button>
                             </div>
-                            <p style={{ margin:0, fontSize:12.5, color:'#4C1D95', lineHeight:1.45, whiteSpace:'pre-line' }}>{visitRecaps[v.id]}</p>
+                            <p style={{ margin:0, fontSize:12.5, color:'#4C1D95', lineHeight:1.45, whiteSpace:'pre-line' }}>{visitRecap}</p>
                           </div>
                         ) : (
                           <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'flex-start' }}>
