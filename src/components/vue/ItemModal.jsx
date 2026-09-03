@@ -698,6 +698,32 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     } catch { /* ignore */ }
   };
 
+  // Enregistrer TOUTES les photos de l'observation dans le téléphone (demande Thomas : filet type
+  // « pellicule Android »). iOS interdit l'écriture SILENCIEUSE dans Photos → on passe par la feuille
+  // de partage native (« Enregistrer N images » = 1 seul geste pour tout). Android/PC : téléchargement.
+  const [savingPhone, setSavingPhone] = useState(false);
+  const saveAllPhotosToDevice = async () => {
+    const photos = (form.photos || []).filter(p => p.data || p.annotated);
+    if (!photos.length || savingPhone) return;
+    setSavingPhone(true);
+    try {
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const canShare = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
+      if (isIOS && canShare) {
+        const files = await Promise.all(photos.map(async (ph, i) => {
+          const src = ph.annotated || ph.data;
+          const blob = await fetch(src).then(r => r.blob());
+          return new File([blob], ph.name || `photo_${i + 1}.jpg`, { type: blob.type || 'image/jpeg' });
+        }));
+        if (navigator.canShare({ files })) { await navigator.share({ files }); }
+        else { for (const f of files) { try { if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f] }); } catch { /* annulé */ } } }
+      } else {
+        photos.forEach((ph, i) => autoSaveToDevice({ data: ph.annotated || ph.data, name: ph.name || `photo_${i + 1}.jpg` }));
+      }
+    } catch { /* annulé par l'utilisateur ou non supporté */ }
+    finally { setSavingPhone(false); }
+  };
+
   const readFiles = (files, fromCamera = false) => {
     const filtered = Array.from(files).filter(f => {
       if (f.size > 25 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 25 Mo)`); return false; }
@@ -1277,6 +1303,12 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
               <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
               <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+                {form.photos.length > 0 && (
+                  <button onClick={saveAllPhotosToDevice} disabled={savingPhone} title="Enregistrer les photos dans le téléphone (galerie / Photos)"
+                    style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:savingPhone?'default':'pointer',opacity:savingPhone?0.6:1 }}>
+                    <Ic n="dl" s={14}/> {savingPhone ? '…' : 'Enreg.'}
+                  </button>
+                )}
                 <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
                   <Ic n="img" s={14}/> Galerie
                 </button>
