@@ -787,16 +787,18 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
     // marqueur vient d'un plan d'observation — puis repli sur l'index aplati historique.
     const vxxNum = vxxPhotoMap?.get(photoVpKey(ph)) ?? vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
     const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
-    // Curseurs « taille annotations photos » actifs (≠ 1×) → on privilégie la couche overlay
-    // (re-dessin live, sensible aux curseurs) plutôt que le composite cuit (taille figée).
-    // On veut TOUJOURS l'overlay re-dessiné (par-dessus la photo BRUTE) pour appliquer
-    // l'agrandissement rapport (REPORT_ANNOT_BOOST) — le composite cuit, lui, est figé à 1×.
-    // On l'utilise dès qu'il est rendable de façon SYNCHRONE (annotW connu, hydraté depuis
-    // photoPrefs) → le PDF a toujours les annotations. Sinon (annotW absent, ex. autre appareil)
-    // on retombe sur le composite cuit : annotations présentes (à 1×), jamais perdues.
-    const overlaySync = hasAnnotations && !!ph.data && ph.annotW != null;
-    const useAnnotOverlay = hasAnnotations && !!ph.data && (!ph.annotated || overlaySync);
-    const imgSrc = useAnnotOverlay ? ph.data : (ph.annotated || ph.data);
+    // Source de la cellule photo — on privilégie le COMPOSITE CUIT (ph.annotated), EXACTEMENT
+    // comme la grille de l'app (`ph.annotated || ph.data`) qui, elle, s'affiche toujours.
+    // Historiquement le rapport préférait la photo BRUTE (ph.data) + un overlay live re-dessiné
+    // pour appliquer REPORT_ANNOT_BOOST — mais ce boost vaut 1.0 (annotations à la taille de
+    // l'éditeur), donc l'overlay produit EXACTEMENT le même rendu que le composite cuit. Or si
+    // l'URL signée de ph.data était morte (expirée/absente) alors que celle du composite était
+    // valide, on obtenait une photo BLANCHE avec l'annotation flottante (retour Thomas, aperçu
+    // rapport KO alors que l'app était OK). On aligne donc le rapport sur l'app : composite cuit
+    // d'abord, et overlay re-dessiné UNIQUEMENT si aucun composite n'existe (annoté sur un autre
+    // appareil sans upload du composite) → les annotations ne sont jamais perdues.
+    const useAnnotOverlay = hasAnnotations && !!ph.data && !ph.annotated;
+    const imgSrc = ph.annotated || ph.data;
     return (
       <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
