@@ -433,6 +433,32 @@ function ZoneHeader({ loc }) {
 // l'éditeur → ça agrandit l'éditeur ET le rapport ensemble, sans jamais les désynchroniser.
 const REPORT_ANNOT_BOOST = 1.0;
 
+// Image d'une cellule photo du rapport avec REPLI DÉTERMINISTE de source.
+// `sources` = liste ordonnée d'URL candidates (ex : [ph.data brut, ph.annotated cuit]). Si la
+// première échoue au chargement (URL signée expirée/absente, base64 stripé du cache offline…),
+// on passe à la suivante — chacune essayée UNE fois, via l'état React (pas de manip impérative
+// de .src qui était boguée : le repli ne s'appliquait jamais → photo BLANCHE dans l'aperçu,
+// retour Thomas « TJ PAS BON »). Garantit qu'on affiche toujours une image tant qu'UNE source
+// est valide.
+// `overlay` (canvas d'annotations transparent) n'est rendu QUE tant que la source affichée est
+// `overlaySrc` (le brut) : si on retombe sur `ph.annotated` (composite qui contient DÉJÀ les
+// annotations cuites), on masque l'overlay pour ne pas DOUBLER les annotations.
+function ReportPhotoImg({ sources, style, overlay = null, overlaySrc = null }) {
+  const list = (sources || []).filter((s, i, a) => s && a.indexOf(s) === i);
+  const key = list.join('|');
+  const [idx, setIdx] = React.useState(0);
+  React.useEffect(() => { setIdx(0); }, [key]);
+  const src = list[Math.min(idx, list.length - 1)] || '';
+  return (
+    <>
+      <img src={src} alt=""
+        onError={() => setIdx(i => (i < list.length - 1 ? i + 1 : i))}
+        style={style}/>
+      {overlay && src === overlaySrc && overlay}
+    </>
+  );
+}
+
 function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, containerAR = 4 / 3, photoScale = { text: 1, shape: 1, symbol: 1 } }) {
   const psText  = photoScale?.text   ?? 1;
   const psSym   = photoScale?.symbol ?? 1;
@@ -777,21 +803,15 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
             l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
             aucune image cuite n'existe. */}
-        <img src={imgSrc} alt=""
-          onError={e => {
-            // Repli si l'URL (signée) de la photo échoue (expirée/absente) → on essaie l'image cuite
-            // annotée puis la donnée brute, chacune UNE fois (pas de boucle). Évite la photo blanche
-            // avec l'annotation flottante (retour Thomas).
-            const t = e.currentTarget;
-            const tried = t.dataset._tried ? t.dataset._tried.split('') : [];
-            const alt = [ph.annotated, ph.data].find(s => s && s !== t.src && !tried.includes(s));
-            if (alt) { t.dataset._tried = [...tried, t.src].join(''); t.src = alt; }
-          }}
+        <ReportPhotoImg
+          sources={[imgSrc, ph.annotated, ph.data]}
+          overlaySrc={useAnnotOverlay ? imgSrc : null}
+          overlay={useAnnotOverlay
+            ? <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum} photoScale={photoAnnotScales}/>
+            : null}
           style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
             objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
             transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
-        {useAnnotOverlay &&
-          <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum} photoScale={photoAnnotScales}/>}
         {/* Bouton « Annoter » (haut-droite) : ouvre l'outil d'annotation sur la photo —
             permet de retoucher / déplacer les annotations directement depuis le rapport. */}
         {onAnnotatePhoto && !!ph.data && (
