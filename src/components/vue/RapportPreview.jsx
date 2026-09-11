@@ -2329,11 +2329,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       const encodeAt = async (src, maxW, q) => {
         try {
           const im = await loadImg(src);
-          // Logos/sigles (< 1000px) : intacts (l'aplatissement JPEG casserait leur transparence).
-          // MAIS uniquement si la source est déjà un data: URL — une image blob:/http NON cuite
-          // reste non rendable dans la fenêtre d'impression (blob = document d'origine → photo
-          // BLANCHE dans le PDF). On la cuit donc toujours en data URL.
-          if (src.startsWith('data:') && im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
+          // Logos/sigles (< 1000px) : INTACTS (l'aplatissement JPEG casserait leur transparence →
+          // fond blanc). Vrai pour data: ET http(s) (les logos du bucket Branding se chargent très
+          // bien dans la fenêtre d'impression). SEULES les blob: doivent être cuites (invalides hors
+          // du document d'origine → photo blanche) — elles sont quasi toujours des photos > 1000px.
+          if (!src.startsWith('blob:') && im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
           const scale = Math.min(1, maxW / im.naturalWidth);
           const W = Math.max(1, Math.round(im.naturalWidth * scale));
           const H = Math.max(1, Math.round(im.naturalHeight * scale));

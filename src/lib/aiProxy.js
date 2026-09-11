@@ -9,7 +9,7 @@ const THROTTLE_MS = 15000; // 15s entre deux appels par feature pour ménager le
 // provider + modèle et envoyée au proxy à chaque appel ; le proxy route en conséquence.
 const AI_PROVIDER_KEY = 'chantierai_ai_provider';
 const AI_ENGINES = ['claude', 'gemini-flash', 'gemini-pro'];
-const GEMINI_MODEL_FOR = { 'gemini-flash': 'gemini-3.6-flash', 'gemini-pro': 'gemini-3.6-pro' };
+const GEMINI_MODEL_FOR = { 'gemini-flash': 'gemini-3.7-flash', 'gemini-pro': 'gemini-3.7-pro' };
 export function getAIProvider() {
   // Défaut = gemini-flash (rapide, fiable). Claude n'a plus de crédit → n'est plus le défaut.
   try { const v = localStorage.getItem(AI_PROVIDER_KEY); return AI_ENGINES.includes(v) ? v : 'gemini-flash'; } catch { return 'gemini-flash'; }

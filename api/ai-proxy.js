@@ -59,7 +59,11 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
 // ── Gemini (Google) — activé si la requête demande provider:'gemini' ────────────
 // Variable d'env Vercel requise : GEMINI_API_KEY. La réponse est normalisée au MÊME
 // format que Claude ({ content:[{type:'text',text}] }) → aucun changement côté app.
-const GEMINI_MODEL = 'gemini-3.6-flash'; // modèle Flash stable = repli si le modèle demandé est indisponible
+const GEMINI_MODEL = 'gemini-3.7-flash'; // modèle Flash stable courant = repli par défaut
+// Repli EN CASCADE : Google retire régulièrement d'anciennes versions (ex. gemini-3.6-* supprimé →
+// 404). On essaie ces modèles dans l'ordre jusqu'à ce qu'un réponde → l'IA ne tombe plus en panne.
+const GEMINI_FLASH_FALLBACKS = ['gemini-3.7-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+const GEMINI_PRO_FALLBACKS   = ['gemini-3.7-pro', 'gemini-pro-latest', 'gemini-2.5-pro', 'gemini-3.7-flash'];
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 // Convertit un contenu de message (string OU tableau de blocs texte/image façon Anthropic) en
@@ -174,12 +178,18 @@ export default async function handler(req, res) {
       const rt = await callGemini(gModel, { ...payload, json: false }, geminiKey, maxTokens, 55000, false);
       if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); gUp = rt.res; gData = d2; } catch { /* garde l'erreur d'origine */ } }
     }
-    // Repli automatique : si le modèle demandé (ex. Pro) est introuvable/indisponible (404), on
-    // réessaie avec le modèle Flash stable → l'IA répond quand même au lieu d'échouer.
-    if ((gUp.status === 404 || (gUp.status === 400 && /not found|not supported|unavailable/i.test(JSON.stringify(gData?.error || '')))) && gModel !== GEMINI_MODEL) {
-      const fb = await callGemini(GEMINI_MODEL, payload, geminiKey, maxTokens);
-      if (!fb.timedOut && fb.res) {
-        try { const fbData = await fb.res.json(); gUp = fb.res; gData = fbData; gModel = GEMINI_MODEL; } catch { /* garde l'erreur d'origine */ }
+    // Repli automatique EN CASCADE : si le modèle demandé est introuvable/retiré (404 / not found /
+    // deprecated), on essaie une liste de modèles Gemini connus jusqu'à ce qu'un réponde. Corrige le
+    // cas « gemini-3.x retiré par Google → génération de texte HS ».
+    const isModelGone = (st, d) => st === 404 || (st === 400 && /not found|not supported|unavailable|deprecated/i.test(JSON.stringify(d?.error || '')));
+    if (isModelGone(gUp.status, gData)) {
+      const candidates = (wantFast ? GEMINI_FLASH_FALLBACKS : GEMINI_PRO_FALLBACKS).filter(m => m !== gModel);
+      for (const cand of candidates) {
+        const fb = await callGemini(cand, payload, geminiKey, maxTokens, 55000, /flash/i.test(cand));
+        if (fb.timedOut || !fb.res) continue;
+        let d2; try { d2 = await fb.res.json(); } catch { continue; }
+        gUp = fb.res; gData = d2; gModel = cand;
+        if (fb.res.ok || !isModelGone(fb.res.status, d2)) break; // succès OU autre erreur (quota…) → stop
       }
     }
     if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
