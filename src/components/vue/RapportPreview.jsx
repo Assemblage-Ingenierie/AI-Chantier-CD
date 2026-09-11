@@ -778,6 +778,15 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
             aucune image cuite n'existe. */}
         <img src={imgSrc} alt=""
+          onError={e => {
+            // Repli si l'URL (signée) de la photo échoue (expirée/absente) → on essaie l'image cuite
+            // annotée puis la donnée brute, chacune UNE fois (pas de boucle). Évite la photo blanche
+            // avec l'annotation flottante (retour Thomas).
+            const t = e.currentTarget;
+            const tried = t.dataset._tried ? t.dataset._tried.split('') : [];
+            const alt = [ph.annotated, ph.data].find(s => s && s !== t.src && !tried.includes(s));
+            if (alt) { t.dataset._tried = [...tried, t.src].join(''); t.src = alt; }
+          }}
           style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
             objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
             transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
