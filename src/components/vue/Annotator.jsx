@@ -2540,13 +2540,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             : <span style={{ color:'rgba(255,255,255,0.7)', fontSize:14 }}>Photo non disponible sur cet appareil</span>}
         </div>
       )}
-      {/* ── Aide : un marqueur est sélectionné → taper une photo le lie à cette photo ── */}
-      {selVp && validPhotos.length > 0 && (
-        <div style={{ background:'#0b6', color:'white', padding:'5px 12px', fontSize:12, fontWeight:700, flexShrink:0, display:'flex', alignItems:'center', gap:8 }}>
-          <Ic n="img" s={15}/>
-          <span>Repère {selVp.label || 'V?'} sélectionné — tape une photo ci-dessous pour la lier{selVp.photoIdx != null ? ' (vert = photo actuelle)' : ''}.</span>
-        </div>
-      )}
+      {/* Bandeau d'aide « repère sélectionné » RETIRÉ (retour Thomas : sélectionner un VXX faisait
+          apparaître un bandeau vert + rétrécissait le plan, gênant pour juste le supprimer). Le lien
+          photo↔marqueur reste possible : la photo liée est déjà entourée de vert dans la bande. */}
       {/* ── Bande de photos (sans labels V1/V2) ── */}
       {validPhotos.length > 0 && (
         <div style={{ background:'#1a1a1a',borderTop:'1px solid #333',padding:'6px 12px',display:'flex',gap:8,overflowX:'auto',flexShrink:0,alignItems:'center' }}>

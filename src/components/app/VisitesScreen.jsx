@@ -260,11 +260,23 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     if (!source) return;
     const newId = crypto.randomUUID();
     const today = new Date().toISOString().slice(0, 10);
+    // Duplication SANS photos : les marqueurs VXX (type 'viewpoint') sur les plans pointaient vers
+    // les photos supprimées → ils ne correspondent plus à rien. On les retire (+ l'image cuite
+    // `exported` qui les montre encore) pour un plan propre (retour Thomas). Les autres annotations
+    // (flèches, texte, symboles) sont conservées. Avec photos : on garde tout tel quel.
+    const cleanAnn = (ann) => {
+      if (!ann) return ann ?? null;
+      if (keepPhotos) return { ...ann };
+      const paths = (ann.paths || []).filter(p => p.type !== 'viewpoint');
+      // eslint-disable-next-line no-unused-vars
+      const { exported, ...rest } = ann; // retire le composite cuit → re-rendu sans les VXX
+      return { ...rest, paths };
+    };
     const localisations = (source.localisations || []).map(loc => ({
       ...loc,
       id: crypto.randomUUID(),
-      planAnnotations: loc.planAnnotations ? { ...loc.planAnnotations } : null,
-      extraPlans: (loc.extraPlans || []).map(ep => ({ ...ep, planAnnotations: ep.planAnnotations ? { ...ep.planAnnotations } : null })),
+      planAnnotations: cleanAnn(loc.planAnnotations),
+      extraPlans: (loc.extraPlans || []).map(ep => ({ ...ep, planAnnotations: cleanAnn(ep.planAnnotations) })),
       items: (loc.items || []).map(item => ({
         ...item,
         id: crypto.randomUUID(),
@@ -272,6 +284,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         photos: keepPhotos
           ? (item.photos || []).map(ph => ({ ...ph, _id: crypto.randomUUID(), id: undefined }))
           : [],
+        // Plans PROPRES aux observations : mêmes marqueurs VXX à nettoyer si sans photos.
+        ...(keepPhotos ? {} : { plans: (item.plans || []).map(pl => ({ ...pl, planAnnotations: cleanAnn(pl.planAnnotations) })) }),
       })),
     }));
     const newVisite = {
