@@ -530,6 +530,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const totalItems = visitProjet.localisations.flatMap(l => l.items || []).length;
 
+  // Index mémoïsé planId → plan : évite un `.find` sur toute la bibliothèque pour CHAQUE
+  // zone / plan d'observation à CHAQUE rendu (O(zones×plans) → O(1) par accès).
+  const planById = useMemo(
+    () => new Map((projet.planLibrary || []).map(p => [p.id, p])),
+    [projet.planLibrary]
+  );
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
 
@@ -668,14 +675,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const items    = loc.items || [];
                     const isOpen   = openLocIds.has(loc.id);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
-                    const assignedPlan = loc.planId ? (projet.planLibrary||[]).find(p => p.id === loc.planId) : null;
+                    const assignedPlan = loc.planId ? planById.get(loc.planId) : null;
                     const allPlanThumbs = [];
                     // Ignore les références orphelines (plan supprimé) → pas de tuile « Plan » vide fantôme.
                     if (loc.planBg || (loc.planId && assignedPlan)) {
                       allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden, planId: loc.planId });
                     }
                     for (const ep of (loc.extraPlans || [])) {
-                      const epLib = (projet.planLibrary||[]).find(p => p.id === ep.planId);
+                      const epLib = planById.get(ep.planId);
                       if (!ep.planBg && !epLib) continue; // orphelin
                       allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden, planId: ep.planId });
                     }
@@ -765,7 +772,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               for (const it of items) {
                                 for (let pi = 0; pi < (it.plans || []).length; pi++) {
                                   const pl  = it.plans[pi];
-                                  const lib = (projet.planLibrary || []).find(p => p.id === pl.planId);
+                                  const lib = planById.get(pl.planId);
                                   const bg  = pl.planBg || lib?.bg || null;
                                   if (!bg && !pl.planAnnotations?.exported) continue; // orphelin → ignoré
                                   obsPlans.push({ it, pl, pi, bg, nom: lib?.nom || null });
