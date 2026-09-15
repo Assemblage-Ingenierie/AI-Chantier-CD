@@ -8,6 +8,7 @@ import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOffli
 import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
+import { subscribePendingChanges } from '../../lib/pendingSync.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -44,7 +45,9 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [detailByProject, setDetailByProject] = useState({}); // { projectId: { plans, donnees } }
   const [offlinePrefs, setOfflinePrefs] = useState({}); // reflet local des switchs
   const [busyProject, setBusyProject] = useState(null);
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);   // photos en attente d'envoi
+  const [pendingChanges, setPendingChanges] = useState(0); // projets modifiés non synchronisés
+  const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
@@ -95,6 +98,12 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
 
   useEffect(() => { refreshSizes(); }, []);
   useEffect(() => subscribePendingUploads(setPendingCount), []);
+  useEffect(() => subscribePendingChanges(setPendingChanges), []);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener('online', on); window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
   // Dispo de l'install native / état installé peuvent changer après l'ouverture (capture
   // tardive de l'événement, ou installation depuis l'invite). On reste synchro.
   useEffect(() => subscribeInstall(() => { setNativeReady(canInstallNative()); setAppInstalled(isAppInstalled()); }), []);
@@ -135,6 +144,44 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:'16px 18px' }}>
+
+          {/* ── SAUVEGARDE : état clair « tout est sauvegardé » vs « en attente » (demande Thomas :
+                que Margaux/Pierre sachent AVANT de fermer que rien n'est perdu). ── */}
+          {(() => {
+            const allSynced = pendingCount === 0 && pendingChanges === 0;
+            const parts = [];
+            if (pendingChanges > 0) parts.push(`${pendingChanges} modif${pendingChanges > 1 ? 's' : ''}`);
+            if (pendingCount > 0) parts.push(`${pendingCount} photo${pendingCount > 1 ? 's' : ''}`);
+            const bg = allSynced ? '#EAF7EE' : (online ? '#FFF6E6' : '#FDECEC');
+            const bd = allSynced ? '#8FD3A6' : (online ? '#F0C674' : '#F3A6A6');
+            const fg = allSynced ? '#1E7A3D' : (online ? '#8A5A00' : '#8A1F1F');
+            return (
+              <div style={{ marginBottom:22 }}>
+                <p style={sectionTitle}>Sauvegarde</p>
+                <div style={{ border:`1px solid ${bd}`, background:bg, borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'flex-start', gap:10 }}>
+                  <span style={{ flexShrink:0, marginTop:1, color:fg }}>
+                    <Ic n={allSynced ? 'chk' : (online ? 'spn' : 'wifioff')} s={18}/>
+                  </span>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:14, fontWeight:800, color:fg }}>
+                      {allSynced
+                        ? 'Tout est sauvegardé ✓'
+                        : online
+                          ? `Synchronisation… (${parts.join(' + ')})`
+                          : `Hors ligne — ${parts.length ? parts.join(' + ') + ' en attente' : 'tout est gardé sur l’appareil'}`}
+                    </div>
+                    <div style={{ fontSize:12, color:fg, opacity:0.85, marginTop:2, lineHeight:1.45 }}>
+                      {allSynced
+                        ? 'Photos et données sont bien enregistrées sur le serveur. Tu peux fermer l’app sans risque.'
+                        : online
+                          ? 'Envoi en cours vers le serveur — garde l’app ouverte quelques secondes.'
+                          : 'Rien n’est perdu : tout est gardé sur l’appareil et sera envoyé automatiquement dès le retour du réseau.'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── Hors-ligne par projet : UNIQUEMENT « mes projets » (initiales sur une visite) ── */}
           {(() => {
