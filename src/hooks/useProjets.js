@@ -6,6 +6,7 @@ import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
+import { publishPendingCount } from '../lib/pendingSync.js';
 
 const MAX_HISTORY = 20;
 
@@ -244,7 +245,11 @@ export function useProjets(onSyncStatus) {
   // Miroir RÉACTIF de dirtyIds (ref non observable) → permet aux badges par projet de
   // savoir quels projets ont des modifs locales en attente.
   const [dirtyProjectIds, setDirtyProjectIds] = useState(new Set());
-  const syncDirtyMirror = () => setDirtyProjectIds(new Set(dirtyIds.current));
+  const syncDirtyMirror = () => {
+    setDirtyProjectIds(new Set(dirtyIds.current));
+    // Publie le nombre de projets non synchronisés au bandeau global (informatif, aucune écriture).
+    publishPendingCount(dirtyIds.current.size);
+  };
   // Mode « visite hors-ligne » (V3) : suspend VOLONTAIREMENT la sync distante (le cache local
   // et la boîte noire continuent). Non persisté → un rechargement rétablit la sync normale
   // (filet de sécurité : on ne reste jamais bloqué en mode visite après un reload).

@@ -1,13 +1,36 @@
-const CACHE = 'aichantier-v87';
+const CACHE = 'aichantier-v88';
 const PLAN_PDF_CACHE = 'plan-pdfs'; // PDF de plans servis en local (mode hors ligne + lecteur natif)
 
 // Ressources connues à pré-cacher au premier install
 const PRECACHE = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png', '/favicon.svg'];
 
+// APP-SHELL 100% HORS LIGNE : à l'installation, on précache non seulement les ressources
+// fixes ci-dessus mais AUSSI tout le code de l'app (bundles /assets/ hashés + la CSS +
+// le chunk « report » du PDF). On lit index.html fraîchement téléchargé et on en extrait
+// toutes les URL /assets/ : ainsi, après cette mise à jour, l'app s'ouvre TOUJOURS hors
+// ligne, même après un nettoyage navigateur ou un lancement à froid sans réseau (retour
+// Thomas : « ça tourne sur l'icône sans s'ouvrir » hors connexion). allSettled : un asset
+// manquant ne fait jamais échouer l'install (sinon le SW ne s'activerait pas).
+async function precacheAppShell(c) {
+  try {
+    const res = await fetch('/', { cache: 'no-cache' });
+    if (!res || !res.ok) return;
+    await c.put('/', res.clone());
+    const html = await res.text();
+    const urls = [...new Set(
+      [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(m => m[1])
+    )];
+    if (urls.length) await Promise.allSettled(urls.map(u => c.add(u)));
+  } catch { /* hors ligne à l'install (rare) → cache paresseux au premier chargement en ligne */ }
+}
+
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await Promise.allSettled(PRECACHE.map(u => c.add(u)));
+    await precacheAppShell(c);
+    await self.skipWaiting();
+  })());
 });
 
 // Permet à la page de demander l'activation immédiate du nouveau SW (cf. main.jsx).

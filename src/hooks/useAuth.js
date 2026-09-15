@@ -13,7 +13,13 @@ function readCachedProfile() {
     const r = localStorage.getItem(PROF_KEY);
     if (!r) return null;
     const p = JSON.parse(r);
-    if (p._ts && Date.now() - p._ts > PROF_TTL_MS) { localStorage.removeItem(PROF_KEY); return null; }
+    // Péremption 8h UNIQUEMENT en ligne : quand on est en ligne, on peut re-fetch un profil
+    // frais → on jette le cache périmé pour rafraîchir le statut d'approbation. HORS LIGNE,
+    // on NE jette JAMAIS le profil (aucun re-fetch possible) : sinon après une longue journée
+    // sans réseau (> 8h), l'utilisateur approuvé retombe sur l'écran « en attente d'approbation »
+    // et ne peut plus bosser (retour Thomas : autonomie hors-ligne totale). On le garde donc.
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false;
+    if (online && p._ts && Date.now() - p._ts > PROF_TTL_MS) { localStorage.removeItem(PROF_KEY); return null; }
     return p;
   } catch { return null; }
 }

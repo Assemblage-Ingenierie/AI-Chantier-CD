@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Ic } from './Icons.jsx';
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
+import { subscribePendingChanges } from '../../lib/pendingSync.js';
 
 // Bandeau global (demande Thomas) : rassure sur le chantier sans réseau.
 // - HORS LIGNE  → bandeau ambré + nombre de photos en attente d'envoi.
@@ -10,7 +11,8 @@ import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 // aucune donnée touchée.
 export default function OfflineBanner() {
   const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [pending, setPending] = useState(0);
+  const [pending, setPending] = useState(0);   // photos en attente d'envoi (fichiers)
+  const [changes, setChanges] = useState(0);   // projets modifiés non encore synchronisés (données)
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -18,21 +20,32 @@ export default function OfflineBanner() {
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
     const unsub = subscribePendingUploads(setPending);
+    const unsub2 = subscribePendingChanges(setChanges);
     return () => {
       window.removeEventListener('online', on);
       window.removeEventListener('offline', off);
       if (unsub) unsub();
+      if (unsub2) unsub2();
     };
   }, []);
 
   const offline = !online;
-  // Rien à afficher : en ligne ET aucune photo en attente.
+  // EN LIGNE, on n'affiche le bandeau que pour un vrai backlog de PHOTOS en cours d'envoi
+  // (les modifs de données routinières se synchronisent en ~5s → couvertes par la pastille
+  // du header, inutile de faire clignoter un bandeau à chaque frappe). HORS LIGNE, on montre
+  // tout ce qui est en attente (modifs + photos) pour rassurer que le travail est capturé.
   if (!offline && pending === 0) return null;
+
+  // Récapitulatif compact de ce qui reste à synchroniser.
+  const parts = [];
+  if (offline && changes > 0) parts.push(`${changes} modif${changes > 1 ? 's' : ''}`);
+  if (pending > 0) parts.push(`${pending} photo${pending > 1 ? 's' : ''}`);
+  const pendingTxt = parts.join(' + ');
 
   const bg = offline ? '#8A5A00' : '#1E3A5F';
   const label = offline
-    ? (pending > 0
-        ? `Hors ligne — ${pending} photo${pending > 1 ? 's' : ''} en attente d'envoi`
+    ? (pendingTxt
+        ? `Hors ligne — ${pendingTxt} en attente`
         : 'Hors ligne — tout est sauvegardé sur l’appareil')
     : `Envoi de ${pending} photo${pending > 1 ? 's' : ''}…`;
   const sub = offline ? 'Synchronisation automatique dès le retour du réseau' : null;
