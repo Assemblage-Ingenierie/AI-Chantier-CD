@@ -501,7 +501,7 @@ function ConsultViewerTouch({ group, hdById = {}, loadHd = null, loadingHd = new
   const snapshot = () => { gestRef.current = { t: { ...tRef.current }, pts: [...ptrs.current.values()].map(p => ({ ...p })) }; };
 
   const onDown = (e) => {
-    boxRef.current?.setPointerCapture?.(e.pointerId);
+    try { boxRef.current?.setPointerCapture?.(e.pointerId); } catch { /* iOS Safari peut lever — le pan/pinch doit continuer */ }
     vecReq.current++;              // invalide un rendu vectoriel en cours
     // NB : on NE masque PLUS la loupe au toucher — elle est dans inner, elle suit le transform
     // pendant le geste (net et sans à-coup). Re-rendue à la bonne résolution en fin de geste.

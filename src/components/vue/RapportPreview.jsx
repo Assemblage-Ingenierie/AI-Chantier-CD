@@ -658,7 +658,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
     e.preventDefault();
     const el = containerRef.current;
     if (!el) return;
-    el.setPointerCapture(e.pointerId);
+    try { el.setPointerCapture(e.pointerId); } catch { /* iOS Safari peut lever ici — sans effet sur le drag */ }
     const rect = el.getBoundingClientRect();
     const cW = rect.width, cH = rect.height;
     const bFW = photoRatio <= FRAME_RATIO ? cW : cH * FRAME_RATIO;

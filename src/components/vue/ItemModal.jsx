@@ -342,6 +342,15 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
 
+  // Fermeture manuelle : pour une NOUVELLE observation (pas d'item.id), la clé de brouillon
+  // est partagée (`chantierai_draft_new`) → sans purge, un brouillon abandonné réapparaissait
+  // dans la prochaine nouvelle observation d'une autre zone. On le purge donc à la fermeture
+  // manuelle. La récupération après crash/fermeture app (pagehide, pas onClose) reste intacte.
+  const handleClose = () => {
+    if (!item?.id) { try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} }
+    onClose();
+  };
+
   const handleSave = () => {
     try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
     // DIAGNOSTIC image collée absente (bug Thomas) : trace ce qui est réellement enregistré.
@@ -1003,7 +1012,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
-            <button onClick={onClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
+            <button onClick={handleClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
           {draftRestored && (
             <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginTop:8 }}>

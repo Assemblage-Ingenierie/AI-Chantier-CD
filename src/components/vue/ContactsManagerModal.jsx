@@ -28,13 +28,24 @@ function computeTagged(projets) {
   return map;
 }
 
-function download(filename, text) {
+async function download(filename, text) {
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  const linkDownload = () => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  };
+  // iOS Safari ignore `download` → feuille de partage native quand elle accepte les fichiers.
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const file = new File([blob], filename, { type: 'text/csv' });
+  if (isIOS && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: filename }); }
+    catch (err) { if (err?.name !== 'AbortError') linkDownload(); }
+  } else {
+    linkDownload();
+  }
 }
 
 const EMPTY = { nom: '', poste: '', entreprise: '', email: '', tel: '', isAssemblage: false };

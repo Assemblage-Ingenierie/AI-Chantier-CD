@@ -128,7 +128,7 @@ function splitCsvLine(line, sep) {
 // Ne renvoie que les lignes ayant au moins un nom.
 export function parseContactsCsv(text) {
   if (!text) return [];
-  const clean = text.replace(/^﻿/, '');
+  const clean = text.replace(/^﻿/, ''); // retire le BOM UTF-8 en tête (CSV Excel)
   const rows = clean.split(/\r\n|\n|\r/).filter(l => l.trim());
   if (!rows.length) return [];
   const sep = (rows[0].match(/;/g) || []).length >= (rows[0].match(/,/g) || []).length ? ';' : ',';

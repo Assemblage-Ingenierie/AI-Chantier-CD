@@ -33,7 +33,13 @@ function clearCachedProfile() {
 export function useAuth() {
   // Démarrage instantané depuis le cache — le vrai état est vérifié en arrière-plan
   const cachedProf = readCachedProfile();
-  const [authState, setAuthState] = useState(cachedProf ? 'approved' : 'loading');
+  // Init : si le profil en cache est explicitement NON approuvé, démarrer sur 'waiting'
+  // (sinon un compte non approuvé voyait brièvement toute l'app avant correction). On ne
+  // rétrograde que sur `is_approved === false` explicite → aucun impact pour un approuvé
+  // dont un vieux cache n'aurait pas le champ (reste 'approved').
+  const [authState, setAuthState] = useState(
+    cachedProf ? (cachedProf.is_approved === false ? 'waiting' : 'approved') : 'loading'
+  );
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(cachedProf);
 

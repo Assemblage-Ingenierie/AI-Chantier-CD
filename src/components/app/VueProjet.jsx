@@ -859,16 +859,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                                   onClick={async (e) => {
                                                     e.stopPropagation();
                                                     const rotated = await rotateBg90CW(pt.bg);
+                                                    // Garde : ne propager que si le plan a un planId réel. Sans ça, un
+                                                    // pt.planId null/undefined matcherait TOUTES les zones sans plan
+                                                    // (planId vide) → leur planBg écrasé par l'image tournée.
                                                     const newLibrary = (projet.planLibrary || []).map(pl =>
-                                                      pl.id === pt.planId ? { ...pl, bg: rotated } : pl
+                                                      pt.planId && pl.id === pt.planId ? { ...pl, bg: rotated } : pl
                                                     );
                                                     const newVisites = (projet.visites || []).map(v => ({
                                                       ...v,
                                                       localisations: (v.localisations || []).map(l => ({
                                                         ...l,
-                                                        planBg: l.planId === pt.planId ? rotated : l.planBg,
+                                                        planBg: pt.planId && l.planId === pt.planId ? rotated : l.planBg,
                                                         extraPlans: (l.extraPlans || []).map(ep =>
-                                                          ep.planId === pt.planId ? { ...ep, planBg: rotated } : ep
+                                                          pt.planId && ep.planId === pt.planId ? { ...ep, planBg: rotated } : ep
                                                         ),
                                                       })),
                                                     }));
@@ -1042,7 +1045,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
-              onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
+              // Forme FONCTIONNELLE obligatoire : l'import de plusieurs images déclenche N
+              // callbacks onload séparés ; avec `projet.planLibrary` figé au rendu, chacun
+              // écrasait le précédent → seule la dernière image restait dans la bibliothèque.
+              onUpdate(prev => ({ planLibrary: [...(prev.planLibrary || []), ...arr] }));
               savePlanBgNow(projet.id, arr);
             }}
           />
@@ -1093,7 +1099,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
-              onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
+              // Forme FONCTIONNELLE obligatoire : l'import de plusieurs images déclenche N
+              // callbacks onload séparés ; avec `projet.planLibrary` figé au rendu, chacun
+              // écrasait le précédent → seule la dernière image restait dans la bibliothèque.
+              onUpdate(prev => ({ planLibrary: [...(prev.planLibrary || []), ...arr] }));
               savePlanBgNow(projet.id, arr);
             }}
           />

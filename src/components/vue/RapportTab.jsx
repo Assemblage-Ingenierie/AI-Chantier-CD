@@ -327,17 +327,28 @@ export default function RapportTab({ projet, onUpdate }) {
       // Suivi du volume d'egress consommé par l'export ZIP (anticipation des pics — audit point 2).
       logEvent('export.zipPhotos', { photos: allPhotos.length, remote: remoteCount, downloadedBytes: zippedBytes });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
       const datePart = projet.dateVisite ? projet.dateVisite.replace(/-/g, '_') : null;
       const nomVisite = projet.visiteNom ? sanitize(projet.visiteNom) : null;
       const ingPart = projet.ingenieur ? `_(${projet.ingenieur})` : '';
       const parts = [datePart, nomVisite].filter(Boolean);
       const zipName = parts.length > 0 ? `${parts.join('_')}${ingPart}` : sanitize(projet.nom || 'rapport');
-      a.href     = url;
-      a.download = `${zipName}_photos.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const fileName = `${zipName}_photos.zip`;
+      // iOS Safari IGNORE l'attribut `download` (téléchargement muet) → on passe par la feuille
+      // de partage native quand elle accepte les fichiers. Ailleurs : lien de téléchargement classique.
+      const linkDownload = () => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      };
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const file = new File([blob], fileName, { type: 'application/zip' });
+      if (isIOS && navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fileName }); }
+        catch (err) { if (err?.name !== 'AbortError') linkDownload(); } // annulation utilisateur = ne rien faire
+      } else {
+        linkDownload();
+      }
     } catch (e) {
       console.error('ZIP photos:', e);
       alert('Erreur lors de la création du ZIP : ' + (e.message || e));
@@ -682,9 +693,14 @@ export default function RapportTab({ projet, onUpdate }) {
             if (item) {
               // Échelle durable (survit au reload) — même filet que l'éditeur.
               setPhotoAnnotPref(editingPhoto.photo?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
-              const updatedPhotos = (item.photos || []).map(p => p === editingPhoto.photo
-                ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null }
-                : p);
+              // Matcher par _id (stable) plutôt que par référence objet : si item.photos a été
+              // régénéré entre-temps (hydratation/poll), la référence ne matchait plus → l'annotation
+              // était silencieusement perdue. Repli sur la référence si pas d'_id (aucune régression).
+              const target = editingPhoto.photo;
+              const updatedPhotos = (item.photos || []).map(p =>
+                (target?._id != null ? p._id === target._id : p === target)
+                  ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null }
+                  : p);
               onUpdateItem(editingPhoto.locId, editingPhoto.itemId, { photos: updatedPhotos, _photosHydrated: true });
             }
             setEditingPhoto(null);

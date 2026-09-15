@@ -136,6 +136,9 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
   width: 100%;
   border-radius: 16px 16px 0 0;
   max-height: 93vh;
+  /* dvh quand dispo : exclut la barre d'URL dynamique de Safari mobile → le bas de la feuille
+     (et un éventuel bouton d'action) ne passe plus sous la barre du navigateur. */
+  max-height: 93dvh;
   overflow-y: auto;
 }
 .modal-sheet-flex {
