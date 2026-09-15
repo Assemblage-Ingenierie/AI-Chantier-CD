@@ -92,9 +92,11 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
     })();
   }, [remoteLoaded, projets, profile?.initials]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation
+  // Vérifie toutes les 30s s'il y a des utilisateurs en attente d'approbation (admin only).
+  // Suspendu quand l'app est en arrière-plan → pas de réveil réseau inutile (batterie).
   useEffect(() => {
     if (profile?.role !== 'admin') return;
+    let interval = null;
     const check = async () => {
       try {
         const { getSupabase } = await import('../../supabase.js');
@@ -103,9 +105,15 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         setPendingCount(count ?? 0);
       } catch {}
     };
-    check();
-    const interval = setInterval(check, 30000);
-    return () => clearInterval(interval);
+    const start = () => { if (interval == null) interval = setInterval(check, 30000); };
+    const stop  = () => { if (interval != null) { clearInterval(interval); interval = null; } };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') { check(); start(); }
+      else stop();
+    };
+    if (document.visibilityState === 'visible') { check(); start(); }
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, [profile?.role]);
   const [undoToast, setUndoToast] = useState(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -121,9 +129,13 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const projetsRef = useRef(projets);
   useEffect(() => { projetsRef.current = projets; }, [projets]);
 
-  // Poll léger toutes les 60s (+ au focus fenêtre) pour détecter les MàJ distantes
+  // Poll léger toutes les 60s pour détecter les MàJ distantes — MAIS uniquement quand l'app
+  // est VISIBLE. En arrière-plan (écran verrouillé, autre app), on suspend l'intervalle :
+  // aucun réveil réseau inutile → économie de batterie (retour Thomas : « l'appli défonce ma
+  // batterie »). On relance un check immédiat au retour au premier plan pour rester à jour.
   useEffect(() => {
     if (!remoteLoaded) return;
+    let iv = null;
     const check = async () => {
       try {
         const ts = await fetchRemoteTimestamps();
@@ -141,10 +153,17 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         });
       } catch {}
     };
-    check();
-    const iv = setInterval(check, 60_000);
+    const start = () => { if (iv == null) iv = setInterval(check, 60_000); };
+    const stop  = () => { if (iv != null) { clearInterval(iv); iv = null; } };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') { check(); start(); }
+      else stop();
+    };
+    // Démarrage : seulement si visible (au montage l'app est au premier plan en pratique)
+    if (document.visibilityState === 'visible') { check(); start(); }
+    document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', check);
-    return () => { clearInterval(iv); window.removeEventListener('focus', check); };
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', check); };
   }, [remoteLoaded]);
 
   useEffect(() => {

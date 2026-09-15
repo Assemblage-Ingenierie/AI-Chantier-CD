@@ -53,7 +53,20 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
   };
 
   useEffect(() => { fetchProfiles(); }, []);
-  useEffect(() => { const t = setInterval(fetchProfiles, 20000); return () => clearInterval(t); }, []);
+  // Rafraîchit la liste toutes les 20s — mais uniquement quand le panneau est VISIBLE
+  // (suspendu en arrière-plan → pas de réveil réseau inutile, économie de batterie).
+  useEffect(() => {
+    let t = null;
+    const start = () => { if (t == null) t = setInterval(fetchProfiles, 20000); };
+    const stop  = () => { if (t != null) { clearInterval(t); t = null; } };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') { fetchProfiles(); start(); }
+      else stop();
+    };
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setApproval = async (id, approved) => {
     setSavingId(id);
