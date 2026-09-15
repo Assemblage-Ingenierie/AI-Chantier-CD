@@ -796,7 +796,7 @@ export function useProjets(onSyncStatus) {
                   ...item,
                   _photosHydrated: true,
                   photos: photosMap[item.id]
-                    ? photosMap[item.id].map(ph => {
+                    ? [...photosMap[item.id].map(ph => {
                         const existing = existingById.get(ph.id) ?? existingByName.get(ph.name);
                         // Réglages d'affichage rapport (recadrage + orientation portrait) ET
                         // métadonnées d'échelle des annotations (annotW/H + annotSizeScale) :
@@ -825,7 +825,16 @@ export function useProjets(onSyncStatus) {
                           _id:            ph.id,
                           _legacy:        ph._legacy ?? false,
                         };
-                      })
+                      }),
+                      // ANTI-ORPHELIN (audit #3, Règle N°2) : conserver les photos LOCALES FRAÎCHES
+                      // (prises mais dont la LIGNE item_photos n'existe pas encore en base — leur _id
+                      // local n'est pas dans le résultat DB). Sans ça, hydratePhotos les JETAIT de
+                      // l'état React → saveRemote n'écrivait jamais leur ligne → octets orphelins dans
+                      // Storage, invisibles partout. On les garde (celles qui ont des octets : data
+                      // ou composite annoté) → saveRemote écrira leur ligne au prochain cycle.
+                      ...(item.photos || []).filter(p =>
+                        p._id && !photosMap[item.id].some(x => x.id === p._id) && (p.data || p.annotated)
+                      )]
                     // La lecture DB ne renvoie rien pour cet item (chargement partiel/timing) :
                     // NE PAS écraser par [] des photos locales déjà présentes (cache hydraté),
                     // sinon les photos annotées « disparaissent » jusqu'au prochain reload propre.
