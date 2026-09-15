@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -1129,6 +1129,18 @@ export function useProjets(onSyncStatus) {
     window.addEventListener('online', flushOnline);
     return () => { clearTimeout(retryTimer); window.removeEventListener('online', flushOnline); };
   }, [onSyncStatus]);
+
+  // ── Rejeu des suppressions de projets faites HORS LIGNE ────────────────────────
+  // Une suppression sans réseau n'atteint pas le serveur (deleteRemoteProjet échoue) →
+  // sans ce rejeu, le projet réapparaissait sur les AUTRES appareils (ligne serveur jamais
+  // supprimée, tombstone serveur jamais posé). On rejoue la file au retour du réseau ET au
+  // démarrage (si en ligne). Best-effort : chaque suppression confirmée se retire de la file.
+  useEffect(() => {
+    const replay = () => { try { replayPendingDeletes(); } catch {} };
+    if (navigator.onLine) replay();
+    window.addEventListener('online', replay);
+    return () => window.removeEventListener('online', replay);
+  }, []);
 
   // ── Mode visite hors-ligne (V3) ────────────────────────────────────────────────
   // Active/désactive la suspension VOLONTAIRE de la sync distante. À la désactivation

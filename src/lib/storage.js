@@ -572,22 +572,25 @@ export async function hydratePlans(_projectId) {
 // Appelé au moment où l'utilisateur confirme la suppression, en complément du filtre local.
 export async function deleteRemoteProjet(id) {
   addPersistedDeletedId(id); // persisté immédiatement — survit à un rechargement avant confirmation
+  addPendingDelete(id);      // file de rejeu : retirée SEULEMENT quand le serveur répond (cf. replayPendingDeletes)
   insertDeletedChantierTombstone(id); // tombstone SERVEUR (Phase 2) — partagé entre appareils
   try {
     const sb = await getSupabase();
     // .select('id') retourne les lignes supprimées — permet de détecter un silence RLS
     // (0 rows retournées sans erreur = RLS a bloqué la suppression silencieusement).
     const { data, error } = await sb.from('aichantier_chantiers').delete().eq('id', id).select('id');
-    if (error) { console.warn('deleteRemoteProjet error:', error); return false; }
+    if (error) { console.warn('deleteRemoteProjet error:', error); return false; } // serveur/réseau KO → reste en file de rejeu
+    // La requête a ABOUTI (0 ou 1 ligne) → le serveur a bien été atteint : plus besoin de rejouer,
+    // que la ligne ait été supprimée maintenant ou qu'elle soit déjà absente (déjà supprimée ailleurs).
+    removePendingDelete(id);
+    if (_lastRemoteIds) _lastRemoteIds.delete(id);
     // Vérifier que la ligne a bien été supprimée (pas de silence RLS)
     const deleted = Array.isArray(data) && data.length > 0;
     if (!deleted) {
       // Ligne introuvable (déjà supprimée) ou RLS — tombstone conservé pour sécurité
       console.warn('deleteRemoteProjet: row not found or RLS prevented deletion for', id);
-      if (_lastRemoteIds) _lastRemoteIds.delete(id);
       return false;
     }
-    if (_lastRemoteIds) _lastRemoteIds.delete(id);
     // Tombstone DURABLE : on NE l'efface PLUS après confirmation. Il continue de bloquer toute
     // résurrection (filtrage du remote ET du cache local non encore purgé qui serait sinon
     // ré-poussé via la logique « unsynced »). Le tombstone n'est levé QUE si l'utilisateur
@@ -1652,6 +1655,41 @@ export function removePersistedDeletedId(id) {
     ids.delete(id);
     localStorage.setItem(PERSISTED_DELETED_IDS_KEY, JSON.stringify([...ids]));
   } catch {}
+}
+
+// ── File de SUPPRESSIONS EN ATTENTE (rejeu à la reconnexion) ─────────────────────
+// Une suppression de projet faite HORS LIGNE échoue côté serveur (deleteRemoteProjet)
+// et n'était jamais retentée → le projet réapparaissait sur les autres appareils (ligne
+// serveur jamais supprimée, tombstone serveur jamais posé). On mémorise donc l'id ici
+// jusqu'à ce que le serveur CONFIRME la suppression ; replayPendingDeletes() rejoue au
+// retour du réseau. Distinct des tombstones (durables, jamais retirés) : cette file est
+// une file de RETRY, vidée dès confirmation serveur.
+const PENDING_DELETES_KEY = '_chantierai_pending_deletes_v1';
+
+export function getPendingDeletes() {
+  try {
+    const raw = localStorage.getItem(PENDING_DELETES_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+function addPendingDelete(id) {
+  try { const s = getPendingDeletes(); s.add(id); localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify([...s])); } catch {}
+}
+function removePendingDelete(id) {
+  try { const s = getPendingDeletes(); s.delete(id); localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify([...s])); } catch {}
+}
+
+// Rejoue les suppressions serveur en attente (retour réseau / démarrage en ligne). Chaque
+// deleteRemoteProjet retire l'id de la file si le serveur confirme (ligne supprimée ou déjà
+// absente) ; sinon il y reste pour la prochaine tentative. Best-effort, ne rejette jamais.
+export async function replayPendingDeletes() {
+  const pending = getPendingDeletes();
+  if (!pending.size) return;
+  for (const id of pending) {
+    try { await deleteRemoteProjet(id); } catch { /* réseau KO → reste en file */ }
+  }
 }
 
 // IDs des projets avec des modifications locales NON synchronisées vers Supabase.
