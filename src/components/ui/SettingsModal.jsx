@@ -7,6 +7,7 @@ import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/p
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
+import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -47,6 +48,12 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
+  // « Télécharger l'application » (PWA) : plateforme dont les instructions sont dépliées,
+  // dispo de l'installation native, état installé, message de résultat.
+  const [dlPlatform, setDlPlatform] = useState(detectPlatform()); // 'android' | 'ios' | 'desktop'
+  const [nativeReady, setNativeReady] = useState(canInstallNative());
+  const [appInstalled, setAppInstalled] = useState(isAppInstalled());
+  const [installMsg, setInstallMsg] = useState('');
 
   const refreshSizes = async () => {
     const [plans, snapshots, pending, byProject] = await Promise.all([
@@ -88,6 +95,17 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
 
   useEffect(() => { refreshSizes(); }, []);
   useEffect(() => subscribePendingUploads(setPendingCount), []);
+  // Dispo de l'install native / état installé peuvent changer après l'ouverture (capture
+  // tardive de l'événement, ou installation depuis l'invite). On reste synchro.
+  useEffect(() => subscribeInstall(() => { setNativeReady(canInstallNative()); setAppInstalled(isAppInstalled()); }), []);
+
+  const handleInstallNative = async () => {
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') setInstallMsg('Installation lancée ✓');
+    else if (outcome === 'dismissed') setInstallMsg('Installation annulée');
+    else setInstallMsg('');
+    setNativeReady(canInstallNative());
+  };
 
   const handleClearPlans = async () => {
     setClearing(true);
@@ -231,6 +249,73 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               Moteur utilisé pour générer et améliorer les textes (rédaction, correction). <strong>Claude</strong> par défaut.
               <strong> Gemini Pro</strong> = meilleure qualité/précision mais plus lent ; <strong>Flash</strong> = rapide. Réversible à tout moment.
             </p>
+          </div>
+
+          {/* ── Télécharger l'application (PWA) ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Télécharger l'application</p>
+            {appInstalled ? (
+              <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:DA.gray, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>
+                <Ic n="chk" s={16}/> L'application est déjà installée sur cet appareil.
+              </div>
+            ) : (
+            <>
+              {/* Sélecteur de plateforme (3 boutons) — révèle les instructions adaptées */}
+              <div style={{ display:'flex', gap:6 }}>
+                {[{ k:'android', l:'Android' }, { k:'ios', l:'iPhone / iPad' }, { k:'desktop', l:'Ordinateur' }].map(o => {
+                  const active = dlPlatform === o.k;
+                  return (
+                    <button key={o.k} onClick={() => { setDlPlatform(o.k); setInstallMsg(''); }}
+                      style={{ flex:1, padding:'9px 6px', borderRadius:9, fontSize:12, fontWeight:700, cursor:'pointer', lineHeight:1.25,
+                        border:`1.5px solid ${active ? DA.red : DA.border}`,
+                        background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, transition:'background 0.15s, border-color 0.15s' }}>
+                      {o.l}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop:10, border:`1px solid ${DA.border}`, borderRadius:10, padding:'12px 14px' }}>
+                {/* Android & Ordinateur : installation native en un clic si dispo, sinon manuel */}
+                {(dlPlatform === 'android' || dlPlatform === 'desktop') && (
+                  nativeReady ? (
+                    <>
+                      <button onClick={handleInstallNative}
+                        style={{ width:'100%', padding:'12px', borderRadius:9, border:'none', background:DA.red, color:'white',
+                          fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                        <Ic n="dl" s={16}/> Installer l'application
+                      </button>
+                      {installMsg && <p style={{ fontSize:12, color:DA.gray, margin:'8px 2px 0', textAlign:'center' }}>{installMsg}</p>}
+                    </>
+                  ) : dlPlatform === 'android' ? (
+                    <ol style={{ margin:0, paddingLeft:18, fontSize:13, color:DA.gray, lineHeight:1.7 }}>
+                      <li>Ouvrez le menu <strong>⋮</strong> (3 points) en haut à droite de Chrome</li>
+                      <li>Appuyez sur <strong>« Ajouter à l'écran d'accueil »</strong> ou <strong>« Installer l'application »</strong></li>
+                      <li style={{ color:DA.grayL }}>Sur Samsung Internet : menu ⋮ → « Ajouter page à » → « Écran d'accueil »</li>
+                    </ol>
+                  ) : (
+                    <ol style={{ margin:0, paddingLeft:18, fontSize:13, color:DA.gray, lineHeight:1.7 }}>
+                      <li>Dans Chrome ou Edge, cliquez sur l'icône <strong>installer</strong> (écran avec flèche) à droite de la barre d'adresse</li>
+                      <li>Ou menu <strong>⋮</strong> → <strong>« Installer AI chantier… »</strong></li>
+                    </ol>
+                  )
+                )}
+
+                {/* iOS : pas d'installation native possible → instructions Partager (Safari) */}
+                {dlPlatform === 'ios' && (
+                  <ol style={{ margin:0, paddingLeft:18, fontSize:13, color:DA.gray, lineHeight:1.7 }}>
+                    <li>Ouvrez le site dans <strong>Safari</strong></li>
+                    <li>Appuyez sur <strong>Partager</strong> <span style={{ whiteSpace:'nowrap' }}>(carré avec flèche ↑)</span> en bas de l'écran</li>
+                    <li>Faites défiler et appuyez sur <strong>« Sur l'écran d'accueil »</strong></li>
+                  </ol>
+                )}
+              </div>
+              <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+                AI chantier s'installe comme une vraie application (icône sur l'écran d'accueil, plein écran,
+                fonctionne hors connexion) — sans passer par un store, gratuitement.
+              </p>
+            </>
+            )}
           </div>
 
           {/* ── À propos ── */}

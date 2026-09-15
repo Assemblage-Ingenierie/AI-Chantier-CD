@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './styles.css';
 import { installGlobalErrorHandlers } from './lib/logger.js';
+// Capture l'événement d'installation PWA dès le chargement (il ne se déclenche qu'une fois,
+// très tôt) → le bouton « Télécharger l'application » des Paramètres peut lancer l'install native.
+import './lib/pwaInstall.js';
 
 // Capture les erreurs hors rendu React (rejets de promesses, erreurs de sync) que
 // l'ErrorBoundary ne voit pas → remontée serveur via /api/log.
