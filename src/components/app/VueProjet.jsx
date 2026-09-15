@@ -74,49 +74,44 @@ async function rotateBg90CW(dataUrl) {
 function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0 }) {
   const canvasRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const [srcImg, setSrcImg] = useState(null); // fond décodé UNE fois par `bg`, réutilisé aux redraws
   const paths = annotations?.paths;
   const hasVp = !!(paths && paths.length);
 
+  // 1) DÉCODAGE du fond — UNIQUEMENT quand `bg` change. Avant, tout l'effet (fetch + décodage)
+  //    se relançait à chaque changement de numérotation Vxx de la visite (vpNumByPath/vpBase),
+  //    re-téléchargeant/re-décodant TOUTES les vignettes de plan à chaque ajout de photo/annotation.
+  //    On décode donc l'image une seule fois par plan ; le redessin (étape 2) est instantané.
   useEffect(() => {
-    if (!bg || !hasVp) { setReady(false); return; }
+    if (!bg || !hasVp) { setSrcImg(null); return; }
     let cancelled = false;
-    setReady(false);
-    const draw = (srcW, srcH, srcImg) => {
-      if (cancelled) return;
-      const cv = canvasRef.current;
-      if (!cv) return;
-      const CW = Math.min(srcW || 1400, 1600);
-      const k = CW / (srcW || CW);
-      cv.width = CW;
-      cv.height = Math.round((srcH || CW) * k);
-      const ctx = cv.getContext('2d');
-      ctx.drawImage(srcImg, 0, 0, cv.width, cv.height);
-      ctx.save();
-      ctx.scale(k, k);
-      const labeled = relabelViewpoints(paths, vpNumByPath, vpBase);
-      drawAnnotationPaths(ctx, labeled, Math.max(0.5, (srcW || 1400) / 1400));
-      ctx.restore();
-      setReady(true);
-    };
-    (async () => {
-      // Décodage non bloquant via createImageBitmap (off-main-thread) ; repli sur <img>.
-      try {
-        if (typeof createImageBitmap === 'function') {
-          const blob = await (await fetch(bg)).blob();
-          if (cancelled) return;
-          const bmp = await createImageBitmap(blob);
-          if (cancelled) { bmp.close?.(); return; }
-          draw(bmp.width, bmp.height, bmp);
-          bmp.close?.();
-          return;
-        }
-      } catch { /* repli ci-dessous */ }
-      const img = new Image();
-      img.onload = () => draw(img.naturalWidth, img.naturalHeight, img);
-      img.src = bg;
-    })();
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { if (!cancelled) setSrcImg({ w: img.naturalWidth, h: img.naturalHeight, img }); };
+    img.onerror = () => { if (!cancelled) setSrcImg(null); };
+    img.src = bg;
     return () => { cancelled = true; };
-  }, [bg, paths, vpNumByPath, vpBase, hasVp]);
+  }, [bg, hasVp]);
+
+  // 2) DESSIN (fond décodé + annotations + numérotation Vxx) — rapide, sans re-décodage.
+  useEffect(() => {
+    if (!srcImg || !hasVp) { setReady(false); return; }
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const { w: srcW, h: srcH, img } = srcImg;
+    const CW = Math.min(srcW || 1400, 1600);
+    const k = CW / (srcW || CW);
+    cv.width = CW;
+    cv.height = Math.round((srcH || CW) * k);
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    ctx.save();
+    ctx.scale(k, k);
+    const labeled = relabelViewpoints(paths, vpNumByPath, vpBase);
+    drawAnnotationPaths(ctx, labeled, Math.max(0.5, (srcW || 1400) / 1400));
+    ctx.restore();
+    setReady(true);
+  }, [srcImg, paths, vpNumByPath, vpBase, hasVp]);
 
   if (!hasVp) {
     return <img src={bg} alt="" decoding="async" style={{ ...style, objectFit:'contain', display:'block' }} />;
