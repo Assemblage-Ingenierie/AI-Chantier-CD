@@ -1,6 +1,6 @@
 import { getSupabase } from '../supabase.js';
 import { getCachedUrls, setCachedUrls } from './urlCache.js';
-import { clearSnapshots } from './backupVault.js';
+import { clearSnapshots, getLatestSnapshot } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
 import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
@@ -1725,14 +1725,36 @@ export async function fetchRemoteTimestamps() {
 
 // Charge uniquement depuis le cache local (sans réseau ni blobs)
 // Utilisé pour l'affichage instantané des cartes projet au démarrage
-export function loadLocalData() {
+export async function loadLocalData() {
+  // 1) Source rapide et normale : cache localStorage (chantierai_v12). PRÉSENT (même une
+  // liste VIDE) = source de vérité : on respecte son contenu EXACT. Crucial : un utilisateur
+  // qui a supprimé tous ses projets a un cache « [] » légitime — il ne faut SURTOUT PAS
+  // ressusciter d'anciens projets via le snapshot dans ce cas. Le repli ne s'active donc que
+  // si le cache est ABSENT (évincé) ou CORROMPU, jamais s'il est simplement vide.
   try {
     const raw = _hasLS ? localStorage.getItem(SK) : (_mem[SK] ?? null);
-    if (!raw) return Promise.resolve([]);
-    return Promise.resolve(JSON.parse(raw));
-  } catch {
-    return Promise.resolve([]);
-  }
+    if (raw != null) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+  } catch { /* raw corrompu (parse KO) → on tente le repli durable ci-dessous */ }
+
+  // 2) REPLI DURABLE (double copie) : cache localStorage ABSENT (évincé — quota iOS ~5 Mo
+  // dépassé, stockage nettoyé par le navigateur) ou corrompu. On récupère le dernier snapshot
+  // de la « boîte noire » IndexedDB (quota en Go), qui contient TOUT le texte/structure des
+  // projets (blobs exclus). L'app s'ouvre donc hors ligne même si localStorage a disparu ;
+  // les photos/plans sont ré-hydratés ensuite (cache offline IndexedDB / Supabase au retour
+  // du réseau). 100 % additif : si aucun snapshot, on renvoie []. La boîte noire est purgée
+  // à la déconnexion (clearLocalData → clearSnapshots) → aucune fuite entre utilisateurs.
+  try {
+    const snap = await getLatestSnapshot();
+    if (snap?.data && Array.isArray(snap.data) && snap.data.length) {
+      try { logWarn('loadLocalData_snapshotFallback', { count: snap.data.length, savedAt: snap.savedAt }); } catch {}
+      return snap.data;
+    }
+  } catch { /* pas de snapshot → tableau vide */ }
+
+  return [];
 }
 
 export async function loadData() {
