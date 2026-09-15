@@ -49,6 +49,18 @@ export function detectPlatform() {
 export function canInstallNative() { return !!_deferred; }
 export function isAppInstalled() { return _installed || isStandalone(); }
 
+// Le navigateur a-t-il accordé un stockage PERSISTANT (non effaçable) ? Sur un onglet Safari
+// iOS non installé, c'est typiquement FAUX → les données peuvent être purgées (ITP). Async.
+export async function isStoragePersisted() {
+  try {
+    if (isStandalone()) return true; // PWA installée : stockage durable de fait
+    return navigator.storage?.persisted ? await navigator.storage.persisted() : false;
+  } catch { return false; }
+}
+export function isMobile() {
+  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || window.innerWidth < 900;
+}
+
 // Lance l'invite d'installation native du navigateur. Renvoie 'accepted' | 'dismissed'
 // | 'unavailable'. À appeler dans un geste utilisateur (clic bouton).
 export async function promptInstall() {

@@ -70,6 +70,23 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
     });
   }, [syncPendingNow]);
 
+  // Fiabilité version NAVIGATEUR non installée (retour Thomas : rollbacks de photos chez Pierre
+  // qui utilise le SITE et pas l'app installée). Un onglet Safari/Chrome non installé peut voir
+  // son stockage local EFFACÉ par le téléphone (ITP iOS, pression mémoire). Au passage en
+  // arrière-plan (l'utilisateur quitte / change d'app), on POUSSE immédiatement les modifs en
+  // attente vers le serveur — photos incluses — pendant qu'on a encore le réseau. Ainsi, si le
+  // cache local est effacé ensuite, rien n'est perdu : le serveur fait foi, tout se recharge à
+  // la réouverture. syncPendingNow est déjà optimiste + restauration en cas d'échec (zéro risque).
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden' && navigator.onLine) {
+        try { syncPendingNow(); } catch {}
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, [syncPendingNow]);
+
   // ── Pré-téléchargement HORS-LIGNE automatique des projets de l'ingénieur ──
   // Une fois les données chargées et les initiales connues : télécharge en arrière-plan
   // (données + plans + photos) chaque projet ACTIF « à moi » dont le switch hors-ligne est

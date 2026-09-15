@@ -4,6 +4,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx';
 import AuthGate from './components/auth/AuthGate.jsx';
 import InstallPrompt from './components/ui/InstallPrompt.jsx';
 import OfflineBanner from './components/ui/OfflineBanner.jsx';
+import StorageWarning from './components/ui/StorageWarning.jsx';
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <AuthGate />
       <InstallPrompt />
       <OfflineBanner />
+      <StorageWarning />
       <Analytics />
     </ErrorBoundary>
   );
