@@ -79,16 +79,30 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     // SYNTHÈSE LOCALE, DÉTERMINISTE et FIGÉE : 1 puce = idée principale (titre, sinon 1re phrase,
     // coupée proprement aux mots si vraiment longue). Générée UNE fois puis gravée (aucune réécriture
     // IA en arrière-plan — retour Thomas : « ça doit rester gravé dans le marbre, ne plus changer »).
+    const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const firstSentence = (c) => { const m = c.match(/^.*?[.!?](?=\s|$)/); return (m ? m[0] : c).trim(); };
+    // Idée principale d'une observation : le titre s'il est informatif ; sinon (ou si le titre est
+    // GÉNÉRIQUE, type « Avancement… ») la 1re phrase du commentaire, qui porte la vraie info.
     const idea = (it) => {
-      if (it.titre && it.titre.trim()) return it.titre.trim().replace(/\s+/g, ' ');
-      let c = stripHtml(it.commentaire || '').replace(/\s+/g, ' ').trim();
-      if (!c) return '';
-      const m = c.match(/^.*?[.!?](?=\s|$)/);
-      let s = (m ? m[0] : c).trim();
-      if (s.length > 110) { s = s.slice(0, 110); const sp = s.lastIndexOf(' '); if (sp > 60) s = s.slice(0, sp); s += '…'; }
+      const t = (it.titre || '').trim().replace(/\s+/g, ' ');
+      const c = stripHtml(it.commentaire || '').replace(/\s+/g, ' ').trim();
+      const cs = c ? firstSentence(c) : '';
+      let s = t;
+      if (!s || s.length < 4) s = cs;
+      else if (cs && /^(avancement|suivi|point|observation|divers|r[ae]s|g[ée]n[ée]ral)\b/i.test(t) && norm(cs) !== norm(t)) s = cs;
+      if (s.length > 120) { s = s.slice(0, 120); const sp = s.lastIndexOf(' '); if (sp > 70) s = s.slice(0, sp); s += '…'; }
       return s;
     };
-    const localBody = kept.map(it => `• ${it.urgence === 'haute' ? '⚠ ' : ''}${it.zone ? `${it.zone} — ` : ''}${idea(it)}`).filter(l => l.replace(/[•⚠\s—-]/g, '')).join('\n');
+    // 1 puce = 1 observation. On ÉVITE la redondance « Zone — Zone… » (retour Thomas : récap
+    // « pas ouf ») : si l'idée nomme déjà la zone, on n'ajoute pas le préfixe de zone.
+    const line = (it) => {
+      const txt = idea(it);
+      if (!txt) return '';
+      const zone = (it.zone || '').trim();
+      const showZone = zone && !norm(txt).includes(norm(zone));
+      return `• ${it.urgence === 'haute' ? '⚠ ' : ''}${showZone ? `${zone} — ` : ''}${txt}`;
+    };
+    const localBody = kept.map(line).filter(l => l.replace(/[•⚠\s—-]/g, '')).join('\n');
     saveRecap(v.id, `${header}\n${localBody}`);
   };
 

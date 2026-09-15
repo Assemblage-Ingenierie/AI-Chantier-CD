@@ -990,13 +990,32 @@ function imgNaturalWidth(src) {
   });
 }
 
+// Cache module de l'image de plan rendue (canvas HD → dataURL, coûteux). Corrige le retour
+// Thomas : quand l'édition des coupes de page REMONTE le composant, il repartait de zéro
+// (« Plan en cours de chargement… ») → le plan disparaissait puis réapparaissait (clignotement),
+// et le rendu 4000px se refaisait à chaque coupe (lenteur, longue page blanche). En mémorisant
+// l'image rendue, un remontage l'affiche INSTANTANÉMENT et le rendu coûteux n'est pas refait.
+// Borné pour limiter la mémoire (dataURL de plans = lourds, surtout sur iOS).
+const _planImgCache = new Map();
+const _PLAN_IMG_CACHE_MAX = 30;
+
 function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null, onOrient = null }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
-  const [renderedImg, setRenderedImg] = useState(null);
+  // Clé identifiant le rendu visuel (plan + nb d'annotations + échelle + numérotation Vxx).
+  const _planCacheKey = `${planId ?? 'bg'}|${paths?.length ?? 0}|${JSON.stringify(deferredAnnotScale)}|${vpNumByPath ? vpNumByPath.size : 0}`;
+  const [renderedImg, setRenderedImg] = useState(() => _planImgCache.get(_planCacheKey) ?? null);
   const [fetchedBg, setFetchedBg] = useState(null);
   const [bgFetchDone, setBgFetchDone] = useState(false);
+  // Met à jour l'état ET le cache (uniquement pour une vraie image).
+  const commitImg = (v) => {
+    setRenderedImg(v);
+    if (v) {
+      _planImgCache.set(_planCacheKey, v);
+      if (_planImgCache.size > _PLAN_IMG_CACHE_MAX) _planImgCache.delete(_planImgCache.keys().next().value);
+    }
+  };
   // Orientation du plan (détectée sur les dimensions naturelles de l'image) : un plan portrait
   // est affiché en grand (pleine page) au lieu du plafond paysage de 340px, et remonté à
   // RapportPreview (onOrient) pour qu'il soit isolé sur sa propre page.
@@ -1032,8 +1051,8 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
 
   useEffect(() => {
     const bgSrc = bg || fetchedBg;
-    if (!bgSrc) { setRenderedImg(exported || null); return; }
-    if (!paths?.length) { setRenderedImg(bgSrc); return; }
+    if (!bgSrc) { commitImg(exported || null); return; }
+    if (!paths?.length) { commitImg(bgSrc); return; }
     // Dédoublonne les annotations + numérote les viewpoints (1 seul Vxx par marqueur sur le plan).
     const drawPaths = dedupPlanPaths(paths, vpNumByPath);
     let cancelled = false;
@@ -1083,9 +1102,9 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
         drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
         // JPEG 0.95 : qualité supérieure pour ne pas flouter le texte fin des marqueurs (le plan
         // reste opaque → pas de transparence perdue), data-URL toujours raisonnable.
-        setRenderedImg(cv.toDataURL('image/jpeg', 0.95));
+        commitImg(cv.toDataURL('image/jpeg', 0.95));
       };
-      el.onerror = () => { if (!cancelled) setRenderedImg(exported || bgSrc); };
+      el.onerror = () => { if (!cancelled) commitImg(exported || bgSrc); };
       el.src = src;
     })();
     return () => { cancelled = true; };
