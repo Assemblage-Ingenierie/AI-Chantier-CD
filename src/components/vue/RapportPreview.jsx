@@ -128,7 +128,7 @@ function estimateBlockH(block, ppl) {
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
       h += (row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
     } else {
-      const nPh = Math.min((item.photos || []).filter(p => p.data).length, 6);
+      const nPh = Math.min((item.photos || []).filter(p => p.data || p.annotated).length, 6);
       if (nPh > 0) {
         const cols  = Math.min(ppl, 3);
         const cellW = (CW - 12 - (cols - 1) * 3) / cols;
@@ -165,7 +165,7 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
     blocks.push({ type:'zone', id:loc.id, loc });
     let photoOffset = 0;
     for (const item of items) {
-      const photos  = (item.photos || []).filter(p => p.data);
+      const photos  = (item.photos || []).filter(p => p.data || p.annotated);
       const comment = item.commentaire?.trim() || '';
 
       // Découpage texte : manuel (paraBreaks) sinon automatique (splitComment)
@@ -763,7 +763,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
 }
 
 function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 } }) {
-  const allPhotos = (item.photos || []).filter(p => p.data);
+  const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
   const commentToShow = textContent ?? item.commentaire;
