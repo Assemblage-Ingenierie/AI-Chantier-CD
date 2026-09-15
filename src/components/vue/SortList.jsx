@@ -98,7 +98,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   const fill = imgStyle?.width === '100%';
   return (
     <span style={{ position:'relative', display: fill ? 'block' : 'inline-block', width: fill ? '100%' : undefined, flexShrink:0, lineHeight:0 }}>
-      <img src={src} alt="" draggable={false}
+      <img src={src} alt="" draggable={false} loading="lazy" decoding="async"
         onPointerDown={e => { e.stopPropagation(); startLP(src); }}
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
         onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}

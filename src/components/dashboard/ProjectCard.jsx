@@ -45,7 +45,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
       {/* Photo */}
       <div className="proj-card-img" onClick={() => !arc && onSelect(p)}>
         {p.photo
-          ? <img src={p.photo} alt={p.nom}/>
+          ? <img src={p.photo} alt={p.nom} loading="lazy" decoding="async"/>
           : <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
         }
         {/* Le bouton appareil photo a été retiré (la photo de couverture se change via

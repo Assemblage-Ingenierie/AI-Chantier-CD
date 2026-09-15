@@ -472,7 +472,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               const realIdx = (item.photos || []).indexOf(p);
               const isActive = realIdx === photoIdx;
               return (
-                <img key={vi} src={p.annotated || p.data} alt=""
+                <img key={vi} src={p.annotated || p.data} alt="" loading="lazy" decoding="async"
                   onClick={() => !isActive && switchToPhoto(realIdx)}
                   style={{ width:52, height:52, objectFit:'cover', borderRadius:6, cursor: isActive ? 'default' : 'pointer', border:`2px solid ${isActive ? 'white' : 'transparent'}`, opacity: isActive ? 1 : 0.55, transition:'all 0.1s' }}
                 />

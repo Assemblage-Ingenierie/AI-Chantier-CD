@@ -1331,7 +1331,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
                     <img
-                      src={ph.annotated || ph.data} alt=""
+                      src={ph.annotated || ph.data} alt="" loading="lazy" decoding="async"
                       title="Cliquer pour annoter — appui long pour agrandir"
                       style={{ width:'100%',height:'100%',objectFit:'cover',WebkitTouchCallout:'none',userSelect:'none',cursor:'pointer' }}
                       onContextMenu={e => e.preventDefault()}

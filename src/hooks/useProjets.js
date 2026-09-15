@@ -848,13 +848,21 @@ export function useProjets(onSyncStatus) {
       };
     }));
 
-    // Preload images into browser cache so thumbnails appear instantly on next render
-    Object.values(photosMap).forEach(photos => {
-      photos.forEach(ph => {
-        if (ph.data) { const i = new Image(); i.src = ph.data; }
-        if (ph.annotated) { const i = new Image(); i.src = ph.annotated; }
-      });
-    });
+    // Préchauffe le cache navigateur pour un affichage instantané des vignettes — MAIS borné.
+    // Avant : on décodait en RAM data ET annotated de TOUTES les photos de la visite → pic
+    // mémoire (risque d'éviction / onglet tué sur iOS). Désormais : uniquement la variante
+    // AFFICHÉE (annotated || data) et plafonné aux premières ; le reste se charge en `lazy`.
+    const PREHEAT_MAX = 24;
+    const toPreheat = [];
+    for (const photos of Object.values(photosMap)) {
+      for (const ph of photos) {
+        const src = ph.annotated || ph.data;
+        if (src) toPreheat.push(src);
+        if (toPreheat.length >= PREHEAT_MAX) break;
+      }
+      if (toPreheat.length >= PREHEAT_MAX) break;
+    }
+    toPreheat.forEach(src => { const i = new Image(); i.src = src; });
 
     // Migration background : legacy base64 → Storage
     const legacyPhotoIds = [];
