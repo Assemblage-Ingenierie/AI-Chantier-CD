@@ -414,7 +414,11 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   // - timeout déclenché ET cache local non vide → dashboard + bandeau jaune
   // - cache local vide → splash jusqu'au chargement Supabase (évite les tuiles vides)
   const hasDataToShow = hydrated && projets.length > 0;
-  const showSplash = !remoteLoaded && (!splashTimedOut || !hasDataToShow);
+  // HORS LIGNE : on n'attend JAMAIS le serveur (il ne répondra pas). Dès que le cache
+  // local est lu (hydrated), on affiche l'app — même vide → jamais de spinner infini
+  // (retour Thomas : « l'appli tourne sur l'icône sans s'ouvrir » hors connexion).
+  const offlineReady = !isOnline && hydrated;
+  const showSplash = !remoteLoaded && !offlineReady && (!splashTimedOut || !hasDataToShow);
 
   const dotColor = syncStatus === 'ok' ? DA.urgGrn : syncStatus === 'saving' ? DA.urgAmb : DA.red;
   const dotLabel = syncStatus === 'saving' ? 'Sauvegarde…' : syncStatus === 'error' ? 'Erreur sync' : 'Sauvegardé';

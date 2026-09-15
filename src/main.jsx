@@ -11,6 +11,21 @@ import './lib/pwaInstall.js';
 // l'ErrorBoundary ne voit pas → remontée serveur via /api/log.
 installGlobalErrorHandlers();
 
+// ── Stockage PERSISTANT (anti-effacement) ───────────────────────────────────────
+// Sans cette demande, iOS/Chrome peuvent EFFACER localStorage + IndexedDB sous
+// pression mémoire ou après quelques jours d'inactivité → les projets « téléchargés »
+// disparaissent et l'app ne s'ouvre plus hors ligne. `persist()` marque le stockage
+// comme durable : le navigateur ne l'efface plus automatiquement. Silencieux et sans
+// invite pour une PWA installée. Best-effort : si l'API n'existe pas, on ignore.
+(async () => {
+  try {
+    if (navigator.storage?.persist) {
+      const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      if (!already) await navigator.storage.persist();
+    }
+  } catch { /* API absente / refus navigateur — sans effet néfaste */ }
+})();
+
 // ── Anti-fermeture par le bouton retour (Android) / geste retour (iOS) ──────────
 // Le tampon de sentinelles d'historique de ChantierAI ne s'arme qu'au MONTAGE React :
 // pendant le splash/chargement (ou après un gel Android qui a vidé l'historique),
