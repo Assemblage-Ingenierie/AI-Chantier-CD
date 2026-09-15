@@ -12,6 +12,25 @@ function decodeEntities(s) {
     .replace(/&#39;/g, "'");
 }
 
+// Sanitisation défensive du HTML de commentaire AVANT toute injection via innerHTML.
+// Le contenu vient normalement de l'éditeur maison (jamais de gestionnaires d'événements),
+// mais une ligne écrite directement en base (token utilisateur) pourrait contenir
+// <img src=x onerror="…"> : l'attribut onerror se déclenche à l'analyse innerHTML (éditeur
+// live + conteneur de rendu). On retire donc : <script>, les gestionnaires inline on*=, et
+// les URL javascript: dans href/src. Tout le reste (gras, listes, styles, images légitimes,
+// data-cimg…) est PRÉSERVÉ — le contenu réel n'a jamais de on*= ni de javascript:.
+export function sanitizeHtml(html) {
+  if (!html || typeof html !== 'string') return html;
+  return html
+    .replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+    .replace(/<\s*script\b[^>]*\/?>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/(href|src)\s*=\s*"\s*javascript:[^"]*"/gi, '$1="#"')
+    .replace(/(href|src)\s*=\s*'\s*javascript:[^']*'/gi, "$1='#'");
+}
+
 // Détecte si le contenu est du HTML — regex plus robuste que includes() pour gérer
 // les balises avec attributs comme <u style="...">, <span class="...">.
 function isHtml(text) {
@@ -33,7 +52,7 @@ function renderHtml(html) {
   }
 
   const container = document.createElement('div');
-  container.innerHTML = prepared;
+  container.innerHTML = sanitizeHtml(prepared); // retire script/on*=/javascript: avant injection
 
   let key = 0;
   const k = () => key++;

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { sanitizeHtml } from '../../lib/markup.jsx';
 
 // Convertit l'ancien format markdown (** __ *) en HTML pour l'éditeur
 function mdToHtml(text) {
@@ -352,7 +353,7 @@ const RichTextArea = forwardRef(function RichTextArea(
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    const html = normalizeToHtml(value);
+    const html = sanitizeHtml(normalizeToHtml(value));
     if (el.innerHTML !== html) el.innerHTML = html;
     normalizeStrayImages(el); // borne + rend cliquable toute image sauvage déjà enregistrée
     rebuildCaptionViews(el); // affiche les légendes sous les images (data-cap)
@@ -369,7 +370,7 @@ const RichTextArea = forwardRef(function RichTextArea(
     const forced = syncKey !== lastSyncKey.current;
     lastSyncKey.current = syncKey;
     if (isTyping.current && !forced) return; // frappe en cours, pas d'événement externe → ne pas toucher
-    const html = normalizeToHtml(value);
+    const html = sanitizeHtml(normalizeToHtml(value));
     if (strippedHtml(el) !== html) { el.innerHTML = html; setSelImg(null); setSelGrid(null); setGridDividers([]); setSelCell(null); setBorderPanel(false); normalizeStrayImages(el); rebuildCaptionViews(el); if (forced) el.blur(); }
   }, [value, syncKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
