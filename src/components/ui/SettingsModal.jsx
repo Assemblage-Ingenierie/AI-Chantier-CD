@@ -9,6 +9,7 @@ import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 import { subscribePendingChanges } from '../../lib/pendingSync.js';
+import { getPhotoQuality, setPhotoQuality } from '../../lib/uiPrefs.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -51,6 +52,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
+  const [photoQual, setPhotoQualState] = useState(getPhotoQuality()); // qualité photo capture
   // « Télécharger l'application » (PWA) : plateforme dont les instructions sont dépliées,
   // dispo de l'installation native, état installé, message de résultat.
   const [dlPlatform, setDlPlatform] = useState(detectPlatform()); // 'android' | 'ios' | 'desktop'
@@ -273,6 +275,29 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               {pendingCount > 0
                 ? `Indisponible : ${pendingCount} photo${pendingCount > 1 ? 's' : ''} en attente d'envoi. Reconnectez-vous pour les synchroniser d'abord.`
                 : 'Libère de l\'espace. Les plans se retéléchargent automatiquement à la prochaine ouverture d\'un projet. Vos données, photos et observations ne sont pas touchées.'}
+            </p>
+          </div>
+
+          {/* ── Qualité photo (réversible, défaut = normale) ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Qualité photo</p>
+            <div style={{ display:'flex', gap:6 }}>
+              {[{ k:'light', l:'Légère', s:'plus léger' }, { k:'normal', l:'Normale', s:'défaut' }, { k:'max', l:'Max', s:'plus net' }].map(o => {
+                const active = photoQual === o.k;
+                return (
+                  <button key={o.k} onClick={() => { setPhotoQuality(o.k); setPhotoQualState(o.k); }}
+                    style={{ flex:1, padding:'9px 6px', borderRadius:9, fontSize:12, fontWeight:700, cursor:'pointer', lineHeight:1.25,
+                      border:`1.5px solid ${active ? DA.red : DA.border}`,
+                      background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, transition:'background 0.15s, border-color 0.15s' }}>
+                    {o.l}<br/><span style={{ fontSize:10, fontWeight:600, opacity:0.85 }}>{o.s}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+              Qualité des <strong>nouvelles</strong> photos prises. <strong>Normale</strong> par défaut (bon compromis).
+              <strong> Max</strong> = plus net (photos plus lourdes) ; <strong>Légère</strong> = plus rapide à envoyer.
+              Le PDF reste envoyable dans tous les cas (recompression automatique &lt; 5 Mo).
             </p>
           </div>
 

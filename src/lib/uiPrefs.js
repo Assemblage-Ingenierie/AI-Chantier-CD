@@ -23,3 +23,24 @@ export function useUiScale() {
   const [scale] = useState('app');
   return scale;
 }
+
+// ── Qualité photo à la capture (optionnel, défaut = normale) ─────────────────────
+// Règle le compromis netteté / poids AU MOMENT de la prise. Le budget d'export PDF
+// (< 5 Mo) recompresse de toute façon les photos → « max » reste envoyable, il donne
+// juste des photos plus nettes dans l'app et un point de départ de meilleure qualité.
+const PHOTO_QUALITY_KEY = 'chantierai_photo_quality';
+const PHOTO_QUALITY = {
+  light:  { max: 1200, q: 0.72 }, // plus léger (cache/envoi plus rapides)
+  normal: { max: 1600, q: 0.82 }, // défaut (comportement historique)
+  max:    { max: 2200, q: 0.90 }, // plus net (photos plus lourdes)
+};
+export function getPhotoQuality() {
+  try { const v = localStorage.getItem(PHOTO_QUALITY_KEY); return PHOTO_QUALITY[v] ? v : 'normal'; }
+  catch { return 'normal'; }
+}
+export function setPhotoQuality(v) {
+  try { localStorage.setItem(PHOTO_QUALITY_KEY, PHOTO_QUALITY[v] ? v : 'normal'); } catch { /* mode privé */ }
+}
+export function getPhotoQualityParams() {
+  return PHOTO_QUALITY[getPhotoQuality()] || PHOTO_QUALITY.normal;
+}

@@ -10,6 +10,7 @@ import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
@@ -669,7 +670,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       img.onerror = fallback;
       img.onload = () => {
         try {
-          const MAX = 1600;
+          // Résolution + qualité selon le réglage « Qualité photo » des Paramètres (défaut = normale).
+          const { max: MAX, q: QUAL } = getPhotoQualityParams();
           let { width, height } = img;
           if (width > MAX || height > MAX) {
             if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
@@ -681,10 +683,10 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
           if (!ctx) { fallback(); return; }
           ctx.drawImage(img, 0, 0, width, height);
           // Try WebP first; iOS < 17 falls back to PNG which is much larger than JPEG
-          let dataUrl = canvas.toDataURL('image/webp', 0.82);
+          let dataUrl = canvas.toDataURL('image/webp', QUAL);
           let ext = 'webp';
           if (!dataUrl.startsWith('data:image/webp')) {
-            dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            dataUrl = canvas.toDataURL('image/jpeg', QUAL);
             ext = 'jpg';
           }
           const name = file.name.replace(/\.[^.]+$/, '.' + ext);
