@@ -246,10 +246,25 @@ function renderMarkdown(text) {
   return result;
 }
 
+// Cache mémoïsé : renderMarkup(text) est une fonction PURE de `text` (les éléments React
+// produits sont immuables et réutilisables entre rendus). Sans ça, chaque rendu d'une liste
+// d'observations reparse le DOM de CHAQUE commentaire (createElement + innerHTML + walk) — coûteux
+// pendant un glisser (le parent se re-rend à chaque frame). Cache borné (éviction FIFO) pour ne
+// pas croître indéfiniment. Clé = le texte exact ; un commentaire modifié a un nouveau texte → recalcul.
+const _renderCache = new Map();
+const _RENDER_CACHE_MAX = 300;
+
 // Point d'entrée unique — gère HTML (nouveau) et markdown (legacy)
 export function renderMarkup(text) {
   if (!text) return null;
-  return isHtml(text) ? renderHtml(text) : renderMarkdown(text);
+  const cached = _renderCache.get(text);
+  if (cached !== undefined) return cached;
+  const out = isHtml(text) ? renderHtml(text) : renderMarkdown(text);
+  _renderCache.set(text, out);
+  if (_renderCache.size > _RENDER_CACHE_MAX) {
+    _renderCache.delete(_renderCache.keys().next().value); // évince l'entrée la plus ancienne
+  }
+  return out;
 }
 
 // Version texte brut — pour PDF, IA, exports
