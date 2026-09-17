@@ -27,16 +27,23 @@ export default function Dashboard({ projets, profile = null, remoteLoaded, stale
   const uiScale = useUiScale();
 
   const byName = (a, b) => a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base', numeric: true });
-  const actifsAll = projets.filter(p => p.statut !== 'archive').sort(byName);
-  const archives  = projets.filter(p => p.statut === 'archive').sort(byName);
+  const actifsAll   = projets.filter(p => p.statut !== 'archive').sort(byName);
+  const archivesAll = projets.filter(p => p.statut === 'archive').sort(byName);
   const myInitials = (profile?.initials || '').trim().toUpperCase();
-  const miens = myInitials ? actifsAll.filter(p => projectMatchesInitials(p, myInitials)) : [];
-  // Sans initiales (profil pas encore complété) ou aucun projet à soi → on montre tout,
-  // jamais un tableau de bord vide par erreur de filtre.
-  const filterUsable = myInitials !== '' && miens.length > 0;
-  const actifs = (scope === 'mine' && filterUsable) ? miens : actifsAll;
+  const mineOf = (list) => myInitials ? list.filter(p => projectMatchesInitials(p, myInitials)) : [];
+  const miens        = mineOf(actifsAll);
+  const archivesMine = mineOf(archivesAll);
+  // Sans initiales (profil pas encore complété) ou aucun projet à soi (actif OU archivé) → on
+  // montre tout, jamais un tableau de bord vide par erreur de filtre.
+  const filterUsable = myInitials !== '' && (miens.length > 0 || archivesMine.length > 0);
+  const useMine = scope === 'mine' && filterUsable;
+  const actifs = useMine ? miens : actifsAll;
+  // BUG corrigé (retour Thomas) : les ARCHIVES ignoraient le filtre « Mes projets » → archiver un
+  // projet d'un collègue (initiales GP/TC, pas les miennes) le faisait apparaître dans MES archives.
+  // On applique le même filtre par initiales aux archives → elles n'apparaissent que chez les bons.
+  const archives = useMine ? archivesMine : archivesAll;
   const stats = [
-    { l:'Projets actifs', v:actifsAll.length },
+    { l:'Projets actifs', v:actifs.length },
     { l:'Archivés',       v:archives.length },
   ];
 
