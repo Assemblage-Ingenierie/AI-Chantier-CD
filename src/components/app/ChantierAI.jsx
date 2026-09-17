@@ -660,7 +660,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onUnpinVisite={unpinVisite}
           />
         ) : (
-          <div style={{ height:'100%',overflowY:'auto' }}>
+          {/* scrollbar-gutter: réserve la place de la barre de défilement même quand le contenu
+              est court → plus de décalage horizontal en changeant d'onglet (Mes projets ↔
+              Assemblage) selon qu'il y a ou non une barre de défilement (retour Thomas). */}
+          <div style={{ height:'100%',overflowY:'auto',scrollbarGutter:'stable' }}>
             <Dashboard
               projets={projets}
               profile={profile}
