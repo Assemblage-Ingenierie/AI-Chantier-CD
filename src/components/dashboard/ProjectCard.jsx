@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import SyncBadge, { projectSyncState } from '../ui/SyncBadge.jsx';
@@ -16,6 +16,21 @@ function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter
 export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
+  // Couverture : on garde le placeholder (icône bâtiment) TANT QUE la photo n'est pas chargée,
+  // puis on la fait apparaître en fondu → plus jamais l'icône « image cassée » + le texte alt
+  // (nom du projet) qui s'affichaient au chargement de la page (retour Thomas). Réinitialisé si
+  // la photo de couverture change.
+  const [coverLoaded, setCoverLoaded] = useState(false);
+  const [coverErr, setCoverErr] = useState(false);
+  const coverRef = useRef(null);
+  // À chaque changement de photo : si l'image est DÉJÀ en cache (déjà complète), on l'affiche
+  // tout de suite — sinon onLoad, déclenché par un cache trop rapide, pourrait manquer et laisser
+  // le placeholder collé par-dessus une photo pourtant chargée.
+  useEffect(() => {
+    setCoverErr(false);
+    const el = coverRef.current;
+    setCoverLoaded(!!(el && el.complete && el.naturalWidth > 0));
+  }, [p.photo]);
   const obs = obsCount(p);
   const urg = urgCount(p);
 
@@ -44,10 +59,17 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
     <div className="proj-card" style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
       {/* Photo */}
       <div className="proj-card-img" onClick={() => !arc && onSelect(p)}>
-        {p.photo
-          ? <img src={p.photo} alt={p.nom} loading="lazy" decoding="async"/>
-          : <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
-        }
+        {/* Chargement IMMÉDIAT (pas de lazy : la couverture est en haut de page) + fondu à
+            l'arrivée. Le placeholder reste visible tant que la photo n'est pas chargée, ce qui
+            masque l'icône « image cassée » + le nom (alt) pendant le téléchargement. */}
+        {p.photo && !coverErr && (
+          <img ref={coverRef} src={p.photo} alt={p.nom} decoding="async"
+            onLoad={() => setCoverLoaded(true)} onError={() => setCoverErr(true)}
+            style={{ opacity: coverLoaded ? 1 : 0, transition:'opacity 0.25s ease' }}/>
+        )}
+        {(!p.photo || coverErr || !coverLoaded) && (
+          <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
+        )}
         {/* Le bouton appareil photo a été retiré (la photo de couverture se change via
             le menu ⋯ → Modifier). PhotoModal reste disponible côté Dashboard. */}
         {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,padding:'3px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={10}/> Archivé</div>}
