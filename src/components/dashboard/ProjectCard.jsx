@@ -59,11 +59,12 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
     <div className="proj-card" style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
       {/* Photo */}
       <div className="proj-card-img" onClick={() => !arc && onSelect(p)}>
-        {/* Chargement IMMÉDIAT (pas de lazy : la couverture est en haut de page) + fondu à
-            l'arrivée. Le placeholder reste visible tant que la photo n'est pas chargée, ce qui
-            masque l'icône « image cassée » + le nom (alt) pendant le téléchargement. */}
+        {/* loading="lazy" : avec BEAUCOUP de projets, on ne télécharge que les couvertures
+            visibles (les autres se chargent au défilement) → plus d'embouteillage réseau qui
+            laissait des cartes blanches. Le placeholder reste affiché tant que la photo n'est pas
+            chargée (masque l'icône « image cassée » + le nom alt), puis fondu à l'arrivée. */}
         {p.photo && !coverErr && (
-          <img ref={coverRef} src={p.photo} alt={p.nom} decoding="async"
+          <img ref={coverRef} src={p.photo} alt={p.nom} loading="lazy" decoding="async"
             onLoad={() => setCoverLoaded(true)} onError={() => setCoverErr(true)}
             style={{ opacity: coverLoaded ? 1 : 0, transition:'opacity 0.25s ease' }}/>
         )}

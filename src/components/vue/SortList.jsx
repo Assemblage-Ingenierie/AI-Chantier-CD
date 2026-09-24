@@ -68,6 +68,8 @@ if (typeof window !== 'undefined') {
 function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   const cvRef = useRef(null);
   const [dims, setDims] = useState(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const imgElRef = useRef(null);
   const hasAnnot = !photo.annotated && photo.annotations?.length > 0 && !!photo.data;
 
   // Dimensions naturelles (repère des paths) — lecture de naturalWidth/Height seulement, jamais
@@ -92,17 +94,28 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   }, [dims, photo.annotations, photo.annotSizeScale]);
 
   const src = photo.annotated || photo.data;
+  // Squelette gris tant que la vignette n'est pas chargée : quand BEAUCOUP de photos chargent en
+  // même temps (file d'attente réseau du navigateur), on voit des cases grises qui se remplissent
+  // au lieu d'un écran blanc « on voit rien » (retour Thomas). Prend en compte le cache navigateur.
+  useEffect(() => {
+    const el = imgElRef.current;
+    setImgLoaded(!!(el && el.complete && el.naturalWidth > 0));
+  }, [src]);
   // Tuile « pleine largeur » (grille mobile 2 colonnes) quand imgStyle demande width:100% :
   // le span doit alors être block et occuper 100% de la cellule (sinon inline-block se rétrécit
   // au contenu et la photo ne remplit pas sa colonne). Desktop (width:auto) → inchangé.
   const fill = imgStyle?.width === '100%';
   return (
     <span style={{ position:'relative', display: fill ? 'block' : 'inline-block', width: fill ? '100%' : undefined, flexShrink:0, lineHeight:0 }}>
-      <img src={src} alt="" draggable={false} loading="lazy" decoding="async"
+      {!imgLoaded && (
+        <span aria-hidden="true" style={{ position:'absolute', inset:0, background:'#ECECEC', borderRadius: imgStyle?.borderRadius, display:'block' }}/>
+      )}
+      <img ref={imgElRef} src={src} alt="" draggable={false} loading="lazy" decoding="async"
+        onLoad={() => setImgLoaded(true)} onError={() => setImgLoaded(true)}
         onPointerDown={e => { e.stopPropagation(); startLP(src); }}
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
         onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
-        style={imgStyle}/>
+        style={{ ...imgStyle, opacity: imgLoaded ? 1 : 0, transition:'opacity 0.2s ease' }}/>
       {hasAnnot && dims && (
         <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', borderRadius: imgStyle?.borderRadius }}/>
       )}
