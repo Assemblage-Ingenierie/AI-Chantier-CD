@@ -404,6 +404,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const annotatorRef = useRef(null);
   const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
+  // Index mémoïsé planId → plan : évite un `.find` sur toute la bibliothèque pour CHAQUE
+  // zone / plan d'observation à CHAQUE rendu (O(zones×plans) → O(1) par accès).
+  // ⚠️ DOIT rester AVANT les `return` conditionnels ci-dessous (photoAnnot / annotate) :
+  // un hook déclaré après un return conditionnel = « rendered fewer hooks » (React #300)
+  // dès qu'on ouvre l'annotateur photo. (Règle des hooks — bug corrigé.)
+  const planById = useMemo(
+    () => new Map((projet.planLibrary || []).map(p => [p.id, p])),
+    [projet.planLibrary]
+  );
 
   if (modal?.t === 'photoAnnot') {
     const { item, locId, photoIdx } = modal;
@@ -529,13 +538,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   }
 
   const totalItems = visitProjet.localisations.flatMap(l => l.items || []).length;
-
-  // Index mémoïsé planId → plan : évite un `.find` sur toute la bibliothèque pour CHAQUE
-  // zone / plan d'observation à CHAQUE rendu (O(zones×plans) → O(1) par accès).
-  const planById = useMemo(
-    () => new Map((projet.planLibrary || []).map(p => [p.id, p])),
-    [projet.planLibrary]
-  );
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:DA.grayXL }}>
