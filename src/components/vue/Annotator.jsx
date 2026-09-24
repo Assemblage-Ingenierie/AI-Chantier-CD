@@ -342,6 +342,15 @@ export const SYMBOL_CATEGORIES = [
   { id:'divers',   label:'Divers',   ids:['portee','nv','danger','eclat','nc','rouille','fontis'] },
 ];
 
+// ── Accès localStorage TOLÉRANT aux navigateurs qui le bloquent ────────────────
+// En webview embarquée (photo ouverte depuis une messagerie) ou en navigation privée iOS,
+// `localStorage.getItem/setItem` LÈVE une exception (SecurityError). Non gardé, un simple
+// getItem au RENDU de l'Annotateur (lecture des échelles) faisait planter TOUTE l'app
+// (ErrorBoundary « Recharger l'app ») dès qu'on ouvrait une photo sur ces appareils — alors
+// que le reste de l'app est déjà protégé (cf. _hasLS dans supabase.js / useAuth.js).
+const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+
 // ── Symboles personnalisés (stockés en localStorage, forme auto-générée) ──────
 const CUSTOM_SYMS_KEY = 'chantierai_custom_syms_v1';
 const _CSHAPES = [
@@ -459,11 +468,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Échelles INDÉPENDANTES par type (texte / forme / symbole). Migrées depuis l'ancienne
   // échelle unique 'chantierai_annot_scale' pour que le rendu reste identique au repos.
   const _oldAnnot = (() => {
-    const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1');
+    const v = parseFloat(_lsGet('chantierai_annot_scale') ?? '1');
     return (isNaN(v) || v > 1.5) ? 1 : Math.max(0.3, Math.min(5, v));
   })();
   const _readScale = (key, fb) => {
-    const v = parseFloat(localStorage.getItem(key) ?? String(fb));
+    const v = parseFloat(_lsGet(key) ?? String(fb));
     return isNaN(v) ? fb : Math.max(0.3, Math.min(5, v));
   };
   // Contexte PHOTO (exportSizeMultiplier 7) vs PLAN (2) : les photos utilisent les curseurs de
@@ -1849,7 +1858,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     const existing = loadCustomSymbols();
     const short = label.replace(/\s+/g, '').slice(0, 4).toUpperCase();
     const entry = { id: 'custom_' + crypto.randomUUID(), label, short, shapeIdx: existing.length };
-    localStorage.setItem(CUSTOM_SYMS_KEY, JSON.stringify([...existing, entry]));
+    _lsSet(CUSTOM_SYMS_KEY, JSON.stringify([...existing, entry]));
     const newDefs = getCustomSymbolDefs();
     setCustomSyms(newDefs);
     setSym(newDefs[newDefs.length - 1]);
@@ -1857,7 +1866,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
 
   const delCustomSym = (id) => {
-    localStorage.setItem(CUSTOM_SYMS_KEY, JSON.stringify(loadCustomSymbols().filter(s => s.id !== id)));
+    _lsSet(CUSTOM_SYMS_KEY, JSON.stringify(loadCustomSymbols().filter(s => s.id !== id)));
     const newDefs = getCustomSymbolDefs();
     setCustomSyms(newDefs);
     if (sym?.id === id) setSym(SYMBOLS[0]);
@@ -1977,7 +1986,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 12px 8px' }}>
         <span style={{ fontSize:9, color:'#ddd', fontWeight:700, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {ctl.lbl.toUpperCase()}</span>
         <input type="range" min="0.3" max="5" step="0.1" value={ctl.val}
-          onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); localStorage.setItem(ctl.key, String(v)); }}
+          onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); _lsSet(ctl.key, String(v)); }}
           style={{ flex:1, accentColor:DA.red, cursor:'pointer', height:22 }}/>
         <span style={{ color:'#fff', fontSize:12, fontWeight:800, minWidth:30, textAlign:'right' }}>{ctl.val.toFixed(1)}×</span>
       </div>
@@ -2144,7 +2153,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
               <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
-                onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); _lsSet(s.key, String(v)); }}
                 style={{ width:74,accentColor:DA.red,cursor:'pointer' }}/>
               <span style={{ color:'#bbb',fontSize:10,fontWeight:700,minWidth:26,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
@@ -2181,7 +2190,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:10 }}>
               <span style={{ fontSize:11,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:66 }}>{s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
-                onChange={e => { const v = parseFloat(e.target.value); s.set(v); localStorage.setItem(s.key, String(v)); }}
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); _lsSet(s.key, String(v)); }}
                 style={{ flex:1,accentColor:DA.red,cursor:'pointer',height:26 }}/>
               <span style={{ color:'#fff',fontSize:13,fontWeight:800,minWidth:32,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
