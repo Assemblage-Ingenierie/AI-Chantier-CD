@@ -5,6 +5,14 @@ html, body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
+  /* Empêche l'auto-agrandissement de police des navigateurs mobiles (surtout Firefox Android :
+     « font inflation »), qui grossit le texte dans les conteneurs défilables et le fait DÉBORDER
+     des boutons/cartes (retour Pierre : « le texte dépasse de partout » sous Firefox). On fige la
+     taille à 100% = exactement ce que le CSS demande, sur TOUS les navigateurs/téléphones.
+     Sans effet là où l'inflation n'existe pas (Safari/Chrome) → aucun changement visuel ailleurs. */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   /* Désactive le geste natif "glisser depuis le bord = retour navigateur" (Safari/Chrome).
      L'app gère déjà son propre retour (bouton + bouton matériel Android via popstate) ;
      laisser le geste système actif pouvait faire sauter plusieurs niveaux d'un coup dans
