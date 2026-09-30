@@ -279,6 +279,15 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         else { ctx.globalAlpha = p.strokeOpacity ?? 1; }
         ctx.stroke();
         ctx.globalAlpha = 1;
+      } else if (p.shape === 'polyline') {
+        // Polyligne OUVERTE : segments à la suite, ni fermeture ni remplissage (demande Thomas).
+        if (!p.pts || p.pts.length < 2) { ctx.restore(); return; }
+        ctx.globalAlpha = p.strokeOpacity ?? 1;
+        ctx.beginPath();
+        ctx.moveTo(p.pts[0].x, p.pts[0].y);
+        p.pts.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       }
       ctx.restore();
     } else if (p.points?.length) {
@@ -415,7 +424,7 @@ function getShapeHandles(ap) {
   if (ap.shape === 'arrow' || ap.shape === 'line') {
     return [{ id:'p1', x:ap.x1, y:ap.y1 }, { id:'p2', x:ap.x2, y:ap.y2 }];
   }
-  if (ap.shape === 'poly' && ap.pts) {
+  if ((ap.shape === 'poly' || ap.shape === 'polyline') && ap.pts) {
     return ap.pts.map((pt, i) => ({ id:`v${i}`, x:pt.x, y:pt.y }));
   }
   return [];
@@ -783,7 +792,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
 
     // Prévisualisation polygone en cours
-    if (polyPts.length > 0 && tool === 'shape' && shapeTool === 'poly') {
+    if (polyPts.length > 0 && tool === 'shape' && (shapeTool === 'poly' || shapeTool === 'polyline')) {
       ctx.save();
       ctx.strokeStyle = color; ctx.lineWidth = size * strokeScale;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -824,7 +833,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       } else if (ap.type === 'shape') {
         // Contour de sélection + poignées de redimensionnement
         ctx.setLineDash([4 * ratio, 3 * ratio]);
-        if (ap.shape === 'poly' && ap.pts?.length > 1) {
+        if ((ap.shape === 'poly' || ap.shape === 'polyline') && ap.pts?.length > 1) {
           const xs = ap.pts.map(pt => pt.x), ys = ap.pts.map(pt => pt.y);
           ctx.beginPath(); ctx.rect(Math.min(...xs)-8, Math.min(...ys)-8, Math.max(...xs)-Math.min(...xs)+16, Math.max(...ys)-Math.min(...ys)+16); ctx.stroke();
         } else if (ap.x1 != null) {
@@ -1243,7 +1252,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (p.type === 'shape') {
           const hitRSh = 18 * (cv.width / cv.clientWidth);
           let hitShape = false;
-          if (p.shape === 'poly' && p.pts?.length > 1) {
+          if ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1) {
             const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
             hitShape = pos.x >= Math.min(...xs) - hitRSh && pos.x <= Math.max(...xs) + hitRSh &&
               pos.y >= Math.min(...ys) - hitRSh && pos.y <= Math.max(...ys) + hitRSh;
@@ -1390,7 +1399,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const hitR = 18 * (cv.width / cv.clientWidth);
 
       // ── Outil polygone : clic = sommet, double-clic/snap = fermeture ──
-      if (shapeTool === 'poly') {
+      if (shapeTool === 'poly' || shapeTool === 'polyline') {
+        // Polyligne = même saisie que le polygone mais OUVERTE (pas de fermeture, pas de
+        // remplissage) et dès 2 points (demande Thomas). Double-clic = terminer.
+        const isPolyline = shapeTool === 'polyline';
+        const minPts = isPolyline ? 2 : 3;
         // Tant qu'on n'a PAS commencé à tracer (aucun sommet posé), un clic sur une forme
         // existante la MANIPULE (poignée de resize, ou sélection + déplacement) au lieu de
         // démarrer un nouveau polygone → on peut enfin re-sélectionner/recolorer une zone.
@@ -1408,7 +1421,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           for (let i = paths.length - 1; i >= 0; i--) {
             const p = paths[i];
             if (p.type !== 'shape') continue;
-            const hit = (p.shape === 'poly' && p.pts?.length > 1)
+            const hit = ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1)
               ? (pos.x >= Math.min(...p.pts.map(pt=>pt.x)) - hitR && pos.x <= Math.max(...p.pts.map(pt=>pt.x)) + hitR &&
                  pos.y >= Math.min(...p.pts.map(pt=>pt.y)) - hitR && pos.y <= Math.max(...p.pts.map(pt=>pt.y)) + hitR)
               : (p.x1 != null && pos.x >= Math.min(p.x1,p.x2) - hitR && pos.x <= Math.max(p.x1,p.x2) + hitR &&
@@ -1427,14 +1440,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const isDbl = (now - lt.time < 380) && polyPts.length >= 2 && Math.hypot(pos.x - lt.x, pos.y - lt.y) < snapR;
         lastTapRef.current = { time: now, x: pos.x, y: pos.y };
         if (isDbl) {
-          if (polyPts.length >= 3) {
-            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
+          if (polyPts.length >= minPts) {
+            setPaths(prev => [...prev, { type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: isPolyline ? false : shapeFilled, fillOpacity, strokeOpacity }]);
           }
           setPolyPts([]); setPolyMousePos(null);
           return;
         }
-        // Snap au premier sommet pour fermer
-        if (polyPts.length >= 3) {
+        // Snap au premier sommet pour fermer — POLYGONE uniquement (la polyligne reste ouverte)
+        if (!isPolyline && polyPts.length >= 3) {
           const closeR = 18 * (cv.width / cv.clientWidth);
           if (Math.hypot(pos.x - polyPts[0].x, pos.y - polyPts[0].y) < closeR) {
             setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
@@ -1465,7 +1478,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'shape') continue;
-        if (p.shape === 'poly' && p.pts?.length > 1) {
+        if ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1) {
           const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
           if (pos.x >= Math.min(...xs) - hitR && pos.x <= Math.max(...xs) + hitR &&
               pos.y >= Math.min(...ys) - hitR && pos.y <= Math.max(...ys) + hitR) { hitIdx = i; break; }
@@ -1640,8 +1653,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       setPendingPortee({ symbolId: sym.id, x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
       return;
     }
-    // Polygone : mise à jour position curseur pour preview
-    if (tool === 'shape' && shapeTool === 'poly' && polyPts.length > 0) {
+    // Polygone / polyligne : mise à jour position curseur pour preview
+    if (tool === 'shape' && (shapeTool === 'poly' || shapeTool === 'polyline') && polyPts.length > 0) {
       setPolyMousePos(pos);
       return;
     }
@@ -2289,7 +2302,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 { k:'ellipse', g:'◯', lbl:'Ellipse'    },
                 { k:'arrow',   g:'→', lbl:'Flèche'     },
                 { k:'line',    g:'╱', lbl:'Ligne'      },
-                { k:'poly',    g:'⬠', lbl:'Zone libre' },
+                { k:'poly',     g:'⬠', lbl:'Zone libre' },
+                { k:'polyline', g:'∠', lbl:'Polyligne'  },
               ].map(s => (
                 <button key={s.k} onClick={() => { if (s.k !== shapeTool) { setPolyPts([]); setPolyMousePos(null); } setShapeTool(s.k); }}
                   style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
@@ -2326,6 +2340,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
               {shapeTool === 'poly'
                 ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
+                : shapeTool === 'polyline'
+                ? 'Clic = point · Double-clic = terminer · Échap = annuler'
                 : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
             </span>
           )}
@@ -2437,7 +2453,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {paths[selAnnot.idx].type === 'viewpoint'
               ? 'Vue'
               : paths[selAnnot.idx].type === 'shape'
-                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone' }[paths[selAnnot.idx].shape] || 'Forme')
+                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone', polyline:'Polyligne' }[paths[selAnnot.idx].shape] || 'Forme')
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             } sélectionné
           </span>
