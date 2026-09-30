@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DA, URGENCE } from '../../lib/constants.js';
+import { DA, URGENCE, isBrouillon } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
@@ -197,7 +197,7 @@ export default function RapportTab({ projet, onUpdate }) {
     );
     // Lignes issues des items (hors "fait" et hors "excluded")
     const itemRows = localisations.flatMap(loc =>
-      (loc.items || []).filter(i => hasContent(i) && i.suivi !== 'fait').map(i => {
+      (loc.items || []).filter(i => !isBrouillon(i) && hasContent(i) && i.suivi !== 'fait').map(i => {
         const ov = ovMap.get(i.id) || {};
         if (ov.excluded) return null;
         return {
@@ -278,7 +278,7 @@ export default function RapportTab({ projet, onUpdate }) {
 
   const handleExportPhotos = async () => {
     const allPhotos = localisations.flatMap(loc =>
-      (loc.items || []).flatMap(item =>
+      (loc.items || []).filter(item => !isBrouillon(item)).flatMap(item =>
         (item.photos || []).filter(ph => ph.data).map((ph, idx) => ({
           data: ph.data,
           name: ph.name || `photo_${idx + 1}.webp`,
@@ -357,7 +357,7 @@ export default function RapportTab({ projet, onUpdate }) {
   };
 
   const totalPhotos = useMemo(() =>
-    localisations.flatMap(l => l.items || []).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
+    localisations.flatMap(l => l.items || []).filter(i => !isBrouillon(i)).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
   [localisations]);
 
   // ── Estimation POIDS PDF (info, demande Thomas) — heuristique légère, pas d'encodage réel.
@@ -368,6 +368,7 @@ export default function RapportTab({ projet, onUpdate }) {
     for (const l of localisations) {
       if (l.planAnnotations?.paths?.length || l.planBg || l.planId) plans++;
       for (const it of (l.items || [])) {
+        if (isBrouillon(it)) continue;
         for (const ep of (it.plans || [])) {
           if (ep?.planAnnotations?.paths?.length || ep?.planBg || ep?.planId) plans++;
         }

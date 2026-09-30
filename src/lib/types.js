@@ -33,6 +33,7 @@
  * @property {'basse'|'moyenne'|'haute'|string} urgence
  * @property {string} commentaire
  * @property {'left'|'center'|'right'|string} [commentaireAlign]
+ * @property {'rapport'|'brouillon'} [statut]  Absent = 'rapport'. 'brouillon' = exclu du rapport
  * @property {Object|null} [planAnnotations]
  * @property {Array} [plans]
  * @property {Photo[]} photos

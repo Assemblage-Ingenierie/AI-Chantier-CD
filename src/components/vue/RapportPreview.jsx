@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
-import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { DA, URGENCE, SUIVI, isBrouillon } from '../../lib/constants.js';
 import { renderMarkup, stripMarkup } from '../../lib/markup.jsx';
 import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
@@ -161,11 +161,14 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
 
   for (const loc of locs) {
     const items = (loc.items || []).filter(itemHasReportContent);
-    if (!items.length) continue;
+    if (!items.some(i => !isBrouillon(i))) continue;
     blocks.push({ type:'zone', id:loc.id, loc });
     let photoOffset = 0;
     for (const item of items) {
       const photos  = (item.photos || []).filter(p => p.data || p.annotated);
+      // Brouillon : absent du rapport, mais ses photos comptent dans l'offset (index aplati des
+      // badges Vxx de la zone) → les badges des observations suivantes restent justes.
+      if (isBrouillon(item)) { photoOffset += photos.length; continue; }
       const comment = item.commentaire?.trim() || '';
 
       // Découpage texte : manuel (paraBreaks) sinon automatique (splitComment)
@@ -1684,7 +1687,7 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
     const isPresentation = (t) => /pr[ée]sentation|introduction|contexte/i.test(t || '');
     const urg = { haute: 0, moyenne: 0, basse: 0 };
     const zones = (localisations || []).map(loc => {
-      const its = (loc.items || []).filter(i => (i.titre || i.commentaire) && !isPresentation(i.titre));
+      const its = (loc.items || []).filter(i => !isBrouillon(i) && (i.titre || i.commentaire) && !isPresentation(i.titre));
       if (!its.length) return null;
       const lines = its.map(i => {
         const u = i.urgence || 'basse'; urg[u] = (urg[u] || 0) + 1;
@@ -1888,7 +1891,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
   const rows = recapRows && recapRows.length >= 0 && onUpdateRecap
     ? recapRows
     : localisations.flatMap(loc =>
-        (loc.items || []).filter(i => i.titre && i.suivi !== 'fait').map(i => {
+        (loc.items || []).filter(i => !isBrouillon(i) && i.titre && i.suivi !== 'fait').map(i => {
           const ov = ovMap.get(i.id) || {};
           return { locNom: 'zone' in ov ? ov.zone : (loc.nom || ''), titre: 'titre' in ov ? ov.titre : (i.titre || ''), urgence: 'urgence' in ov ? ov.urgence : (i.urgence || 'basse'), solution: 'solution' in ov ? ov.solution : '' };
         })
@@ -2110,7 +2113,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
-  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(itemHasReportContent)), [localisations]);
+  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => !isBrouillon(i) && itemHasReportContent(i))), [localisations]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
@@ -2235,7 +2238,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const pageRefs     = useRef([]);
   const scale = usePreviewScale(scrollRef);
 
-  const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => i.titre && i.suivi !== 'fait'));
+  const recapItems    = localisations.flatMap(l => (l.items || []).filter(i => !isBrouillon(i) && i.titre && i.suivi !== 'fait'));
   // Le tableau s'affiche dès qu'il y a des lignes à montrer : lignes calculées (recapRows,
   // qui incluent les lignes personnalisées/IA ET les observations sans intitulé) OU, en repli,
   // des items avec intitulé. Avant : basé uniquement sur recapItems (intitulé obligatoire) →

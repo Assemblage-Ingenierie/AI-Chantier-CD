@@ -395,7 +395,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   };
 
   const saveItem = (locId, form) => {
-    if (form._quickSuivi) { patchItem(locId, form); return; }
+    // Le drapeau _quickSuivi ne doit pas rester sur l'item stocké : sinon le prochain clic sur la
+    // ligne repasserait par ce chemin au lieu d'ouvrir l'éditeur.
+    // eslint-disable-next-line no-unused-vars
+    if (form._quickSuivi) { const { _quickSuivi, ...rest } = form; patchItem(locId, rest); return; }
     patchItem(locId, { ...form, id: form.id || crypto.randomUUID() });
   };
 
