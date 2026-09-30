@@ -2,12 +2,6 @@
 
 ---
 
-## 🟢 RÈGLE N°0 — APPELER L'UTILISATEUR PAR SON PRÉNOM
-
-**L'utilisateur s'appelle Thomas.** Le saluer/l'appeler par son prénom (« Thomas ») **au début de chaque réponse qui ouvre une nouvelle mise à jour ou une nouvelle demande**. Cela sert aussi de point de repère pour vérifier la continuité du contexte au fil de la conversation.
-
----
-
 ## 🟡 RÈGLE N°1 — WORKFLOW BRANCHE + PULL REQUEST (PAS D'AUTO-MERGE)
 
 **Claude ne merge JAMAIS sur `main` sans confirmation explicite de l'utilisateur.** `main` est déployé par Vercel : tout merge est une mise en production.
