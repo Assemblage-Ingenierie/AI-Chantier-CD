@@ -191,6 +191,7 @@ function buildLocFromRow(loc, itemsByLoc) {
         urgence:         item.urgence ?? 'basse',
         commentaire:     item.commentaire ?? '',
         commentaireAlign: item.commentaire_align ?? 'left',
+        statut:          item.statut === 'brouillon' ? 'brouillon' : 'rapport',
         planAnnotations,
         plans,
         photos:          [],
@@ -213,13 +214,18 @@ async function loadRemote() {
     sb.from('aichantier_chantier_localisations')
       .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
       .order('sort_order'),
-    // commentaire_align : colonne récente → tentative avec, repli sans si migration pas encore
-    // appliquée (sinon tout le chargement échouerait). Aucune perte : alignement non persisté.
+    // commentaire_align / statut : colonnes récentes → tentative avec, repli sans si migration pas
+    // encore appliquée (sinon tout le chargement échouerait). Sans `statut`, les observations
+    // sont lues comme 'rapport' (comportement d'avant).
     (async () => {
+      const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|schema cache/i.test(e?.message || '');
+      const withStatut = await sb.from('aichantier_localisation_items')
+        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations,sort_order')
+        .order('sort_order');
+      if (!(withStatut.error && isColErr(withStatut.error))) return withStatut;
       const withAlign = await sb.from('aichantier_localisation_items')
         .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,plan_annotations,sort_order')
         .order('sort_order');
-      const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|schema cache/i.test(e?.message || '');
       if (withAlign.error && isColErr(withAlign.error)) {
         return sb.from('aichantier_localisation_items')
           .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
@@ -1493,6 +1499,7 @@ async function saveRemote(ps, dirtyIds = null) {
           titre: item.titre ?? '', suivi: item.suivi ?? 'rien',
           urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
           commentaire_align: item.commentaireAlign ?? 'left',
+          statut: item.statut === 'brouillon' ? 'brouillon' : 'rapport',
           plan_annotations: (() => {
             const ann = item.planAnnotations ? { ...slimAnnot(item.planAnnotations) } : {};
             // Plans bibliothèque de l'item encodés dans _plans (même colonne, pas de colonne dédiée)
@@ -1535,12 +1542,17 @@ async function saveRemote(ps, dirtyIds = null) {
             .in('item_id', unloadedItemIds).order('sort_order')
         : Promise.resolve({ data: [] }),
     ]);
-    // commentaire_align : si la colonne n'existe pas encore (migration non appliquée), on rejoue
-    // l'upsert SANS ce champ → la sauvegarde n'échoue jamais (zéro perte de données).
-    const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|schema cache/i.test(e?.message || '');
+    // statut / commentaire_align : si une colonne n'existe pas encore (migration non appliquée),
+    // on rejoue l'upsert SANS `statut`, puis sans `commentaire_align` → la sauvegarde n'échoue
+    // jamais (zéro perte de données).
+    const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|schema cache/i.test(e?.message || '');
     if (upsertItemsRes?.error && isAlignColErr(upsertItemsRes.error) && allItems.length > 0) {
-      const stripped = allItems.map(({ commentaire_align, ...row }) => row); // eslint-disable-line no-unused-vars
-      const retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      let stripped = allItems.map(({ statut, ...row }) => row); // eslint-disable-line no-unused-vars
+      let retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      if (retry.error && isAlignColErr(retry.error)) {
+        stripped = stripped.map(({ commentaire_align, ...row }) => row); // eslint-disable-line no-unused-vars
+        retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      }
       upsertItemsRes.error = retry.error ?? null;
     }
     if (upsertItemsRes?.error) errors.push(upsertItemsRes.error);

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { DA, URGENCE, SUIVI, isBrouillon } from '../../lib/constants.js';
 import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { drawAnnotationPaths } from './Annotator.jsx';
@@ -347,6 +347,9 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
           const isDragging = dragIdx === i;
           const isOver     = overIdx === i && dragIdx !== i;
           const ICON_BTN   = 38; // taille commune aux icônes d'action — ALIGNÉE sur l'en-tête de zone (38px)
+          // Brouillon : observation gardée pour soi (onglet Visite uniquement, jamais dans le
+          // rapport) → ligne grisée.
+          const draft      = isBrouillon(item);
           return (
             <div key={item.id}
               draggable
@@ -359,9 +362,9 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                 display:'flex', alignItems:'flex-start', gap: isDesktop ? 12 : 8,
                 padding: isDesktop ? '18px 18px 18px 8px' : '14px 18px 14px 6px',
                 borderBottom:`1px solid ${DA.border}`,
-                borderLeft:`4px solid ${URGENCE[item.urgence]?.dot || DA.border}`,
+                borderLeft:`4px solid ${draft ? '#D1D5DB' : (URGENCE[item.urgence]?.dot || DA.border)}`,
                 cursor:'pointer',
-                background: isDragging ? '#f0f0f0' : isOver ? DA.redL : 'white',
+                background: isDragging ? '#f0f0f0' : isOver ? DA.redL : draft ? '#F3F4F6' : 'white',
                 borderTop: isOver ? `2px solid ${DA.red}` : 'none',
                 opacity: isDragging ? 0.45 : 1,
                 transition: 'background 0.08s, opacity 0.08s',
@@ -387,7 +390,20 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                     rognait ~90px sur texte ET photos → écran mal optimisé, retour Thomas). */}
                 <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{item.titre}</p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                      <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0 }}>{item.titre}</p>
+                      {/* Statut Rapport / Brouillon — un appui bascule (comme le badge de suivi). */}
+                      <button type="button"
+                        onClick={e => { e.stopPropagation(); onEdit({ ...item, statut: draft ? 'rapport' : 'brouillon', _quickSuivi: true }); }}
+                        title={draft ? "Brouillon : non publiée dans le rapport — toucher pour l'inclure" : 'Publiée dans le rapport — toucher pour passer en brouillon'}
+                        aria-label={draft ? 'Statut : Brouillon' : 'Statut : Rapport'}
+                        style={{ flexShrink:0, padding:'3px 9px', borderRadius:10, fontSize:11, fontWeight:700, lineHeight:1.3, cursor:'pointer', fontFamily:'inherit',
+                          border:`1px solid ${draft ? '#9CA3AF' : DA.border}`,
+                          background: draft ? '#E5E7EB' : 'white',
+                          color: draft ? '#4B5563' : DA.grayL }}>
+                        {draft ? 'Brouillon' : 'Rapport'}
+                      </button>
+                    </div>
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
                       <Badge level={item.urgence}/>
                       <span style={{ display:'flex', alignItems:'center', gap:3 }}>
@@ -430,7 +446,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                   </div>
                 </div>
                 {item.commentaire && (
-                  <p style={{ fontSize: isDesktop ? 14 : 13, color:DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(commentFor(item))}</p>
+                  <p style={{ fontSize: isDesktop ? 14 : 13, color: draft ? DA.grayL : DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(commentFor(item))}</p>
                 )}
 
                 {/* Photos — toujours en dessous du texte (mobile + desktop) */}
@@ -444,7 +460,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                       // que soit l'orientation → plus de « blanc » à droite avec les photos paysage
                       // (retour Bach). Mobile = 2 colonnes ; desktop = autant de colonnes de ≥150px
                       // que la largeur permet (≥2), sans trou.
-                      <div style={{ display:'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10 }}
+                      <div style={{ display:'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, ...(draft ? { filter:'grayscale(1)', opacity:0.6 } : {}) }}
                         // Déposer dans le vide de la zone photos d'une observation → y déplacer la
                         // photo glissée (depuis une autre observation/zone). Les photos elles-mêmes
                         // gèrent leur propre drop (réordonner / déposer dessus) via stopPropagation.

@@ -19,6 +19,10 @@ export const URGENCE = {
   basse:   { bg: '#F0FDF4', text: '#15803D', dot: '#16A34A', border: '#86EFAC', label: 'Mineur',      hex: '#16A34A' },
 };
 
+// Statut d'une observation : 'rapport' (défaut — champ absent inclus) ou 'brouillon' (visible
+// dans l'onglet Visite uniquement, exclue du rapport et de l'export PDF).
+export const isBrouillon = (item) => item?.statut === 'brouillon';
+
 export const SUIVI = {
   rien: { label: '—', bg: '#F3F4F6', text: '#6B7280', dot: '#9CA3AF', border: '#E5E7EB' },
   a_faire: { label: 'À faire', bg: '#FFF7ED', text: '#C2410C', dot: '#F97316', border: '#FED7AA' },

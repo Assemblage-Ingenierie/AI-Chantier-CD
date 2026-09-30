@@ -2,27 +2,19 @@
 
 ---
 
-## 🟢 RÈGLE N°0 — APPELER L'UTILISATEUR PAR SON PRÉNOM
+## 🟡 RÈGLE N°1 — WORKFLOW BRANCHE + PULL REQUEST (PAS D'AUTO-MERGE)
 
-**L'utilisateur s'appelle Thomas.** Le saluer/l'appeler par son prénom (« Thomas ») **au début de chaque réponse qui ouvre une nouvelle mise à jour ou une nouvelle demande**. Cela sert aussi de point de repère pour vérifier la continuité du contexte au fil de la conversation.
+**Claude ne merge JAMAIS sur `main` sans confirmation explicite de l'utilisateur.** `main` est déployé par Vercel : tout merge est une mise en production.
 
----
+Workflow obligatoire :
+1. Créer une branche depuis `main` (`git checkout main && git pull && git checkout -b <feature-branch>`)
+2. Travailler en local, committer sur la branche feature
+3. Pousser la branche sur le remote (`git push -u origin <feature-branch>`)
+4. Ouvrir une **pull request** vers `main` pour comparaison des branches (`gh pr create`)
+5. **Attendre la confirmation explicite de l'utilisateur avant de merger sur `main`**
 
-## 🟡 RÈGLE N°1 — PUSH ET MERGE AUTOMATIQUE AUTORISÉS
-
-**L'utilisateur a donné accord général pour pusher et merger sur `main` sans demander confirmation à chaque fois, tant que les changements sont sûrs et ne cassent rien.**
-
-Workflow :
-1. Faire les changements en local
-2. Committer sur la branche feature
-3. Push sur la branche feature
-4. Merger immédiatement sur `main` si le build passe et qu'aucune zone critique n'est touchée
-5. Pour les changements à risque élevé (persistance, auth, schéma Supabase) : présenter un résumé et attendre confirmation
-
-Zones qui nécessitent encore une confirmation explicite :
-- Modifications de `mergeWithLocal`, `saveRemote`, `loadData` (persistance données)
-- Changements de schéma Supabase (migrations)
-- Toute modification qui pourrait provoquer une perte de données utilisateur
+Claude peut : créer la branche, committer, pousser la branche feature, ouvrir la PR.
+Claude ne peut pas, sans accord explicite : merger la PR / `main`, push sur `main`, force-push.
 
 ---
 
@@ -128,21 +120,23 @@ Se poser, dans l'ordre : « Est-ce que ça peut être **automatique** ? Sinon **
 
 
 
-**Branche de travail** : toujours développer sur une branche feature dédiée.
-**Push** : uniquement après accord explicite de l'utilisateur (voir Règle N°1).
-**Merge sur main** : immédiatement après le push, car Vercel déploie depuis `main`.
+**Branche de travail** : toujours développer sur une branche feature dédiée, créée depuis `main`.
+**Push** : la branche feature est poussée sur le remote, puis une pull request est ouverte (voir Règle N°1).
+**Merge sur main** : JAMAIS automatique — uniquement après confirmation explicite de l'utilisateur, car Vercel déploie depuis `main`.
 
 ```bash
-# Après accord de l'utilisateur :
-git push -u origin <feature-branch>
-git checkout main
-git pull origin main
-git merge <feature-branch> --no-edit
-git push origin main
-git checkout <feature-branch>
-```
+# 1. Branche depuis main
+git checkout main && git pull origin main
+git checkout -b <feature-branch>
 
-Ne jamais laisser des changements uniquement sur la branche feature.
+# 2. Travail local + commits sur la branche feature, puis :
+git push -u origin <feature-branch>
+
+# 3. Ouvrir la pull request (comparaison des branches)
+gh pr create --base main --head <feature-branch>
+
+# 4. STOP — attendre l'accord explicite de l'utilisateur avant tout merge sur main.
+```
 
 ---
 
