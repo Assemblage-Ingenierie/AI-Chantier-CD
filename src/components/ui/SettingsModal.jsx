@@ -10,6 +10,7 @@ import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 import { subscribePendingChanges } from '../../lib/pendingSync.js';
 import { getPhotoQuality, setPhotoQuality } from '../../lib/uiPrefs.js';
+import { listDeletedItems, removeDeletedItem, clearDeletedItems } from '../../lib/recoveryBin.js';
 
 function fmtBytes(n) {
   if (!n || n < 1024) return `${n || 0} o`;
@@ -40,7 +41,7 @@ function localStorageBytes() {
   } catch { return 0; }
 }
 
-export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null }) {
+export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null, onRestoreObservation = null }) {
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
   const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: octets PHOTOS }
   const [detailByProject, setDetailByProject] = useState({}); // { projectId: { plans, donnees } }
@@ -59,6 +60,11 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [nativeReady, setNativeReady] = useState(canInstallNative());
   const [appInstalled, setAppInstalled] = useState(isAppInstalled());
   const [installMsg, setInstallMsg] = useState('');
+  // Bibliothèque de récupération (observations supprimées) : null = en cours de lecture.
+  const [recovery, setRecovery] = useState(null);
+  const [recMsg, setRecMsg] = useState({});   // { [recId]: 'texte' } messages par entrée
+  const [recBusy, setRecBusy] = useState(null); // recId en cours de restauration
+  const [recConfirmClear, setRecConfirmClear] = useState(false);
 
   const refreshSizes = async () => {
     const [plans, snapshots, pending, byProject] = await Promise.all([
@@ -127,6 +133,38 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
     setTimeout(() => setCleared(false), 2500);
   };
 
+  // ── Bibliothèque de récupération ──────────────────────────────────────────────
+  const refreshRecovery = async () => setRecovery(await listDeletedItems());
+  useEffect(() => { refreshRecovery(); }, []);
+
+  const handleRestore = async (entry) => {
+    setRecBusy(entry.recId);
+    const res = onRestoreObservation ? onRestoreObservation(entry) : { ok: false, reason: 'unavailable' };
+    if (res?.ok) {
+      await removeDeletedItem(entry.recId);
+      await refreshRecovery();
+    } else {
+      const reason = res?.reason === 'loc' || res?.reason === 'visite'
+        ? 'La zone d’origine n’existe plus — impossible de restaurer ici.'
+        : res?.reason === 'project'
+          ? 'Le projet d’origine n’existe plus.'
+          : 'Restauration impossible.';
+      setRecMsg(m => ({ ...m, [entry.recId]: reason }));
+    }
+    setRecBusy(null);
+  };
+
+  const handleDeleteOneRecovery = async (recId) => {
+    await removeDeletedItem(recId);
+    await refreshRecovery();
+  };
+
+  const handleClearRecovery = async () => {
+    await clearDeletedItems();
+    await refreshRecovery();
+    setRecConfirmClear(false);
+  };
+
   const sectionTitle = { fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 10px' };
   const row = { display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'8px 0' };
 
@@ -184,6 +222,75 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               </div>
             );
           })()}
+
+          {/* ── RÉCUPÉRATION : observations supprimées, restaurables (demande Thomas) ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Récupération{Array.isArray(recovery) && recovery.length > 0 ? ` (${recovery.length})` : ''}</p>
+            {recovery == null ? (
+              <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>…</p>
+            ) : recovery.length === 0 ? (
+              <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>
+                Aucune observation supprimée récemment. Les observations que vous supprimez atterrissent ici
+                et peuvent être restaurées en un clic si c'était une erreur.
+              </p>
+            ) : (
+              <>
+                <div style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'4px 12px', maxHeight:260, overflowY:'auto' }}>
+                  {recovery.map((entry, i) => {
+                    const photoN = (entry.item?.photos || []).filter(p => p && (p.data || p.annotated || p.storage_url)).length;
+                    const date = new Date(entry.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+                    return (
+                      <div key={entry.recId} style={{ ...row, alignItems:'flex-start', ...(i > 0 ? { borderTop:`1px solid ${DA.grayXL}` } : {}) }}>
+                        <div style={{ minWidth:0, flex:1 }}>
+                          <div style={{ fontSize:13, color:DA.black, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {entry.item?.titre || 'Observation'}
+                          </div>
+                          <div style={{ fontSize:11, color:DA.grayL, marginTop:2, lineHeight:1.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {(entry.projectNom || 'Projet')}{entry.locNom ? ` › ${entry.locNom}` : ''} · {date}{photoN > 0 ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}
+                          </div>
+                          {recMsg[entry.recId] && <div style={{ fontSize:11, color:DA.red, marginTop:3 }}>{recMsg[entry.recId]}</div>}
+                        </div>
+                        <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'center' }}>
+                          <button onClick={() => handleRestore(entry)} disabled={recBusy === entry.recId}
+                            style={{ padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor: recBusy === entry.recId ? 'default' : 'pointer',
+                              border:`1.5px solid ${DA.red}`, background:'white', color:DA.red, whiteSpace:'nowrap', opacity: recBusy === entry.recId ? 0.6 : 1 }}>
+                            {recBusy === entry.recId ? '…' : 'Restaurer'}
+                          </button>
+                          <button onClick={() => handleDeleteOneRecovery(entry.recId)} title="Retirer définitivement de la liste" aria-label="Retirer"
+                            style={{ width:30, height:30, borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:DA.grayL, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                            <Ic n="x" s={13}/>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {recConfirmClear ? (
+                  <div style={{ display:'flex', gap:8, marginTop:10 }}>
+                    <button onClick={() => setRecConfirmClear(false)}
+                      style={{ flex:1, padding:'10px', borderRadius:9, fontSize:13, fontWeight:700, border:`1px solid ${DA.border}`, background:'white', color:DA.gray, cursor:'pointer' }}>
+                      Annuler
+                    </button>
+                    <button onClick={handleClearRecovery}
+                      style={{ flex:1, padding:'10px', borderRadius:9, fontSize:13, fontWeight:800, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
+                      Tout vider
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setRecConfirmClear(true)}
+                    style={{ width:'100%', marginTop:10, padding:'11px', borderRadius:9, fontSize:13, fontWeight:700,
+                      border:`1px solid ${DA.border}`, background:'white', color:DA.red, cursor:'pointer',
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
+                    <Ic n="del" s={14}/> Vider la liste
+                  </button>
+                )}
+              </>
+            )}
+            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+              Toute observation supprimée (texte + photos) est conservée ici pour pouvoir être restaurée en cas d'erreur.
+              Cette liste est locale à cet appareil ; videz-la de temps en temps.
+            </p>
+          </div>
 
           {/* ── Hors-ligne par projet : UNIQUEMENT « mes projets » (initiales sur une visite) ── */}
           {(() => {

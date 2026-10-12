@@ -16,6 +16,7 @@ import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js'
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
+import { addDeletedItem } from '../../lib/recoveryBin.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -364,13 +365,21 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const deleteItem = useCallback((locId, itemId) => {
     const prevLocs = visitProjet.localisations;
-    const item = prevLocs.find(l => l.id === locId)?.items?.find(i => i.id === itemId);
+    const loc = prevLocs.find(l => l.id === locId);
+    const item = loc?.items?.find(i => i.id === itemId);
     const locs = prevLocs.map(l =>
       l.id !== locId ? l : { ...l, items: (l.items || []).filter(i => i.id !== itemId) }
     );
     onUpdateVisit({ localisations: locs });
+    // Filet de récupération (demande Thomas) : on copie l'observation supprimée — texte + photos
+    // + contexte — dans la bibliothèque « Récupération » (IndexedDB dédiée, 100 % additif). On
+    // peut la restaurer plus tard si la suppression était une erreur. Fire-and-forget, non bloquant.
+    if (item) addDeletedItem(item, {
+      projectId: projet.id, projectNom: projet.nom,
+      visiteId: selectedVisiteId, locId, locNom: loc?.nom || '',
+    });
     showUndo(`"${item?.titre || 'Observation'}" supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
-  }, [visitProjet.localisations, onUpdateVisit, showUndo]);
+  }, [visitProjet.localisations, onUpdateVisit, showUndo, projet.id, projet.nom, selectedVisiteId]);
 
   const addLoc = () => {
     const newLoc = { id: crypto.randomUUID(), nom: 'Nouvelle zone', items: [], planBg: null, planData: null, planAnnotations: null };

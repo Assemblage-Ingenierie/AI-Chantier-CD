@@ -592,6 +592,31 @@ export function useProjets(onSyncStatus) {
       : p));
   };
 
+  // Restaure une observation depuis la bibliothèque « Récupération » (filet demandé par Thomas).
+  // Ré-insère l'item dans sa zone d'origine SI le projet / la visite / la zone existent encore.
+  // Passe par updateProjet → marque dirty + sauvegarde normale (aucune logique de sync dupliquée).
+  const restoreObservation = (entry) => {
+    if (!entry?.item || !entry.projectId) return { ok: false, reason: 'invalid' };
+    const proj = projetsRef.current.find(p => p.id === entry.projectId);
+    if (!proj) return { ok: false, reason: 'project' };
+    const visite = (proj.visites || []).find(v => v.id === entry.visiteId);
+    if (!visite) return { ok: false, reason: 'visite' };
+    const loc = (visite.localisations || []).find(l => l.id === entry.locId);
+    if (!loc) return { ok: false, reason: 'loc' };
+    const already = (loc.items || []).some(i => i.id === entry.item.id);
+    updateProjet(entry.projectId, (p) => ({
+      ...p,
+      visites: (p.visites || []).map(v => v.id !== entry.visiteId ? v : {
+        ...v,
+        localisations: (v.localisations || []).map(l => l.id !== entry.locId ? l : {
+          ...l,
+          items: already ? (l.items || []) : [...(l.items || []), entry.item],
+        }),
+      }),
+    }));
+    return { ok: true, already };
+  };
+
   const deleteProjet = (id) => {
     pushHistory();
     userModified.current = true;
@@ -1236,5 +1261,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation };
 }
