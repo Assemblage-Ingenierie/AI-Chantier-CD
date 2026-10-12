@@ -261,11 +261,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const over = zoneOverRef.current;
     if (!zoneDragDidMove.current || !dragId || !over || over.id === dragId) return;
     const locs = zoneLocsRef.current;
-    const next = over.into ? nestZone(locs, dragId, over.id) : placeZone(locs, dragId, over.id);
+    const next = over.into ? nestZone(locs, dragId, over.intoId || over.id) : placeZone(locs, dragId, over.id);
     if (next !== locs) {
       onUpdateVisit({ localisations: next });
       // On ouvre le groupe qui vient de recevoir la zone → on la voit arriver dedans.
-      if (over.into) setOpenLocIds(prev => new Set([...prev, over.id]));
+      if (over.into) setOpenLocIds(prev => new Set([...prev, over.intoId || over.id]));
     }
   }, [onUpdateVisit]);
 
@@ -300,8 +300,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       return;
     }
     clearTimeout(zoneIntoTimer.current);
-    const canInto = !!t.onHead && canNestInto(zoneLocsRef.current, dragId, t.id);
-    const next = { id: t.id, onHead: t.onHead, into: false, canInto, since: Date.now() };
+    // Maintien sur le titre d'une zone RANGÉE (« R+4 › M. Albert Thomas ») = rejoindre son groupe.
+    const locsNow = zoneLocsRef.current;
+    const tLoc = locsNow.find(l => l.id === t.id);
+    const intoId = (tLoc && effectiveParentId(locsNow, tLoc)) || t.id;
+    const canInto = !!t.onHead && canNestInto(locsNow, dragId, intoId);
+    const next = { id: t.id, onHead: t.onHead, into: false, canInto, intoId, since: Date.now() };
     zoneOverRef.current = next; setZoneOver(next);
     zoneDragDidMove.current = true;
     if (canInto) zoneIntoTimer.current = setTimeout(() => goInto(next), ZONE_INTO_MS);
@@ -752,12 +756,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 <>
                   {(() => {
                   const allLocs = visitProjet.localisations;
-                  // Zones de 1er niveau ; les SOUS-ZONES (groupe « R+4 ») s'affichent DANS la carte
-                  // de leur groupe, sous son contenu. Sans groupe : rendu strictement identique.
+                  // Zones rangées dans un groupe (« R+4 ») : affichées au même niveau, préfixées du nom
+                  // du groupe. Sans groupe : rendu strictement identique.
                   const renderZone = (loc, isSub) => {
                     const items    = loc.items || [];
                     const isOpen   = openLocIds.has(loc.id);
                     const kids     = isSub ? [] : childrenOf(allLocs, loc.id);
+                    const parentNom = isSub ? (allLocs.find(l => l.id === loc.parentId)?.nom || '') : '';
                     const isDragged = zoneDragId === loc.id;
                     const isOver    = !!zoneOver && zoneOver.id === loc.id && !isDragged;
                     const isInto    = isOver && zoneOver.into;
@@ -802,11 +807,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
                         }}>
                         <div data-zone-head={loc.id}
-                          style={{ display:'flex', alignItems:'center', padding: isSub ? '12px 14px' : '16px 18px', gap:10, position:'relative',
+                          style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10, position:'relative',
                             ...(isInto ? { background:DA.redL, boxShadow:`inset 0 0 0 2px ${DA.red}` } : {}) }}>
                           {isInto && (
                             <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:DA.red, color:'white', fontSize:11, fontWeight:800, borderRadius:20, padding:'3px 10px', whiteSpace:'nowrap', zIndex:2, pointerEvents:'none' }}>
-                              Ranger dans « {loc.nom || 'cette zone'} »
+                              Ranger dans « {allLocs.find(l => l.id === zoneOver.intoId)?.nom || loc.nom || 'cette zone'} »
                             </span>
                           )}
                           <div onClick={e => e.stopPropagation()}
@@ -820,17 +825,30 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={16}/>
                           </button>
-                          <EditTitle
-                            value={loc.nom}
-                            onSave={nom => patchLoc(loc.id, { nom })}
-                            style={{ fontSize: isSub ? 12.5 : 13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
-                            inputStyle={{ fontSize: isSub ? 12.5 : 13, fontWeight:800, textTransform:'uppercase' }}
-                          />
-                          {kids.length > 0 && !isOpen && (
-                            <span style={{ fontSize:11.5, fontWeight:700, color:DA.grayL, whiteSpace:'nowrap', flexShrink:0 }}>
-                              {kids.length} sous-zone{kids.length > 1 ? 's' : ''}
-                            </span>
-                          )}
+                          {/* Zone rangée : même niveau que les autres, juste le nom du groupe DEVANT
+                              (« R+4 » M. Albert Thomas) — demande Thomas. */}
+                          {(() => {
+                            const title = (
+                              <EditTitle
+                                value={loc.nom}
+                                onSave={nom => patchLoc(loc.id, { nom })}
+                                style={{ fontSize:13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
+                                inputStyle={{ fontSize:13, fontWeight:800, textTransform:'uppercase', ...(isSub && !isDesktop ? { width:'100%' } : {}) }}
+                              />
+                            );
+                            if (!isSub || !parentNom) return title;
+                            const chip = (
+                              <span title={`Rangée dans « ${parentNom} »`}
+                                style={{ flexShrink:0, alignSelf: isDesktop ? 'center' : 'flex-start', maxWidth: isDesktop ? '38%' : '100%', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize: isDesktop ? 11.5 : 10, fontWeight:800, color:DA.red, background:DA.redL, border:'1px solid #FCA5A5', borderRadius:5, padding: isDesktop ? '2px 7px' : '1px 6px', textTransform:'uppercase', letterSpacing:0.5, lineHeight:1.4 }}>
+                                {parentNom}
+                              </span>
+                            );
+                            // PC : étiquette DEVANT le nom. Téléphone : juste au-dessus, pour garder le
+                            // nom entier sur 375 px (sinon « M. ALBE… »).
+                            return isDesktop ? <>{chip}{title}</> : (
+                              <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:3 }}>{chip}{title}</div>
+                            );
+                          })()}
                           <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
                             {urgentCount > 0 && (
                               <span style={{ fontSize:12, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'2px 8px', lineHeight:1.6 }}>
@@ -1013,17 +1031,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 <Ic n="map" s={13}/> Assigner un plan à cette zone
                               </button>
                             )}
-                            {kids.length > 0 && (
-                              <div style={{ borderTop:`1px solid ${DA.border}`, background:'#F6F6F6', padding: isDesktop ? '12px 12px 12px 22px' : '10px 8px 10px 14px', display:'flex', flexDirection:'column', gap:8 }}>
-                                {kids.map(k => renderZone(k, true))}
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
                     );
                   };
-                  return allLocs.filter(l => !effectiveParentId(allLocs, l)).map(l => renderZone(l, false));
+                  // Toutes les zones au MÊME niveau ; l'ordre canonique (orderZones) garde chaque groupe
+                  // suivi de ses zones rangées.
+                  return allLocs.map(l => renderZone(l, !!effectiveParentId(allLocs, l)));
                   })()}
                   <button onClick={addLoc}
                     style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
