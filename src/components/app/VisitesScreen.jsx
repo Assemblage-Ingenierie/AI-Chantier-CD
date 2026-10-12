@@ -5,6 +5,7 @@ import { callAIProxy } from '../../lib/aiProxy.js';
 import SyncBadge from '../ui/SyncBadge.jsx';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import IngenieursEditor, { splitInitials } from '../ui/IngenieursEditor.jsx';
+import { remapParentIds } from '../../lib/zoneGroups.js';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -272,9 +273,12 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       const { exported, ...rest } = ann; // retire le composite cuit → re-rendu sans les VXX
       return { ...rest, paths };
     };
-    const localisations = (source.localisations || []).map(loc => ({
+    // Nouveaux id de zones connus d'avance → les sous-zones (« R+4 › M. Albert Thomas ») restent
+    // rangées dans la COPIE de leur groupe (remapParentIds), pas dans celui de la visite d'origine.
+    const zoneIdMap = new Map((source.localisations || []).map(loc => [loc.id, crypto.randomUUID()]));
+    const localisations = remapParentIds((source.localisations || []).map(loc => ({
       ...loc,
-      id: crypto.randomUUID(),
+      id: zoneIdMap.get(loc.id),
       planAnnotations: cleanAnn(loc.planAnnotations),
       extraPlans: (loc.extraPlans || []).map(ep => ({ ...ep, planAnnotations: cleanAnn(ep.planAnnotations) })),
       items: (loc.items || []).map(item => ({
@@ -287,7 +291,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         // Plans PROPRES aux observations : mêmes marqueurs VXX à nettoyer si sans photos.
         ...(keepPhotos ? {} : { plans: (item.plans || []).map(pl => ({ ...pl, planAnnotations: cleanAnn(pl.planAnnotations) })) }),
       })),
-    }));
+    })), zoneIdMap);
     const newVisite = {
       ...source,
       id: newId,
@@ -318,17 +322,20 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     const today = new Date().toISOString().slice(0, 10);
     const planLibrary = projet.planLibrary || [];
     const lastVisite = visites[visites.length - 1];
-    const localisations = (lastVisite?.localisations || []).map(loc => {
+    const zoneIdMap = new Map((lastVisite?.localisations || []).map(loc => [loc.id, crypto.randomUUID()]));
+    const localisations = remapParentIds((lastVisite?.localisations || []).map(loc => {
       const libPlan = planLibrary.find(p => p.bg && p.bg === loc.planBg);
       return {
-        id: crypto.randomUUID(),
+        id: zoneIdMap.get(loc.id),
         nom: loc.nom,
+        // Les groupes de zones (R+4 › appartements) sont repris dans la nouvelle visite.
+        ...(loc.parentId ? { parentId: loc.parentId } : {}),
         planBg: libPlan?.bg || loc.planBg || null,
         planData: libPlan?.data || loc.planData || null,
         planAnnotations: null,
         items: [],
       };
-    });
+    }), zoneIdMap);
     const newVisite = {
       id: newId,
       label: `Visite ${visites.length + 1}`,

@@ -19,6 +19,7 @@ import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
+import { orderZones, childrenOf, effectiveParentId, canNestInto, nestZone, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -181,7 +182,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const visitProjet = useMemo(() => ({
     ...projet,
-    localisations:       selectedVisite?.localisations       ?? [],
+    // Ordre canonique groupe → sous-zones (même tableau, inchangé, s'il n'y a aucun groupe).
+    localisations:       orderZones(selectedVisite?.localisations ?? []),
     dateVisite:          selectedVisite?.dateVisite           ?? null,
     participants:        selectedVisite?.participants         ?? [],
     tableauRecap:        selectedVisite?.tableauRecap         ?? [],
@@ -232,21 +234,78 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     onUpdate({ visites: newVisites });
   };
 
-  const [zoneDragIdx, setZoneDragIdx] = useState(null);
-  const [zoneOverIdx, setZoneOverIdx] = useState(null);
+  // ── Glisser-déposer des ZONES (par id) ──
+  // Dépôt RAPIDE sur une zone = prendre sa place (réordonner, comme avant). MAINTENIR ~½ s sur
+  // le TITRE d'une zone de 1er niveau = « Ranger dedans » (groupe de zones, ex. R+4 › M. Albert
+  // Thomas — demande Thomas). Déposer sur une sous-zone = entrer dans son groupe ; sur une zone
+  // de 1er niveau = sortir du groupe. Logique pure et testée dans lib/zoneGroups.js.
+  const [zoneDragId, setZoneDragId] = useState(null);
+  const [zoneOver, setZoneOver] = useState(null); // { id, onHead, into }
+  const zoneOverRef = useRef(null);
+  const zoneIntoTimer = useRef(null);
   // Le drag PC n'est ARMÉ que depuis la poignée ⋮⋮ (mousedown) : une tuile draggable en
   // permanence empêchait de sélectionner le texte du titre en édition — le navigateur
   // déplaçait la tuile au lieu de sélectionner (demande Thomas).
-  const [zoneDragArm, setZoneDragArm] = useState(null);
+  const [zoneDragArm, setZoneDragArm] = useState(null); // id de la zone armée
   const zoneDragDidMove = useRef(false);
+  const zoneLocsRef = useRef(visitProjet.localisations);
+  zoneLocsRef.current = visitProjet.localisations;
 
-  const moveZone = useCallback((fromIdx, toIdx) => {
-    if (fromIdx === toIdx || toIdx < 0 || toIdx >= visitProjet.localisations.length) return;
-    const locs = [...visitProjet.localisations];
-    const [moved] = locs.splice(fromIdx, 1);
-    locs.splice(toIdx, 0, moved);
-    onUpdateVisit({ localisations: locs });
-  }, [visitProjet.localisations, onUpdateVisit]);
+  const resetZoneDrag = useCallback(() => {
+    clearTimeout(zoneIntoTimer.current);
+    zoneOverRef.current = null;
+    setZoneDragId(null); setZoneOver(null);
+  }, []);
+
+  const applyZoneDrop = useCallback((dragId) => {
+    const over = zoneOverRef.current;
+    if (!zoneDragDidMove.current || !dragId || !over || over.id === dragId) return;
+    const locs = zoneLocsRef.current;
+    const next = over.into ? nestZone(locs, dragId, over.id) : placeZone(locs, dragId, over.id);
+    if (next !== locs) {
+      onUpdateVisit({ localisations: next });
+      // On ouvre le groupe qui vient de recevoir la zone → on la voit arriver dedans.
+      if (over.into) setOpenLocIds(prev => new Set([...prev, over.id]));
+    }
+  }, [onUpdateVisit]);
+
+  // Carte de zone sous le pointeur : la plus INTERNE (sous-zone avant son groupe), jamais la zone
+  // déplacée ni ses propres sous-zones. onHead = le pointeur est sur l'en-tête (titre) de la carte.
+  const zoneTargetAt = (x, y, dragId) => {
+    const el = typeof document !== 'undefined' ? document.elementFromPoint(x, y) : null;
+    const card = el?.closest?.('[data-zone-id]');
+    if (!card) return null;
+    for (let n = card; n; n = n.parentElement?.closest?.('[data-zone-id]')) {
+      if (n.getAttribute('data-zone-id') === dragId) return null;
+    }
+    const id = card.getAttribute('data-zone-id');
+    const head = el.closest('[data-zone-head]');
+    return { id, onHead: !!head && head.getAttribute('data-zone-head') === id };
+  };
+
+  const ZONE_INTO_MS = 550;
+  const updateZoneOver = useCallback((t, dragId) => {
+    if (!t) return;
+    const cur = zoneOverRef.current;
+    const goInto = (base) => {
+      if (zoneOverRef.current !== base) return;
+      const into = { ...base, into: true };
+      zoneOverRef.current = into; setZoneOver(into);
+      try { navigator.vibrate?.(15); } catch { /* iOS : pas de vibration */ }
+    };
+    if (cur && cur.id === t.id && cur.onHead === t.onHead) {
+      // Inchangé. Souris : le navigateur répète dragover tant qu'on survole → on bascule en
+      // « ranger dedans » dès que le maintien dure assez (le minuteur couvre le tactile immobile).
+      if (cur.canInto && !cur.into && Date.now() - cur.since >= ZONE_INTO_MS) goInto(cur);
+      return;
+    }
+    clearTimeout(zoneIntoTimer.current);
+    const canInto = !!t.onHead && canNestInto(zoneLocsRef.current, dragId, t.id);
+    const next = { id: t.id, onHead: t.onHead, into: false, canInto, since: Date.now() };
+    zoneOverRef.current = next; setZoneOver(next);
+    zoneDragDidMove.current = true;
+    if (canInto) zoneIntoTimer.current = setTimeout(() => goInto(next), ZONE_INTO_MS);
+  }, []);
 
   const patchLoc = useCallback((locId, patch) => {
     const locs = visitProjet.localisations.map(l => l.id === locId ? { ...l, ...patch } : l);
@@ -271,48 +330,32 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     });
   }, [visitProjet.localisations, patchLoc]);
 
-  const onZoneDragEnd = useCallback(() => {
-    if (zoneDragDidMove.current && zoneDragIdx !== null && zoneOverIdx !== null) {
-      moveZone(zoneDragIdx, zoneOverIdx);
-    }
-    setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
-  }, [zoneDragIdx, zoneOverIdx, moveZone]);
-
   // Réordonnancement TACTILE des zones (le drag HTML5 ne marche pas au doigt — mobile est la
   // plateforme principale, cf. CLAUDE.md Règle N°4). On suit le doigt depuis la poignée et on
-  // calcule la zone survolée par rapport au milieu de chaque carte mesurée dans le DOM.
-  const zoneNodesRef = useRef(new Map()); // locIdx → élément DOM de la carte
-  const zoneTouch = useRef(null);
-  const startZoneTouch = useCallback((e, idx) => {
+  // cherche la carte de zone sous le doigt (elementFromPoint).
+  const startZoneTouch = useCallback((e, id) => {
     zoneDragDidMove.current = false;
-    zoneTouch.current = { from: idx, overIdx: idx };
-    setZoneDragIdx(idx); setZoneOverIdx(idx);
+    zoneOverRef.current = null;
+    setZoneDragId(id); setZoneOver(null);
     const onMove = (ev) => {
       const t = ev.touches[0]; if (!t) return;
       ev.preventDefault(); // touchAction:'none' sur la poignée → pas de scroll parasite
-      zoneDragDidMove.current = true;
-      let over = idx;
-      const entries = [...zoneNodesRef.current.entries()].sort((a, b) => a[0] - b[0]);
-      for (const [i, el] of entries) {
-        const r = el.getBoundingClientRect();
-        if (t.clientY < r.top + r.height / 2) { over = i; break; }
-        over = i;
-      }
-      zoneTouch.current.overIdx = over;
-      setZoneOverIdx(over);
+      updateZoneOver(zoneTargetAt(t.clientX, t.clientY, id), id);
     };
     const onEnd = () => {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onEnd);
-      const st = zoneTouch.current; zoneTouch.current = null;
-      if (zoneDragDidMove.current && st && st.from !== st.overIdx) moveZone(st.from, st.overIdx);
-      setZoneDragIdx(null); setZoneOverIdx(null); zoneDragDidMove.current = false;
+      applyZoneDrop(id);
+      resetZoneDrag();
+      // Laisse passer le « click » synthétique qui suit le touchend avant de réautoriser le
+      // dépliage (sinon le dépôt ouvrait/fermait la zone).
+      setTimeout(() => { zoneDragDidMove.current = false; }, 0);
     };
     document.addEventListener('touchmove', onMove, { passive: false });
     document.addEventListener('touchend', onEnd);
     document.addEventListener('touchcancel', onEnd);
-  }, [moveZone]);
+  }, [updateZoneOver, applyZoneDrop, resetZoneDrag]);
 
   const [openLocIds, setOpenLocIds] = useState(
     () => new Set((selectedVisite?.localisations || []).map(l => l.id))
@@ -402,7 +445,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   // suppression d'observation) — remplace le window.confirm bloquant, jarring sur mobile.
   const deleteLoc = (locId, nom) => {
     const prevLocs = visitProjet.localisations;
-    onUpdateVisit({ localisations: prevLocs.filter(l => l.id !== locId) });
+    // Supprimer un GROUPE (« R+4 ») ne supprime JAMAIS ses sous-zones : elles redeviennent des
+    // zones normales, avec toutes leurs observations (« Annuler » remet le groupe tel quel).
+    const kidIds = new Set(childrenOf(prevLocs, locId).map(k => k.id));
+    onUpdateVisit({ localisations: prevLocs
+      .filter(l => l.id !== locId)
+      .map(l => (kidIds.has(l.id) ? { ...l, parentId: null } : l)) });
     // Pierre tombale ZONE (retour Thomas : « des zones supprimées sont réapparues ») : mémorisée
     // localement ET partagée avec les autres appareils → la zone ne peut plus revenir.
     addTombstone('loc', locId, projet.id);
@@ -702,9 +750,17 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 </div>
               ) : (
                 <>
-                  {visitProjet.localisations.map((loc, locIdx) => {
+                  {(() => {
+                  const allLocs = visitProjet.localisations;
+                  // Zones de 1er niveau ; les SOUS-ZONES (groupe « R+4 ») s'affichent DANS la carte
+                  // de leur groupe, sous son contenu. Sans groupe : rendu strictement identique.
+                  const renderZone = (loc, isSub) => {
                     const items    = loc.items || [];
                     const isOpen   = openLocIds.has(loc.id);
+                    const kids     = isSub ? [] : childrenOf(allLocs, loc.id);
+                    const isDragged = zoneDragId === loc.id;
+                    const isOver    = !!zoneOver && zoneOver.id === loc.id && !isDragged;
+                    const isInto    = isOver && zoneOver.into;
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const assignedPlan = loc.planId ? planById.get(loc.planId) : null;
                     const allPlanThumbs = [];
@@ -720,27 +776,43 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
                       <div key={loc.id}
-                        ref={el => { if (el) zoneNodesRef.current.set(locIdx, el); else zoneNodesRef.current.delete(locIdx); }}
-                        draggable={zoneDragArm === locIdx}
-                        onDragStart={() => { setZoneDragIdx(locIdx); zoneDragDidMove.current = false; }}
-                        onDragEnter={() => { if (zoneDragIdx !== null) { setZoneOverIdx(locIdx); zoneDragDidMove.current = true; } }}
-                        onDragEnd={() => { onZoneDragEnd(); setZoneDragArm(null); }}
+                        data-zone-id={loc.id}
+                        draggable={zoneDragArm === loc.id}
+                        onDragStart={e => {
+                          e.stopPropagation(); // une sous-zone ne déclenche pas le drag de son groupe
+                          if (zoneDragArm !== loc.id) { e.preventDefault(); return; } // drag natif d'une sélection de texte
+                          zoneDragDidMove.current = false; zoneOverRef.current = null;
+                          setZoneDragId(loc.id); setZoneOver(null);
+                        }}
+                        onDragEnd={e => { e.stopPropagation(); applyZoneDrop(loc.id); resetZoneDrag(); setZoneDragArm(null); setTimeout(() => { zoneDragDidMove.current = false; }, 0); }}
                         onMouseUp={() => setZoneDragArm(null)}
-                        onDragOver={e => e.preventDefault()}
+                        onDragOver={e => {
+                          e.preventDefault();
+                          if (!zoneDragId) return; // seulement pendant un VRAI glisser de zone
+                          e.stopPropagation();
+                          updateZoneOver(zoneTargetAt(e.clientX, e.clientY, zoneDragId), zoneDragId);
+                        }}
                         style={{
-                          background: zoneDragIdx===locIdx ? '#e8e8e8' : zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.redL : 'white',
+                          background: isDragged ? '#e8e8e8' : isOver && !isInto ? DA.redL : 'white',
                           borderRadius: 10,
-                          border: `1px solid ${zoneOverIdx===locIdx&&zoneDragIdx!==locIdx ? DA.red : DA.border}`,
-                          boxShadow: zoneDragIdx===locIdx ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
+                          border: `1px solid ${isOver && !isInto ? DA.red : DA.border}`,
+                          boxShadow: isDragged ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
                           overflow: 'hidden',
-                          opacity: zoneDragIdx===locIdx ? 0.45 : 1,
+                          opacity: isDragged ? 0.45 : 1,
                           transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
                         }}>
-                        <div style={{ display:'flex', alignItems:'center', padding:'16px 18px', gap:10 }}>
+                        <div data-zone-head={loc.id}
+                          style={{ display:'flex', alignItems:'center', padding: isSub ? '12px 14px' : '16px 18px', gap:10, position:'relative',
+                            ...(isInto ? { background:DA.redL, boxShadow:`inset 0 0 0 2px ${DA.red}` } : {}) }}>
+                          {isInto && (
+                            <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:DA.red, color:'white', fontSize:11, fontWeight:800, borderRadius:20, padding:'3px 10px', whiteSpace:'nowrap', zIndex:2, pointerEvents:'none' }}>
+                              Ranger dans « {loc.nom || 'cette zone'} »
+                            </span>
+                          )}
                           <div onClick={e => e.stopPropagation()}
-                            onTouchStart={e => startZoneTouch(e, locIdx)}
-                            onMouseDown={() => setZoneDragArm(locIdx)}
-                            title="Glisser pour réorganiser"
+                            onTouchStart={e => { e.stopPropagation(); startZoneTouch(e, loc.id); }}
+                            onMouseDown={() => setZoneDragArm(loc.id)}
+                            title="Glisser pour réorganiser — maintenir sur le titre d'une zone pour l'y ranger"
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
@@ -751,9 +823,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           <EditTitle
                             value={loc.nom}
                             onSave={nom => patchLoc(loc.id, { nom })}
-                            style={{ fontSize:13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
-                            inputStyle={{ fontSize:13, fontWeight:800, textTransform:'uppercase' }}
+                            style={{ fontSize: isSub ? 12.5 : 13, fontWeight:800, color:'#555', textTransform:'uppercase', letterSpacing:0.8 }}
+                            inputStyle={{ fontSize: isSub ? 12.5 : 13, fontWeight:800, textTransform:'uppercase' }}
                           />
+                          {kids.length > 0 && !isOpen && (
+                            <span style={{ fontSize:11.5, fontWeight:700, color:DA.grayL, whiteSpace:'nowrap', flexShrink:0 }}>
+                              {kids.length} sous-zone{kids.length > 1 ? 's' : ''}
+                            </span>
+                          )}
                           <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
                             {urgentCount > 0 && (
                               <span style={{ fontSize:12, fontWeight:700, background:'#FFF0F0', color:DA.red, border:`1px solid #FCA5A5`, borderRadius:10, padding:'2px 8px', lineHeight:1.6 }}>
@@ -777,6 +854,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             <SortList
                               items={items}
                               locId={loc.id}
+                              compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
@@ -935,11 +1013,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 <Ic n="map" s={13}/> Assigner un plan à cette zone
                               </button>
                             )}
+                            {kids.length > 0 && (
+                              <div style={{ borderTop:`1px solid ${DA.border}`, background:'#F6F6F6', padding: isDesktop ? '12px 12px 12px 22px' : '10px 8px 10px 14px', display:'flex', flexDirection:'column', gap:8 }}>
+                                {kids.map(k => renderZone(k, true))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
-                  })}
+                  };
+                  return allLocs.filter(l => !effectiveParentId(allLocs, l)).map(l => renderZone(l, false));
+                  })()}
                   <button onClick={addLoc}
                     style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
                     <Ic n="plus" s={16}/> Ajouter une zone
@@ -1026,7 +1111,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         return (
           <PlanLocModal
             loc={locForModal}
-            items={loc?.items || []}
+            // Zone groupe (« R+4 ») : photos de la zone + de ses sous-zones → on peut placer les
+            // repères des appartements sur le plan du R+4.
+            items={zonePlanItems(visitProjet.localisations, loc)}
             planLibrary={projet.planLibrary || []}
             autoAnnot={!!modal.autoAnnot}
             annotIdx={modal.annotIdx ?? null}

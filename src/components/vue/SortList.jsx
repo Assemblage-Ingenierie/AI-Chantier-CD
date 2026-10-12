@@ -128,7 +128,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
+export default function SortList({ items, locId = null, compactEmpty = false, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -338,7 +338,14 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
     )}
 
     <div ref={wrapperRef}>
-      {items.length === 0 && (
+      {/* Zone GROUPE (« R+4 ») sans observation propre : simple lien discret — ses sous-zones
+          portent le contenu, pas de gros encart vide (Règle 5 : écran épuré). */}
+      {items.length === 0 && compactEmpty && (
+        <button onClick={() => onEdit(null)} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:5, padding:'10px 14px', background:'white', border:'none', borderBottom:`1px solid ${DA.border}`, color:DA.red, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+          <Ic n="plus" s={13}/> Observation sur toute la zone
+        </button>
+      )}
+      {items.length === 0 && !compactEmpty && (
         <div style={{ padding:'24px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
           <p style={{ fontSize:14,color:DA.grayL,margin:'0 0 14px' }}>Aucune observation dans cette zone</p>
           <button onClick={() => onEdit(null)} style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'12px 22px',background:DA.red,color:'white',borderRadius:20,border:'none',fontSize:15,fontWeight:700,cursor:'pointer' }}>

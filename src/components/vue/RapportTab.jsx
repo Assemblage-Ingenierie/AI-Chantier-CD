@@ -9,6 +9,7 @@ import AnnexesModal from './AnnexesModal.jsx';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 import Costar from './Costar.jsx';
+import { zoneLabel } from '../../lib/zoneGroups.js';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   const taRef = useRef();
@@ -212,7 +213,7 @@ export default function RapportTab({ projet, onUpdate }) {
         return {
           itemId: i.id,
           isCustom: false,
-          locNom:   'zone'     in ov ? ov.zone     : (loc.nom     || ''),
+          locNom:   'zone'     in ov ? ov.zone     : zoneLabel(localisations, loc),
           titre:    'titre'    in ov ? ov.titre    : (i.titre      || ''),
           urgence:  'urgence'  in ov ? ov.urgence  : (i.urgence   || 'basse'),
           solution: 'solution' in ov ? ov.solution : '',
