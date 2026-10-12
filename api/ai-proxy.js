@@ -56,6 +56,75 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
   }
 }
 
+// ── Mistral (La Plateforme) — provider:'mistral', ou SECOURS automatique quand Gemini est à
+// court de quota. Variable d'env Vercel : MISTRAL_API_KEY (offre gratuite « Experiment »).
+// Réponse normalisée au MÊME format que Claude/Gemini → aucun changement côté app.
+const MISTRAL_API = 'https://api.mistral.ai/v1/chat/completions';
+const MISTRAL_DEFAULT = 'mistral-small-latest'; // texte + images, bon en français, quota gratuit
+
+function toMistralContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return String(content ?? '');
+  const parts = content.map(c => {
+    if (typeof c === 'string') return { type: 'text', text: c };
+    if (c?.type === 'text') return { type: 'text', text: c.text || '' };
+    if (c?.type === 'image' && c.source?.type === 'base64' && c.source?.data)
+      return { type: 'image_url', image_url: `data:${c.source.media_type || 'image/jpeg'};base64,${c.source.data}` };
+    if (c?.text) return { type: 'text', text: c.text };
+    return null;
+  }).filter(Boolean);
+  // Que du texte → une simple chaîne (compatible avec tous les modèles Mistral).
+  return parts.every(p => p.type === 'text') ? parts.map(p => p.text).join('\n') : parts;
+}
+
+async function callMistral(payload, apiKey, maxTokens, timeoutMs = 55000) {
+  const requested = typeof payload.model === 'string' && /^(mistral|magistral|pixtral|ministral|open-mistral)/.test(payload.model) ? payload.model : null;
+  const models = [...new Set([requested, MISTRAL_DEFAULT].filter(Boolean))];
+  const messages = [
+    ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
+    ...(payload.messages || []).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toMistralContent(m.content) })),
+  ];
+  let last = { status: 504, data: { error: { message: 'Timeout IA (55s) — réessaie' } }, model: models[0] };
+  for (const model of models) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const body = { model, messages, max_tokens: maxTokens, ...(payload.json ? { response_format: { type: 'json_object' } } : {}) };
+      const res = await fetch(MISTRAL_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      let data = null; try { data = await res.json(); } catch { /* corps illisible */ }
+      last = { status: res.status, data, model };
+      if (res.ok) break;
+      if (res.status === 401 || res.status === 429) break; // clé / quota : inutile d'essayer un autre modèle
+    } catch {
+      clearTimeout(t);
+    }
+  }
+  return last;
+}
+
+// Envoie la réponse Mistral au format commun ({ content:[{type:'text',text}], _finish }).
+function sendMistral(res, out) {
+  const { status, data, model } = out;
+  if (status === 401) return res.status(401).json({ error: 'Clé API Mistral invalide. Vérifie MISTRAL_API_KEY dans Vercel.' });
+  if (status === 429) return res.status(429).json({ error: 'Quota Mistral dépassé — réessaie dans une minute' });
+  if (status < 200 || status >= 300) {
+    const detail = data?.message || data?.error?.message || data?.detail || status;
+    return res.status(status || 500).json({ error: `Erreur IA Mistral (${model}) : ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` });
+  }
+  const choice = data?.choices?.[0];
+  const c = choice?.message?.content;
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => x?.text || '').join('') : '';
+  // finish_reason 'length' = réponse coupée → même signal que Gemini (le client la refuse).
+  const finish = choice?.finish_reason === 'length' ? 'MAX_TOKENS' : (choice?.finish_reason || null);
+  return res.status(200).json({ content: [{ type: 'text', text }], _model: data?.model || model, _finish: finish });
+}
+
 // ── Gemini (Google) — activé si la requête demande provider:'gemini' ────────────
 // Variable d'env Vercel requise : GEMINI_API_KEY. La réponse est normalisée au MÊME
 // format que Claude ({ content:[{type:'text',text}] }) → aucun changement côté app.
@@ -65,7 +134,7 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
 // gemini-3.x fantômes). Les versions numériques ne servent que de repli, et en DERNIER recours
 // une découverte dynamique (models.list) choisit un modèle réellement disponible.
 const GEMINI_MODEL = 'gemini-flash-latest';
-const GEMINI_FLASH_FALLBACKS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GEMINI_FLASH_FALLBACKS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GEMINI_PRO_FALLBACKS   = ['gemini-pro-latest', 'gemini-2.5-pro'];
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
@@ -191,7 +260,14 @@ export default async function handler(req, res) {
 
   const maxTokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
 
-  // ── Routage MOTEUR : Gemini si demandé, sinon Claude (défaut) ──
+  // ── Routage MOTEUR : Mistral / Gemini si demandé, sinon Claude (défaut) ──
+  const mistralKey = (process.env.MISTRAL_API_KEY || '').trim();
+  if (payload.provider === 'mistral') {
+    if (!mistralKey) {
+      return res.status(500).json({ error: 'Mistral non configuré (MISTRAL_API_KEY manquante dans Vercel). Choisis un autre moteur dans les Paramètres.' });
+    }
+    return sendMistral(res, await callMistral(payload, mistralKey, maxTokens));
+  }
   if (payload.provider === 'gemini') {
     const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
     if (!geminiKey) {
@@ -207,9 +283,11 @@ export default async function handler(req, res) {
     const seen = new Set();
     const tryModels = ordered.filter(m => m && !seen.has(m) && (seen.add(m), true));
 
-    // Erreur TERMINALE (inutile d'essayer d'autres modèles) : clé invalide, quota, permission.
+    // Erreur TERMINALE (inutile d'essayer d'autres modèles) : clé invalide, permission.
+    // PAS le quota (429) : chaque modèle a SON quota gratuit (Flash épuisé → Flash-Lite, bien
+    // plus généreux, prend le relais au lieu d'abandonner).
     const isTerminal = (st, d) =>
-      st === 429 || st === 403 ||
+      st === 403 ||
       (st === 400 && /api[_ ]?key|permission|denied/i.test(JSON.stringify(d?.error || '')));
 
     let gUp = null, gData = null, gModel = null, timedOutAll = true;
@@ -249,6 +327,8 @@ export default async function handler(req, res) {
 
     if (timedOutAll || !gUp) return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
     if (gUp.status === 429) {
+      // Secours automatique : tous les quotas Gemini épuisés → Mistral (si la clé est configurée).
+      if (mistralKey) return sendMistral(res, await callMistral({ ...payload, model: null }, mistralKey, maxTokens));
       return res.status(429).json({ error: 'Quota Gemini dépassé — réessaie dans quelques minutes' });
     }
     if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {

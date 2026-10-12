@@ -412,7 +412,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
           <div style={{ marginBottom:22 }}>
             <p style={sectionTitle}>Moteur IA</p>
             <div style={{ display:'flex', gap:6 }}>
-              {[{ k:'claude', l:'Claude', s:'défaut' }, { k:'gemini-flash', l:'Gemini Flash', s:'rapide' }, { k:'gemini-pro', l:'Gemini Pro', s:'précis' }].map(o => {
+              {[{ k:'claude', l:'Claude', s:'défaut' }, { k:'gemini-flash', l:'Gemini Flash', s:'rapide' }, { k:'gemini-pro', l:'Gemini Pro', s:'précis' }, { k:'mistral', l:'Mistral', s:'gratuit' }].map(o => {
                 const active = aiProvider === o.k;
                 return (
                   <button key={o.k} onClick={() => { setAIProvider(o.k); setAiProviderState(o.k); }}
@@ -426,7 +426,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
             </div>
             <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
               Moteur utilisé pour générer et améliorer les textes (rédaction, correction). <strong>Claude</strong> par défaut.
-              <strong> Gemini Pro</strong> = meilleure qualité/précision mais plus lent ; <strong>Flash</strong> = rapide. Réversible à tout moment.
+              <strong> Gemini Pro</strong> = meilleure qualité/précision mais plus lent ; <strong>Flash</strong> = rapide ; <strong>Mistral</strong> = offre gratuite (et secours automatique quand Gemini est à court de quota). Réversible à tout moment.
             </p>
           </div>
 

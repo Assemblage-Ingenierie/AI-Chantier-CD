@@ -8,7 +8,7 @@ const THROTTLE_MS = 15000; // 15s entre deux appels par feature pour ménager le
 // localStorage, réglable via le switch des Paramètres. La préférence est traduite en
 // provider + modèle et envoyée au proxy à chaque appel ; le proxy route en conséquence.
 const AI_PROVIDER_KEY = 'chantierai_ai_provider';
-const AI_ENGINES = ['claude', 'gemini-flash', 'gemini-pro'];
+const AI_ENGINES = ['claude', 'gemini-flash', 'gemini-pro', 'mistral'];
 // Alias `-latest` : pointent toujours vers la dernière version stable → jamais périmés quand
 // Google retire un numéro de version (le proxy a en plus des replis + une découverte dynamique).
 const GEMINI_MODEL_FOR = { 'gemini-flash': 'gemini-flash-latest', 'gemini-pro': 'gemini-pro-latest' };
@@ -37,7 +37,11 @@ export async function callAIProxy(params) {
   // Moteur IA choisi dans les Paramètres (défaut Claude) — le proxy route en conséquence.
   if (!params.provider) {
     const engine = getAIProvider();
-    if (engine === 'gemini-flash' || engine === 'gemini-pro') {
+    if (engine === 'mistral') {
+      // Mistral (offre gratuite) : modèle par défaut du proxy sauf si un modèle Mistral est demandé.
+      params.provider = 'mistral';
+      if (!params.model || !/^(mistral|magistral|pixtral|ministral)/.test(String(params.model))) params.model = 'mistral-small-latest';
+    } else if (engine === 'gemini-flash' || engine === 'gemini-pro') {
       params.provider = 'gemini';
       // Remplace tout modèle Claude passé en dur par le modèle Gemini choisi (sinon le proxy
       // ignore ce nom et retombe sur le Flash par défaut → « Pro » ne serait jamais utilisé).
