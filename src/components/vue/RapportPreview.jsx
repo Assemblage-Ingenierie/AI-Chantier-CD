@@ -166,8 +166,10 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
     // sous-zones a du contenu. Sous-zone : sous-titre. Sans groupe → rendu inchangé.
     const isGroup = childrenOf(locs, loc.id).length > 0;
     if (!isGroup && !items.some(i => !isBrouillon(i))) continue;
-    const level = isGroup ? 'group' : (effectiveParentId(locs, loc) ? 'sub' : 'zone');
-    blocks.push({ type:'zone', id:loc.id, loc, level });
+    const parentId = effectiveParentId(locs, loc);
+    const level = isGroup ? 'group' : (parentId ? 'sub' : 'zone');
+    const parentNom = parentId ? (locs.find(l => l.id === parentId)?.nom || '') : '';
+    blocks.push({ type:'zone', id:loc.id, loc, level, parentNom });
     let photoOffset = 0;
     for (const item of items) {
       const photos  = (item.photos || []).filter(p => p.data || p.annotated);
@@ -426,20 +428,16 @@ function ParaCutZone({ paraId, onCut }) {
   );
 }
 
-function ZoneHeader({ loc, level = 'zone' }) {
-  // Groupe (« R+4 ») : titre plus marqué. Sous-zone (« M. Albert Thomas ») : sous-titre en retrait,
-  // filet fin. Zone normale : inchangé.
-  if (level === 'sub') {
-    return (
-      <div style={{ borderBottom:'1px solid #D9D9D9', paddingBottom:3, marginBottom:6, marginLeft:8, display:'flex', alignItems:'center', gap:5 }}>
-        <span style={{ width:3, height:9, background:DA.red, flexShrink:0 }}/>
-        <span style={{ fontSize:8.5, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#333', textTransform:'uppercase', letterSpacing:'0.07em' }}>{loc.nom}</span>
-      </div>
-    );
-  }
+function ZoneHeader({ loc, level = 'zone', parentNom = '' }) {
+  // Même disposition que l'écran Visite (choix Thomas) : toutes les zones au MÊME niveau, une
+  // zone rangée dans un groupe affiche simplement le nom du groupe devant (« R+4 › M. ALBERT
+  // THOMAS »). Zone normale et groupe : titre inchangé.
   return (
-    <div style={{ borderBottom:`${level === 'group' ? 3 : 2}px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
-      <span style={{ fontSize: level === 'group' ? 10.5 : 9, fontFamily:"'Open Sans', sans-serif", fontWeight: level === 'group' ? 800 : 700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loc.nom}</span>
+    <div style={{ borderBottom:`2px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+      <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+        {level === 'sub' && parentNom && <span style={{ color:DA.red }}>{parentNom} › </span>}
+        {loc.nom}
+      </span>
     </div>
   );
 }
@@ -2636,7 +2634,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {allBlocks.map(block => (
               <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
                 {block.type === 'zone'
-                  ? <ZoneHeader loc={block.loc} level={block.level}/>
+                  ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                   : block.type === 'itemplan'
@@ -2699,7 +2697,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
                       <div>
                         {block.type === 'zone'
-                          ? <ZoneHeader loc={block.loc} level={block.level}/>
+                          ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
                           : block.type === 'plan'
                           ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                           : block.type === 'itemplan'
