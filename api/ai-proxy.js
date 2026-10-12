@@ -56,6 +56,58 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
   }
 }
 
+// ── Mistral (La Plateforme) — provider:'mistral', ou SECOURS automatique quand Gemini est à
+// court de quota. Variable d'env Vercel : MISTRAL_API_KEY (offre gratuite « Experiment »).
+// Réponse normalisée au MÊME format que Claude/Gemini → aucun changement côté app.
+const MISTRAL_API = 'https://api.mistral.ai/v1/chat/completions';
+const MISTRAL_DEFAULT = 'mistral-small-latest'; // texte + images, bon en français, quota gratuit
+
+function toMistralContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return String(content ?? '');
+  const parts = content.map(c => {
+    if (typeof c === 'string') return { type: 'text', text: c };
+    if (c?.type === 'text') return { type: 'text', text: c.text || '' };
+    if (c?.type === 'image' && c.source?.type === 'base64' && c.source?.data)
+      return { type: 'image_url', image_url: `data:${c.source.media_type || 'image/jpeg'};base64,${c.source.data}` };
+    if (c?.text) return { type: 'text', text: c.text };
+    return null;
+  }).filter(Boolean);
+  // Que du texte → une simple chaîne (compatible avec tous les modèles Mistral).
+  return parts.every(p => p.type === 'text') ? parts.map(p => p.text).join('\n') : parts;
+}
+
+async function callMistral(payload, apiKey, maxTokens, timeoutMs = 55000) {
+  const requested = typeof payload.model === 'string' && /^(mistral|magistral|pixtral|ministral|open-mistral)/.test(payload.model) ? payload.model : null;
+  const models = [...new Set([requested, MISTRAL_DEFAULT].filter(Boolean))];
+  const messages = [
+    ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
+    ...(payload.messages || []).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toMistralContent(m.content) })),
+  ];
+  let last = { status: 504, data: { error: { message: 'Timeout IA (55s) — réessaie' } }, model: models[0] };
+  for (const model of models) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const body = { model, messages, max_tokens: maxTokens, ...(payload.json ? { response_format: { type: 'json_object' } } : {}) };
+      const res = await fetch(MISTRAL_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      let data = null; try { data = await res.json(); } catch { /* corps illisible */ }
+      last = { status: res.status, data, model };
+      if (res.ok) break;
+      if (res.status === 401 || res.status === 429) break; // clé / quota : inutile d'essayer un autre modèle
+    } catch {
+      clearTimeout(t);
+    }
+  }
+  return last;
+}
+
 // ── Gemini (Google) — activé si la requête demande provider:'gemini' ────────────
 // Variable d'env Vercel requise : GEMINI_API_KEY. La réponse est normalisée au MÊME
 // format que Claude ({ content:[{type:'text',text}] }) → aucun changement côté app.
@@ -65,7 +117,7 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
 // gemini-3.x fantômes). Les versions numériques ne servent que de repli, et en DERNIER recours
 // une découverte dynamique (models.list) choisit un modèle réellement disponible.
 const GEMINI_MODEL = 'gemini-flash-latest';
-const GEMINI_FLASH_FALLBACKS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GEMINI_FLASH_FALLBACKS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GEMINI_PRO_FALLBACKS   = ['gemini-pro-latest', 'gemini-2.5-pro'];
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
@@ -150,6 +202,116 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, 
   }
 }
 
+// ── Exécuteurs par moteur : renvoient { status, json } (json = corps à renvoyer au client) ──
+
+async function runMistral(payload, apiKey, maxTokens) {
+  const out = await callMistral(payload, apiKey, maxTokens);
+  const { status, data, model } = out;
+  if (status === 401) return { status: 401, json: { error: 'Clé API Mistral invalide. Vérifie MISTRAL_API_KEY dans Vercel.' } };
+  if (status === 429) return { status: 429, json: { error: 'Quota Mistral dépassé — réessaie dans une minute' } };
+  if (status < 200 || status >= 300) {
+    const detail = data?.message || data?.error?.message || data?.detail || status;
+    return { status: status || 500, json: { error: `Erreur IA Mistral (${model}) : ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` } };
+  }
+  const choice = data?.choices?.[0];
+  const c = choice?.message?.content;
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => x?.text || '').join('') : '';
+  // finish_reason 'length' = réponse coupée → même signal que Gemini (le client la refuse).
+  const finish = choice?.finish_reason === 'length' ? 'MAX_TOKENS' : (choice?.finish_reason || null);
+  return { status: 200, json: { content: [{ type: 'text', text }], _model: data?.model || model, _finish: finish } };
+}
+
+async function runGemini(payload, geminiKey, maxTokens) {
+  const requested = (typeof payload.model === 'string' && payload.model.startsWith('gemini-')) ? payload.model : null;
+  const wantPro = requested ? /pro/i.test(requested) : false;
+
+  // Liste ORDONNÉE de modèles à essayer : (1) un modèle déjà validé cette session (cache),
+  // (2) le modèle demandé, (3) les replis connus. On dédoublonne en gardant l'ordre.
+  const cachedGood = wantPro ? _discovered.pro : _discovered.flash;
+  // Pro (souvent hors offre gratuite) → repli sur les Flash avant de changer de moteur.
+  const ordered = [cachedGood, requested, ...(wantPro ? [...GEMINI_PRO_FALLBACKS, ...GEMINI_FLASH_FALLBACKS] : GEMINI_FLASH_FALLBACKS)];
+  const seen = new Set();
+  const tryModels = ordered.filter(m => m && !seen.has(m) && (seen.add(m), true));
+
+  // Erreur TERMINALE (inutile d'essayer d'autres modèles) : clé invalide, permission.
+  // PAS le quota (429) : chaque modèle a SON quota gratuit (Flash épuisé → Flash-Lite, bien
+  // plus généreux, prend le relais au lieu d'abandonner).
+  const isTerminal = (st, d) =>
+    st === 403 ||
+    (st === 400 && /api[_ ]?key|permission|denied/i.test(JSON.stringify(d?.error || '')));
+
+  let gUp = null, gData = null, gModel = null, timedOutAll = true;
+  const runOne = async (cand) => {
+    // Flash : réflexion coupée (rapide) SAUF si la requête demande un budget de réflexion.
+    const fast = /flash/i.test(cand) && !Number.isFinite(payload.thinkingBudget);
+    const r = await callGemini(cand, payload, geminiKey, maxTokens, 55000, fast);
+    if (r.timedOut || !r.res) return { timedOut: true };
+    let d; try { d = await r.res.json(); } catch { return { res: r.res, data: null }; }
+    // Réglage refusé (thinking/responseMimeType) → on réessaie le MÊME modèle sans les extras.
+    if (r.res.status === 400 && /invalid.?argument/i.test(JSON.stringify(d?.error || ''))) {
+      const rt = await callGemini(cand, { ...payload, json: false }, geminiKey, maxTokens, 55000, false);
+      if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); return { res: rt.res, data: d2 }; } catch { /* garde d'origine */ } }
+    }
+    return { res: r.res, data: d };
+  };
+
+  for (const cand of tryModels) {
+    const out = await runOne(cand);
+    if (out.timedOut) continue;
+    timedOutAll = false;
+    gUp = out.res; gData = out.data; gModel = cand;
+    if (out.res.ok) { if (wantPro) _discovered.pro = cand; else _discovered.flash = cand; break; }
+    if (isTerminal(out.res.status, out.data)) break; // clé/quota → arrêter, message clair plus bas
+    // sinon (404 modèle absent, 400 not found, 500…) → candidat suivant
+  }
+
+  // DERNIER RECOURS : aucun modèle connu n'a marché → on demande à Google la liste réelle et on
+  // essaie le meilleur modèle disponible. Rend l'IA insensible aux renommages/retraits de Google.
+  if ((!gUp || !gUp.ok) && !(gUp && isTerminal(gUp.status, gData))) {
+    const disc = await discoverGeminiModel(geminiKey, wantPro);
+    if (disc && !seen.has(disc)) {
+      const out = await runOne(disc);
+      if (!out.timedOut) { timedOutAll = false; gUp = out.res; gData = out.data; gModel = disc; }
+    }
+  }
+
+  if (timedOutAll || !gUp) return { status: 504, json: { error: 'Timeout IA (55s) — réessaie' } };
+  if (gUp.status === 429) return { status: 429, json: { error: 'Quota Gemini dépassé — réessaie dans quelques minutes' } };
+  if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
+    return { status: 401, json: { error: 'Clé API Gemini invalide. Vérifie GEMINI_API_KEY dans Vercel.' } };
+  }
+  if (!gUp.ok) {
+    const detail = gData?.error?.message || gUp.status;
+    return { status: gUp.status || 500, json: { error: `Erreur IA Gemini (${gModel}) : ${detail}` } };
+  }
+  const gText = (gData.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('') || '';
+  // _finish : motif de fin (STOP, MAX_TOKENS…) → le client peut REFUSER une réponse coupée au
+  // lieu de la prendre pour un texte complet (sinon la fin manquante = « à supprimer »).
+  return { status: 200, json: { content: [{ type: 'text', text: gText }], _model: gModel, _finish: gData.candidates?.[0]?.finishReason || null } };
+}
+
+async function runClaude(payload, anthropicKey, maxTokens) {
+  const model = resolveModel(payload.model);
+  let { res: upstream, timedOut } = await callClaude(model, payload, anthropicKey, maxTokens);
+  if (timedOut || !upstream) return { status: 504, json: { error: 'Timeout IA (55s) — réessaie' } };
+  let data;
+  try { data = await upstream.json(); } catch {
+    return { status: 502, json: { error: 'Réponse invalide du modèle' } };
+  }
+  // Si overloaded ou erreur serveur, retry avec le modèle de fallback
+  if ((upstream.status === 529 || upstream.status === 503) && model !== FALLBACK_MODEL) {
+    const fb = await callClaude(FALLBACK_MODEL, payload, anthropicKey, maxTokens);
+    if (!fb.timedOut && fb.res) {
+      try { data = await fb.res.json(); upstream = fb.res; } catch { /* garde la 1re réponse */ }
+    }
+  }
+  if (upstream.status === 401) return { status: 401, json: { error: 'Clé API Claude invalide ou expirée. Vérifie ANTHROPIC_API_KEY dans Vercel.' } };
+  if (upstream.status === 429) return { status: 429, json: { error: `Quota Claude dépassé — ${data?.error?.message || 'réessaie dans quelques minutes'}` } };
+  if (!upstream.ok) return { status: upstream.status || 500, json: { error: `Erreur IA : ${data?.error?.message || upstream.status}` } };
+  // Réponse Anthropic : { content: [{ type:'text', text:'...' }] }
+  return { status: 200, json: { content: [{ type: 'text', text: data.content?.[0]?.text ?? '' }], _model: data.model || model } };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -191,119 +353,30 @@ export default async function handler(req, res) {
 
   const maxTokens = Math.min(Number(payload.max_tokens) || 1024, MAX_TOKENS_CAP);
 
-  // ── Routage MOTEUR : Gemini si demandé, sinon Claude (défaut) ──
-  if (payload.provider === 'gemini') {
-    const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (!geminiKey) {
-      return res.status(500).json({ error: 'Gemini non configuré (GEMINI_API_KEY manquante dans Vercel). Repasse sur Claude dans les Paramètres.' });
-    }
-    const requested = (typeof payload.model === 'string' && payload.model.startsWith('gemini-')) ? payload.model : null;
-    const wantPro = requested ? /pro/i.test(requested) : false;
-
-    // Liste ORDONNÉE de modèles à essayer : (1) un modèle déjà validé cette session (cache),
-    // (2) le modèle demandé, (3) les replis connus. On dédoublonne en gardant l'ordre.
-    const cachedGood = wantPro ? _discovered.pro : _discovered.flash;
-    const ordered = [cachedGood, requested, ...(wantPro ? GEMINI_PRO_FALLBACKS : GEMINI_FLASH_FALLBACKS)];
-    const seen = new Set();
-    const tryModels = ordered.filter(m => m && !seen.has(m) && (seen.add(m), true));
-
-    // Erreur TERMINALE (inutile d'essayer d'autres modèles) : clé invalide, quota, permission.
-    const isTerminal = (st, d) =>
-      st === 429 || st === 403 ||
-      (st === 400 && /api[_ ]?key|permission|denied/i.test(JSON.stringify(d?.error || '')));
-
-    let gUp = null, gData = null, gModel = null, timedOutAll = true;
-    const runOne = async (cand) => {
-      // Flash : réflexion coupée (rapide) SAUF si la requête demande un budget de réflexion.
-      const fast = /flash/i.test(cand) && !Number.isFinite(payload.thinkingBudget);
-      const r = await callGemini(cand, payload, geminiKey, maxTokens, 55000, fast);
-      if (r.timedOut || !r.res) return { timedOut: true };
-      let d; try { d = await r.res.json(); } catch { return { res: r.res, data: null }; }
-      // Réglage refusé (thinking/responseMimeType) → on réessaie le MÊME modèle sans les extras.
-      if (r.res.status === 400 && /invalid.?argument/i.test(JSON.stringify(d?.error || ''))) {
-        const rt = await callGemini(cand, { ...payload, json: false }, geminiKey, maxTokens, 55000, false);
-        if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); return { res: rt.res, data: d2 }; } catch { /* garde d'origine */ } }
-      }
-      return { res: r.res, data: d };
-    };
-
-    for (const cand of tryModels) {
-      const out = await runOne(cand);
-      if (out.timedOut) continue;
-      timedOutAll = false;
-      gUp = out.res; gData = out.data; gModel = cand;
-      if (out.res.ok) { if (wantPro) _discovered.pro = cand; else _discovered.flash = cand; break; }
-      if (isTerminal(out.res.status, out.data)) break; // clé/quota → arrêter, message clair plus bas
-      // sinon (404 modèle absent, 400 not found, 500…) → candidat suivant
-    }
-
-    // DERNIER RECOURS : aucun modèle connu n'a marché → on demande à Google la liste réelle et on
-    // essaie le meilleur modèle disponible. Rend l'IA insensible aux renommages/retraits de Google.
-    if ((!gUp || !gUp.ok) && !(gUp && isTerminal(gUp.status, gData))) {
-      const disc = await discoverGeminiModel(geminiKey, wantPro);
-      if (disc && !seen.has(disc)) {
-        const out = await runOne(disc);
-        if (!out.timedOut) { timedOutAll = false; gUp = out.res; gData = out.data; gModel = disc; }
-      }
-    }
-
-    if (timedOutAll || !gUp) return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
-    if (gUp.status === 429) {
-      return res.status(429).json({ error: 'Quota Gemini dépassé — réessaie dans quelques minutes' });
-    }
-    if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
-      return res.status(401).json({ error: 'Clé API Gemini invalide. Vérifie GEMINI_API_KEY dans Vercel.' });
-    }
-    if (!gUp.ok) {
-      const detail = gData?.error?.message || gUp.status;
-      return res.status(gUp.status || 500).json({ error: `Erreur IA Gemini (${gModel}) : ${detail}` });
-    }
-    const gText = (gData.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('') || '';
-    // _finish : motif de fin (STOP, MAX_TOKENS…) → le client peut REFUSER une réponse coupée au
-    // lieu de la prendre pour un texte complet (sinon la fin manquante = « à supprimer »).
-    return res.status(200).json({ content: [{ type: 'text', text: gText }], _model: gModel, _finish: gData.candidates?.[0]?.finishReason || null });
+  // ── Routage MOTEUR avec SECOURS AUTOMATIQUE entre moteurs ──
+  // Le moteur choisi dans les Paramètres passe en premier ; s'il échoue (quota épuisé, clé
+  // absente ou invalide, panne, délai), l'app bascule SEULE sur les autres moteurs configurés.
+  // But : que l'IA marche avec la seule clé Gemini et/ou Mistral, sans jamais dépendre de Claude.
+  const keys = {
+    gemini:  (process.env.GEMINI_API_KEY || '').trim(),
+    mistral: (process.env.MISTRAL_API_KEY || '').trim(),
+    claude:  (process.env.ANTHROPIC_API_KEY || '').trim(),
+  };
+  const order = payload.provider === 'mistral' ? ['mistral', 'gemini', 'claude']
+    : payload.provider === 'gemini' ? ['gemini', 'mistral', 'claude']
+    : ['claude', 'gemini', 'mistral'];
+  const runners = { gemini: runGemini, mistral: runMistral, claude: runClaude };
+  let firstFail = null;
+  const t0 = Date.now();
+  for (const prov of order) {
+    if (!keys[prov]) continue;
+    if (firstFail && Date.now() - t0 > 40000) break; // la fonction Vercel s'arrête à 60 s
+    // Moteur de SECOURS : on ne lui impose pas le modèle demandé pour un autre moteur.
+    const p = prov === payload.provider || (prov === 'claude' && !payload.provider) ? payload : { ...payload, model: null };
+    const out = await runners[prov](p, keys[prov], maxTokens);
+    if (out.status === 200) return res.status(200).json(out.json);
+    if (!firstFail) firstFail = out;
   }
-
-  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!anthropicKey) {
-    return res.status(500).json({ error: 'Clé API manquante (ANTHROPIC_API_KEY non configurée dans Vercel)' });
-  }
-
-  const model = resolveModel(payload.model);
-
-  // Tentative avec le modèle principal
-  let { res: upstream, timedOut, err } = await callClaude(model, payload, anthropicKey, maxTokens);
-
-  if (timedOut) {
-    return res.status(504).json({ error: 'Timeout IA (55s) — réessaie' });
-  }
-
-  let data;
-  try { data = await upstream.json(); } catch {
-    return res.status(502).json({ error: 'Réponse invalide du modèle' });
-  }
-
-  // Si overloaded ou erreur serveur, retry avec le modèle de fallback
-  if ((upstream.status === 529 || upstream.status === 503) && model !== FALLBACK_MODEL) {
-    const fb = await callClaude(FALLBACK_MODEL, payload, anthropicKey, maxTokens);
-    if (!fb.timedOut && fb.res) {
-      try { data = await fb.res.json(); upstream = fb.res; } catch {}
-    }
-  }
-
-  if (upstream.status === 401) {
-    return res.status(401).json({ error: 'Clé API Claude invalide ou expirée. Vérifie ANTHROPIC_API_KEY dans Vercel.' });
-  }
-  if (upstream.status === 429) {
-    const retryAfter = data?.error?.message || '';
-    return res.status(429).json({ error: `Quota Claude dépassé — ${retryAfter || 'réessaie dans quelques minutes'}` });
-  }
-  if (!upstream.ok) {
-    const detail = data?.error?.message || upstream.status;
-    return res.status(upstream.status || 500).json({ error: `Erreur IA : ${detail}` });
-  }
-
-  // Réponse Anthropic : { content: [{ type:'text', text:'...' }] }
-  const text = data.content?.[0]?.text ?? '';
-  return res.status(200).json({ content: [{ type: 'text', text }], _model: data.model || model });
+  if (firstFail) return res.status(firstFail.status || 500).json(firstFail.json);
+  return res.status(500).json({ error: 'Aucun moteur IA configuré (GEMINI_API_KEY / MISTRAL_API_KEY dans Vercel).' });
 }
