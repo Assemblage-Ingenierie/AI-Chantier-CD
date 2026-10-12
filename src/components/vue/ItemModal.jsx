@@ -7,6 +7,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
+import { buildDiffSegments, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
@@ -484,39 +485,6 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
   };
 
   // Construit des segments diff avec corrections individuellement toggleables
-  const buildDiffSegments = (orig, corr) => {
-    const wa = orig.split(/(\s+)/);
-    const wb = corr.split(/(\s+)/);
-    const n = wa.length, m = wb.length;
-    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = 1; i <= n; i++)
-      for (let j = 1; j <= m; j++)
-        dp[i][j] = wa[i-1] === wb[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
-    const tokens = [];
-    let i = n, j = m;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && wa[i-1] === wb[j-1]) { tokens.unshift({ t:'eq', v:wb[j-1] }); i--; j--; }
-      else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
-      else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
-    }
-    // Grouper en segments : texte neutre ou correction toggleable
-    const segs = [];
-    let ci = 0, k = 0;
-    while (k < tokens.length) {
-      if (tokens[k].t === 'eq') {
-        let text = '';
-        while (k < tokens.length && tokens[k].t === 'eq') { text += tokens[k].v; k++; }
-        segs.push({ type:'eq', text });
-      } else {
-        const dels = [], adds = [];
-        while (k < tokens.length && tokens[k].t === 'del') { dels.push(tokens[k].v); k++; }
-        while (k < tokens.length && tokens[k].t === 'add') { adds.push(tokens[k].v); k++; }
-        segs.push({ type:'fix', id: ci++, del: dels.join(''), add: adds.join(''), active: true });
-      }
-    }
-    return segs;
-  };
-
   const toggleFix = (id) => setSpellDiff(d => ({
     ...d,
     segments: d.segments.map(s => s.type === 'fix' && s.id === id ? { ...s, active: !s.active } : s),
@@ -524,10 +492,17 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
 
   const applyDiff = (all = false) => {
     const segs = all ? spellDiff.segments.map(s => s.type === 'fix' ? { ...s, active: true } : s) : spellDiff.segments;
-    let result = form.commentaire;
-    for (const seg of segs) {
-      if (seg.type !== 'fix' || !seg.active || !seg.del) continue;
-      result = patchHtmlText(result, seg.del, seg.add);
+    // Application À LA POSITION EXACTE de chaque correction (retour Thomas : « la correction ne
+    // s'est pas appliquée »). L'ancienne méthode corrigeait la 1re occurrence du mot dans tout
+    // le texte (mauvaise phrase) et ignorait les insertions ; elle ne sert plus que de repli si
+    // l'alignement texte ↔ HTML échoue (texte modifié entre-temps).
+    let result = applyFixesAtPositions(form.commentaire, spellDiff.original || '', segs);
+    if (result == null) {
+      result = form.commentaire;
+      for (const seg of segs) {
+        if (seg.type !== 'fix' || !seg.active || !seg.del) continue;
+        result = patchHtmlText(result, seg.del, seg.add);
+      }
     }
     setForm(f => ({ ...f, commentaire: result }));
     setSpellDiff(null);
