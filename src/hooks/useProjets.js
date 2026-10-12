@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, getPersistedDeletedItemIds, removePersistedDeletedItemId } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes } from '../lib/storage.js';
+import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -28,7 +29,7 @@ function writePinnedVisiteIds(set) {
 //   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
 //   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
 //   Si null (1ère/legacy session) : seuls les projets déjà dans dirtyIds sont traités comme unsynced.
-export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null, deletedItemIds = null) {
+export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null, deletedItemIds = null, deletedLocIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
   // When previousRemoteIds is null (first/legacy session), only treat local-only projects
@@ -220,14 +221,20 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
   // même si une copie traîne encore côté serveur / cache / autre session. Choix délibéré de NE
   // PAS disperser le filtre dans les branches délicates de fusion (Règle N°2). La restauration
   // (bibliothèque de récupération) lève d'abord le tombstone → l'obs restaurée n'est pas filtrée.
-  const stripTombstonedItems = (ps) => (!deletedItemIds || deletedItemIds.size === 0) ? ps : ps.map(p => ({
+  // Même passe pour les ZONES supprimées (deletedLocIds) : une zone tombstonée disparaît avec ses
+  // observations, quel que soit le chemin (cache périmé, autre appareil, version serveur).
+  const hasItemTomb = !!(deletedItemIds && deletedItemIds.size);
+  const hasLocTomb = !!(deletedLocIds && deletedLocIds.size);
+  const stripTombstonedItems = (ps) => (!hasItemTomb && !hasLocTomb) ? ps : ps.map(p => ({
     ...p,
     visites: (p.visites || []).map(v => ({
       ...v,
-      localisations: (v.localisations || []).map(l => ({
-        ...l,
-        items: (l.items || []).filter(it => !it?.id || !deletedItemIds.has(it.id)),
-      })),
+      localisations: (v.localisations || [])
+        .filter(l => !hasLocTomb || !l?.id || !deletedLocIds.has(l.id))
+        .map(l => !hasItemTomb ? l : ({
+          ...l,
+          items: (l.items || []).filter(it => !it?.id || !deletedItemIds.has(it.id)),
+        })),
     })),
   }));
 
@@ -319,6 +326,13 @@ export function useProjets(onSyncStatus) {
     // dans deletedIdsRef AVANT le filtrage → un projet supprimé sur un autre appareil est bloqué
     // ici aussi. Défensif : Set vide si la table n'existe pas encore (migration non appliquée).
     const tombstonePromise = loadDeletedChantierIds().catch(() => new Set());
+    // Pierres tombales ZONES / OBSERVATIONS partagées entre appareils : envoi de la file locale puis
+    // alignement sur le serveur. Borné à 4 s pour ne jamais retarder l'ouverture ; en cas d'échec
+    // (hors ligne, table absente), le mémo local fait foi — comportement d'avant.
+    const entityTombPromise = Promise.race([
+      syncTombstones().catch(() => null),
+      new Promise(r => setTimeout(() => r(null), 4000)),
+    ]);
     // Lire la dernière sauvegarde « boîte noire » AVANT tout merge — sert à détecter
     // si le chargement aboutit à MOINS de contenu que ce qui était sauvegardé localement
     // (scénario : modif PC non synchronisée écrasée par le remote au rechargement).
@@ -329,7 +343,7 @@ export function useProjets(onSyncStatus) {
       .catch(() => {})
       .finally(() => setHydrated(true));
 
-    Promise.all([loadData(), tombstonePromise])
+    Promise.all([loadData(), tombstonePromise, entityTombPromise])
       .then(([remotePs, serverDeleted]) => {
         setLoadError(null);
         // Fusionner les tombstones serveur (Phase 2) dans le mémo local AVANT tout filtrage.
@@ -367,7 +381,7 @@ export function useProjets(onSyncStatus) {
           }
         }
 
-        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getPersistedDeletedItemIds());
+        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getDeletedIds('item'), getDeletedIds('loc'));
         // Mark locally-newer and unsynced projects dirty so saves are targeted.
         // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
         // that were deleted by another user between our loadData() and our save.
@@ -505,10 +519,12 @@ export function useProjets(onSyncStatus) {
     if (syncPausedRef.current) return; // mode visite : pas de merge distant pendant la visite
     try {
       const previousRemoteIds = getPersistedRemoteIds();
-      const remotePs = await loadData();
+      // Pierres tombales rafraîchies EN MÊME TEMPS que les projets : une suppression ou une
+      // restauration faite sur un autre appareil est prise en compte sans attendre un rechargement.
+      const [remotePs] = await Promise.all([loadData(), syncTombstones().catch(() => null)]);
       if (!remotePs.length) return;
       const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getPersistedDeletedItemIds());
+      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getDeletedIds('item'), getDeletedIds('loc'));
       // If local-only plans/locs were found, mark dirty and trigger a save
       if (keptLocalIds.size > 0) {
         keptLocalIds.forEach(id => dirtyIds.current.add(id));
@@ -623,7 +639,7 @@ export function useProjets(onSyncStatus) {
     const already = (loc.items || []).some(i => i.id === entry.item.id);
     // Lève la pierre tombale AVANT de ré-insérer, sinon la prochaine fusion re-supprimerait
     // aussitôt l'observation restaurée (anti-résurrection de la partie A).
-    removePersistedDeletedItemId(entry.item.id);
+    liftTombstone(entry.item.id); // local + serveur (partagé entre appareils)
     updateProjet(entry.projectId, (p) => ({
       ...p,
       visites: (p.visites || []).map(v => v.id !== entry.visiteId ? v : {
@@ -1198,7 +1214,7 @@ export function useProjets(onSyncStatus) {
   // supprimée, tombstone serveur jamais posé). On rejoue la file au retour du réseau ET au
   // démarrage (si en ligne). Best-effort : chaque suppression confirmée se retire de la file.
   useEffect(() => {
-    const replay = () => { try { replayPendingDeletes(); } catch {} };
+    const replay = () => { try { replayPendingDeletes(); } catch {} flushTombstones().catch(() => {}); };
     if (navigator.onLine) replay();
     window.addEventListener('online', replay);
     return () => window.removeEventListener('online', replay);

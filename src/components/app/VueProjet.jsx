@@ -2,7 +2,8 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { savePlanBgNow, savePlanHdNow, addPersistedDeletedItemId, removePersistedDeletedItemId } from '../../lib/storage.js';
+import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
+import { addTombstone, liftTombstone } from '../../lib/tombstones.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -374,7 +375,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     if (item) {
       // Pierre tombale ANTI-RÉSURRECTION (partie A) : l'obs supprimée ne pourra plus être
       // ressuscitée par la fusion, même si une copie traîne côté serveur/cache/autre session.
-      addPersistedDeletedItemId(itemId);
+      addTombstone('item', itemId, projet.id); // mémo local + partagé avec les autres appareils
       // Filet de récupération (partie B) : copie de l'observation supprimée — texte + photos +
       // contexte — dans la bibliothèque « Récupération » (IndexedDB dédiée). Fire-and-forget.
       addDeletedItem(item, {
@@ -385,7 +386,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     // Annuler (toast) = restaurer : on LÈVE la pierre tombale, sinon la prochaine fusion
     // re-supprimerait aussitôt l'observation réapparue.
     showUndo(`"${item?.titre || 'Observation'}" supprimée`, () => {
-      removePersistedDeletedItemId(itemId);
+      liftTombstone(itemId);
       onUpdateVisit({ localisations: prevLocs });
     });
   }, [visitProjet.localisations, onUpdateVisit, showUndo, projet.id, projet.nom, selectedVisiteId]);
@@ -401,7 +402,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const deleteLoc = (locId, nom) => {
     const prevLocs = visitProjet.localisations;
     onUpdateVisit({ localisations: prevLocs.filter(l => l.id !== locId) });
-    showUndo(`Zone « ${nom || 'sans nom'} » supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
+    // Pierre tombale ZONE (retour Thomas : « des zones supprimées sont réapparues ») : mémorisée
+    // localement ET partagée avec les autres appareils → la zone ne peut plus revenir.
+    addTombstone('loc', locId, projet.id);
+    showUndo(`Zone « ${nom || 'sans nom'} » supprimée`, () => {
+      liftTombstone(locId); // Annuler → la zone n'est plus filtrée nulle part
+      onUpdateVisit({ localisations: prevLocs });
+    });
   };
 
   const toggleLoc = (locId) => {

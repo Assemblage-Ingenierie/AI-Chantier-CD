@@ -4,6 +4,7 @@ import { clearSnapshots, getLatestSnapshot } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
 import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
+import { getDeletedIds, addTombstone, liftTombstone, TOMBSTONE_KEYS } from './tombstones.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -1216,8 +1217,15 @@ async function saveRemote(ps, dirtyIds = null) {
     }));
 
     const firstVisit = p.visites?.[0];
+    // ⚠️ ANTI-RÉSURRECTION : une zone / observation SUPPRIMÉE (pierre tombale locale ou partagée
+    // par un autre appareil) n'est JAMAIS renvoyée au serveur, même si un état local périmé la
+    // contient encore. Ces ids ne visent que des éléments explicitement supprimés par un utilisateur.
+    const _tombLocs = getDeletedIds('loc');
+    const _tombItems = getDeletedIds('item');
     const allLocsFlat = (p.visites || []).flatMap(v =>
-      (v.localisations || []).map(l => ({ ...l, _visiteId: v.id }))
+      (v.localisations || [])
+        .filter(l => !(l?.id && _tombLocs.has(l.id)))
+        .map(l => ({ ...l, items: (l.items || []).filter(it => !(it?.id && _tombItems.has(it.id))), _visiteId: v.id }))
     );
 
     const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
@@ -1329,8 +1337,11 @@ async function saveRemote(ps, dirtyIds = null) {
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
 
-    // Garde de sécurité : jamais effacer si l'état local est vide
-    if (allLocsFlat.length === 0 && dbLocIds.size > 0) {
+    // Garde de sécurité : jamais effacer si l'état local est vide. Calculée sur les zones AVANT
+    // filtrage des pierres tombales → sens inchangé (un état local réellement vide), et un projet
+    // dont toutes les zones ont été supprimées ailleurs ne bloque pas la synchro.
+    const _rawLocCount = (p.visites || []).reduce((n, v) => n + (v.localisations || []).length, 0);
+    if (_rawLocCount === 0 && dbLocIds.size > 0) {
       errors.push({ message: 'Sync interrompu : état local vide alors que la DB contient des données. Rechargez la page.', code: 'SAFETY_EMPTY' });
       continue;
     }
@@ -1365,7 +1376,8 @@ async function saveRemote(ps, dirtyIds = null) {
     const localVisitIds = new Set((p.visites || []).map(v => v.id));
     const knownLocIds   = _knownLocIdsByProject.get(p.id);
     const removedLocIds = (dbLocsRes.data || [])
-      .filter(l => !currLocIds.has(l.id) && (knownLocIds != null ? knownLocIds.has(l.id) : localVisitIds.has(l.visite_id)))
+      // + nettoyage des zones SUPPRIMÉES (pierre tombale) renvoyées par un autre appareil.
+      .filter(l => !currLocIds.has(l.id) && (_tombLocs.has(l.id) || (knownLocIds != null ? knownLocIds.has(l.id) : localVisitIds.has(l.visite_id))))
       .map(l => l.id);
     const locIdsToFetch  = locRows.map(l => l.id).filter(Boolean);
 
@@ -1373,8 +1385,10 @@ async function saveRemote(ps, dirtyIds = null) {
     const [, dbItemsRes] = await Promise.all([
       removedLocIds.length > 0
         ? (async () => {
-            await sb.from('aichantier_localisation_items').delete().in('localisation_id', removedLocIds);
-            await sb.from('aichantier_chantier_localisations').delete().in('id', removedLocIds);
+            const r1 = await sb.from('aichantier_localisation_items').delete().in('localisation_id', removedLocIds);
+            const r2 = await sb.from('aichantier_chantier_localisations').delete().in('id', removedLocIds);
+            // Échec de suppression serveur : n'était jamais signalé → tracé (diagnostic des « zones qui reviennent »).
+            if (r1?.error || r2?.error) logWarn('saveRemote.deleteLocs', { projet: p.id, n: removedLocIds.length, error: (r1?.error || r2?.error)?.message });
           })()
         : Promise.resolve(),
       locIdsToFetch.length > 0
@@ -1488,7 +1502,8 @@ async function saveRemote(ps, dirtyIds = null) {
       const knownItemIds  = _knownItemIdsByProject.get(p.id);
       // Ne supprimer que les items connus au chargement (et plus en local = supprimés par l'utilisateur).
       // Les items inconnus au chargement ont été ajoutés par un autre utilisateur → ne pas les supprimer.
-      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id) && (knownItemIds != null ? knownItemIds.has(id) : true));
+      // + nettoyage des observations SUPPRIMÉES (pierre tombale) renvoyées par un autre appareil.
+      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id) && (_tombItems.has(id) || (knownItemIds != null ? knownItemIds.has(id) : true)));
       allRemovedItemIds.push(...removedItemIds);
 
       for (let ii = 0; ii < (l.items || []).length; ii++) {
@@ -1527,8 +1542,9 @@ async function saveRemote(ps, dirtyIds = null) {
     // ── Parallèle : suppr items retirés (batch) + upsert items + prefetch photos
     const deleteRemovedItemsPromise = allRemovedItemIds.length > 0
       ? (async () => {
-          await sb.from('aichantier_item_photos').delete().in('item_id', allRemovedItemIds);
-          await sb.from('aichantier_localisation_items').delete().in('id', allRemovedItemIds);
+          const r1 = await sb.from('aichantier_item_photos').delete().in('item_id', allRemovedItemIds);
+          const r2 = await sb.from('aichantier_localisation_items').delete().in('id', allRemovedItemIds);
+          if (r1?.error || r2?.error) logWarn('saveRemote.deleteItems', { projet: p.id, n: allRemovedItemIds.length, error: (r1?.error || r2?.error)?.message });
         })()
       : Promise.resolve();
 
@@ -1670,45 +1686,12 @@ export function removePersistedDeletedId(id) {
 }
 
 // ── Pierres tombales d'OBSERVATIONS (items) — anti-résurrection ──────────────────
-// Même principe que les tombstones de projet, mais au niveau observation : une obs supprimée
-// est mémorisée (durable) pour que mergeWithLocal ne la RESSUSCITE JAMAIS, même si une copie
-// traîne encore côté serveur / cache / autre session (bug « observations supprimées qui
-// reviennent », signalé par Thomas). Les ids d'items sont des UUID jamais réutilisés → un
-// tombstone est sûr indéfiniment ; on borne la liste (plus récents) pour ne pas gonfler le
-// localStorage. Clé DÉDIÉE (jamais la clé de cache chantierai_v12).
-const PERSISTED_DELETED_ITEM_IDS_KEY = '_chantierai_deleted_items_v1';
-const DELETED_ITEMS_CAP = 5000;
-
-export function getPersistedDeletedItemIds() {
-  try {
-    const raw = localStorage.getItem(PERSISTED_DELETED_ITEM_IDS_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? new Set(arr) : new Set();
-  } catch { return new Set(); }
-}
-
-export function addPersistedDeletedItemId(id) {
-  if (!id) return;
-  try {
-    const ids = getPersistedDeletedItemIds();
-    ids.add(id);
-    let arr = [...ids];
-    if (arr.length > DELETED_ITEMS_CAP) arr = arr.slice(arr.length - DELETED_ITEMS_CAP); // garde les plus récents
-    localStorage.setItem(PERSISTED_DELETED_ITEM_IDS_KEY, JSON.stringify(arr));
-  } catch {}
-}
-
-// Lève le tombstone d'une observation quand l'utilisateur la RESTAURE (bibliothèque de
-// récupération) → la fusion ne la re-supprimera plus.
-export function removePersistedDeletedItemId(id) {
-  if (!id) return;
-  try {
-    const ids = getPersistedDeletedItemIds();
-    ids.delete(id);
-    localStorage.setItem(PERSISTED_DELETED_ITEM_IDS_KEY, JSON.stringify([...ids]));
-  } catch {}
-}
+// Implémentées dans tombstones.js (mémo LOCAL + partage SERVEUR entre appareils). Ces fonctions
+// gardent l'API d'origine (même clé localStorage `_chantierai_deleted_items_v1`) pour ne rien
+// casser chez les appelants existants.
+export function getPersistedDeletedItemIds() { return getDeletedIds('item'); }
+export function addPersistedDeletedItemId(id) { addTombstone('item', id); }
+export function removePersistedDeletedItemId(id) { liftTombstone(id); }
 
 // ── File de SUPPRESSIONS EN ATTENTE (rejeu à la reconnexion) ─────────────────────
 // Une suppression de projet faite HORS LIGNE échoue côté serveur (deleteRemoteProjet)
@@ -1793,7 +1776,7 @@ export function clearLocalData() {
       localStorage.removeItem(SK);
       localStorage.removeItem(PERSISTED_REMOTE_IDS_KEY);
       localStorage.removeItem(PERSISTED_DELETED_IDS_KEY);
-      localStorage.removeItem(PERSISTED_DELETED_ITEM_IDS_KEY);
+      TOMBSTONE_KEYS.forEach(k => localStorage.removeItem(k)); // pierres tombales zones/observations + files
       localStorage.removeItem(PERSISTED_DIRTY_IDS_KEY);
     }
     delete _mem[SK];
