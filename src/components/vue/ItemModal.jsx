@@ -519,18 +519,33 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       const d = await callAIProxy({
         feature: 'spell-correction',
         model: 'gemini-3.6-flash',
-        max_tokens: 2000,
-        system: 'Tu es un correcteur orthographique et grammatical français. Corrige TOUTES les fautes : orthographe, grammaire, accords, conjugaison, ponctuation évidente et doubles espaces. Ne reformule pas, ne résume pas, ne coupe pas, ne change ni le sens ni l\'ordre des idées : tu gardes le texte tel quel, seules les fautes sont corrigées (la longueur peut donc varier un peu, c\'est normal). N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
+        // Réflexion BORNÉE (plus fiable sur accords / mots manquants qu'une réponse « à froid ») +
+        // marge de sortie suffisante pour renvoyer le texte INTÉGRAL après réflexion.
+        thinkingBudget: 1024,
+        max_tokens: 4096,
+        system: 'Tu es un correcteur orthographique et grammatical français, relecteur de rapports d\'ingénieur structure. Relis TOUT le texte, du premier au dernier mot, et corrige TOUTES les fautes : orthographe, grammaire, accords (genre, nombre, participes), conjugaison, ponctuation évidente, doubles espaces. Corrige aussi les fautes de frappe évidentes : lettres manquantes, en trop ou inversées (ex. « ddu » → « du », « tirantss » → « tirants », « de u mur » → « d\'un mur ») et ajoute un petit mot manquant quand la phrase est clairement incorrecte sans lui (ex. « la présence plusieurs fissures » → « la présence de plusieurs fissures »). En revanche : ne reformule pas, ne résume pas, ne coupe rien, ne change ni le sens, ni l\'ordre des idées, ni le vocabulaire technique, ni les retours à la ligne, ni les puces, ni le style des apostrophes et guillemets. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
         messages: [{ role: 'user', content: plain }],
       });
-      const corrected = d.content?.[0]?.text?.trim();
-      const minLen = Math.floor(plain.length * 0.6);
-      if (!corrected) throw new Error('Réponse vide du modèle');
-      if (corrected.length < minLen) throw new Error('Réponse IA tronquée — réessaie');
-      if (corrected === plain) {
+      // Réponse COUPÉE par la limite de longueur → on refuse : sinon la fin manquante apparaîtrait
+      // comme « à supprimer » dans le diff et pourrait effacer la fin du commentaire.
+      if (d._finish === 'MAX_TOKENS' || d.stop_reason === 'max_tokens')
+        throw new Error('Texte trop long pour une correction en une fois — réessaie ou corrige par morceaux');
+      const raw = d.content?.[0]?.text?.trim();
+      if (!raw) throw new Error('Réponse vide du modèle');
+      // Une correction ne raccourcit quasiment jamais un texte : en dessous de 85 % → réponse tronquée.
+      if (raw.length < Math.floor(plain.trim().length * 0.85)) throw new Error('Réponse IA tronquée — réessaie');
+      // On remet les blancs de début/fin d'origine (la réponse est « trim ») : le diff ne doit
+      // porter QUE sur les vraies corrections, et les segments doivent recomposer le texte exact.
+      const corrected = plain.match(/^\s*/)[0] + raw + plain.match(/\s*$/)[0];
+      const segments = buildDiffSegments(plain, corrected);
+      // Filet : un diff qui se TERMINE par la suppression d'un long passage = réponse tronquée.
+      const lastFix = [...segments].reverse().find(s => s.type === 'fix' || (s.type === 'eq' && s.text.trim()));
+      if (lastFix?.type === 'fix' && !lastFix.add.trim() && lastFix.del.trim().length > 30)
+        throw new Error('Réponse IA incomplète — réessaie');
+      if (!segments.some(s => s.type === 'fix')) {
         setSpellError('Aucune faute détectée ✓');
       } else {
-        setSpellDiff({ original: plain, segments: buildDiffSegments(plain, corrected) });
+        setSpellDiff({ original: plain, segments });
       }
     } catch (e) { setSpellError(e.message || 'Erreur IA'); }
     setCorrecting(false);

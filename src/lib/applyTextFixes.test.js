@@ -37,6 +37,25 @@ describe('applyFixesAtPositions — corrections appliquées à leur position exa
     expect(textOf(applyFixesAtPositions(html, plain, segs))).toBe('les coin et du plafond');
   });
 
+  it('apostrophes/espaces insécables différents ne sont PAS des fautes (pas de fausse correction)', () => {
+    const curly = String.fromCharCode(0x2019), nbsp = String.fromCharCode(0x00a0);
+    const orig = `Dans l${curly}appartement${nbsp}: la cage d${curly}escalier`;
+    const corr = "Dans l'appartement : la cage d'escalier";
+    const segs = buildDiffSegments(orig, corr);
+    expect(segs.some(s => s.type === 'fix')).toBe(false);
+    // le diff recompose exactement l'ORIGINAL (typographie d'origine conservée)
+    expect(segs.map(s => (s.type === 'eq' ? s.text : s.del)).join('')).toBe(orig);
+  });
+
+  it('vraie faute à côté d\'une différence typographique : seule la faute est proposée', () => {
+    const curly = String.fromCharCode(0x2019);
+    const orig = `la cage d${curly}escalier ddu batiment`;
+    const segs = buildDiffSegments(orig, "la cage d'escalier du batiment");
+    const fixes = segs.filter(s => s.type === 'fix');
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0]).toMatchObject({ del: 'ddu', add: 'du' });
+  });
+
   it('texte modifié entre-temps → null (l\'app garde l\'ancienne méthode, aucune perte)', () => {
     const segs = buildDiffSegments('un texte ancien', 'un texte corrigé');
     expect(applyFixesAtPositions('<div>autre chose</div>', 'un texte ancien', segs)).toBeNull();

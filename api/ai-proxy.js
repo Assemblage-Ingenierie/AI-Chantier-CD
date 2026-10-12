@@ -125,6 +125,9 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, 
     // Coupe la « réflexion » (thinking) → réponse rapide. Valide sur Flash (budget 0), refusé par
     // Pro (400) → le handler réessaie alors sans ce réglage. N'activer que quand demandé (Flash).
     if (disableThinking) genCfg.thinkingConfig = { thinkingBudget: 0 };
+    // Réflexion BORNÉE demandée explicitement (ex. correcteur d'orthographe : plus fiable sur les
+    // accords et les mots manquants) — budget fixe pour ne pas manger la sortie.
+    else if (Number.isFinite(payload.thinkingBudget)) genCfg.thinkingConfig = { thinkingBudget: payload.thinkingBudget };
     // JSON garanti : Gemini sort parfois du texte autour du JSON → « Réponse illisible ». Avec
     // responseMimeType, la sortie est un JSON valide. Demandé par la requête (payload.json).
     if (payload.json) genCfg.responseMimeType = 'application/json';
@@ -211,7 +214,8 @@ export default async function handler(req, res) {
 
     let gUp = null, gData = null, gModel = null, timedOutAll = true;
     const runOne = async (cand) => {
-      const fast = /flash/i.test(cand);
+      // Flash : réflexion coupée (rapide) SAUF si la requête demande un budget de réflexion.
+      const fast = /flash/i.test(cand) && !Number.isFinite(payload.thinkingBudget);
       const r = await callGemini(cand, payload, geminiKey, maxTokens, 55000, fast);
       if (r.timedOut || !r.res) return { timedOut: true };
       let d; try { d = await r.res.json(); } catch { return { res: r.res, data: null }; }
@@ -254,8 +258,10 @@ export default async function handler(req, res) {
       const detail = gData?.error?.message || gUp.status;
       return res.status(gUp.status || 500).json({ error: `Erreur IA Gemini (${gModel}) : ${detail}` });
     }
-    const gText = (gData.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('') || '';
-    return res.status(200).json({ content: [{ type: 'text', text: gText }], _model: gModel });
+    const gText = (gData.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('') || '';
+    // _finish : motif de fin (STOP, MAX_TOKENS…) → le client peut REFUSER une réponse coupée au
+    // lieu de la prendre pour un texte complet (sinon la fin manquante = « à supprimer »).
+    return res.status(200).json({ content: [{ type: 'text', text: gText }], _model: gModel, _finish: gData.candidates?.[0]?.finishReason || null });
   }
 
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
