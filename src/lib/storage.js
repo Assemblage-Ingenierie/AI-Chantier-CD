@@ -1669,6 +1669,47 @@ export function removePersistedDeletedId(id) {
   } catch {}
 }
 
+// ── Pierres tombales d'OBSERVATIONS (items) — anti-résurrection ──────────────────
+// Même principe que les tombstones de projet, mais au niveau observation : une obs supprimée
+// est mémorisée (durable) pour que mergeWithLocal ne la RESSUSCITE JAMAIS, même si une copie
+// traîne encore côté serveur / cache / autre session (bug « observations supprimées qui
+// reviennent », signalé par Thomas). Les ids d'items sont des UUID jamais réutilisés → un
+// tombstone est sûr indéfiniment ; on borne la liste (plus récents) pour ne pas gonfler le
+// localStorage. Clé DÉDIÉE (jamais la clé de cache chantierai_v12).
+const PERSISTED_DELETED_ITEM_IDS_KEY = '_chantierai_deleted_items_v1';
+const DELETED_ITEMS_CAP = 5000;
+
+export function getPersistedDeletedItemIds() {
+  try {
+    const raw = localStorage.getItem(PERSISTED_DELETED_ITEM_IDS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+
+export function addPersistedDeletedItemId(id) {
+  if (!id) return;
+  try {
+    const ids = getPersistedDeletedItemIds();
+    ids.add(id);
+    let arr = [...ids];
+    if (arr.length > DELETED_ITEMS_CAP) arr = arr.slice(arr.length - DELETED_ITEMS_CAP); // garde les plus récents
+    localStorage.setItem(PERSISTED_DELETED_ITEM_IDS_KEY, JSON.stringify(arr));
+  } catch {}
+}
+
+// Lève le tombstone d'une observation quand l'utilisateur la RESTAURE (bibliothèque de
+// récupération) → la fusion ne la re-supprimera plus.
+export function removePersistedDeletedItemId(id) {
+  if (!id) return;
+  try {
+    const ids = getPersistedDeletedItemIds();
+    ids.delete(id);
+    localStorage.setItem(PERSISTED_DELETED_ITEM_IDS_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
 // ── File de SUPPRESSIONS EN ATTENTE (rejeu à la reconnexion) ─────────────────────
 // Une suppression de projet faite HORS LIGNE échoue côté serveur (deleteRemoteProjet)
 // et n'était jamais retentée → le projet réapparaissait sur les autres appareils (ligne
@@ -1752,6 +1793,7 @@ export function clearLocalData() {
       localStorage.removeItem(SK);
       localStorage.removeItem(PERSISTED_REMOTE_IDS_KEY);
       localStorage.removeItem(PERSISTED_DELETED_IDS_KEY);
+      localStorage.removeItem(PERSISTED_DELETED_ITEM_IDS_KEY);
       localStorage.removeItem(PERSISTED_DIRTY_IDS_KEY);
     }
     delete _mem[SK];

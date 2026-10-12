@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
+import { savePlanBgNow, savePlanHdNow, addPersistedDeletedItemId, removePersistedDeletedItemId } from '../../lib/storage.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -371,14 +371,23 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       l.id !== locId ? l : { ...l, items: (l.items || []).filter(i => i.id !== itemId) }
     );
     onUpdateVisit({ localisations: locs });
-    // Filet de récupération (demande Thomas) : on copie l'observation supprimée — texte + photos
-    // + contexte — dans la bibliothèque « Récupération » (IndexedDB dédiée, 100 % additif). On
-    // peut la restaurer plus tard si la suppression était une erreur. Fire-and-forget, non bloquant.
-    if (item) addDeletedItem(item, {
-      projectId: projet.id, projectNom: projet.nom,
-      visiteId: selectedVisiteId, locId, locNom: loc?.nom || '',
+    if (item) {
+      // Pierre tombale ANTI-RÉSURRECTION (partie A) : l'obs supprimée ne pourra plus être
+      // ressuscitée par la fusion, même si une copie traîne côté serveur/cache/autre session.
+      addPersistedDeletedItemId(itemId);
+      // Filet de récupération (partie B) : copie de l'observation supprimée — texte + photos +
+      // contexte — dans la bibliothèque « Récupération » (IndexedDB dédiée). Fire-and-forget.
+      addDeletedItem(item, {
+        projectId: projet.id, projectNom: projet.nom,
+        visiteId: selectedVisiteId, locId, locNom: loc?.nom || '',
+      });
+    }
+    // Annuler (toast) = restaurer : on LÈVE la pierre tombale, sinon la prochaine fusion
+    // re-supprimerait aussitôt l'observation réapparue.
+    showUndo(`"${item?.titre || 'Observation'}" supprimée`, () => {
+      removePersistedDeletedItemId(itemId);
+      onUpdateVisit({ localisations: prevLocs });
     });
-    showUndo(`"${item?.titre || 'Observation'}" supprimée`, () => onUpdateVisit({ localisations: prevLocs }));
   }, [visitProjet.localisations, onUpdateVisit, showUndo, projet.id, projet.nom, selectedVisiteId]);
 
   const addLoc = () => {

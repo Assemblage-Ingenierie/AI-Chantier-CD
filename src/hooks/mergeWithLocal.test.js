@@ -77,4 +77,25 @@ describe('mergeWithLocal — résolution local/remote', () => {
     expect(locs).toContain('l2-local');
     expect(keptLocalIds.has('a')).toBe(true);
   });
+
+  it('tombstone observation : une obs supprimée (deletedItemIds) est retirée même si le remote la renvoie', () => {
+    const remote = [proj('a', { updatedAt: '2026-06-10T00:00:00.000Z',
+      locs: [loc('l1', [{ id: 'itVivante', titre: 'vivante' }, { id: 'itMorte', titre: 'morte' }])] })];
+    const local  = [proj('a', { updatedAt: '2026-06-01T00:00:00.000Z',
+      locs: [loc('l1', [{ id: 'itVivante', titre: 'vivante' }])] })];
+    // deletedItemIds = { itMorte } → l'obj ressuscité par le remote doit disparaître du résultat.
+    const { allMerged } = mergeWithLocal(remote, local, new Set(), new Set(['a']), new Set(), new Set(['itMorte']));
+    const items = allMerged.find(p => p.id === 'a').visites[0].localisations[0].items.map(i => i.id);
+    expect(items).toContain('itVivante');
+    expect(items).not.toContain('itMorte');
+  });
+
+  it('sans tombstone observation : comportement inchangé (le remote garde ses items)', () => {
+    const remote = [proj('a', { updatedAt: '2026-06-10T00:00:00.000Z',
+      locs: [loc('l1', [{ id: 'it1', titre: 'un' }, { id: 'it2', titre: 'deux' }])] })];
+    const local  = [proj('a', { updatedAt: '2026-06-01T00:00:00.000Z', locs: [loc('l1', [])] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(), new Set(['a']), new Set(), null);
+    const items = allMerged.find(p => p.id === 'a').visites[0].localisations[0].items.map(i => i.id);
+    expect(items).toEqual(['it1', 'it2']);
+  });
 });
