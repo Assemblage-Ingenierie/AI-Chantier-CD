@@ -63,7 +63,11 @@ function patchHtmlText(html, del, add) {
     if (/\s/.test(flat[i])) continue;
     compact += flat[i]; map.push(i);
   }
-  const needle = del.replace(/\s+/g, '');
+  // Normalise les apostrophes/guillemets typographiques (1:1 → `map` reste aligné) : un extrait IA
+  // avec apostrophe droite retrouve le texte avec apostrophe courbe (sinon « introuvable » → rien).
+  const _q = (s) => s.replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"');
+  compact = _q(compact);
+  const needle = _q(del.replace(/\s+/g, ''));
   if (!needle) return html;
   const ci = compact.indexOf(needle);
   if (ci < 0) return html; // extrait introuvable → on ne touche à rien (sûr)
@@ -109,6 +113,25 @@ function insertAfterHtml(html, anchor, add) {
   const esc = clean.replace(/[<>&]/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[s]));
   const sep = (html && html.trim()) ? '<div><br></div>' : '';
   return `${html || ''}${sep}<div>${esc}</div>`;
+}
+
+// Normalisation pour RETROUVER un extrait IA dans le texte même quand le modèle a « lissé » les
+// apostrophes (courbes ' vs droites ') ou les espaces (doubles espaces fréquents au clavier
+// téléphone). Sans ça, une suggestion parfaitement valide était JETÉE en silence (retour Thomas :
+// « ça propose trop peu / ça corrige quasi rien »).
+const _normMatch = (s) => String(s || '')
+  .replace(/[‘’‛′]/g, "'")
+  .replace(/[“”″]/g, '"')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// Remplace la 1re occurrence de `find` dans `text` en tolérant apostrophes/guillemets
+// typographiques (normalisation 1:1 → longueur et positions préservées). Inchangé si introuvable.
+function _tolReplace(text, find, repl) {
+  if (!find) return text;
+  const q = (s) => s.replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"');
+  const idx = q(text).indexOf(q(find));
+  return idx < 0 ? text : text.slice(0, idx) + repl + text.slice(idx + find.length);
 }
 
 // Photo (data URL ou URL signée Supabase) → bloc image base64 pour l'API vision. Redimensionne
@@ -522,7 +545,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         feature: 'spell-correction',
         model: 'gemini-3.6-flash',
         max_tokens: 2000,
-        system: 'Tu es un correcteur orthographique et grammatical français. Corrige UNIQUEMENT les fautes d\'orthographe et de grammaire, sans rien reformuler, sans résumer, sans couper le texte. Le texte corrigé doit avoir exactement la même longueur et le même contenu que l\'original. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
+        system: 'Tu es un correcteur orthographique et grammatical français. Corrige TOUTES les fautes : orthographe, grammaire, accords, conjugaison, ponctuation évidente et doubles espaces. Ne reformule pas, ne résume pas, ne coupe pas, ne change ni le sens ni l\'ordre des idées : tu gardes le texte tel quel, seules les fautes sont corrigées (la longueur peut donc varier un peu, c\'est normal). N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
         messages: [{ role: 'user', content: plain }],
       });
       const corrected = d.content?.[0]?.text?.trim();
@@ -585,7 +608,7 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
             const cards = [];
             for (const a of (ov?.ajouts || [])) {
               if (a && typeof a.texte === 'string' && a.texte.trim())
-                cards.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
+                cards.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && _normMatch(plain).includes(_normMatch(a.apres))) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
             }
             if (cards.length) {
               vigilanceAddedRef.current = true;
@@ -612,20 +635,20 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
       // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
       let correctedPlain = plain;
       for (const c of (obj?.corrections || [])) {
-        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && correctedPlain.includes(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
-          correctedPlain = correctedPlain.replace(c.extrait, c.correction.trim());
+        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
+          correctedPlain = _tolReplace(correctedPlain, c.extrait, c.correction.trim());
       }
       const hasOrtho = correctedPlain !== plain;
       if (hasOrtho) setSpellDiff({ original: plain, segments: buildDiffSegments(plain, correctedPlain) });
       // Reformulations + AJOUTS déduits du texte → cartes (AVANT d'éventuels « à vérifier » photos).
       const unified = [];
       for (const r of (obj?.reformulations || [])) {
-        if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && plain.includes(r.extrait) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
+        if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && _normMatch(plain).includes(_normMatch(r.extrait)) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
           unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
       }
       for (const a of (obj?.ajouts || [])) {
         if (a && typeof a.texte === 'string' && a.texte.trim())
-          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && plain.includes(a.apres)) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
+          unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && _normMatch(plain).includes(_normMatch(a.apres))) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
       }
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de
