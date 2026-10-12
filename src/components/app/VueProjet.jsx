@@ -20,7 +20,7 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { orderZones, childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
-import { mergeZones, canMergeZones } from '../../lib/zoneMerge.js';
+import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -1119,6 +1119,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           <ItemModal
             key={modal.savedForm ? 'annotated' : 'normal'}
             item={initItem}
+            zones={visitProjet.localisations.filter(l => !l._mergedInto).map(l => ({ id: l.id, nom: l.nom }))}
+            zoneId={modal.item?.id ? modal.locId : null}
             planBg={loc?.planBg ?? null}
             planId={loc?.planId ?? null}
             extraPlans={loc?.extraPlans ?? []}
@@ -1127,7 +1129,25 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             vpNumByPath={vpNumGlobal}
             vpBase={vpMaxGlobal}
             onClose={() => { itemModalBackRef.current = null; setModal(null); }}
-            onSave={form => { itemModalBackRef.current = null; saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
+            onSave={form => {
+              itemModalBackRef.current = null;
+              // eslint-disable-next-line no-unused-vars
+              const { _moveTo, ...clean } = form;
+              const saved = { ...clean, id: clean.id || crypto.randomUUID() };
+              if (_moveTo) {
+                // Déplacement vers une autre zone (ou nouvelle zone) : l'observation garde son id →
+                // la sauvegarde la ré-enregistre sous sa nouvelle zone (garde anti-perte saveRemote).
+                const next = moveItemToZone(visitProjet.localisations, modal.locId, saved, _moveTo);
+                if (next !== visitProjet.localisations) {
+                  onUpdateVisit({ localisations: next });
+                  const dest = typeof _moveTo === 'string' ? _moveTo : next.find(l => !visitProjet.localisations.some(o => o.id === l.id))?.id;
+                  if (dest) setOpenLocIds(prev => new Set([...prev, dest]));
+                }
+              } else {
+                saveItem(modal.locId, saved);
+              }
+              setModal(null);
+            }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
             onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
