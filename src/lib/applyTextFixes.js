@@ -15,20 +15,30 @@
 
 const isWs = (c) => /\s/.test(c);
 
+// Différences PUREMENT typographiques (apostrophe ’ vs ', guillemets “ ” vs ", espace insécable vs
+// espace) : ce ne sont pas des fautes. On les ignore dans la comparaison, sinon elles s'affichaient
+// comme de fausses « corrections » (retour Thomas : « il reste des trucs chelous »).
+const typo = (s) => s
+  .replace(/[\u2018\u2019\u201b\u2032]/g, "'")
+  .replace(/[\u201c\u201d\u2033]/g, '"')
+  .replace(/[\u00a0\u202f]/g, ' ');
+
 // Diff mot à mot (LCS) entre le texte original et le texte corrigé par l'IA → segments neutres
-// ('eq') ou corrections activables ('fix'). Déplacé tel quel depuis ItemModal (testable ici).
+// ('eq') ou corrections activables ('fix'). Les segments 'eq' gardent le texte ORIGINAL (le
+// diff recompose exactement l'original, et sa typographie n'est jamais modifiée).
 export function buildDiffSegments(orig, corr) {
   const wa = orig.split(/(\s+)/);
   const wb = corr.split(/(\s+)/);
+  const na = wa.map(typo), nb = wb.map(typo);
   const n = wa.length, m = wb.length;
   const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = 1; i <= n; i++)
     for (let j = 1; j <= m; j++)
-      dp[i][j] = wa[i-1] === wb[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+      dp[i][j] = na[i-1] === nb[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
   const tokens = [];
   let i = n, j = m;
   while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && wa[i-1] === wb[j-1]) { tokens.unshift({ t:'eq', v:wb[j-1] }); i--; j--; }
+    if (i > 0 && j > 0 && na[i-1] === nb[j-1]) { tokens.unshift({ t:'eq', v:wa[i-1] }); i--; j--; }
     else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
     else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
   }
