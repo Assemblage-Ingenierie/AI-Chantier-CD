@@ -195,3 +195,26 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
     padding: 32px;
   }
 }
+
+/* ── Costar (castor relecteur du rapport, PC) ── */
+.costar .costar-eyes { transform-box: fill-box; transform-origin: center; animation: costar-blink 5s infinite; }
+.costar .costar-tail { transform-box: fill-box; transform-origin: 10% 50%; animation: costar-tail 3.2s ease-in-out infinite; }
+.costar-wiggle { transform-origin: 50% 90%; animation: costar-wiggle 0.85s ease-in-out; }
+.costar-busy .costar-head { transform-box: view-box; transform-origin: 58px 80px; animation: costar-nod 0.9s ease-in-out infinite; }
+.costar-busy .costar-teeth { transform-box: fill-box; transform-origin: top center; animation: costar-chew 0.35s ease-in-out infinite; }
+.costar-label { animation: costar-float 2.6s ease-in-out infinite; }
+.costar-bubble { transform-origin: 90% 100%; animation: costar-pop 0.22s ease-out; }
+.costar-dots span { animation: costar-dot 1.2s infinite; opacity: 0.2; }
+.costar-dots span:nth-child(2) { animation-delay: 0.2s; }
+.costar-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes costar-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes costar-tail { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-7deg); } }
+@keyframes costar-wiggle { 0% { transform: rotate(0); } 15% { transform: rotate(-10deg) translateY(-6px); } 35% { transform: rotate(9deg) translateY(-10px); } 55% { transform: rotate(-6deg) translateY(-4px); } 75% { transform: rotate(4deg); } 100% { transform: rotate(0); } }
+@keyframes costar-nod { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(4deg) translateY(1px); } }
+@keyframes costar-chew { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.7); } }
+@keyframes costar-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes costar-pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+@keyframes costar-dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-dots span { animation: none; }
+}

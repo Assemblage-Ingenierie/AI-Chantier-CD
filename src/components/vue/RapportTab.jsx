@@ -8,6 +8,7 @@ import Annotator from './Annotator.jsx';
 import AnnexesModal from './AnnexesModal.jsx';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
+import Costar from './Costar.jsx';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   const taRef = useRef();
@@ -97,6 +98,14 @@ export default function RapportTab({ projet, onUpdate }) {
   const dragRef = useRef(null);
   const localisations = projet.localisations || [];
   const allItems      = localisations.flatMap(l => l.items || []);
+
+  // Costar (castor relecteur) : version PC uniquement (écran large).
+  const [isPc, setIsPc] = useState(() => window.innerWidth >= 900);
+  useEffect(() => {
+    const onResize = () => setIsPc(window.innerWidth >= 900);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const onResize = () => setPanelOpen(w => window.innerWidth >= 640 ? true : w);
@@ -652,6 +661,9 @@ export default function RapportTab({ projet, onUpdate }) {
           setEditingPhoto({ locId, itemId: item.id, photo, bg: photo.data, paths: photo.annotations || [] });
         }}
       />
+
+      {/* ── Costar : avis honnête + note sur le rapport complet (PC uniquement) ── */}
+      {isPc && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet}/>}
 
       {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
       {editingPlan && (
