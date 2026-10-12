@@ -1231,6 +1231,11 @@ async function saveRemote(ps, dirtyIds = null) {
         .filter(l => !(l?.id && _tombLocs.has(l.id)))
         .map(l => ({ ...l, items: (l.items || []).filter(it => !(it?.id && _tombItems.has(it.id))), _visiteId: v.id }))
     );
+    // Observations ENCORE PRÉSENTES localement (toutes zones confondues). Garde anti-perte : une
+    // observation DÉPLACÉE d'une zone à une autre (fusion de zones) apparaît « retirée » de sa zone
+    // d'origine en base → elle ne doit JAMAIS être supprimée pour autant (incident 2026-10-12 :
+    // suppression concurrente de l'upsert → « violates foreign key constraint item_photos_item_id_fkey »).
+    const _localItemIds = new Set(allLocsFlat.flatMap(l => (l.items || []).map(it => it?.id).filter(Boolean)));
 
     const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
     const newCoverPath = `${slug}/cover/${p.id}.webp`;
@@ -1390,10 +1395,20 @@ async function saveRemote(ps, dirtyIds = null) {
     const [, dbItemsRes] = await Promise.all([
       removedLocIds.length > 0
         ? (async () => {
-            const r1 = await sb.from('aichantier_localisation_items').delete().in('localisation_id', removedLocIds);
-            const r2 = await sb.from('aichantier_chantier_localisations').delete().in('id', removedLocIds);
+            // Une zone retirée dont une observation existe ENCORE localement (déplacée ailleurs, pas
+            // encore ré-enregistrée sous sa nouvelle zone) n'est PAS supprimée maintenant : la
+            // suppression de zone (et la FK ON DELETE CASCADE) emporterait l'observation et ses
+            // photos. Elle sera supprimée à la sauvegarde suivante, une fois l'observation déplacée.
+            const r0 = await sb.from('aichantier_localisation_items').select('id,localisation_id').in('localisation_id', removedLocIds);
+            if (r0?.error) { logWarn('saveRemote.deleteLocs', { projet: p.id, n: removedLocIds.length, error: r0.error.message, skipped: true }); return; }
+            const blocked = new Set((r0.data || []).filter(it => _localItemIds.has(it.id)).map(it => it.localisation_id));
+            const locsToDelete = removedLocIds.filter(id => !blocked.has(id));
+            if (blocked.size) logWarn('saveRemote.deleteLocsDeferred', { projet: p.id, n: blocked.size });
+            if (!locsToDelete.length) return;
+            const r1 = await sb.from('aichantier_localisation_items').delete().in('localisation_id', locsToDelete);
+            const r2 = await sb.from('aichantier_chantier_localisations').delete().in('id', locsToDelete);
             // Échec de suppression serveur : n'était jamais signalé → tracé (diagnostic des « zones qui reviennent »).
-            if (r1?.error || r2?.error) logWarn('saveRemote.deleteLocs', { projet: p.id, n: removedLocIds.length, error: (r1?.error || r2?.error)?.message });
+            if (r1?.error || r2?.error) logWarn('saveRemote.deleteLocs', { projet: p.id, n: locsToDelete.length, error: (r1?.error || r2?.error)?.message });
           })()
         : Promise.resolve(),
       locIdsToFetch.length > 0
@@ -1508,7 +1523,7 @@ async function saveRemote(ps, dirtyIds = null) {
       // Ne supprimer que les items connus au chargement (et plus en local = supprimés par l'utilisateur).
       // Les items inconnus au chargement ont été ajoutés par un autre utilisateur → ne pas les supprimer.
       // + nettoyage des observations SUPPRIMÉES (pierre tombale) renvoyées par un autre appareil.
-      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id) && (_tombItems.has(id) || (knownItemIds != null ? knownItemIds.has(id) : true)));
+      const removedItemIds = [...dbLocItemIds].filter(id => !currItemIds.has(id) && !_localItemIds.has(id) && (_tombItems.has(id) || (knownItemIds != null ? knownItemIds.has(id) : true)));
       allRemovedItemIds.push(...removedItemIds);
 
       for (let ii = 0; ii < (l.items || []).length; ii++) {
