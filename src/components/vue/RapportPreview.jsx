@@ -17,6 +17,7 @@ import { fetchPlanData, fetchPlanHdDataUrl, fetchAnnexPdf } from '../../lib/stor
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
+import { childrenOf, effectiveParentId, zoneLabel } from '../../lib/zoneGroups.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
 // d'annexe à chaque changement d'onglet serait lent. Clé `${chantierId}|${annexId}`.
@@ -161,8 +162,12 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
 
   for (const loc of locs) {
     const items = (loc.items || []).filter(itemHasReportContent);
-    if (!items.some(i => !isBrouillon(i))) continue;
-    blocks.push({ type:'zone', id:loc.id, loc });
+    // Groupe de zones (« R+4 ») : titre + plan même SANS observation propre, dès qu'une de ses
+    // sous-zones a du contenu. Sous-zone : sous-titre. Sans groupe → rendu inchangé.
+    const isGroup = childrenOf(locs, loc.id).length > 0;
+    if (!isGroup && !items.some(i => !isBrouillon(i))) continue;
+    const level = isGroup ? 'group' : (effectiveParentId(locs, loc) ? 'sub' : 'zone');
+    blocks.push({ type:'zone', id:loc.id, loc, level });
     let photoOffset = 0;
     for (const item of items) {
       const photos  = (item.photos || []).filter(p => p.data || p.annotated);
@@ -421,10 +426,20 @@ function ParaCutZone({ paraId, onCut }) {
   );
 }
 
-function ZoneHeader({ loc }) {
+function ZoneHeader({ loc, level = 'zone' }) {
+  // Groupe (« R+4 ») : titre plus marqué. Sous-zone (« M. Albert Thomas ») : sous-titre en retrait,
+  // filet fin. Zone normale : inchangé.
+  if (level === 'sub') {
+    return (
+      <div style={{ borderBottom:'1px solid #D9D9D9', paddingBottom:3, marginBottom:6, marginLeft:8, display:'flex', alignItems:'center', gap:5 }}>
+        <span style={{ width:3, height:9, background:DA.red, flexShrink:0 }}/>
+        <span style={{ fontSize:8.5, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#333', textTransform:'uppercase', letterSpacing:'0.07em' }}>{loc.nom}</span>
+      </div>
+    );
+  }
   return (
-    <div style={{ borderBottom:`2px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
-      <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loc.nom}</span>
+    <div style={{ borderBottom:`${level === 'group' ? 3 : 2}px solid ${DA.red}`, paddingBottom:4, marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+      <span style={{ fontSize: level === 'group' ? 10.5 : 9, fontFamily:"'Open Sans', sans-serif", fontWeight: level === 'group' ? 800 : 700, color:'#000', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loc.nom}</span>
     </div>
   );
 }
@@ -1695,7 +1710,7 @@ function ConclusionPage({ conclusion, conclusionAlign = 'left', projet, pageNum,
         const c = stripMarkup(i.commentaire || '').replace(/\s+/g, ' ').trim().slice(0, 600);
         return `  • [${lab}] ${i.titre || ''}${c ? ` : ${c}` : ''}`;
       }).join('\n');
-      return `Zone « ${loc.nom || '(sans nom)'} » :\n${lines}`;
+      return `Zone « ${zoneLabel(localisations, loc) || '(sans nom)'} » :\n${lines}`;
     }).filter(Boolean).join('\n\n');
     const count = urg.haute + urg.moyenne + urg.basse;
     return { meta, zones, urg, count };
@@ -1893,7 +1908,7 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
     : localisations.flatMap(loc =>
         (loc.items || []).filter(i => !isBrouillon(i) && i.titre && i.suivi !== 'fait').map(i => {
           const ov = ovMap.get(i.id) || {};
-          return { locNom: 'zone' in ov ? ov.zone : (loc.nom || ''), titre: 'titre' in ov ? ov.titre : (i.titre || ''), urgence: 'urgence' in ov ? ov.urgence : (i.urgence || 'basse'), solution: 'solution' in ov ? ov.solution : '' };
+          return { locNom: 'zone' in ov ? ov.zone : zoneLabel(localisations, loc), titre: 'titre' in ov ? ov.titre : (i.titre || ''), urgence: 'urgence' in ov ? ov.urgence : (i.urgence || 'basse'), solution: 'solution' in ov ? ov.solution : '' };
         })
       ).sort((a, b) => (urgOrder[a.urgence] ?? 2) - (urgOrder[b.urgence] ?? 2));
 
@@ -2113,7 +2128,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
-  const locs = useMemo(() => localisations.filter(l => (l.items || []).some(i => !isBrouillon(i) && itemHasReportContent(i))), [localisations]);
+  // Zones présentes dans le rapport : celles qui ont du contenu, + les GROUPES (« R+4 ») dont une
+  // sous-zone a du contenu (titre + plan du groupe). Sans groupe : liste identique à avant.
+  const locs = useMemo(() => {
+    const has = (l) => (l.items || []).some(i => !isBrouillon(i) && itemHasReportContent(i));
+    return localisations.filter(l => has(l) || childrenOf(localisations, l.id).some(has));
+  }, [localisations]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
@@ -2616,7 +2636,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {allBlocks.map(block => (
               <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
                 {block.type === 'zone'
-                  ? <ZoneHeader loc={block.loc}/>
+                  ? <ZoneHeader loc={block.loc} level={block.level}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                   : block.type === 'itemplan'
@@ -2679,7 +2699,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
                       <div>
                         {block.type === 'zone'
-                          ? <ZoneHeader loc={block.loc} />
+                          ? <ZoneHeader loc={block.loc} level={block.level}/>
                           : block.type === 'plan'
                           ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
                           : block.type === 'itemplan'

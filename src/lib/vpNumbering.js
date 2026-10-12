@@ -20,6 +20,8 @@
 //       - clé d'INDEX `${locId}_${photoIdx}` (repli historique, photos legacy sans _id).
 //   • vpNumByPath : label du marqueur (clé : ref objet ET _vpId).
 
+import { zonePlanItems } from './zoneGroups.js';
+
 // Clé d'identité stable d'une photo (id de ligne DB conservé dans _id, sinon id distant).
 export const photoVpKey = (ph) =>
   ph && ph._id != null ? `pid:${ph._id}` : (ph && ph.id != null ? `pid:${ph.id}` : null);
@@ -63,11 +65,11 @@ export function computeVpNumbering(localisations) {
   }
   // Photos APLATIES d'une zone, dans l'ORDRE EXACT vu par l'annotateur des plans de zone
   // (PlanLocModal : items.flatMap(photos avec data)) → vp.photoIdx d'un plan de zone indexe
-  // cette liste.
+  // cette liste. Zone GROUPE (« R+4 ») : ses photos puis celles de ses sous-zones (zonePlanItems).
   const zoneFlatOf = (l) => {
     if (!l) return [];
     if (!zoneFlatCache.has(l.id)) {
-      zoneFlatCache.set(l.id, (l.items || []).flatMap(it => (it.photos || []).filter(p => p.data)));
+      zoneFlatCache.set(l.id, zonePlanItems(localisations || [], l).flatMap(it => (it.photos || []).filter(p => p.data)));
     }
     return zoneFlatCache.get(l.id);
   };
@@ -127,7 +129,7 @@ export function debugVpNumbering(localisations) {
   const idOf = (ph) => ph ? (ph._id ?? ph.id ?? null) : null;
   const shortId = (id) => id == null ? '∅' : String(id).slice(0, 6);
   for (const loc of (localisations || [])) {
-    const zoneFlat = (loc.items || []).flatMap(it => (it.photos || []).filter(p => p.data));
+    const zoneFlat = zonePlanItems(localisations || [], loc).flatMap(it => (it.photos || []).filter(p => p.data));
     const markers = [];
     const pushVp = (vp, plan, ownerId) => {
       if (vp.type !== 'viewpoint') return;

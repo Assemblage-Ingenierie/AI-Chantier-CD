@@ -7,6 +7,7 @@
 // Aucune écriture : l'avis est jetable (rien n'est sauvegardé dans le projet).
 
 import { URGENCE, SUIVI, isBrouillon } from './constants.js';
+import { zoneLabel } from './zoneGroups.js';
 
 // Texte brut d'un commentaire riche (HTML / markdown léger), sans images collées.
 export function plainText(html) {
@@ -66,7 +67,7 @@ export function buildReportDigest(projet, { maxChars = 90000 } = {}) {
     const items = itemsOf(l).filter(i => i && !isBrouillon(i));
     const hasPlan = !!(l.planId || l.planBg || l.planAnnotations?.paths?.length);
     lines.push('');
-    lines.push(`=== ZONE : ${l.nom || '(sans nom)'} (${items.length} observation(s)${hasPlan ? ', plan de repérage joint' : ''}) ===`);
+    lines.push(`=== ZONE : ${zoneLabel(locs, l) || '(sans nom)'} (${items.length} observation(s)${hasPlan ? ', plan de repérage joint' : ''}) ===`);
     items.forEach((it) => {
       n++;
       const urg = URGENCE[it.urgence]?.label;

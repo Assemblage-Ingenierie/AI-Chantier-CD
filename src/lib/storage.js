@@ -153,6 +153,9 @@ function buildLocFromRow(loc, itemsByLoc) {
   const parsedAnnot = tryParseJson(loc.plan_annotations);
   const planId = parsedAnnot?._planId ?? null;
   const planReportHidden = parsedAnnot?._planReportHidden ?? false;
+  // Groupe de zones : id de la zone parente (« R+4 » › « M. Albert Thomas »), encodé comme
+  // _planId dans plan_annotations → aucune colonne / migration. Absent = zone normale.
+  const parentId = parsedAnnot?._parentId ?? null;
   const extraPlans = (parsedAnnot?._extraPlans || []).map(ep => ({
     id: crypto.randomUUID(),
     planId: ep.planId || null,
@@ -162,7 +165,7 @@ function buildLocFromRow(loc, itemsByLoc) {
     reportHidden: ep.reportHidden ?? false,
   }));
   const planAnnotations = parsedAnnot
-    ? (({ _planId, _extraPlans, _planReportHidden, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
+    ? (({ _planId, _extraPlans, _planReportHidden, _parentId, ...rest }) => Object.keys(rest).length ? rest : null)(parsedAnnot)
     : null;
   return {
     id:              loc.id,
@@ -173,6 +176,7 @@ function buildLocFromRow(loc, itemsByLoc) {
     planAnnotations,
     planReportHidden,
     extraPlans,
+    ...(parentId ? { parentId } : {}),
     items: (itemsByLoc[loc.id] ?? []).map(item => {
       const parsedAnnot = tryParseJson(item.plan_annotations);
       // Plans de bibliothèque attachés à l'item — encodés dans _plans pour éviter une colonne dédiée
@@ -1354,9 +1358,10 @@ async function saveRemote(ps, dirtyIds = null) {
         .map(ep => ({ ...(ep.planId ? { planId: ep.planId } : {}), ...(ep.planAnnotations?.paths?.length ? { paths: ep.planAnnotations.paths } : {}), ...(ep.reportHidden ? { reportHidden: true } : {}) }))
         .filter(ep => ep.planId);
       let annotObj = null;
-      if (l.planId || l.planAnnotations?.paths?.length || extraPlansToStore.length || l.planReportHidden) {
+      if (l.planId || l.planAnnotations?.paths?.length || extraPlansToStore.length || l.planReportHidden || l.parentId) {
         annotObj = {};
         if (l.planId) annotObj._planId = l.planId;
+        if (l.parentId) annotObj._parentId = l.parentId;
         if (l.planReportHidden) annotObj._planReportHidden = true;
         if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
         if (extraPlansToStore.length) annotObj._extraPlans = extraPlansToStore;
