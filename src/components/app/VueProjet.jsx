@@ -18,6 +18,7 @@ import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
+import ThumbImg from '../ui/ThumbImg.jsx';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -504,7 +505,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               const realIdx = (item.photos || []).indexOf(p);
               const isActive = realIdx === photoIdx;
               return (
-                <img key={vi} src={p.annotated || p.data} alt="" loading="lazy" decoding="async"
+                <ThumbImg key={vi} src={p.annotated || p.data} width={320} alt="" loading="lazy" decoding="async"
                   onClick={() => !isActive && switchToPhoto(realIdx)}
                   style={{ width:52, height:52, objectFit:'cover', borderRadius:6, cursor: isActive ? 'default' : 'pointer', border:`2px solid ${isActive ? 'white' : 'transparent'}`, opacity: isActive ? 1 : 0.55, transition:'all 0.1s' }}
                 />
