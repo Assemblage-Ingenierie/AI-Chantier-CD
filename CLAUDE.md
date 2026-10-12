@@ -2,19 +2,23 @@
 
 ---
 
-## 🟡 RÈGLE N°1 — WORKFLOW BRANCHE + PULL REQUEST (PAS D'AUTO-MERGE)
+## 🟡 RÈGLE N°1 — WORKFLOW BRANCHE + PULL REQUEST, MERGE AUTO SI CI VERTE
 
-**Claude ne merge JAMAIS sur `main` sans confirmation explicite de l'utilisateur.** `main` est déployé par Vercel : tout merge est une mise en production.
+`main` est déployé par Vercel : tout merge est une mise en production. Tout passe par une **pull request** (trace + CI + preview), mais **Thomas a donné son accord (12/10/2026) pour que Claude merge lui-même chaque PR dès que la CI est verte**, sans redemander à chaque fois.
 
-Workflow obligatoire :
+Workflow :
 1. Créer une branche depuis `main` (`git checkout main && git pull && git checkout -b <feature-branch>`)
-2. Travailler en local, committer sur la branche feature
+2. Travailler en local, committer sur la branche feature (build + tests verts avant de pousser)
 3. Pousser la branche sur le remote (`git push -u origin <feature-branch>`)
-4. Ouvrir une **pull request** vers `main` pour comparaison des branches (`gh pr create`)
-5. **Attendre la confirmation explicite de l'utilisateur avant de merger sur `main`**
+4. Ouvrir une **pull request** vers `main` (`gh pr create`)
+5. **Dès que la CI (`build-and-test`) est verte : merger la PR**, puis prévenir Thomas de ce qui part en prod
 
-Claude peut : créer la branche, committer, pousser la branche feature, ouvrir la PR.
-Claude ne peut pas, sans accord explicite : merger la PR / `main`, push sur `main`, force-push.
+**Exceptions — confirmation explicite de Thomas AVANT de merger :**
+- Persistance des données : `mergeWithLocal`, `saveRemote`, `saveLocalCache`, `loadData`, `deleteRemoteProjet`, clés localStorage
+- Schéma Supabase (migrations), RLS, auth
+- Toute modification qui pourrait faire perdre des données utilisateur
+
+Claude ne doit jamais : merger avec une CI rouge, push direct sur `main` hors PR, force-push.
 
 ---
 
@@ -122,7 +126,7 @@ Se poser, dans l'ordre : « Est-ce que ça peut être **automatique** ? Sinon **
 
 **Branche de travail** : toujours développer sur une branche feature dédiée, créée depuis `main`.
 **Push** : la branche feature est poussée sur le remote, puis une pull request est ouverte (voir Règle N°1).
-**Merge sur main** : JAMAIS automatique — uniquement après confirmation explicite de l'utilisateur, car Vercel déploie depuis `main`.
+**Merge sur main** : via la PR, dès que la CI est verte (accord Thomas) — sauf zones à risque listées en Règle N°1, qui exigent sa confirmation explicite. Vercel déploie depuis `main`.
 
 ```bash
 # 1. Branche depuis main
@@ -135,7 +139,7 @@ git push -u origin <feature-branch>
 # 3. Ouvrir la pull request (comparaison des branches)
 gh pr create --base main --head <feature-branch>
 
-# 4. STOP — attendre l'accord explicite de l'utilisateur avant tout merge sur main.
+# 4. CI verte → merger la PR (sauf zones à risque de la Règle N°1 → attendre l'accord de Thomas).
 ```
 
 ---
