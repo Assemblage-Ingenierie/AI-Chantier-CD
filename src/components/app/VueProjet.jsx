@@ -19,7 +19,8 @@ import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
-import { orderZones, childrenOf, effectiveParentId, canNestInto, nestZone, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
+import { orderZones, childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
+import { mergeZones, canMergeZones } from '../../lib/zoneMerge.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -261,13 +262,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const over = zoneOverRef.current;
     if (!zoneDragDidMove.current || !dragId || !over || over.id === dragId) return;
     const locs = zoneLocsRef.current;
-    const next = over.into ? nestZone(locs, dragId, over.intoId || over.id) : placeZone(locs, dragId, over.id);
-    if (next !== locs) {
-      onUpdateVisit({ localisations: next });
-      // On ouvre le groupe qui vient de recevoir la zone → on la voit arriver dedans.
-      if (over.into) setOpenLocIds(prev => new Set([...prev, over.intoId || over.id]));
-    }
-  }, [onUpdateVisit]);
+    if (over.into) { mergeZoneInto(dragId, over.id); return; }
+    const next = placeZone(locs, dragId, over.id);
+    if (next !== locs) onUpdateVisit({ localisations: next });
+  }, [onUpdateVisit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carte de zone sous le pointeur : la plus INTERNE (sous-zone avant son groupe), jamais la zone
   // déplacée ni ses propres sous-zones. onHead = le pointeur est sur l'en-tête (titre) de la carte.
@@ -300,12 +298,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       return;
     }
     clearTimeout(zoneIntoTimer.current);
-    // Maintien sur le titre d'une zone RANGÉE (« R+4 › M. Albert Thomas ») = rejoindre son groupe.
-    const locsNow = zoneLocsRef.current;
-    const tLoc = locsNow.find(l => l.id === t.id);
-    const intoId = (tLoc && effectiveParentId(locsNow, tLoc)) || t.id;
-    const canInto = !!t.onHead && canNestInto(locsNow, dragId, intoId);
-    const next = { id: t.id, onHead: t.onHead, into: false, canInto, intoId, since: Date.now() };
+    // Maintien sur le TITRE d'une zone = FUSIONNER dedans (ses observations la rejoignent).
+    const canInto = !!t.onHead && canMergeZones(zoneLocsRef.current, dragId, t.id);
+    const next = { id: t.id, onHead: t.onHead, into: false, canInto, since: Date.now() };
     zoneOverRef.current = next; setZoneOver(next);
     zoneDragDidMove.current = true;
     if (canInto) zoneIntoTimer.current = setTimeout(() => goInto(next), ZONE_INTO_MS);
@@ -333,6 +328,54 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       extraPlans: extras.map(e => ({ planId: e.planId, planBg: e.planBg, planAnnotations: e.planAnnotations, reportHidden: !!e.reportHidden })),
     });
   }, [visitProjet.localisations, patchLoc]);
+
+  // ── FUSION de zones (maintien sur le titre d'une autre zone) ──
+  // Les observations partent tout de suite dans la zone cible (lib/zoneMerge.js). La zone
+  // d'origine, vidée et masquée, n'est SUPPRIMÉE qu'après qu'une sauvegarde COMPLÈTE a enregistré
+  // le déplacement : en base, supprimer une zone supprime en cascade ses observations + photos
+  // (FK ON DELETE CASCADE) → la supprimer dans la même sauvegarde que le déplacement pourrait
+  // perdre des photos. On suit donc syncStatus : une sauvegarde qui DÉMARRE après la fusion
+  // ('saving') puis réussit ('ok') → suppression définitive (avec pierre tombale).
+  const pendingMerges = useRef(new Map()); // srcId → { needFresh, sawSaving }
+  const syncStatusRef = useRef(syncStatus);
+  syncStatusRef.current = syncStatus;
+  const mergeZoneInto = useCallback((srcId, tgtId) => {
+    const prevLocs = zoneLocsRef.current;
+    const next = mergeZones(prevLocs, srcId, tgtId);
+    if (next === prevLocs) return;
+    const tgt = prevLocs.find(l => l.id === tgtId);
+    onUpdateVisit({ localisations: next });
+    pendingMerges.current.set(srcId, { needFresh: syncStatusRef.current === 'saving', sawSaving: false });
+    setOpenLocIds(prev => new Set([...prev, tgtId]));
+    showUndo(`Zone fusionnée dans « ${tgt?.nom || 'zone'} »`, () => {
+      pendingMerges.current.delete(srcId);
+      liftTombstone(srcId); // au cas où la suppression différée aurait déjà eu lieu
+      onUpdateVisit({ localisations: prevLocs });
+    });
+    // showUndo (déclaré plus bas, stable) volontairement HORS des dépendances : le citer ici
+    // l'évaluerait pendant le rendu → crash TDZ « Cannot access before initialization ».
+  }, [onUpdateVisit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const pend = pendingMerges.current;
+    if (!pend.size) return;
+    const toDelete = [];
+    for (const [id, st] of pend) {
+      if (syncStatus !== 'saving' && st.needFresh) st.needFresh = false; // la sauvegarde en cours à la fusion est finie
+      else if (syncStatus === 'saving' && !st.needFresh) st.sawSaving = true; // une sauvegarde postérieure démarre
+      else if (syncStatus === 'ok' && st.sawSaving) toDelete.push(id);       // … et a réussi
+    }
+    if (!toDelete.length) return;
+    const locs = zoneLocsRef.current;
+    const del = new Set(toDelete.filter(id => {
+      const l = locs.find(x => x.id === id);
+      return !l || (l._mergedInto && !(l.items || []).length); // jamais une zone qui a reçu du contenu
+    }));
+    toDelete.forEach(id => pend.delete(id));
+    if (!del.size) return;
+    onUpdateVisit({ localisations: locs.filter(l => !del.has(l.id)) });
+    del.forEach(id => addTombstone('loc', id, projet.id));
+  }, [syncStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Réordonnancement TACTILE des zones (le drag HTML5 ne marche pas au doigt — mobile est la
   // plateforme principale, cf. CLAUDE.md Règle N°4). On suit le doigt depuis la poignée et on
@@ -811,13 +854,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             ...(isInto ? { background:DA.redL, boxShadow:`inset 0 0 0 2px ${DA.red}` } : {}) }}>
                           {isInto && (
                             <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:DA.red, color:'white', fontSize:11, fontWeight:800, borderRadius:20, padding:'3px 10px', whiteSpace:'nowrap', zIndex:2, pointerEvents:'none' }}>
-                              Ranger dans « {allLocs.find(l => l.id === zoneOver.intoId)?.nom || loc.nom || 'cette zone'} »
+                              Fusionner dans « {loc.nom || 'cette zone'} »
                             </span>
                           )}
                           <div onClick={e => e.stopPropagation()}
                             onTouchStart={e => { e.stopPropagation(); startZoneTouch(e, loc.id); }}
                             onMouseDown={() => setZoneDragArm(loc.id)}
-                            title="Glisser pour réorganiser — maintenir sur le titre d'une zone pour l'y ranger"
+                            title="Glisser pour réorganiser — maintenir sur le titre d'une autre zone pour fusionner"
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
@@ -1038,7 +1081,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                   };
                   // Toutes les zones au MÊME niveau ; l'ordre canonique (orderZones) garde chaque groupe
                   // suivi de ses zones rangées.
-                  return allLocs.map(l => renderZone(l, !!effectiveParentId(allLocs, l)));
+                  // Zones fusionnées en attente de suppression (vides) : masquées.
+                  return allLocs.filter(l => !l._mergedInto).map(l => renderZone(l, !!effectiveParentId(allLocs, l)));
                   })()}
                   <button onClick={addLoc}
                     style={{ width:'100%', padding:16, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:15, fontWeight:700, color:'white', background:DA.red, border:'none', borderRadius:10, cursor:'pointer', boxShadow:'0 2px 8px rgba(227,5,19,0.25)' }}>
