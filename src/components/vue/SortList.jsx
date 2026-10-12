@@ -392,19 +392,20 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
                       <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0 }}>{item.titre}</p>
-                      {/* Statut Rapport / Brouillon — un appui bascule (comme le badge de suivi). */}
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
+                      {/* Statut Rapport / Brouillon — sur la MÊME ligne que les badges (demande Thomas).
+                          Rapport = ROUGE (publiée au rapport) ; Brouillon = GRIS (au clic). Un appui bascule. */}
                       <button type="button"
                         onClick={e => { e.stopPropagation(); onEdit({ ...item, statut: draft ? 'rapport' : 'brouillon', _quickSuivi: true }); }}
                         title={draft ? "Brouillon : non publiée dans le rapport — toucher pour l'inclure" : 'Publiée dans le rapport — toucher pour passer en brouillon'}
                         aria-label={draft ? 'Statut : Brouillon' : 'Statut : Rapport'}
                         style={{ flexShrink:0, padding:'3px 9px', borderRadius:10, fontSize:11, fontWeight:700, lineHeight:1.3, cursor:'pointer', fontFamily:'inherit',
-                          border:`1px solid ${draft ? '#9CA3AF' : DA.border}`,
-                          background: draft ? '#E5E7EB' : 'white',
-                          color: draft ? '#4B5563' : DA.grayL }}>
+                          border:`1px solid ${draft ? '#9CA3AF' : DA.red}`,
+                          background: draft ? '#E5E7EB' : DA.redL,
+                          color: draft ? '#4B5563' : DA.red }}>
                         {draft ? 'Brouillon' : 'Rapport'}
                       </button>
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
                       <Badge level={item.urgence}/>
                       <span style={{ display:'flex', alignItems:'center', gap:3 }}>
                         <BadgeSuivi suivi={item.suivi||'rien'} small onClick={e => {

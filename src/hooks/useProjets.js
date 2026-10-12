@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, getPersistedDeletedItemIds, removePersistedDeletedItemId } from '../lib/storage.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
@@ -28,7 +28,7 @@ function writePinnedVisiteIds(set) {
 //   - localOnly + dans previousRemoteIds → projet supprimé ailleurs → drop local
 //   - localOnly + jamais dans previousRemoteIds → vraiment unsynced → push back
 //   Si null (1ère/legacy session) : seuls les projets déjà dans dirtyIds sont traités comme unsynced.
-export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null) {
+export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = null, deletedIds = null, deletedItemIds = null) {
   const localById  = new Map(localPs.map(p => [p.id, p]));
   const remoteIds  = new Set(remotePs.map(p => p.id));
   // When previousRemoteIds is null (first/legacy session), only treat local-only projects
@@ -214,7 +214,24 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
     };
   });
 
-  const allMerged = [...merged, ...unsynced]
+  // ⚠️ ANTI-RÉSURRECTION DES OBSERVATIONS (pierres tombales) — passe UNIQUE et contenue,
+  // appliquée au résultat FINAL de la fusion (tous chemins : dirty, non-dirty, unsynced).
+  // Une observation supprimée (id tombstoné) est retirée du state fusionné quoi qu'il arrive,
+  // même si une copie traîne encore côté serveur / cache / autre session. Choix délibéré de NE
+  // PAS disperser le filtre dans les branches délicates de fusion (Règle N°2). La restauration
+  // (bibliothèque de récupération) lève d'abord le tombstone → l'obs restaurée n'est pas filtrée.
+  const stripTombstonedItems = (ps) => (!deletedItemIds || deletedItemIds.size === 0) ? ps : ps.map(p => ({
+    ...p,
+    visites: (p.visites || []).map(v => ({
+      ...v,
+      localisations: (v.localisations || []).map(l => ({
+        ...l,
+        items: (l.items || []).filter(it => !it?.id || !deletedItemIds.has(it.id)),
+      })),
+    })),
+  }));
+
+  const allMerged = stripTombstonedItems([...merged, ...unsynced])
     .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' }));
 
   saveLocalCache(allMerged);
@@ -350,7 +367,7 @@ export function useProjets(onSyncStatus) {
           }
         }
 
-        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current);
+        const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getPersistedDeletedItemIds());
         // Mark locally-newer and unsynced projects dirty so saves are targeted.
         // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
         // that were deleted by another user between our loadData() and our save.
@@ -491,7 +508,7 @@ export function useProjets(onSyncStatus) {
       const remotePs = await loadData();
       if (!remotePs.length) return;
       const filteredRemote = remotePs.filter(p => !deletedIdsRef.current.has(p.id));
-      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current);
+      const { allMerged, keptLocalIds } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getPersistedDeletedItemIds());
       // If local-only plans/locs were found, mark dirty and trigger a save
       if (keptLocalIds.size > 0) {
         keptLocalIds.forEach(id => dirtyIds.current.add(id));
@@ -604,6 +621,9 @@ export function useProjets(onSyncStatus) {
     const loc = (visite.localisations || []).find(l => l.id === entry.locId);
     if (!loc) return { ok: false, reason: 'loc' };
     const already = (loc.items || []).some(i => i.id === entry.item.id);
+    // Lève la pierre tombale AVANT de ré-insérer, sinon la prochaine fusion re-supprimerait
+    // aussitôt l'observation restaurée (anti-résurrection de la partie A).
+    removePersistedDeletedItemId(entry.item.id);
     updateProjet(entry.projectId, (p) => ({
       ...p,
       visites: (p.visites || []).map(v => v.id !== entry.visiteId ? v : {
