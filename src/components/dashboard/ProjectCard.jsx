@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import SyncBadge, { projectSyncState } from '../ui/SyncBadge.jsx';
+import { useThumb } from '../ui/ThumbImg.jsx';
 
 function getLocs(p) {
   if (p.visites?.length) return p.visites.flatMap(v => v.localisations || []);
@@ -23,6 +24,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverErr, setCoverErr] = useState(false);
   const coverRef = useRef(null);
+  // Couverture servie en VIGNETTE allégée (~6-10× plus légère que l'original), repli auto sur
+  // l'original si la vignette est indisponible. Null le temps de la signature → placeholder.
+  const cover = useThumb(p.photo, 640);
   // À chaque changement de photo : si l'image est DÉJÀ en cache (déjà complète), on l'affiche
   // tout de suite — sinon onLoad, déclenché par un cache trop rapide, pourrait manquer et laisser
   // le placeholder collé par-dessus une photo pourtant chargée.
@@ -30,7 +34,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
     setCoverErr(false);
     const el = coverRef.current;
     setCoverLoaded(!!(el && el.complete && el.naturalWidth > 0));
-  }, [p.photo]);
+  }, [p.photo, cover.src]);
   const obs = obsCount(p);
   const urg = urgCount(p);
 
@@ -63,9 +67,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
             visibles (les autres se chargent au défilement) → plus d'embouteillage réseau qui
             laissait des cartes blanches. Le placeholder reste affiché tant que la photo n'est pas
             chargée (masque l'icône « image cassée » + le nom alt), puis fondu à l'arrivée. */}
-        {p.photo && !coverErr && (
-          <img ref={coverRef} src={p.photo} alt={p.nom} loading="lazy" decoding="async"
-            onLoad={() => setCoverLoaded(true)} onError={() => setCoverErr(true)}
+        {p.photo && cover.src && !coverErr && (
+          <img ref={coverRef} src={cover.src} alt={p.nom} loading="lazy" decoding="async"
+            onLoad={() => { cover.onLoad(); setCoverLoaded(true); }} onError={() => { if (!cover.onError()) setCoverErr(true); }}
             style={{ opacity: coverLoaded ? 1 : 0, transition:'opacity 0.25s ease' }}/>
         )}
         {(!p.photo || coverErr || !coverLoaded) && (

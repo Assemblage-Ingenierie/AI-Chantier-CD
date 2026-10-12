@@ -13,6 +13,7 @@ import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
+import ThumbImg from '../ui/ThumbImg.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -1345,8 +1346,8 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
                 {form.photos.map((ph, i) => (
                   <div key={i} style={{ position:'relative',aspectRatio:'1',borderRadius:8,overflow:'hidden' }}>
-                    <img
-                      src={ph.annotated || ph.data} alt="" loading="lazy" decoding="async"
+                    <ThumbImg
+                      src={ph.annotated || ph.data} width={640} alt="" loading="lazy" decoding="async"
                       title="Cliquer pour annoter — appui long pour agrandir"
                       style={{ width:'100%',height:'100%',objectFit:'cover',WebkitTouchCallout:'none',userSelect:'none',cursor:'pointer' }}
                       onContextMenu={e => e.preventDefault()}

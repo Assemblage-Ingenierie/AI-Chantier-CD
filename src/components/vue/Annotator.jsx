@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import ThumbImg from '../ui/ThumbImg.jsx';
 import { getVpNum, relabelViewpoints } from '../../lib/vpNumbering.js';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
@@ -2589,7 +2590,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 onPointerCancel={endStripLP}
                 title={ph.name || `Photo ${i + 1}`}
                 style={{ flexShrink:0,padding:0,background:'none',border:`3px solid ${isLinkedToSel ? '#22c55e' : isActive ? DA.red : 'transparent'}`,borderRadius:8,overflow:'hidden',cursor:'pointer',outline:'none',transition:'border-color 0.15s,width 0.15s,height 0.15s' }}>
-                <img src={ph.data} alt="" style={{ width:sz,height:sz,objectFit:'cover',display:'block' }}/>
+                <ThumbImg src={ph.data} width={320} alt="" style={{ width:sz,height:sz,objectFit:'cover',display:'block' }}/>
               </button>
             );
           })}

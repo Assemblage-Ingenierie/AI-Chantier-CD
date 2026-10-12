@@ -4,6 +4,7 @@ import { Ic, Badge, BadgeSuivi } from '../ui/Icons.jsx';
 import { renderMarkup } from '../../lib/markup.jsx';
 import { drawAnnotationPaths } from './Annotator.jsx';
 import { resolveCommentHtml } from '../../lib/storage.js';
+import ThumbImg, { useThumb } from '../ui/ThumbImg.jsx';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -93,7 +94,11 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
     drawAnnotationPaths(ctx, photo.annotations, scale);
   }, [dims, photo.annotations, photo.annotSizeScale]);
 
-  const src = photo.annotated || photo.data;
+  // fullSrc = photo d'origine (aperçu plein écran à l'appui long) ; src = VIGNETTE allégée
+  // affichée dans la grille (~6-10× plus légère, repli automatique sur l'original).
+  const fullSrc = photo.annotated || photo.data;
+  const thumb = useThumb(fullSrc, 640);
+  const src = thumb.src;
   // Squelette gris tant que la vignette n'est pas chargée : quand BEAUCOUP de photos chargent en
   // même temps (file d'attente réseau du navigateur), on voit des cases grises qui se remplissent
   // au lieu d'un écran blanc « on voit rien » (retour Thomas). Prend en compte le cache navigateur.
@@ -111,8 +116,8 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
         <span aria-hidden="true" style={{ position:'absolute', inset:0, background:'#ECECEC', borderRadius: imgStyle?.borderRadius, display:'block' }}/>
       )}
       <img ref={imgElRef} src={src} alt="" draggable={false} loading="lazy" decoding="async"
-        onLoad={() => setImgLoaded(true)} onError={() => setImgLoaded(true)}
-        onPointerDown={e => { e.stopPropagation(); startLP(src); }}
+        onLoad={() => { thumb.onLoad(); setImgLoaded(true); }} onError={() => { if (!thumb.onError()) setImgLoaded(true); }}
+        onPointerDown={e => { e.stopPropagation(); startLP(fullSrc); }}
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
         onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
         style={{ ...imgStyle, opacity: imgLoaded ? 1 : 0, transition:'opacity 0.2s ease' }}/>
@@ -308,7 +313,7 @@ export default function SortList({ items, locId = null, onReorder, onEdit, onDel
           <div style={{ display:'flex',gap:6,flexWrap:'wrap',justifyContent:'center',padding:'0 16px' }}
             onClick={e => e.stopPropagation()}>
             {lightbox.photos.map((ph, pi) => (
-              <img key={pi} src={ph.annotated || ph.data} alt=""
+              <ThumbImg key={pi} src={ph.annotated || ph.data} width={320} alt=""
                 onClick={() => setLightbox(v => ({ ...v, idx: pi }))}
                 style={{ width:44,height:44,objectFit:'cover',borderRadius:5,cursor:'pointer',border:`2px solid ${lightbox.idx===pi?'white':'transparent'}`,opacity:lightbox.idx===pi?1:0.5,transition:'all 0.1s' }}/>
             ))}
