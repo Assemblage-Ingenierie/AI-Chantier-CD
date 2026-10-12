@@ -90,6 +90,23 @@ describe('mergeWithLocal — résolution local/remote', () => {
     expect(items).not.toContain('itMorte');
   });
 
+  it('tombstone zone : une zone supprimée (deletedLocIds) disparaît avec ses observations, même renvoyée par le remote', () => {
+    const remote = [proj('a', { updatedAt: '2026-06-10T00:00:00.000Z',
+      locs: [loc('lGarde', [{ id: 'o1', titre: 'x' }]), loc('lMorte', [{ id: 'o2', titre: 'y' }])] })];
+    const local  = [proj('a', { updatedAt: '2026-06-01T00:00:00.000Z', locs: [loc('lGarde', [{ id: 'o1', titre: 'x' }])] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(), new Set(['a']), new Set(), null, new Set(['lMorte']));
+    const locs = allMerged.find(p => p.id === 'a').visites[0].localisations;
+    expect(locs.map(l => l.id)).toEqual(['lGarde']);
+    expect(locs[0].items.map(i => i.id)).toEqual(['o1']);
+  });
+
+  it('tombstone zone en chemin dirty : la zone supprimée reste retirée', () => {
+    const remote = [proj('a', { locs: [loc('lMorte')] })];
+    const local  = [proj('a', { locs: [loc('lMorte'), loc('lVivante')] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(['a']), new Set(['a']), new Set(), null, new Set(['lMorte']));
+    expect(allMerged.find(p => p.id === 'a').visites[0].localisations.map(l => l.id)).toEqual(['lVivante']);
+  });
+
   it('sans tombstone observation : comportement inchangé (le remote garde ses items)', () => {
     const remote = [proj('a', { updatedAt: '2026-06-10T00:00:00.000Z',
       locs: [loc('l1', [{ id: 'it1', titre: 'un' }, { id: 'it2', titre: 'deux' }])] })];
