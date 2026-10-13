@@ -253,6 +253,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   // déplaçait la tuile au lieu de sélectionner (demande Thomas).
   const [zoneDragArm, setZoneDragArm] = useState(null); // id de la zone armée
   const zoneDragDidMove = useRef(false);
+  // FUSION CONFIRMÉE (Thomas 13/10/2026 : « en réorganisant, j'en ai fusionné sans faire exprès ») :
+  // lâcher après un maintien sur le titre d'une zone n'ARRÊTE plus rien tout seul — une bulle
+  // demande « Fusionner X dans Y ? » [Juste déplacer] [Fusionner]. Rien ne fusionne sans ce clic.
+  const [mergeAsk, setMergeAsk] = useState(null); // { srcId, tgtId }
   const zoneLocsRef = useRef(visitProjet.localisations);
   zoneLocsRef.current = visitProjet.localisations;
 
@@ -266,7 +270,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const over = zoneOverRef.current;
     if (!zoneDragDidMove.current || !dragId || !over || over.id === dragId) return;
     const locs = zoneLocsRef.current;
-    if (over.into) { mergeZoneInto(dragId, over.id); return; }
+    if (over.into) { setMergeAsk({ srcId: dragId, tgtId: over.id }); return; } // confirmation obligatoire
     const next = placeZone(locs, dragId, over.id);
     if (next !== locs) onUpdateVisit({ localisations: next });
   }, [onUpdateVisit]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -832,6 +836,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const isDragged = zoneDragId === loc.id;
                     const isOver    = !!zoneOver && zoneOver.id === loc.id && !isDragged;
                     const isInto    = isOver && zoneOver.into;
+                    // Repère d'insertion : la zone déplacée prend la place de la cible → elle
+                    // s'insère APRÈS si elle vient d'au-dessus, AVANT si elle vient d'en dessous.
+                    const dropAfter = isOver && !isInto && allLocs.findIndex(l => l.id === zoneDragId) < allLocs.indexOf(loc);
                     const urgentCount = items.filter(i => i.urgence === 'haute').length;
                     const assignedPlan = loc.planId ? planById.get(loc.planId) : null;
                     const allPlanThumbs = [];
@@ -853,6 +860,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           e.stopPropagation(); // une sous-zone ne déclenche pas le drag de son groupe
                           if (zoneDragArm !== loc.id) { e.preventDefault(); return; } // drag natif d'une sélection de texte
                           zoneDragDidMove.current = false; zoneOverRef.current = null;
+                          try {
+                            // Firefox ne démarre AUCUN glisser sans donnée → la zone ne bougeait pas.
+                            e.dataTransfer.setData('text/zone', loc.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            // Image de glisser = l'EN-TÊTE seul (pas toute la carte ouverte, photos
+                            // comprises, qui masquait les zones visées).
+                            const head = e.currentTarget.querySelector(`[data-zone-head="${loc.id}"]`);
+                            if (head) e.dataTransfer.setDragImage(head, 24, 24);
+                          } catch { /* navigateur sans dataTransfer complet */ }
                           setZoneDragId(loc.id); setZoneOver(null);
                         }}
                         onDragEnd={e => { e.stopPropagation(); applyZoneDrop(loc.id); resetZoneDrag(); setZoneDragArm(null); setTimeout(() => { zoneDragDidMove.current = false; }, 0); }}
@@ -864,10 +880,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           updateZoneOver(zoneTargetAt(e.clientX, e.clientY, zoneDragId), zoneDragId);
                         }}
                         style={{
-                          background: isDragged ? '#e8e8e8' : isOver && !isInto ? DA.redL : 'white',
+                          background: isDragged ? '#e8e8e8' : 'white',
                           borderRadius: 10,
-                          border: `1px solid ${isOver && !isInto ? DA.red : DA.border}`,
-                          boxShadow: isDragged ? 'none' : '0 1px 4px rgba(0,0,0,0.07)',
+                          border: `1px solid ${DA.border}`,
+                          // Trait rouge AU-DESSUS ou EN DESSOUS de la cible = là où la zone va se placer.
+                          boxShadow: isDragged ? 'none'
+                            : isOver && !isInto ? `0 ${dropAfter ? 5 : -5}px 0 -1px ${DA.red}, 0 1px 4px rgba(0,0,0,0.07)`
+                            : '0 1px 4px rgba(0,0,0,0.07)',
                           overflow: 'hidden',
                           opacity: isDragged ? 0.45 : 1,
                           transition:'background 0.08s,opacity 0.08s,box-shadow 0.08s',
@@ -877,13 +896,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             ...(isInto ? { background:DA.redL, boxShadow:`inset 0 0 0 2px ${DA.red}` } : {}) }}>
                           {isInto && (
                             <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:DA.red, color:'white', fontSize:11, fontWeight:800, borderRadius:20, padding:'3px 10px', whiteSpace:'nowrap', zIndex:2, pointerEvents:'none' }}>
-                              Fusionner dans « {loc.nom || 'cette zone'} »
+                              Fusionner dans « {loc.nom || 'cette zone'} »{'\u00A0'}?
                             </span>
                           )}
                           <div onClick={e => e.stopPropagation()}
                             onTouchStart={e => { e.stopPropagation(); startZoneTouch(e, loc.id); }}
                             onMouseDown={() => setZoneDragArm(loc.id)}
-                            title="Glisser pour réorganiser — maintenir sur le titre d'une autre zone pour fusionner"
+                            title="Glisser pour réorganiser — maintenir sur le titre d'une autre zone pour proposer une fusion"
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
@@ -1125,6 +1144,41 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
           il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
       {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed/>}
+      {mergeAsk && (() => {
+        const locs = visitProjet.localisations;
+        const src = locs.find(l => l.id === mergeAsk.srcId);
+        const tgt = locs.find(l => l.id === mergeAsk.tgtId);
+        const close = () => setMergeAsk(null);
+        if (!src || !tgt) return null;
+        const justMove = () => { const next = placeZone(locs, src.id, tgt.id); if (next !== locs) onUpdateVisit({ localisations: next }); close(); };
+        const doMerge = () => { mergeZoneInto(src.id, tgt.id); close(); };
+        const n = (src.items || []).length;
+        return (
+          <div onClick={close} onKeyDown={e => { if (e.key === 'Escape') close(); }}
+            style={{ position:'fixed', inset:0, zIndex:450, background:'rgba(0,0,0,0.25)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+            <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Confirmer la fusion"
+              style={{ background:'white', borderRadius:14, padding:'18px 18px 14px', width:360, maxWidth:'100%', boxShadow:'0 12px 40px rgba(0,0,0,0.25)' }}>
+              <p style={{ margin:0, fontSize:15, fontWeight:800, color:DA.black, lineHeight:1.4 }}>
+                Fusionner « {src.nom || 'zone'} » dans « {tgt.nom || 'zone'} »{'\u00A0'}?
+              </p>
+              <p style={{ margin:'6px 0 14px', fontSize:12.5, color:DA.gray, lineHeight:1.5 }}>
+                {n > 0 ? `Ses ${n} observation${n > 1 ? 's' : ''} et ses plans rejoindront « ${tgt.nom || 'zone'} ». ` : 'Ses plans rejoindront la zone. '}
+                Annulable ensuite depuis la corbeille.
+              </p>
+              <div style={{ display:'flex', gap:8 }}>
+                <button autoFocus onClick={justMove}
+                  style={{ flex:1, padding:'11px 10px', borderRadius:9, fontSize:13, fontWeight:700, border:`1px solid ${DA.border}`, background:'white', color:DA.black, cursor:'pointer' }}>
+                  Juste déplacer
+                </button>
+                <button onClick={doMerge}
+                  style={{ flex:1, padding:'11px 10px', borderRadius:9, fontSize:13, fontWeight:800, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
+                  Fusionner
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {trashOpen && (
         <TrashPanel projet={projet} onClose={() => setTrashOpen(false)}
           onRestoreZone={onRestoreZone} onRestoreObservation={onRestoreObservation}
