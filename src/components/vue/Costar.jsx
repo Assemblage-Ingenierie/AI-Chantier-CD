@@ -139,7 +139,7 @@ export default function Costar({ projet, fixed = false }) {
         thinkingBudget: 1536,
         json: true,
         system: COSTAR_SYSTEM,
-        messages: [{ role: 'user', content: `Voici le rapport complet (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis donne ton avis.\n\n${digest.text}` }],
+        messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.\n\n${digest.text}` }],
         _waitOk: true,
         _signal: ctrl.signal,
       });

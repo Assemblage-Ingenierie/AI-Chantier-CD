@@ -15,36 +15,25 @@ const projet = {
 };
 
 describe('Costar — lecture du rapport', () => {
-  it('le digest contient TOUT le rapport (hors brouillons)', () => {
+  it('le digest contient le FOND du rapport (textes), sans les champs de formulaire', () => {
     const d = buildReportDigest(projet);
     expect(d.observations).toBe(2);
     expect(d.zones).toBe(2);
     expect(d.text).toContain('503_SDC_86RDCLERY');
-    expect(d.text).toContain('Pierre · Président (présent)');
-    expect(d.text).toContain('Gaël (absent)');
+    expect(d.text).toContain('[Obs 1] Fissure limon');
     expect(d.text).toContain('Fissure traversante au 2e.');
     expect(d.text).toContain('• surveiller');
-    expect(d.text).toContain('urgence : Urgent | suivi : À faire | 2 photo(s)');
-    expect(d.text).toContain('plan de repérage joint');
     expect(d.text).toContain('(sans titre)');
-    expect(d.text).toContain('urgence : non renseignée');
+    expect(d.text).toContain('(pas de texte)');
     expect(d.text).toContain('CONCLUSION : Travaux à planifier.');
     expect(d.text).not.toContain('ne doit pas apparaître');
+    // Costar juge le fond : ni présences, ni urgence/suivi, ni photos, ni date (demande Thomas).
+    for (const form of ['Pierre', 'Gaël', 'absent', 'urgence', 'Urgent', 'suivi', 'photo', 'Date de visite', 'plan de repérage', 'CONTRÔLES']) expect(d.text).not.toContain(form);
     expect(reportItems(projet)).toHaveLength(2);
   });
 
-  it('contrôles automatiques : chiffres fiables et observations citées', () => {
-    const d = buildReportDigest({ localisations: [{ nom: 'Z', items: [
-      { titre: 'Fissure', commentaire: 'ok', urgence: 'haute', suivi: 'a_faire', photos: [{ data: 'x' }] },
-      { titre: ' fissure ', commentaire: '', photos: [] },
-      { titre: '', commentaire: 'Un commentaire assez long pour ne pas être considéré comme court du tout.', urgence: 'basse' },
-    ] }] });
-    expect(d.text).toContain('Observations sans titre : 1 (Obs 3)');
-    expect(d.text).toContain('Sans commentaire : 1 (Obs 2) ; commentaire très court (< 40 caractères) : 1 (Obs 1)');
-    expect(d.text).toContain('Urgence non renseignée : 1 (Obs 2) ; suivi non renseigné : 2 (Obs 2, 3)');
-    expect(d.text).toContain('Sans photo : 2 (Obs 2, 3)');
-    expect(d.text).toContain('Classées « Urgent » : 1 (Obs 1)');
-    expect(d.text).toContain('Titres en double : Obs 1 = 2');
+  it('pas de conclusion → aucune ligne CONCLUSION (pas de reproche sur la forme)', () => {
+    expect(buildReportDigest({ ...projet, includeConclusion: false }).text).not.toContain('CONCLUSION');
   });
 
   it('plafond : seuls les commentaires démesurés sont raccourcis', () => {
@@ -52,7 +41,7 @@ describe('Costar — lecture du rapport', () => {
     const d = buildReportDigest(big, { maxChars: 3000 });
     expect(d.text.length).toBeLessThanOrEqual(3000);
     expect(d.text).toContain('[suite raccourcie]');
-    expect(d.text).toContain('Titre : court');
+    expect(d.text).toContain('[Obs 2] court');
   });
 
   it('plainText retire le HTML et le markdown', () => {
