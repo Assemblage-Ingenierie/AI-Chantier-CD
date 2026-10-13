@@ -4,6 +4,7 @@ import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '.
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
+import { applyAnnotRecovery } from '../lib/annotRecovery.js';
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
@@ -653,6 +654,18 @@ export function useProjets(onSyncStatus) {
     return { ok: true, already };
   };
 
+  // Remet les annotations de plan perdues lors d'une fusion de zones (lib/annotRecovery.js,
+  // trouvées dans la boîte noire). ADDITIF uniquement ; passe par updateProjet → sauvegarde normale.
+  const restoreZoneAnnotations = (entries) => {
+    if (!entries?.length) return { added: 0 };
+    const { added } = applyAnnotRecovery(projetsRef.current, entries);
+    if (!added) return { added: 0 };
+    for (const pid of new Set(entries.map(e => e.projectId))) {
+      updateProjet(pid, (prev) => ({ visites: applyAnnotRecovery([prev], entries).projets[0].visites }));
+    }
+    return { added };
+  };
+
   const deleteProjet = (id) => {
     pushHistory();
     userModified.current = true;
@@ -1297,5 +1310,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations };
 }

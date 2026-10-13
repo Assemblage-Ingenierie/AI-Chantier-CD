@@ -84,6 +84,24 @@ export function contentWeight(projets) {
   return { byId, total };
 }
 
+// Rotation : les MAX_SNAPSHOTS plus récents sont gardés tels quels ; au-delà, on garde encore UN
+// instantané par heure sur les HOURLY_KEEP dernières heures entamées (incident 13/10/2026 : en
+// éditant, 60 instantanés à 3 s d'intervalle ne couvraient que quelques minutes → l'état
+// d'avant une erreur disparaissait trop vite pour être récupéré).
+const HOURLY_KEEP = 72;
+export function snapshotsToDelete(keys) {
+  if (keys.length <= MAX_SNAPSHOTS) return [];
+  const sorted = [...keys].sort((a, b) => b - a); // plus récent d'abord
+  const hours = new Set();
+  const del = [];
+  for (const k of sorted.slice(MAX_SNAPSHOTS)) {
+    const h = Math.floor(k / 3600000);
+    if (!hours.has(h) && hours.size < HOURLY_KEEP) hours.add(h); // le plus récent de chaque heure
+    else del.push(k);
+  }
+  return del;
+}
+
 // Enregistre un instantané complet (texte + structure, sans blobs) horodaté.
 // Ne rejette jamais. Effectue la rotation (garde les MAX_SNAPSHOTS plus récents).
 export async function saveSnapshot(projets) {
@@ -105,12 +123,7 @@ export async function saveSnapshot(projets) {
       // Rotation : si on dépasse le quota, supprimer les plus anciens.
       const keysReq = store.getAllKeys();
       keysReq.onsuccess = () => {
-        const keys = keysReq.result || [];
-        if (keys.length > MAX_SNAPSHOTS) {
-          keys.sort((a, b) => a - b);
-          const toDelete = keys.slice(0, keys.length - MAX_SNAPSHOTS);
-          for (const k of toDelete) store.delete(k);
-        }
+        for (const k of snapshotsToDelete(keysReq.result || [])) store.delete(k);
       };
       tx.oncomplete = () => resolve();
       tx.onerror    = () => resolve();
