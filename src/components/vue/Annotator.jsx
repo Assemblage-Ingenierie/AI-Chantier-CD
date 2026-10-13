@@ -515,6 +515,59 @@ function squareFrom(from, to) {
   return { x: from.x + (dx < 0 ? -m : m), y: from.y + (dy < 0 ? -m : m) };
 }
 
+// ── ÉDITION RAPIDE (multi-sélection, flèches, dupliquer) ──
+// Rectangle englobant d'une annotation (coords canvas). `r` = rayon d'un point (symbole,
+// viewpoint), `sT` = échelle du texte (même calcul que le hit-test du texte).
+function pathBounds(p, r, sT) {
+  if (!p) return null;
+  const box = (xs, ys, pad = 0) => ({ x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad });
+  const ptsOf = (a) => box(a.map(q => q.x), a.map(q => q.y));
+  if (p.pts?.length) return ptsOf(p.pts);
+  if (p.points?.length) return ptsOf(p.points);
+  if (p.x1 != null) return box([p.x1, p.x2], [p.y1, p.y2]);
+  if (p.type === 'text' && p.x != null) {
+    const fs = (20 + (p.size || 0) * 4) * sT;
+    const ls = String(p.text ?? '').split('\n');
+    const w = p.textW != null ? p.textW * sT + 20 * sT : Math.max(80, ls.reduce((m, l) => Math.max(m, l.length), 0) * fs * 0.6) + 20;
+    const b = { x1: p.x - 10 * sT, y1: p.y - fs - 4 * sT, x2: p.x - 10 * sT + w, y2: p.y + 10 * sT + (ls.length - 1) * fs * 1.2 };
+    if (p.arrowX != null) { b.x1 = Math.min(b.x1, p.arrowX); b.y1 = Math.min(b.y1, p.arrowY); b.x2 = Math.max(b.x2, p.arrowX); b.y2 = Math.max(b.y2, p.arrowY); }
+    return b;
+  }
+  if (p.x != null) return box([p.x], [p.y], r);
+  return null;
+}
+// Clic sur une FORME : sur son trait, ou dans son remplissage si elle est remplie. Un contour
+// vide n'attrape pas les clics en son centre → on peut sélectionner (cadre) ce qui est dedans.
+function hitsShape(p, pos, r) {
+  if (nearShapeOutline(p, pos, r)) return true;
+  if (!p.filled || p.shape === 'polyline' || p.shape === 'line' || p.shape === 'arrow') return false;
+  if (p.pts?.length > 2) {
+    let inside = false;
+    for (let i = 0, j = p.pts.length - 1; i < p.pts.length; j = i++) {
+      const a = p.pts[i], c = p.pts[j];
+      if ((a.y > pos.y) !== (c.y > pos.y) && pos.x < (c.x - a.x) * (pos.y - a.y) / (c.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  }
+  if (p.x1 == null) return false;
+  const x1 = Math.min(p.x1, p.x2), x2 = Math.max(p.x1, p.x2), y1 = Math.min(p.y1, p.y2), y2 = Math.max(p.y1, p.y2);
+  if (p.shape === 'ellipse') {
+    const rx = (x2 - x1) / 2 || 1, ry = (y2 - y1) / 2 || 1;
+    return ((pos.x - (x1 + rx)) / rx) ** 2 + ((pos.y - (y1 + ry)) / ry) ** 2 <= 1;
+  }
+  return pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2;
+}
+// Déplace une annotation de (dx, dy) — tous les types (points, extrémités, sommets, tracé libre).
+function movePath(p, dx, dy) {
+  const q = { ...p };
+  if (q.x  != null) { q.x  += dx; q.y  += dy; }
+  if (q.x1 != null) { q.x1 += dx; q.y1 += dy; q.x2 += dx; q.y2 += dy; }
+  if (q.arrowX != null) { q.arrowX += dx; q.arrowY += dy; }
+  if (p.pts)    q.pts    = p.pts.map(pt => ({ x: pt.x + dx, y: pt.y + dy }));
+  if (p.points) q.points = p.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy }));
+  return q;
+}
+
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
@@ -623,6 +676,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [sizeOpen,         setSizeOpen]         = useState(false); // curseur « Taille » contextuel (tuile épinglée des menus outil)
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
+  // Multi-sélection (PC) : cadre de sélection (glisser dans le vide) ou Maj+clic.
+  const [multiSel,         setMultiSel]         = useState([]);   // index sélectionnés ensemble
+  const multiSelRef = useRef(multiSel); multiSelRef.current = multiSel;
+  const [marquee,          setMarquee]          = useState(null); // { x1, y1, x2, y2 } cadre en cours
+  const marqueeRef     = useRef(null); // { x0, y0, add: [] }
+  const groupDragRef   = useRef(null); // { orig: [[idx, path]], tapX, tapY } — déplacement du groupe
+  const mouseCanvasRef = useRef(null); // dernière position de la souris sur le plan (coller dessous)
   const [pendingArrowLine, setPendingArrowLine] = useState(null); // { tipX,tipY,boxX,boxY } preview flèche
   const [bgVersion,        setBgVersion]        = useState(0);   // incrémenté pour forcer redraw après swap HQ
   const [photoStripBig,    setPhotoStripBig]    = useState(false); // agrandir les miniatures de la bande "Vues"
@@ -782,7 +842,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     lastPushRef.current = { ts: 0, kind: '' };
     skipHistRef.current = 'system';
   };
-  const clearSelections = () => { setSelAnnot(null); setSelTextIdx(null); annotDragRef.current = null; textDragRef.current = null; };
+  const clearSelections = () => { setSelAnnot(null); setSelTextIdx(null); setMultiSel([]); annotDragRef.current = null; textDragRef.current = null; };
   const undoLast = () => {
     // Tracé en cours (polyligne / zone) : Annuler retire d'abord le DERNIER POINT posé.
     if (polyPtsRef.current.length) { setPolyPts(pp => pp.slice(0, -1)); return; }
@@ -881,6 +941,99 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const nextVpLabel = vpNumByPath ? `V${nextVpNum}` : `V${vpCount + 1}`;
   const nextVpNumRef = useRef(nextVpNum);
   nextVpNumRef.current = nextVpNum;
+
+  // ── ÉDITION RAPIDE : sélection courante, copier/coller/dupliquer, flèches ──
+  const cvRatio = () => { const cv = cvRef.current; return cv && cv.clientWidth ? cv.width / cv.clientWidth : 1; };
+  const boundsOf = (p) => pathBounds(p, 22 * cvRatio(), cvRatio() * 0.5 * scaleText);
+  // Sélection courante en index : groupe > forme/symbole/viewpoint > texte.
+  const selectedIdxs = () => multiSelRef.current.length ? multiSelRef.current
+    : selAnnotRef.current ? [selAnnotRef.current.idx]
+    : selTextIdxRef.current != null ? [selTextIdxRef.current] : [];
+  // Sélectionne une liste d'index : un seul élément « classique » → sélection habituelle
+  // (avec ses panneaux) ; sinon → groupe.
+  const selectIdxs = (arr, src = pathsRef.current) => {
+    const list = [...new Set(arr)].filter(i => src[i]).sort((a, b) => a - b);
+    const one = list.length === 1 ? src[list[0]] : null;
+    setSelAnnot(null); setSelTextIdx(null); annotDragRef.current = null; textDragRef.current = null;
+    if (one && one.type === 'text') { setMultiSel([]); setSelTextIdx(list[0]); }
+    else if (one && one.type !== 'stroke') { setMultiSel([]); setSelAnnot({ idx: list[0] }); }
+    else setMultiSel(list);
+  };
+  // Copies d'annotations décalées de (dx, dy) ; un viewpoint copié = NOUVELLE vue (numéro neuf,
+  // délié de la photo d'origine), comme « Dupliquer ».
+  const cloneAnnots = (list, dx, dy) => {
+    let vn = nextVpNumRef.current;
+    return list.map(src => {
+      const c = movePath(src, dx, dy);
+      if (c._vpId) c._vpId = crypto.randomUUID();
+      if (c.type === 'viewpoint') { c.vpNum = vn++; c.label = `V${c.vpNum}`; c.photoIdx = null; c.originLocId = locId ?? null; }
+      return c;
+    });
+  };
+  // Ajoute des copies et les sélectionne. `atMouse` : le groupe est centré sous la souris
+  // (Ctrl+V) ; sinon décalé de 40 px (Ctrl+D).
+  const pasteAnnots = (list, atMouse) => {
+    if (!list?.length) return;
+    let dx = 40, dy = 40;
+    const m = mouseCanvasRef.current;
+    if (atMouse && m) {
+      const bs = list.map(boundsOf).filter(Boolean);
+      if (bs.length) {
+        const cx = (Math.min(...bs.map(b => b.x1)) + Math.max(...bs.map(b => b.x2))) / 2;
+        const cy = (Math.min(...bs.map(b => b.y1)) + Math.max(...bs.map(b => b.y2))) / 2;
+        dx = m.x - cx; dy = m.y - cy;
+      }
+    }
+    const start = pathsRef.current.length;
+    const next = [...pathsRef.current, ...cloneAnnots(list, dx, dy)];
+    setPaths(next);
+    setTool('select');
+    selectIdxs(next.map((_, k) => k).slice(start), next);
+  };
+  const copySelection = () => {
+    const idxs = selectedIdxs();
+    if (!idxs.length) return false;
+    clipboardRef.current = idxs.map(i => pathsRef.current[i]).filter(Boolean).map(p => movePath(p, 0, 0));
+    return true;
+  };
+  const duplicateSelection = () => {
+    const idxs = selectedIdxs();
+    if (!idxs.length) return false;
+    pasteAnnots(idxs.map(i => pathsRef.current[i]).filter(Boolean), false);
+    return true;
+  };
+  // Flèches : déplace la sélection d'1 px écran (Maj : 10 px).
+  const nudgeSelection = (ux, uy, big) => {
+    const idxs = selectedIdxs();
+    if (!idxs.length) return false;
+    const step = (big ? 10 : 1) * cvRatio() / (vtRef.current.z || 1);
+    const set = new Set(idxs);
+    setPaths(prev => prev.map((p, i) => set.has(i) ? movePath(p, ux * step, uy * step) : p));
+    return true;
+  };
+  const deleteSelectionGroup = () => {
+    const idxs = multiSelRef.current;
+    if (!idxs.length) return false;
+    const set = new Set(idxs);
+    setPaths(prev => {
+      const hadVp = prev.some((p, i) => set.has(i) && p.type === 'viewpoint');
+      const next = prev.filter((_, i) => !set.has(i));
+      return hadVp ? resequenceVps(next) : next;
+    });
+    setMultiSel([]);
+    return true;
+  };
+  const selectAll = () => {
+    if (!pathsRef.current.length) return false;
+    setTool('select'); setShowSyms(false);
+    setPolyPts([]); setPolyMousePos(null);
+    selectIdxs(pathsRef.current.map((_, i) => i));
+    return true;
+  };
+  // Le groupe n'existe qu'avec l'outil Sélection.
+  useEffect(() => { if (tool !== 'select') setMultiSel([]); }, [tool]);
+  const editOpsRef = useRef(null);
+  editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll };
   const relabel = (arr) => {
     if (!vpNumByPath) return arr;
     let extra = 0;
@@ -1106,6 +1259,25 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ctx.restore();
     }
 
+    // Groupe sélectionné (cadres pointillés) + cadre de sélection en cours.
+    if (multiSel.length || marquee) {
+      const zz = vtRef.current.z || 1;
+      const sT = ratio * 0.5 * scaleText;
+      ctx.save();
+      ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 1.5 * ratio / zz; ctx.setLineDash([5 * ratio / zz, 4 * ratio / zz]);
+      const pad = 6 * ratio / zz;
+      multiSel.forEach(i => {
+        const b = pathBounds(paths[i], 22 * ratio, sT);
+        if (b) ctx.strokeRect(b.x1 - pad, b.y1 - pad, b.x2 - b.x1 + 2 * pad, b.y2 - b.y1 + 2 * pad);
+      });
+      if (marquee) {
+        ctx.setLineDash([]); ctx.fillStyle = 'rgba(74,158,255,0.12)';
+        ctx.fillRect(marquee.x1, marquee.y1, marquee.x2 - marquee.x1, marquee.y2 - marquee.y1);
+        ctx.strokeRect(marquee.x1, marquee.y1, marquee.x2 - marquee.x1, marquee.y2 - marquee.y1);
+      }
+      ctx.restore();
+    }
+
     // Indicateur de sélection : symbole/viewpoint
     if (selAnnot !== null && paths[selAnnot.idx]) {
       const ap = paths[selAnnot.idx];
@@ -1154,7 +1326,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     } else {
       vpRotateHandleRef.current = null;
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale, snapHint]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale, snapHint, multiSel, marquee]);
 
   useEffect(() => { redraw(); }, [redraw]);
   // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
@@ -1183,35 +1355,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         e.preventDefault();
         redoRef.current();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (_selTextIdx !== null && _paths[_selTextIdx]) {
-          clipboardRef.current = { ..._paths[_selTextIdx] }; e.preventDefault();
-        } else if (_selAnnot !== null && _paths[_selAnnot.idx]) {
-          const ap = _paths[_selAnnot.idx];
-          clipboardRef.current = { ...ap, pts: ap.pts?.map(pt => ({...pt})) }; e.preventDefault();
-        }
+      const ops = editOpsRef.current;
+      const mod = e.ctrlKey || e.metaKey;
+      // Copier / coller (sous la souris) / dupliquer / tout sélectionner — un ou plusieurs éléments.
+      if (mod && (e.key === 'c' || e.key === 'C') && !e.shiftKey) { if (ops.copySelection()) e.preventDefault(); }
+      if (mod && (e.key === 'v' || e.key === 'V') && !e.shiftKey && clipboardRef.current?.length) {
+        e.preventDefault(); ops.pasteAnnots(clipboardRef.current, true);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboardRef.current) {
-        e.preventDefault();
-        const src = clipboardRef.current;
-        const OFF = 40;
-        const copy = { ...src };
-        if (copy._vpId) copy._vpId = crypto.randomUUID();
-        // Coller un viewpoint = nouvelle vue : numéro neuf, déliée de la photo d'origine.
-        if (copy.type === 'viewpoint') {
-          copy.vpNum = nextVpNumRef.current;
-          copy.label = `V${copy.vpNum}`;
-          copy.photoIdx = null;
-        }
-        if (copy.x  != null) { copy.x  += OFF; copy.y  += OFF; }
-        if (copy.x1 != null) { copy.x1 += OFF; copy.y1 += OFF; copy.x2 += OFF; copy.y2 += OFF; }
-        if (copy.arrowX != null) { copy.arrowX += OFF; copy.arrowY += OFF; }
-        if (copy.pts)    copy.pts    = src.pts.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
-        if (copy.points) copy.points = src.points.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
-        setPaths(prev => [...prev, copy]);
-      }
+      if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); ops.duplicateSelection(); return; }
+      if (mod && (e.key === 'a' || e.key === 'A')) { if (ops.selectAll()) e.preventDefault(); return; }
       if (e.key === 'Enter' && finishPolyRef.current()) { e.preventDefault(); return; }
       if (e.key === 'Escape') {
+        setMultiSel([]);
         setPolyPts([]); setPolyMousePos(null);
         setTool('select');
         setShowSyms(false);
@@ -1220,6 +1375,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         setPendingShape(null); shapeStartRef.current = null;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (ops.deleteSelectionGroup()) { e.preventDefault(); return; }
         if (_selAnnot !== null) {
           e.preventDefault();
           const wasVp = _paths[_selAnnot.idx]?.type === 'viewpoint';
@@ -1235,8 +1391,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           setSelTextIdx(null);
         }
       }
-      // Flèches ←/→ : photo précédente / suivante (la sauvegarde des annotations en cours
-      // est gérée par le parent via getAnnotation()).
+      // Flèches avec une sélection : déplacer finement (Maj = ×10).
+      const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (arrow && !mod && ops.nudgeSelection(arrow[0], arrow[1], e.shiftKey)) { e.preventDefault(); return; }
+      // Flèches ←/→ sans sélection : photo précédente / suivante (la sauvegarde des annotations
+      // en cours est gérée par le parent via getAnnotation()).
       if (e.key === 'ArrowLeft' && navRef.current.onPrev) { e.preventDefault(); navRef.current.onPrev(); }
       if (e.key === 'ArrowRight' && navRef.current.onNext) { e.preventDefault(); navRef.current.onNext(); }
     };
@@ -1475,6 +1634,30 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (tool === 'select') {
       const hitR = 22 * (cv.width / cv.clientWidth);
       const ratio_s = cv.width / cv.clientWidth;
+      // ── Groupe sélectionné : glisser l'un de ses éléments déplace TOUT le groupe ──
+      const hitAt = (q) => {
+        if (!q) return false;
+        if (q.type === 'shape') return hitsShape(q, pos, 18 * ratio_s);
+        const b = boundsOf(q), pad = hitR * 0.5;
+        return b && pos.x >= b.x1 - pad && pos.x <= b.x2 + pad && pos.y >= b.y1 - pad && pos.y <= b.y2 + pad;
+      };
+      if (multiSel.length && !e.shiftKey) {
+        if (multiSel.some(i => hitAt(paths[i]))) {
+          groupDragRef.current = { orig: multiSel.map(i => [i, paths[i]]), tapX: pos.x, tapY: pos.y };
+          setDrawing(true); return;
+        }
+        setMultiSel([]);
+      }
+      // ── Maj+clic : ajoute / retire un élément de la sélection ──
+      if (e.shiftKey && !e.touches) {
+        let hitI = -1;
+        for (let i = paths.length - 1; i >= 0; i--) { if (hitAt(paths[i])) { hitI = i; break; } }
+        if (hitI >= 0) {
+          const curSel = selectedIdxs();
+          selectIdxs(curSel.includes(hitI) ? curSel.filter(i => i !== hitI) : [...curSel, hitI]);
+          return;
+        }
+      }
       // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
       // Position lue depuis resizeHandleRef (dessinée au pixel près) → plus d'approximation.
       const rh_s = resizeHandleRef.current;
@@ -1549,15 +1732,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         }
         if (p.type === 'shape') {
           const hitRSh = 18 * (cv.width / cv.clientWidth);
-          let hitShape = false;
-          if ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1) {
-            const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
-            hitShape = pos.x >= Math.min(...xs) - hitRSh && pos.x <= Math.max(...xs) + hitRSh &&
-              pos.y >= Math.min(...ys) - hitRSh && pos.y <= Math.max(...ys) + hitRSh;
-          } else if (p.x1 != null) {
-            hitShape = pos.x >= Math.min(p.x1, p.x2) - hitRSh && pos.x <= Math.max(p.x1, p.x2) + hitRSh &&
-              pos.y >= Math.min(p.y1, p.y2) - hitRSh && pos.y <= Math.max(p.y1, p.y2) + hitRSh;
-          }
+          // Sur le trait (ou dans le remplissage) — plus le rectangle englobant : cliquer-glisser
+          // DANS un grand contour vide trace un cadre de sélection au lieu de déplacer le contour.
+          const hitShape = hitsShape(p, pos, hitRSh);
           if (hitShape) {
             setSelAnnot({ idx: i }); setSelTextIdx(null);
             annotDragRef.current = { idx: i, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
@@ -1565,7 +1742,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           }
         }
       }
+      // Clic dans le vide : désélectionne ; glisser (souris) = CADRE de sélection (Maj = ajoute).
+      const addTo = e.shiftKey ? selectedIdxs() : [];
       setSelAnnot(null); setSelTextIdx(null);
+      if (!e.touches) {
+        marqueeRef.current = { x0: pos.x, y0: pos.y, add: addTo };
+        setDrawing(true);
+      }
       return;
     }
 
@@ -1859,6 +2042,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
 
     const pos = getXY(e, cvRef.current);
+    if (!e.touches) mouseCanvasRef.current = pos;
+    // Cadre de sélection en cours
+    if (marqueeRef.current) {
+      const m = marqueeRef.current;
+      setMarquee({ x1: Math.min(m.x0, pos.x), y1: Math.min(m.y0, pos.y), x2: Math.max(m.x0, pos.x), y2: Math.max(m.y0, pos.y) });
+      return;
+    }
+    // Déplacement du groupe sélectionné
+    if (groupDragRef.current) {
+      const { orig, tapX, tapY } = groupDragRef.current;
+      const dx = pos.x - tapX, dy = pos.y - tapY;
+      const byIdx = new Map(orig);
+      setPaths(prev => prev.map((p, i) => byIdx.has(i) ? movePath(byIdx.get(i), dx, dy) : p));
+      return;
+    }
     // Placement flèche : mise à jour de la ligne de prévisualisation
     if (tool === 'text' && drawing && arrowPlaceRef.current) {
       setPendingArrowLine({ tipX: arrowPlaceRef.current.x, tipY: arrowPlaceRef.current.y, boxX: pos.x, boxY: pos.y });
@@ -1991,6 +2189,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (e.touches.length < 2) gestureRef.current = null;
       return;
     }
+    // Fin du cadre de sélection : éléments ENTIÈREMENT dans le cadre (+ ceux déjà sélectionnés si Maj).
+    if (marqueeRef.current) {
+      const { add } = marqueeRef.current;
+      const r = marquee;
+      marqueeRef.current = null; setMarquee(null); setDrawing(false);
+      const minSz = 4 * cvRatio();
+      if (!r || (r.x2 - r.x1 < minSz && r.y2 - r.y1 < minSz)) { selectIdxs(add); return; } // simple clic
+      const inside = [];
+      paths.forEach((p, i) => { const b = boundsOf(p); if (b && b.x1 >= r.x1 && b.x2 <= r.x2 && b.y1 >= r.y1 && b.y2 <= r.y2) inside.push(i); });
+      selectIdxs([...add, ...inside]);
+      return;
+    }
+    if (groupDragRef.current) { groupDragRef.current = null; setDrawing(false); return; }
     // Fin du placement flèche-callout (drag tip → box)
     if (tool === 'text' && arrowPlaceRef.current) {
       const tip = arrowPlaceRef.current;
@@ -2318,13 +2529,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const recolorSelection = (cl) => {
     setColor(cl);
     setPaths(prev => prev.map((p, i) =>
-      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx))
+      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx) || multiSel.includes(i))
         ? { ...p, color: cl } : p));
   };
   const resizeSelection = (sz) => {
     setSize(sz);
     setPaths(prev => prev.map((p, i) =>
-      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx))
+      ((selTextIdx !== null && i === selTextIdx) || (selAnnot !== null && i === selAnnot.idx) || multiSel.includes(i))
         ? { ...p, size: sz } : p));
   };
 
@@ -2819,6 +3030,28 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             <Ic n="del" s={13}/>
           </button>
           <button onClick={() => { setSelAnnot(null); annotDragRef.current = null; }}
+            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ── Groupe sélectionné (cadre de sélection / Maj+clic) ── */}
+      {multiSel.length > 0 && (
+        <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+          <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
+            Sélection : {multiSel.length} élément{multiSel.length > 1 ? 's' : ''}
+          </span>
+          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer · flèches = au pixel · couleur = pour tous</span>
+          <button onClick={() => duplicateSelection()}
+            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
+            ⊕ Dupliquer
+          </button>
+          <button onClick={() => deleteSelectionGroup()} title="Supprimer la sélection"
+            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
+            <Ic n="del" s={13}/>
+          </button>
+          <button onClick={() => setMultiSel([])}
             style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
             ✕
           </button>
