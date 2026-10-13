@@ -33,6 +33,20 @@ describe('Costar — lecture du rapport', () => {
     expect(reportItems(projet)).toHaveLength(2);
   });
 
+  it('contrôles automatiques : chiffres fiables et observations citées', () => {
+    const d = buildReportDigest({ localisations: [{ nom: 'Z', items: [
+      { titre: 'Fissure', commentaire: 'ok', urgence: 'haute', suivi: 'a_faire', photos: [{ data: 'x' }] },
+      { titre: ' fissure ', commentaire: '', photos: [] },
+      { titre: '', commentaire: 'Un commentaire assez long pour ne pas être considéré comme court du tout.', urgence: 'basse' },
+    ] }] });
+    expect(d.text).toContain('Observations sans titre : 1 (Obs 3)');
+    expect(d.text).toContain('Sans commentaire : 1 (Obs 2) ; commentaire très court (< 40 caractères) : 1 (Obs 1)');
+    expect(d.text).toContain('Urgence non renseignée : 1 (Obs 2) ; suivi non renseigné : 2 (Obs 2, 3)');
+    expect(d.text).toContain('Sans photo : 2 (Obs 2, 3)');
+    expect(d.text).toContain('Classées « Urgent » : 1 (Obs 1)');
+    expect(d.text).toContain('Titres en double : Obs 1 = 2');
+  });
+
   it('plafond : seuls les commentaires démesurés sont raccourcis', () => {
     const big = { localisations: [{ nom: 'Z', items: [{ titre: 'long', commentaire: 'a'.repeat(5000) }, { titre: 'court', commentaire: 'ok' }] }] };
     const d = buildReportDigest(big, { maxChars: 3000 });
@@ -49,7 +63,7 @@ describe('Costar — lecture du rapport', () => {
 describe('Costar — réponse IA', () => {
   it('JSON pur', () => {
     const r = parseCostarReply('{"note":7,"verdict":"Tiguidou","bien":["a"],"ameliorer":["b","c"],"coince":[]}');
-    expect(r).toEqual({ note: 7, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], blague: '' });
+    expect(r).toEqual({ note: 7, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
   });
 
   it('JSON entouré de texte / balises, note bornée', () => {
@@ -58,6 +72,14 @@ describe('Costar — réponse IA', () => {
     expect(r.verdict).toBe('x, y');
     expect(r.bien).toEqual(['seul point']);
     expect(r.coince).toEqual([]);
+  });
+
+  it('priorité + réécriture proposée', () => {
+    const r = parseCostarReply(JSON.stringify({ note: 5, priorite: 'Classer Obs 2 en Urgent — vite', reecriture: { obs: 'Obs 2', avant: 'fissure', apres: 'Fissure traversante de [à compléter] mm' } }));
+    expect(r.priorite).toBe('Classer Obs 2 en Urgent, vite');
+    expect(r.reecriture).toEqual({ obs: 'Obs 2', avant: 'fissure', apres: 'Fissure traversante de [à compléter] mm' });
+    expect(parseCostarReply('{"note":5,"reecriture":null}').reecriture).toBeNull();
+    expect(parseCostarReply('{"note":5,"reecriture":{"avant":"x"}}').reecriture).toBeNull(); // sans version réécrite → rien
   });
 
   it('réponse illisible → null', () => {

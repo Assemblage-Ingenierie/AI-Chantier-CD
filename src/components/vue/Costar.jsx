@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick } from '../../lib/costar.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES } from '../../lib/costar.js';
 
 // Costar : castor québécois en casque de chantier (dessin original, SVG) — mascotte qui relit
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
@@ -96,6 +96,8 @@ export default function Costar({ projet, fixed = false }) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | loading | done | error
   const [review, setReview] = useState(null);
+  const [quip, setQuip] = useState('');
+  const [engine, setEngine] = useState(null); // { provider, from, why } : moteur qui a VRAIMENT répondu
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   const abortRef = useRef(null);
@@ -122,15 +124,17 @@ export default function Costar({ projet, fixed = false }) {
     abortRef.current = ctrl;
     setError(null);
     setReview(null);
+    setEngine(null);
 
     const digest = buildReportDigest(projetRef.current);
-    if (digest.observations === 0) { setReview(EMPTY_REVIEW); setStatus('done'); return; }
+    if (digest.observations === 0) { setReview(EMPTY_REVIEW); setQuip(scoreQuip(0)); setStatus('done'); return; }
 
     setStatus('loading');
     try {
       const d = await callAIProxy({
         feature: 'costar',
         model: 'claude-sonnet-4-6',
+        modelFor: { mistral: 'mistral-medium-latest' }, // relecture fine : Medium plutôt que Small
         max_tokens: 4096,
         thinkingBudget: 1536,
         json: true,
@@ -144,6 +148,8 @@ export default function Costar({ projet, fixed = false }) {
       const parsed = parseCostarReply(raw);
       if (!parsed) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
       setReview(parsed);
+      setQuip(scoreQuip(parsed.note));
+      setEngine(d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null);
       setStatus('done');
     } catch (e) {
       if (ctrl.signal.aborted) return;
@@ -187,7 +193,9 @@ export default function Costar({ projet, fixed = false }) {
 
           {status === 'error' && (
             <div style={{ fontSize: 13, color: DA.black, lineHeight: 1.5, paddingRight: 22 }}>
-              {errMsg}… j'ai pas réussi à lire ton rapport : <span style={{ color: '#B91C1C' }}>{error}</span>
+              {errMsg}… j'ai pas réussi à lire ton rapport.
+              {costarErrorHint(error) && <div style={{ marginTop: 6 }}>{costarErrorHint(error)}</div>}
+              <div style={{ marginTop: 6, fontSize: 11, color: DA.grayL, lineHeight: 1.4 }}>Détail : {error}</div>
               <div><button onClick={ask} style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: DA.red, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>Réessayer</button></div>
             </div>
           )}
@@ -200,16 +208,39 @@ export default function Costar({ projet, fixed = false }) {
                 </div>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: sc.color, background: sc.bg, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap' }}>{sc.label}</span>
               </div>
+              {quip && <div style={{ marginTop: 4, fontSize: 11.5, color: DA.gray }}>{quip}</div>}
               {review.verdict && (
                 <p style={{ margin: '8px 0 0', fontSize: 13.5, fontWeight: 600, fontStyle: 'italic', color: DA.black, lineHeight: 1.4 }}>« {review.verdict} »</p>
               )}
               <Section title="Ce qui est bien" color="#15803D" items={review.bien}/>
               <Section title="À améliorer" color="#C2410C" items={review.ameliorer}/>
               <Section title="Ce qui coince" color="#B91C1C" items={review.coince}/>
+              {review.priorite && (
+                <div style={{ marginTop: 10, padding: '8px 10px', background: '#FEF2F2', borderRadius: 10, fontSize: 12.5, color: DA.black, lineHeight: 1.45 }}>
+                  <span style={{ fontWeight: 800, color: '#B91C1C' }}>Avant d'envoyer : </span>{review.priorite}
+                </div>
+              )}
+              {review.reecriture && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 800, color: '#1D4ED8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1D4ED8', flexShrink: 0 }}/>
+                    Je l'aurais écrit comme ça{review.reecriture.obs ? ` (${review.reecriture.obs})` : ''}
+                  </div>
+                  {review.reecriture.avant && <div style={{ fontSize: 12, color: DA.grayL, textDecoration: 'line-through', lineHeight: 1.4 }}>{review.reecriture.avant}</div>}
+                  <div style={{ marginTop: 3, fontSize: 12.5, color: DA.black, lineHeight: 1.45, background: '#EFF6FF', borderRadius: 8, padding: '6px 8px' }}>{review.reecriture.apres}</div>
+                </div>
+              )}
               {review.blague && (
                 <p style={{ margin: '12px 0 0', padding: '8px 10px', background: '#FFF7ED', borderRadius: 10, fontSize: 12.5, color: '#9A3412', lineHeight: 1.45 }}>
                   🦫 {review.blague}
                 </p>
+              )}
+              {engine && (
+                <div style={{ marginTop: 10, fontSize: 10.5, color: DA.grayL, lineHeight: 1.4 }}>
+                  {engine.from
+                    ? <>{ENGINE_NAMES[engine.from] || engine.from} indisponible{engine.why ? ` (${engine.why})` : ''} : relu avec {ENGINE_NAMES[engine.provider] || engine.provider}.</>
+                    : <>Relu avec {ENGINE_NAMES[engine.provider] || engine.provider}.</>}
+                </div>
               )}
               <button onClick={ask}
                 style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: DA.gray, background: 'white', border: `1px solid ${DA.border}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>

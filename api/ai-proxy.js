@@ -387,6 +387,15 @@ export default async function handler(req, res) {
   let firstFail = null;
   const end = Date.now() + TOTAL_BUDGET_MS;
   const available = order.filter(prov => keys[prov]);
+  // TRANSPARENCE (retour Thomas : « Costar me parle de Gemini alors que je suis sur Mistral ») :
+  // si le moteur CHOISI n'a pas de clé sur le serveur, on le dit, et chaque réponse indique quel
+  // moteur a réellement répondu (_provider) et, en cas de bascule, lequel a été remplacé et pourquoi.
+  const chosen = order[0];
+  const NAMES = { gemini: 'Gemini', mistral: 'Mistral', claude: 'Claude' };
+  const chosenMissing = !keys[chosen]
+    ? `${NAMES[chosen]} non configuré sur le serveur (clé ${chosen === 'claude' ? 'ANTHROPIC' : chosen.toUpperCase()}_API_KEY absente dans Vercel)`
+    : null;
+  let chosenWhy = chosenMissing;
   for (let i = 0; i < available.length; i++) {
     const prov = available[i];
     // Plus assez de temps pour un essai utile → on renvoie l'échec précédent (pas de coupure Vercel).
@@ -396,9 +405,18 @@ export default async function handler(req, res) {
     // Moteur de SECOURS : on ne lui impose pas le modèle demandé pour un autre moteur.
     const p = prov === payload.provider || (prov === 'claude' && !payload.provider) ? payload : { ...payload, model: null };
     const out = await runners[prov](p, keys[prov], maxTokens, budget);
-    if (out.status === 200) return res.status(200).json(out.json);
+    if (out.status === 200) {
+      const extra = prov !== chosen ? { _fallbackFrom: chosen, _fallbackWhy: chosenWhy || null } : {};
+      return res.status(200).json({ ...out.json, _provider: prov, ...extra });
+    }
+    if (prov === chosen) chosenWhy = out.json?.error || `erreur ${out.status}`;
     if (!firstFail) firstFail = out;
   }
-  if (firstFail) return res.status(firstFail.status || 500).json(firstFail.json);
+  if (firstFail) {
+    const json = chosenMissing && firstFail.json?.error
+      ? { ...firstFail.json, error: `${chosenMissing} ; secours : ${firstFail.json.error}` }
+      : firstFail.json;
+    return res.status(firstFail.status || 500).json(json);
+  }
   return res.status(500).json({ error: 'Aucun moteur IA configuré (GEMINI_API_KEY / MISTRAL_API_KEY dans Vercel).' });
 }

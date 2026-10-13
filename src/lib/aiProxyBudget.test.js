@@ -58,3 +58,35 @@ describe('proxy IA — budget de temps', () => {
     expect(res.body.content[0].text).toBe('lent mais ok');
   });
 });
+
+describe('proxy IA — transparence du moteur', () => {
+  it('moteur choisi sans clé : la réponse dit qui a répondu et pourquoi', async () => {
+    delete process.env.MISTRAL_API_KEY;
+    vi.stubGlobal('fetch', vi.fn(() => ok({ candidates: [{ content: { parts: [{ text: 'ok gemini' }] }, finishReason: 'STOP' }] })));
+    const { done, res } = call({ provider: 'mistral', max_tokens: 500, messages: [{ role: 'user', content: 'x' }] });
+    await vi.advanceTimersByTimeAsync(100);
+    await done;
+    expect(res.code).toBe(200);
+    expect(res.body._provider).toBe('gemini');
+    expect(res.body._fallbackFrom).toBe('mistral');
+    expect(res.body._fallbackWhy).toMatch(/MISTRAL_API_KEY absente/);
+  });
+
+  it('moteur choisi sans clé + secours en panne : l\'erreur commence par la vraie cause', async () => {
+    delete process.env.MISTRAL_API_KEY;
+    vi.stubGlobal('fetch', vi.fn((url, opts) => hang(opts?.signal)));
+    const { done, res } = call({ provider: 'mistral', max_tokens: 500, messages: [{ role: 'user', content: 'x' }] });
+    await vi.advanceTimersByTimeAsync(55000);
+    await done;
+    expect(res.body.error).toMatch(/^Mistral non configuré.*secours : Gemini ne répond pas/);
+  });
+
+  it('moteur choisi OK : _provider renseigné, pas de bascule', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => ok(MISTRAL_OK)));
+    const { done, res } = call({ provider: 'mistral', max_tokens: 500, messages: [{ role: 'user', content: 'x' }] });
+    await vi.advanceTimersByTimeAsync(100);
+    await done;
+    expect(res.body._provider).toBe('mistral');
+    expect(res.body._fallbackFrom).toBeUndefined();
+  });
+});
