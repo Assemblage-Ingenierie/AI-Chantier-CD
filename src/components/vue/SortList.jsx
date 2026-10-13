@@ -368,6 +368,8 @@ export default function SortList({ items, locId = null, compactEmpty = false, on
               onDragStart={() => onDragStart(i)}
               onDragEnter={() => onDragEnter(i)}
               onDragEnd={onDragEnd}
+              // Filet : glisser annulé par le navigateur (pas de dragend) → la ligne ne reste pas grisée.
+              onMouseUp={() => { if (dragIdx !== null) { setDragIdx(null); setOverIdx(null); } }}
               onDragOver={e => e.preventDefault()}
               onClick={() => { if (dragDidMoveRef.current) { dragDidMoveRef.current = false; return; } onEdit(item); }}
               style={{
