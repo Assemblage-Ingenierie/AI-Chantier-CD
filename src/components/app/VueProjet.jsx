@@ -857,6 +857,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                         data-zone-id={loc.id}
                         draggable={zoneDragArm === loc.id}
                         onDragStart={e => {
+                          // Glisser d'un élément IMBRIQUÉ (observation à réordonner, photo…) : ce n'est pas
+                          // le glisser de la zone → on le laisse vivre. Avant, la garde ci-dessous l'ANNULAIT
+                          // (preventDefault) → l'observation restait grisée sans bouger (retour Thomas 13/10).
+                          const srcEl = e.target?.nodeType === 1 ? e.target : e.target?.parentElement;
+                          const nested = srcEl?.closest?.('[draggable="true"]');
+                          if (nested && nested !== e.currentTarget) return;
                           e.stopPropagation(); // une sous-zone ne déclenche pas le drag de son groupe
                           if (zoneDragArm !== loc.id) { e.preventDefault(); return; } // drag natif d'une sélection de texte
                           zoneDragDidMove.current = false; zoneOverRef.current = null;
