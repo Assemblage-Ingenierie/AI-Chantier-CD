@@ -431,6 +431,37 @@ function getShapeHandles(ap) {
   return [];
 }
 
+// Le point `pos` est-il SUR le trait d'une forme (à moins de r) ? Test PRÉCIS (segments / bord
+// d'ellipse), pas le rectangle englobant : cliquer DANS un grand contour pour commencer un
+// nouveau tracé ne le sélectionne plus (retour Thomas 13/10/2026).
+function distToSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function nearShapeOutline(p, pos, r) {
+  if (!p) return false;
+  if ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1) {
+    const n = p.pts.length, segs = p.shape === 'poly' ? n : n - 1;
+    for (let i = 0; i < segs; i++) {
+      const a = p.pts[i], b = p.pts[(i + 1) % n];
+      if (distToSeg(pos.x, pos.y, a.x, a.y, b.x, b.y) < r) return true;
+    }
+    return false;
+  }
+  if (p.x1 == null) return false;
+  if (p.shape === 'line' || p.shape === 'arrow') return distToSeg(pos.x, pos.y, p.x1, p.y1, p.x2, p.y2) < r;
+  const x1 = Math.min(p.x1, p.x2), x2 = Math.max(p.x1, p.x2), y1 = Math.min(p.y1, p.y2), y2 = Math.max(p.y1, p.y2);
+  if (p.shape === 'ellipse') {
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, rx = Math.max(1, (x2 - x1) / 2), ry = Math.max(1, (y2 - y1) / 2);
+    const a = Math.atan2((pos.y - cy) / ry, (pos.x - cx) / rx);
+    return Math.hypot(pos.x - (cx + rx * Math.cos(a)), pos.y - (cy + ry * Math.sin(a))) < r;
+  }
+  // rectangle (et toute autre forme à boîte) : les 4 côtés
+  return distToSeg(pos.x, pos.y, x1, y1, x2, y1) < r || distToSeg(pos.x, pos.y, x2, y1, x2, y2) < r
+    || distToSeg(pos.x, pos.y, x2, y2, x1, y2) < r || distToSeg(pos.x, pos.y, x1, y2, x1, y1) < r;
+}
+
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
@@ -583,6 +614,32 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Refs live pour le handler clavier (évite closure stale sur paths/selTextIdx/selAnnot)
   const pathsRef = useRef(paths);
   pathsRef.current = paths;
+
+  // ANNULER / RÉTABLIR (demande Thomas : « je reviens en arrière et je veux revenir en avant »).
+  // Annuler retire la dernière annotation (comportement inchangé) et la garde de côté ; Rétablir
+  // la remet. Toute AUTRE modification (nouveau tracé, déplacement…) vide la pile « Rétablir ».
+  const redoRef = useRef([]);
+  const [redoCount, setRedoCount] = useState(0);
+  const undoRedoOpRef = useRef(false);
+  const undoLast = useCallback(() => {
+    const cur = pathsRef.current;
+    if (!cur.length) return;
+    redoRef.current.push(cur[cur.length - 1]);
+    setRedoCount(redoRef.current.length);
+    undoRedoOpRef.current = true;
+    setPaths(cur.slice(0, -1));
+  }, []);
+  const redoLast = useCallback(() => {
+    const p = redoRef.current.pop();
+    if (!p) return;
+    setRedoCount(redoRef.current.length);
+    undoRedoOpRef.current = true;
+    setPaths([...pathsRef.current, p]);
+  }, []);
+  useEffect(() => {
+    if (undoRedoOpRef.current) { undoRedoOpRef.current = false; return; }
+    if (redoRef.current.length) { redoRef.current = []; setRedoCount(0); }
+  }, [paths]);
   const selTextIdxRef = useRef(selTextIdx);
   selTextIdxRef.current = selTextIdx;
   const selAnnotRef = useRef(selAnnot);
@@ -876,6 +933,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
   // taille correcte à l'écran (sinon, zoomé, la pastille bleue reste géante). Pan (px/py) exclu.
   useEffect(() => { redraw(); }, [vt.z]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Redessine quand la TAILLE D'AFFICHAGE change (ajustement à la fenêtre, plan HD qui arrive) :
+  // l'échelle des symboles/textes dépend de largeur canvas / largeur affichée. Sans ça, le 1er
+  // dessin (fait AVANT l'ajustement) restait figé → symboles minuscules à « 2.0× » jusqu'à ce
+  // qu'on retouche le curseur (retour Thomas 13/10/2026).
+  useEffect(() => { redraw(); }, [dispSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+Z — undo dernière annotation / Delete — supprimer sélection
   // Deps [] : les refs pathsRef/selTextIdxRef/selAnnotRef sont toujours à jour, pas de closure stale.
@@ -885,9 +947,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const _paths = pathsRef.current;
       const _selTextIdx = selTextIdxRef.current;
       const _selAnnot = selAnnotRef.current;
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
         e.preventDefault();
-        setPaths(p => p.slice(0, -1));
+        undoLast();
+      }
+      // Rétablir : Ctrl+Y ou Ctrl+Maj+Z (Cmd sur Mac)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y' || ((e.key === 'z' || e.key === 'Z') && e.shiftKey))) {
+        e.preventDefault();
+        redoLast();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (_selTextIdx !== null && _paths[_selTextIdx]) {
@@ -1419,21 +1486,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               }
             }
           }
-          for (let i = paths.length - 1; i >= 0; i--) {
-            const p = paths[i];
-            if (p.type !== 'shape') continue;
-            const hit = ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1)
-              ? (pos.x >= Math.min(...p.pts.map(pt=>pt.x)) - hitR && pos.x <= Math.max(...p.pts.map(pt=>pt.x)) + hitR &&
-                 pos.y >= Math.min(...p.pts.map(pt=>pt.y)) - hitR && pos.y <= Math.max(...p.pts.map(pt=>pt.y)) + hitR)
-              : (p.x1 != null && pos.x >= Math.min(p.x1,p.x2) - hitR && pos.x <= Math.max(p.x1,p.x2) + hitR &&
-                 pos.y >= Math.min(p.y1,p.y2) - hitR && pos.y <= Math.max(p.y1,p.y2) + hitR);
-            if (hit) {
-              setSelAnnot({ idx: i }); setSelTextIdx(null);
-              annotDragRef.current = { idx: i, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
-              setDrawing(true); return;
-            }
+          // En mode TRACÉ, un clic ne sélectionne JAMAIS une autre forme (retour Thomas : « je trace
+          // une nouvelle ligne, ça sélectionne le contour d'à côté »). Seule la forme DÉJÀ
+          // sélectionnée se déplace, si on clique précisément sur son trait. Pour choisir une autre
+          // forme : outil Sélection (ou Échap).
+          if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR)) {
+            const p = paths[selAnnot.idx];
+            annotDragRef.current = { idx: selAnnot.idx, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
+            setDrawing(true); return;
           }
-          setSelAnnot(null); // clic dans le vide → démarrage d'un nouveau polygone
+          setSelAnnot(null); // → démarrage d'un nouveau tracé
         }
         const now = Date.now();
         const lt = lastTapRef.current;
@@ -1474,21 +1536,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         }
       }
 
-      // ── Autres formes (rect/ellipse/arrow/line) : hit test pour sélection ──
-      let hitIdx = -1;
-      for (let i = paths.length - 1; i >= 0; i--) {
-        const p = paths[i];
-        if (p.type !== 'shape') continue;
-        if ((p.shape === 'poly' || p.shape === 'polyline') && p.pts?.length > 1) {
-          const xs = p.pts.map(pt => pt.x), ys = p.pts.map(pt => pt.y);
-          if (pos.x >= Math.min(...xs) - hitR && pos.x <= Math.max(...xs) + hitR &&
-              pos.y >= Math.min(...ys) - hitR && pos.y <= Math.max(...ys) + hitR) { hitIdx = i; break; }
-        } else if (p.x1 != null) {
-          const bx1 = Math.min(p.x1, p.x2) - hitR, by1 = Math.min(p.y1, p.y2) - hitR;
-          const bx2 = Math.max(p.x1, p.x2) + hitR, by2 = Math.max(p.y1, p.y2) + hitR;
-          if (pos.x >= bx1 && pos.x <= bx2 && pos.y >= by1 && pos.y <= by2) { hitIdx = i; break; }
-        }
-      }
+      // ── Autres formes (rect/ellipse/arrow/line) : en mode TRACÉ, pas de sélection d'une autre
+      // forme (même règle que la polyligne ci-dessus) — seule la forme déjà sélectionnée se
+      // déplace si on clique sur son trait ; sinon, on commence une nouvelle forme.
+      const hitIdx = (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR))
+        ? selAnnot.idx : -1;
       if (hitIdx >= 0) {
         setSelAnnot({ idx: hitIdx });
         annotDragRef.current = { idx: hitIdx, origData: { ...paths[hitIdx], pts: paths[hitIdx].pts ? paths[hitIdx].pts.map(pt => ({...pt})) : undefined }, tapX: pos.x, tapY: pos.y };
@@ -2101,13 +2153,24 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               <Ic n="x" s={26}/>
               <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>
             </button>
-            <button onClick={() => setPaths(p => p.slice(0,-1))}
+            <button onClick={undoLast}
               style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
-              title="Annuler dernière action">
+              title="Annuler dernière action (Ctrl+Z)">
               <Ic n="und" s={26}/>
               <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
             </button>
+            {/* Rétablir — PC (demande Thomas). Grisé tant qu'il n'y a rien à rétablir. */}
+            {!isMob && (
+              <button onClick={redoLast} disabled={!redoCount}
+                style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: redoCount ? 1 : 0.4,
+                  cursor: redoCount ? 'pointer' : 'default',
+                  display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
+                title="Rétablir (Ctrl+Y)">
+                <span style={{ display:'inline-flex', transform:'scaleX(-1)' }}><Ic n="und" s={26}/></span>
+                <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Rétablir</span>
+              </button>
+            )}
             <button onClick={() => {
               // Flush du texte inline EN COURS (si le champ est encore ouvert/focus) → valider
               // sauvegarde tout tel quel, sans devoir d'abord sortir du champ (demande Thomas).
