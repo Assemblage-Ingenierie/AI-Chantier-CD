@@ -363,6 +363,11 @@ export const SYMBOL_CATEGORIES = [
 // que le reste de l'app est déjà protégé (cf. _hasLS dans supabase.js / useAuth.js).
 const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+const ANNOT_PREFS_KEY = 'chantierai_annot_prefs_v1';
+const SHAPE_KEYS = ['rect', 'ellipse', 'arrow', 'line', 'poly', 'polyline'];
+// Raccourcis clavier « une touche » (PC) : outils et formes.
+const TOOL_KEYS  = { v: 'select', d: 'pen', t: 'text', f: 'shape', s: 'symbol' };
+const SHAPE_HOTKEYS = { r: 'rect', e: 'ellipse', a: 'arrow', l: 'line', z: 'poly', p: 'polyline' };
 const _lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* stockage indisponible */ } };
 // Empreinte courte d'une chaîne (identifier un plan / un état d'annotations sans le stocker).
 function hashStr(str) {
@@ -591,10 +596,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
   const gvByVpIdRef    = useRef(new Map()); // _vpId → numéro Vxx global résolu au chargement (survit la migration)
 
+  // Derniers réglages utilisés (couleur, épaisseur, symbole, forme, mode texte) : retrouvés à la
+  // prochaine ouverture, comme dans toute appli de dessin. Lus une fois, jamais bloquant.
+  const prefs0 = useMemo(() => { try { return JSON.parse(_lsGet(ANNOT_PREFS_KEY) || '{}') || {}; } catch { return {}; } }, []);
   const [tool,       setTool]       = useState(initialTool || 'pen');
-  const [color,      setColor]      = useState(DA.red);
-  const [size,       setSize]       = useState(3);
-  const [sym,        setSym]        = useState(SYMBOLS[0]);
+  const [color,      setColor]      = useState(() => (typeof prefs0.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(prefs0.color) ? prefs0.color : DA.red));
+  const [size,       setSize]       = useState(() => (Number.isFinite(prefs0.size) && prefs0.size > 0 && prefs0.size <= 40 ? prefs0.size : 3));
+  const [sym,        setSym]        = useState(() => [...SYMBOLS, ...getCustomSymbolDefs()].find(x => x.id === prefs0.symId) || SYMBOLS[0]);
   const [paths,      setPaths]      = useState(savedPaths || []);
   const [cur,        setCur]        = useState([]);
   const [drawing,    setDrawing]    = useState(false);
@@ -636,9 +644,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [newShapeScale, setNewShapeScale] = useState(() => _readScale(SCALE_KEY('shape_new'), _readScale(SCALE_KEY('shape'), 1)));
   const newShapeMul = scaleShape > 0 ? newShapeScale / scaleShape : 1;
   const shapeMulProp = Math.abs(newShapeMul - 1) > 0.001 ? { sizeMul: Math.round(newShapeMul * 1000) / 1000 } : {};
-  const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line | poly
+  const [shapeTool,     setShapeTool]     = useState(() => (SHAPE_KEYS.includes(prefs0.shapeTool) ? prefs0.shapeTool : 'rect')); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
-  const [shapeFilled,   setShapeFilled]   = useState(false);
+  const [shapeFilled,   setShapeFilled]   = useState(() => prefs0.shapeFilled === true);
   const [fillOpacity,   setFillOpacity]   = useState(0.3);
   const [strokeOpacity, setStrokeOpacity] = useState(1);
   const [polyPts,       setPolyPts]       = useState([]);   // sommets du polygone en cours
@@ -670,7 +678,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [customSyms,    setCustomSyms]    = useState(() => getCustomSymbolDefs());
   const [newSymName,    setNewSymName]    = useState('');
   const [showNewSym,    setShowNewSym]    = useState(false);
-  const [textMode,      setTextMode]      = useState('plain');
+  const [textMode,      setTextMode]      = useState(() => (['plain', 'boxed', 'arrow'].includes(prefs0.textMode) ? prefs0.textMode : 'plain'));
   const [symCat,           setSymCat]           = useState('fissures'); // (conservé — plus d'onglets, rangée unifiée)
   const [showPalette,      setShowPalette]      = useState(false);
   const [sizeOpen,         setSizeOpen]         = useState(false); // curseur « Taille » contextuel (tuile épinglée des menus outil)
@@ -1032,8 +1040,48 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
   // Le groupe n'existe qu'avec l'outil Sélection.
   useEffect(() => { if (tool !== 'select') setMultiSel([]); }, [tool]);
+  // Choisir un outil (barre d'outils ET raccourci clavier).
+  const selectTool = (k) => {
+    finishPoly(); // tracé en cours (polyligne/zone) conservé, pas jeté
+    setTool(k);
+    if (k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
+    setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
+    setSizeOpen(false);
+    if (k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
+    if (k !== 'viewpoint') setActivePh(null);
+    if (k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
+    setSelAnnot(null); annotDragRef.current = null;
+  };
+  const pickShape = (k) => {
+    if (tool !== 'shape') selectTool('shape');
+    else if (k !== shapeTool) finishPoly();
+    setShapeTool(k);
+  };
+  // Mémorise les derniers réglages (cf. prefs0).
+  useEffect(() => {
+    _lsSet(ANNOT_PREFS_KEY, JSON.stringify({ color, size, symId: sym?.id, shapeTool, shapeFilled, textMode }));
+  }, [color, size, sym, shapeTool, shapeFilled, textMode]);
+
+  // ── CONFORT DE VUE : zoom clavier, Espace + glisser, double-clic = vue entière ──
+  // Zoom vers `z` en gardant fixe le point à (mx, my) px du centre du plan affiché ;
+  // par défaut le centre de l'écran.
+  const zoomTo = (z, mx = -vtRef.current.px, my = -vtRef.current.py) => {
+    const cv = cvRef.current;
+    if (!cv) return;
+    const c = vtRef.current;
+    const nz = Math.min(6, Math.max(1, z));
+    const r = nz / c.z;
+    const maxPx = cv.clientWidth * (nz - 1) / 2, maxPy = cv.clientHeight * (nz - 1) / 2;
+    const next = nz <= 1.001 ? { z: 1, px: 0, py: 0 }
+      : { z: nz, px: Math.max(-maxPx, Math.min(maxPx, c.px + mx * (1 - r))), py: Math.max(-maxPy, Math.min(maxPy, c.py + my * (1 - r))) };
+    vtRef.current = next; setVt(next);
+  };
+  const spaceRef = useRef(false);
+  const [spaceDown, setSpaceDown] = useState(false); // Espace maintenu → curseur « main »
+  const [showHelp, setShowHelp] = useState(false);   // aide des raccourcis (touche ?)
+
   const editOpsRef = useRef(null);
-  editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll };
+  editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll, selectTool, pickShape, zoomTo };
   const relabel = (arr) => {
     if (!vpNumByPath) return arr;
     let extra = 0;
@@ -1342,7 +1390,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Deps [] : les refs pathsRef/selTextIdxRef/selAnnotRef sont toujours à jour, pas de closure stale.
   useEffect(() => {
     const onKey = e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      const ops = editOpsRef.current;
+      const mod = e.ctrlKey || e.metaKey;
+      // Espace maintenu = main (glisser déplace la vue). Jamais de défilement/clic de bouton.
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        if (!spaceRef.current) { spaceRef.current = true; setSpaceDown(true); }
+        return;
+      }
+      // Zoom clavier : Ctrl+0 = vue entière, Ctrl+= / Ctrl+- = zoom avant / arrière.
+      if (mod && !e.altKey && (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0')) { e.preventDefault(); ops.zoomTo(1); return; }
+      if (mod && !e.altKey && (e.key === '=' || e.key === '+' || e.code === 'NumpadAdd')) { e.preventDefault(); ops.zoomTo(vtRef.current.z * 1.25); return; }
+      if (mod && !e.altKey && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) { e.preventDefault(); ops.zoomTo(vtRef.current.z / 1.25); return; }
       const _paths = pathsRef.current;
       const _selTextIdx = selTextIdxRef.current;
       const _selAnnot = selAnnotRef.current;
@@ -1355,8 +1415,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         e.preventDefault();
         redoRef.current();
       }
-      const ops = editOpsRef.current;
-      const mod = e.ctrlKey || e.metaKey;
       // Copier / coller (sous la souris) / dupliquer / tout sélectionner — un ou plusieurs éléments.
       if (mod && (e.key === 'c' || e.key === 'C') && !e.shiftKey) { if (ops.copySelection()) e.preventDefault(); }
       if (mod && (e.key === 'v' || e.key === 'V') && !e.shiftKey && clipboardRef.current?.length) {
@@ -1398,9 +1456,25 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       // en cours est gérée par le parent via getAnnotation()).
       if (e.key === 'ArrowLeft' && navRef.current.onPrev) { e.preventDefault(); navRef.current.onPrev(); }
       if (e.key === 'ArrowRight' && navRef.current.onNext) { e.preventDefault(); navRef.current.onNext(); }
+      // Raccourcis « une touche » : outils (V D T F S), formes (R E A L Z P), aide (?).
+      if (!mod && !e.altKey && e.key.length === 1) {
+        if (e.key === '?') { setShowHelp(v => !v); return; }
+        const kk = e.key.toLowerCase();
+        if (TOOL_KEYS[kk]) { e.preventDefault(); ops.selectTool(TOOL_KEYS[kk]); return; }
+        if (SHAPE_HOTKEYS[kk]) { e.preventDefault(); ops.pickShape(SHAPE_HOTKEYS[kk]); return; }
+      }
     };
+    const onKeyUp = e => {
+      if (e.code === 'Space' || e.key === ' ') {
+        if (!(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) e.preventDefault();
+        spaceRef.current = false; setSpaceDown(false);
+      }
+    };
+    const onBlur = () => { spaceRef.current = false; setSpaceDown(false); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Molette / pinch trackpad — zoom centré sur le curseur
@@ -1581,8 +1655,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       oneFingerPanRef.current = null;
     }
 
-    // Clic-droit ou molette enfoncée → pan (bureau uniquement)
-    if (!e.touches && (e.button === 2 || e.button === 1)) {
+    // Clic-droit, molette enfoncée ou Espace maintenu → pan (bureau uniquement)
+    if (!e.touches && (e.button === 2 || e.button === 1 || spaceRef.current)) {
       e.preventDefault();
       panRef.current = { startPx: vtRef.current.px, startPy: vtRef.current.py, startMx: e.clientX, startMy: e.clientY };
       return;
@@ -2624,18 +2698,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 { k:'shape',  n:'shp',  lbl:'Formes'  },
                 { k:'symbol', n:'sym',  lbl:'Symbole' },
               ].map(t => (
-                <button key={t.k}
-                  onClick={() => {
-                    finishPoly(); // tracé en cours (polyligne/zone) conservé, pas jeté
-                    setTool(t.k);
-                    if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
-                    setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
-                    setSizeOpen(false);
-                    if (t.k !== 'text') { setSelTextIdx(null); textDragRef.current = null; }
-                    if (t.k !== 'viewpoint') setActivePh(null);
-                    if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
-                    setSelAnnot(null); annotDragRef.current = null;
-                  }}
+                <button key={t.k} title={isMob ? undefined : `${t.lbl} (${Object.keys(TOOL_KEYS).find(x => TOOL_KEYS[x] === t.k)?.toUpperCase()})`}
+                  onClick={() => selectTool(t.k)}
                   style={{ padding:isMob?'9px 4px':'8px 14px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                     color:tool===t.k?'white':'#aaa',transition:'all 0.15s',flex:isMob?1:'none',
                     display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?0:66 }}>
@@ -2865,6 +2929,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 { k:'polyline', g:'∠', lbl:'Polyligne'  },
               ].map(s => (
                 <button key={s.k} onClick={() => { if (s.k !== shapeTool) finishPoly(); setShapeTool(s.k); }}
+                  title={isMob ? undefined : `${s.lbl} (${Object.keys(SHAPE_HOTKEYS).find(x => SHAPE_HOTKEYS[x] === s.k)?.toUpperCase()})`}
                   style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                     padding:'6px 4px', borderRadius:8, cursor:'pointer', width:isMob?74:96, boxSizing:'border-box',
                     border:`2px solid ${shapeTool===s.k ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
@@ -3084,17 +3149,53 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         {bgImage ? (
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
-              style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
+              style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:spaceDown?'grab':tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
-              onContextMenu={e => { e.preventDefault(); finishPoly(); }}/>
+              onContextMenu={e => { e.preventDefault(); finishPoly(); }}
+              onDoubleClick={() => {
+                // Double-clic dans le VIDE (outil Sélection) = revenir à la vue entière.
+                if (tool === 'select' && vtRef.current.z > 1.001 && !selAnnotRef.current && selTextIdxRef.current == null && !multiSelRef.current.length) zoomTo(1);
+              }}/>
             {vt.z > 1.05 && (
               <button
                 onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}
                 onClick={() => setVt({ z:1, px:0, py:0 })}
+                title={isMob ? undefined : 'Vue entière (Ctrl+0 · double-clic dans le vide)'}
                 style={{ position:'absolute',top:8,right:8,background:'rgba(0,0,0,0.72)',border:'none',color:'white',borderRadius:8,padding:'5px 11px',fontSize:11,fontWeight:700,cursor:'pointer',zIndex:5,letterSpacing:0.3 }}>
                 ×{vt.z.toFixed(1)} ↺
               </button>
+            )}
+            {/* Aide des raccourcis (PC) : petit « ? » discret dans le coin, ou touche ?. */}
+            {!isMob && (
+              <button onClick={() => setShowHelp(v => !v)} title="Raccourcis clavier (?)"
+                style={{ position:'absolute', bottom:8, right:8, zIndex:5, width:30, height:30, borderRadius:15, border:'none', cursor:'pointer',
+                  background: showHelp ? DA.red : 'rgba(0,0,0,0.55)', color:'white', fontSize:15, fontWeight:800 }}>?</button>
+            )}
+            {!isMob && showHelp && (
+              <div onClick={() => setShowHelp(false)}
+                style={{ position:'absolute', bottom:46, right:8, zIndex:8, width:640, maxWidth:'calc(100% - 16px)', maxHeight:'calc(100% - 60px)', overflowY:'auto',
+                  background:'#2b2b2b', border:'1px solid #444', color:'#eee', borderRadius:12, padding:'12px 16px', fontSize:12.5, lineHeight:1.5,
+                  boxShadow:'0 8px 30px rgba(0,0,0,0.5)', cursor:'pointer', columnCount:2, columnGap:22 }}>
+                {[
+                  ['Outils', [['V', 'Sélection'], ['D', 'Dessin'], ['T', 'Texte'], ['F', 'Formes'], ['S', 'Symboles']]],
+                  ['Formes', [['R', 'Rectangle'], ['E', 'Ellipse'], ['A', 'Flèche'], ['L', 'Ligne'], ['Z', 'Zone libre'], ['P', 'Polyligne'], ['Entrée', 'Terminer la ligne / zone']]],
+                  ['Tracé', [['Maj', 'Angles droits · carré / cercle'], ['Alt', 'Sans aimantation']]],
+                  ['Édition', [['Glisser (vide)', 'Cadre de sélection'], ['Maj+clic', 'Ajouter à la sélection'], ['Ctrl+A', 'Tout sélectionner'], ['Ctrl+C / V', 'Copier / coller sous la souris'],
+                    ['Ctrl+D', 'Dupliquer'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Annuler le tracé en cours']]],
+                  ['Vue', [['Molette', 'Zoom'], ['Espace + glisser', 'Déplacer la vue'], ['Ctrl+0', 'Vue entière'], ['Ctrl+ + / −', 'Zoom avant / arrière']]],
+                ].map(([sec, rows]) => (
+                  <div key={sec} style={{ marginBottom:8, breakInside:'avoid' }}>
+                    <div style={{ fontSize:10.5, fontWeight:800, color:'#9a9a9a', textTransform:'uppercase', letterSpacing:0.6, marginBottom:2 }}>{sec}</div>
+                    {rows.map(([kb, what]) => (
+                      <div key={kb} style={{ display:'flex', gap:10, alignItems:'baseline' }}>
+                        <span style={{ flexShrink:0, width:112, fontWeight:700, color:'white' }}>{kb}</span>
+                        <span style={{ color:'#ccc' }}>{what}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             )}
             {/* Bouton « Terminer » visible dès qu'une polyligne/zone en cours peut être terminée. */}
             {tool === 'shape' && (shapeTool === 'polyline' || shapeTool === 'poly') && polyPts.length >= polyMinPts && (
