@@ -363,6 +363,13 @@ export const SYMBOL_CATEGORIES = [
 // que le reste de l'app est déjà protégé (cf. _hasLS dans supabase.js / useAuth.js).
 const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+const _lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* stockage indisponible */ } };
+// Empreinte courte d'une chaîne (identifier un plan / un état d'annotations sans le stocker).
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
 
 // ── Symboles personnalisés (stockés en localStorage, forme auto-générée) ──────
 const CUSTOM_SYMS_KEY = 'chantierai_custom_syms_v1';
@@ -600,6 +607,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       return np;
     });
     gvByVpIdRef.current = gvMap;
+    resetHistory(); // nouveau plan / nouvelle photo = nouvel historique
     setPaths(migrated);
     setSelTextIdx(null);
     hqScaleRef.current = 1;
@@ -641,31 +649,138 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const pathsRef = useRef(paths);
   pathsRef.current = paths;
 
-  // ANNULER / RÉTABLIR (demande Thomas : « je reviens en arrière et je veux revenir en avant »).
-  // Annuler retire la dernière annotation (comportement inchangé) et la garde de côté ; Rétablir
-  // la remet. Toute AUTRE modification (nouveau tracé, déplacement…) vide la pile « Rétablir ».
-  const redoRef = useRef([]);
-  const [redoCount, setRedoCount] = useState(0);
-  const undoRedoOpRef = useRef(false);
-  const undoLast = useCallback(() => {
-    const cur = pathsRef.current;
-    if (!cur.length) return;
-    redoRef.current.push(cur[cur.length - 1]);
-    setRedoCount(redoRef.current.length);
-    undoRedoOpRef.current = true;
-    setPaths(cur.slice(0, -1));
-  }, []);
-  const redoLast = useCallback(() => {
-    const p = redoRef.current.pop();
-    if (!p) return;
-    setRedoCount(redoRef.current.length);
-    undoRedoOpRef.current = true;
-    setPaths([...pathsRef.current, p]);
-  }, []);
+  // ── HISTORIQUE COMPLET Annuler / Rétablir (Thomas : « appli de dessin moderne ») ──
+  // Chaque modification des annotations (tracé, déplacement, couleur, taille, suppression,
+  // collage…) devient un pas d'historique. Un geste (glisser) = UN pas, enregistré au relâchement.
+  // Des retouches successives du MÊME élément à moins de 600 ms (curseur, frappe) = un seul pas.
+  // Les opérations SYSTÈME (chargement, passage du plan en haute définition) ne sont pas des pas :
+  // elles recalent l'historique (mise à l'échelle) sans rien annuler.
+  const polyPtsRef = useRef(polyPts); polyPtsRef.current = polyPts;
+  const histRef = useRef({ undo: [], redo: [] });
+  const committedRef = useRef(paths);   // dernier état « validé » (référence de comparaison)
+  const baselineRef = useRef(paths);    // état à l'ouverture (→ modifications non enregistrées ?)
+  const skipHistRef = useRef(null);     // 'undo' | 'system' → le prochain changement n'est pas un pas
+  const lastPushRef = useRef({ ts: 0, kind: '' });
+  const gestureChangedRef = useRef(false); // modifié PENDANT un geste (glisser) → un pas à lui seul
+  const [histTick, setHistTick] = useState(0);
+  const HIST_MAX = 150;
   useEffect(() => {
-    if (undoRedoOpRef.current) { undoRedoOpRef.current = false; return; }
-    if (redoRef.current.length) { redoRef.current = []; setRedoCount(0); }
-  }, [paths]);
+    const mode = skipHistRef.current;
+    if (mode) {
+      skipHistRef.current = null;
+      committedRef.current = paths;
+      if (mode === 'system') baselineRef.current = paths;
+      setHistTick(t => t + 1);
+      return;
+    }
+    const prev = committedRef.current;
+    if (drawing) { if (paths !== prev) gestureChangedRef.current = true; return; } // geste → enregistré au relâchement
+    if (paths === prev) return;
+    const now = Date.now();
+    // Retouche d'UN SEUL et même élément (curseur, frappe) → regroupable ; tout le reste = un pas.
+    let key = -1;
+    if (prev.length === paths.length) {
+      for (let i = 0; i < paths.length; i++) if (paths[i] !== prev[i]) { if (key !== -1) { key = -2; break; } key = i; }
+    }
+    const kind = gestureChangedRef.current ? 'gesture' : (key >= 0 ? 'modify' : 'other');
+    gestureChangedRef.current = false;
+    const lp = lastPushRef.current;
+    const coalesce = kind === 'modify' && lp.kind === 'modify' && lp.key === key && now - lp.ts < 600 && histRef.current.undo.length;
+    if (!coalesce) {
+      histRef.current.undo.push(prev);
+      if (histRef.current.undo.length > HIST_MAX) histRef.current.undo.shift();
+    }
+    lastPushRef.current = { ts: now, kind, key };
+    histRef.current.redo = [];
+    committedRef.current = paths;
+    setHistTick(t => t + 1);
+  }, [paths, drawing]);
+  // Mise à l'échelle SYSTÈME (sur-échantillonnage, plan HD) : tout l'historique suit.
+  const scaleHistory = (sx, sy) => {
+    const h = histRef.current;
+    h.undo = h.undo.map(a => scalePaths(a, sx, sy));
+    h.redo = h.redo.map(a => scalePaths(a, sx, sy));
+    skipHistRef.current = 'system';
+  };
+  const resetHistory = () => {
+    histRef.current = { undo: [], redo: [] };
+    lastPushRef.current = { ts: 0, kind: '' };
+    skipHistRef.current = 'system';
+  };
+  const clearSelections = () => { setSelAnnot(null); setSelTextIdx(null); annotDragRef.current = null; textDragRef.current = null; };
+  const undoLast = () => {
+    // Tracé en cours (polyligne / zone) : Annuler retire d'abord le DERNIER POINT posé.
+    if (polyPtsRef.current.length) { setPolyPts(pp => pp.slice(0, -1)); return; }
+    const h = histRef.current;
+    if (!h.undo.length) return;
+    h.redo.push(committedRef.current);
+    const prev = h.undo.pop();
+    lastPushRef.current = { ts: 0, kind: '' };
+    skipHistRef.current = 'undo';
+    clearSelections();
+    setPaths(prev);
+  };
+  const redoLast = () => {
+    const h = histRef.current;
+    if (!h.redo.length) return;
+    h.undo.push(committedRef.current);
+    const next = h.redo.pop();
+    lastPushRef.current = { ts: 0, kind: '' };
+    skipHistRef.current = 'undo';
+    clearSelections();
+    setPaths(next);
+  };
+  const undoRef = useRef(undoLast); undoRef.current = undoLast;
+  const redoRef = useRef(redoLast); redoRef.current = redoLast;
+  const canUndo = histRef.current.undo.length > 0 || polyPts.length > 0;
+  const canRedo = histRef.current.redo.length > 0;
+  const isDirty = paths !== baselineRef.current;
+  void histTick; // (re-rendu des boutons quand l'historique change)
+
+  // ── BROUILLON AUTOMATIQUE (« ne jamais perdre ») ──
+  // Pendant l'annotation, l'état courant est copié sur l'appareil (localStorage) dès qu'il diffère
+  // de l'état enregistré. Fermeture accidentelle, onglet tué, batterie… → à la réouverture du MÊME
+  // plan/photo (et si rien n'a été enregistré entre-temps), on propose de reprendre.
+  const draftKey = useMemo(() => {
+    const b = String(bgImage || '');
+    // URL signée : le jeton change à chaque session → on ne garde que le chemin.
+    const ident = b.startsWith('data:') ? `${b.length}|${b.slice(0, 120)}|${b.slice(-120)}` : b.split('?')[0];
+    return `chantierai_annot_draft_v1:${locId ?? ''}:${hashStr(String(title ?? ''))}:${hashStr(ident)}`;
+  }, [bgImage, locId, title]);
+  const baseHash = useMemo(() => hashStr(JSON.stringify(savedPaths || [])), [savedPaths]);
+  const clearDraft = () => _lsDel(draftKey);
+  const [draftOffer, setDraftOffer] = useState(null); // { ts, paths } proposé à la reprise
+  const [closeAsk, setCloseAsk] = useState(false);    // « Enregistrer les modifications ? »
+  useEffect(() => {
+    if (!bgOk || draftOffer) return; // reprise proposée → on ne touche pas au brouillon tant qu'on n'a pas répondu
+    const t = setTimeout(() => {
+      if (paths === baselineRef.current) { _lsDel(draftKey); return; }
+      try {
+        const sc = hqScaleRef.current || 1;
+        const json = JSON.stringify({ ts: Date.now(), base: baseHash, paths: scalePaths(paths, 1 / sc, 1 / sc) });
+        if (json.length < 2_500_000) _lsSet(draftKey, json);
+      } catch { /* quota / sérialisation : le brouillon est un bonus, jamais bloquant */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [paths, bgOk, draftKey, baseHash, draftOffer]);
+  // Reprise : vérifiée une fois le plan chargé (échelle connue).
+  useEffect(() => {
+    if (!bgOk) return;
+    let d = null;
+    try { d = JSON.parse(_lsGet(draftKey) || 'null'); } catch { d = null; }
+    if (!d || !Array.isArray(d.paths)) return;
+    const stale = d.base !== baseHash || Date.now() - (d.ts || 0) > 7 * 24 * 3600 * 1000;
+    if (stale) { _lsDel(draftKey); return; } // enregistré depuis, ou trop ancien → on oublie
+    if (JSON.stringify(d.paths) === JSON.stringify(savedPaths || [])) { _lsDel(draftKey); return; }
+    setDraftOffer(d);
+  }, [bgOk, draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const resumeDraft = () => {
+    if (!draftOffer) return;
+    const sc = hqScaleRef.current || 1;
+    setPaths(scalePaths(draftOffer.paths, sc, sc)); // = une modification (annulable avec Ctrl+Z)
+    setDraftOffer(null);
+  };
+  const dismissDraft = () => { clearDraft(); setDraftOffer(null); };
   const selTextIdxRef = useRef(selTextIdx);
   selTextIdxRef.current = selTextIdx;
   const selAnnotRef = useRef(selAnnot);
@@ -975,12 +1090,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const _selAnnot = selAnnotRef.current;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
         e.preventDefault();
-        undoLast();
+        undoRef.current();
       }
       // Rétablir : Ctrl+Y ou Ctrl+Maj+Z (Cmd sur Mac)
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y' || ((e.key === 'z' || e.key === 'Z') && e.shiftKey))) {
         e.preventDefault();
-        redoLast();
+        redoRef.current();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (_selTextIdx !== null && _paths[_selTextIdx]) {
@@ -1118,6 +1233,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         bgRef.current = img;
         if (f !== 1) {
           hqScaleRef.current = f;                    // getAnnotation redivise → paths stockés en espace naturel
+          scaleHistory(f, f);                        // (opération système : pas un pas d'historique)
           setPaths(prev => scalePaths(prev, f, f));  // paths existants → espace canvas suréchantillonné
         }
         setBgOk(true);
@@ -1148,6 +1264,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       hqScaleRef.current *= sx;
       // Mise à l'échelle des paths existants + forçage du redraw
       if (sx !== 1 || sy !== 1) {
+        scaleHistory(sx, sy); // (opération système : l'historique suit la nouvelle échelle)
         setPaths(prev => scalePaths(prev, sx, sy));
       }
       setBgVersion(v => v + 1);
@@ -2000,6 +2117,41 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // panneau d'édition de texte). Constante → le plan ne change jamais de taille.
   const PANEL_SLOT_H = 160;
 
+  // ── Enregistrer & fermer (bouton « Sauvegarder », et « Enregistrer » de la confirmation) ──
+  const saveAndClose = () => {
+    clearDraft(); // enregistré → le brouillon de secours n'a plus lieu d'être
+    // Flush du texte inline EN COURS (si le champ est encore ouvert/focus) → valider
+    // sauvegarde tout tel quel, sans devoir d'abord sortir du champ (demande Thomas).
+    let fp = applyInlineEdit(paths);
+    if (fp !== paths) { setPaths(fp); cancelInlineEdit(); }
+    const pendPoly = pendingPolyShape(); // polyligne/zone non terminée → enregistrée telle quelle
+    if (pendPoly) fp = [...fp, pendPoly];
+    const cv = cvRef.current;
+    if (!cv || !bgRef.current) { onSave(fp, null, null); onClose(); return; }
+    // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
+    const EW = Math.min(cv.width, 1400);
+    const EH = Math.round(cv.height * EW / cv.width);
+    const ec = document.createElement('canvas');
+    ec.width = EW; ec.height = EH;
+    const ectx = ec.getContext('2d');
+    ectx.drawImage(bgRef.current, 0, 0, EW, EH);
+    ectx.save();
+    ectx.scale(EW / cv.width, EH / cv.height);
+    const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
+    drawAnnotationPaths(ectx, relabel(fp), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
+    ectx.restore();
+    // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
+    const sc = hqScaleRef.current;
+    onSave(scalePaths(fp, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
+    onClose();
+  };
+
+  // ── Fermer : si des modifications ne sont pas enregistrées, on DEMANDE (Thomas : « ne jamais
+  // perdre »). Rien à enregistrer → fermeture directe, comme avant. ──
+  const hasUnsaved = () => isDirty || !!pendingPolyShape() || (inlineEditPos !== null && inlineEditVal.trim() !== '');
+  const requestClose = () => { if (hasUnsaved()) setCloseAsk(true); else { clearDraft(); onClose(); } };
+  const closeWithoutSaving = () => { setCloseAsk(false); clearDraft(); onClose(); };
+
   const duplicateAnnot = (src) => {
     if (!src) return;
     const OFF = 40;
@@ -2185,15 +2337,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           </div>
           {/* Actions — sur mobile, sur leur PROPRE ligne (flex-wrap) et alignées à droite. */}
           <div style={{ display:'flex',gap:6,flexShrink:0,flex:isMob?'1 1 100%':'0 0 auto',justifyContent:'flex-end' }}>
-            <button onClick={onClose}
+            <button onClick={requestClose}
               style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Fermer">
               <Ic n="x" s={26}/>
               <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Fermer</span>
             </button>
-            <button onClick={undoLast}
-              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+            <button onClick={undoLast} disabled={!canUndo}
+              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default',
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Annuler dernière action (Ctrl+Z)">
               <Ic n="und" s={26}/>
@@ -2201,41 +2353,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             </button>
             {/* Rétablir — PC (demande Thomas). Grisé tant qu'il n'y a rien à rétablir. */}
             {!isMob && (
-              <button onClick={redoLast} disabled={!redoCount}
-                style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: redoCount ? 1 : 0.4,
-                  cursor: redoCount ? 'pointer' : 'default',
+              <button onClick={redoLast} disabled={!canRedo}
+                style={{ padding:'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: canRedo ? 1 : 0.4,
+                  cursor: canRedo ? 'pointer' : 'default',
                   display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
                 title="Rétablir (Ctrl+Y)">
                 <span style={{ display:'inline-flex', transform:'scaleX(-1)' }}><Ic n="und" s={26}/></span>
                 <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Rétablir</span>
               </button>
             )}
-            <button onClick={() => {
-              // Flush du texte inline EN COURS (si le champ est encore ouvert/focus) → valider
-              // sauvegarde tout tel quel, sans devoir d'abord sortir du champ (demande Thomas).
-              let fp = applyInlineEdit(paths);
-              if (fp !== paths) { setPaths(fp); cancelInlineEdit(); }
-              const pendPoly = pendingPolyShape(); // polyligne/zone non terminée → enregistrée telle quelle
-              if (pendPoly) fp = [...fp, pendPoly];
-              const cv = cvRef.current;
-              if (!cv || !bgRef.current) { onSave(fp, null, null); onClose(); return; }
-              // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
-              const EW = Math.min(cv.width, 1400);
-              const EH = Math.round(cv.height * EW / cv.width);
-              const ec = document.createElement('canvas');
-              ec.width = EW; ec.height = EH;
-              const ectx = ec.getContext('2d');
-              ectx.drawImage(bgRef.current, 0, 0, EW, EH);
-              ectx.save();
-              ectx.scale(EW / cv.width, EH / cv.height);
-              const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-              drawAnnotationPaths(ectx, relabel(fp), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
-              ectx.restore();
-              // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
-              const sc = hqScaleRef.current;
-              onSave(scalePaths(fp, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
-              onClose();
-            }}
+            <button onClick={saveAndClose}
               style={{ padding:isMob?'8px 12px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
                 display:'flex',flexDirection:'column',alignItems:'center',gap:3 }}>
               <Ic n="chk" s={isMob?24:20}/>
@@ -2634,6 +2761,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 ✓ {shapeTool === 'polyline' ? 'Terminer la ligne' : 'Fermer la zone'}
               </button>
             )}
+            {/* Brouillon retrouvé : bandeau PAR-DESSUS le plan (ne décale rien). */}
+            {draftOffer && (
+              <div style={{ position:'absolute', top:10, left:'50%', transform:'translateX(-50%)', zIndex:7, maxWidth:'calc(100% - 20px)',
+                display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', justifyContent:'center',
+                background:'rgba(20,20,20,0.94)', color:'white', borderRadius:12, padding:'10px 14px', boxShadow:'0 6px 24px rgba(0,0,0,0.5)', border:'1px solid #444' }}>
+                <span style={{ fontSize:13, fontWeight:700 }}>
+                  Annotations non enregistrées retrouvées ({new Date(draftOffer.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })})
+                </span>
+                <button onClick={resumeDraft} style={{ padding:'7px 13px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>Reprendre</button>
+                <button onClick={dismissDraft} style={{ padding:'7px 11px', borderRadius:8, border:'1px solid #555', background:'transparent', color:'#ccc', fontSize:13, fontWeight:700, cursor:'pointer' }}>Ignorer</button>
+              </div>
+            )}
             {/* Saisie inline — apparaît directement au point de tap */}
             {inlineEditPos && (
               <>
@@ -2672,6 +2811,25 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         )}
       </div>
 
+      {/* Fermer avec des modifications non enregistrées → on demande. */}
+      {closeAsk && (
+        <div onClick={() => setCloseAsk(false)} style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Modifications non enregistrées"
+            onKeyDown={e => { if (e.key === 'Escape') setCloseAsk(false); }}
+            style={{ background:'#1f1f1f', color:'white', borderRadius:14, padding:'18px 18px 14px', width:380, maxWidth:'100%', border:'1px solid #3a3a3a', boxShadow:'0 14px 44px rgba(0,0,0,0.6)' }}>
+            <p style={{ margin:0, fontSize:16, fontWeight:800 }}>Enregistrer les modifications ?</p>
+            <p style={{ margin:'6px 0 14px', fontSize:13, color:'#aaa', lineHeight:1.5 }}>Vos annotations sur {isPhotoCtx ? 'cette photo' : 'ce plan'} n'ont pas été enregistrées.</p>
+            <div style={{ display:'flex', gap:8 }}>
+              <button autoFocus onClick={() => { setCloseAsk(false); saveAndClose(); }}
+                style={{ flex:1, padding:'11px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:14, fontWeight:800, cursor:'pointer' }}>Enregistrer</button>
+              <button onClick={closeWithoutSaving}
+                style={{ flex:1, padding:'11px', borderRadius:9, border:'1px solid #555', background:'transparent', color:'#ddd', fontSize:14, fontWeight:700, cursor:'pointer' }}>Ne pas enregistrer</button>
+            </div>
+            <button onClick={() => setCloseAsk(false)}
+              style={{ display:'block', width:'100%', marginTop:6, padding:'9px', border:'none', background:'none', color:'#999', fontSize:13, fontWeight:700, cursor:'pointer' }}>Continuer à annoter</button>
+          </div>
+        </div>
+      )}
       {stripZoom && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
           <img src={stripZoom} alt="" style={{ maxWidth:'96vw', maxHeight:'94vh', objectFit:'contain', borderRadius:6, boxShadow:'0 8px 50px rgba(0,0,0,0.7)' }}/>
