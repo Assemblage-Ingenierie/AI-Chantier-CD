@@ -360,7 +360,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     onUpdateVisit({ localisations: next });
     pendingMerges.current.set(srcId, { needFresh: syncStatusRef.current === 'saving', sawSaving: false });
     setOpenLocIds(prev => new Set([...prev, tgtId]));
-    showUndo(`Zone fusionnée dans « ${tgt?.nom || 'zone'} »`, () => {
+    showUndo(`Zone regroupée sous « ${tgt?.nom || 'zone'} »`, () => {
       pendingMerges.current.delete(srcId);
       liftTombstone(srcId); // au cas où la suppression différée aurait déjà eu lieu
       onUpdateVisit({ localisations: prevLocs });
@@ -896,13 +896,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             ...(isInto ? { background:DA.redL, boxShadow:`inset 0 0 0 2px ${DA.red}` } : {}) }}>
                           {isInto && (
                             <span style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:DA.red, color:'white', fontSize:11, fontWeight:800, borderRadius:20, padding:'3px 10px', whiteSpace:'nowrap', zIndex:2, pointerEvents:'none' }}>
-                              Fusionner dans « {loc.nom || 'cette zone'} »{'\u00A0'}?
+                              Regrouper avec « {loc.nom || 'cette zone'} »{'\u00A0'}?
                             </span>
                           )}
                           <div onClick={e => e.stopPropagation()}
                             onTouchStart={e => { e.stopPropagation(); startZoneTouch(e, loc.id); }}
                             onMouseDown={() => setZoneDragArm(loc.id)}
-                            title="Glisser pour réorganiser — maintenir sur le titre d'une autre zone pour proposer une fusion"
+                            title="Glisser pour réorganiser — maintenir sur le titre d'une autre zone pour les regrouper"
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
@@ -1150,31 +1150,35 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         const tgt = locs.find(l => l.id === mergeAsk.tgtId);
         const close = () => setMergeAsk(null);
         if (!src || !tgt) return null;
+        const nom = (l) => l.nom || 'zone';
         const justMove = () => { const next = placeZone(locs, src.id, tgt.id); if (next !== locs) onUpdateVisit({ localisations: next }); close(); };
-        const doMerge = () => { mergeZoneInto(src.id, tgt.id); close(); };
-        const n = (src.items || []).length;
+        // REGROUPER : on choisit la zone qui RESTE, quel que soit le sens du glisser (Thomas :
+        // « tout regroupé sous M. Phung alors qu'il fallait sous R+4 »). L'autre la rejoint.
+        const groupUnder = (keep, other) => { mergeZoneInto(other.id, keep.id); close(); };
+        // Deux choix de MÊME poids : aucun n'est mis en avant (le « bon » dépend du sens du glisser).
+        const btn = (primary) => ({ flex:1, minWidth:0, padding:'11px 10px', borderRadius:9, fontSize:13, fontWeight: primary ? 800 : 700, cursor:'pointer',
+          border: primary ? 'none' : `1.5px solid ${DA.red}`, background: primary ? DA.red : 'white', color: primary ? 'white' : DA.red,
+          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' });
         return (
           <div onClick={close} onKeyDown={e => { if (e.key === 'Escape') close(); }}
             style={{ position:'fixed', inset:0, zIndex:450, background:'rgba(0,0,0,0.25)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-            <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Confirmer la fusion"
-              style={{ background:'white', borderRadius:14, padding:'18px 18px 14px', width:360, maxWidth:'100%', boxShadow:'0 12px 40px rgba(0,0,0,0.25)' }}>
+            <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Regrouper deux zones"
+              style={{ background:'white', borderRadius:14, padding:'18px 18px 12px', width:400, maxWidth:'100%', boxShadow:'0 12px 40px rgba(0,0,0,0.25)' }}>
               <p style={{ margin:0, fontSize:15, fontWeight:800, color:DA.black, lineHeight:1.4 }}>
-                Fusionner « {src.nom || 'zone'} » dans « {tgt.nom || 'zone'} »{'\u00A0'}?
+                Regrouper « {nom(tgt)} » et « {nom(src)} » sous quelle zone{'\u00A0'}?
               </p>
               <p style={{ margin:'6px 0 14px', fontSize:12.5, color:DA.gray, lineHeight:1.5 }}>
-                {n > 0 ? `Ses ${n} observation${n > 1 ? 's' : ''} et ses plans rejoindront « ${tgt.nom || 'zone'} ». ` : 'Ses plans rejoindront la zone. '}
-                Annulable ensuite depuis la corbeille.
+                La zone choisie reste ; les observations de l'autre la rejoignent, avec le nom de leur ancienne
+                zone devant leur titre ({'«\u00A0Appartement · Fissure…\u00A0»'}). Annulable ensuite depuis la corbeille.
               </p>
               <div style={{ display:'flex', gap:8 }}>
-                <button autoFocus onClick={justMove}
-                  style={{ flex:1, padding:'11px 10px', borderRadius:9, fontSize:13, fontWeight:700, border:`1px solid ${DA.border}`, background:'white', color:DA.black, cursor:'pointer' }}>
-                  Juste déplacer
-                </button>
-                <button onClick={doMerge}
-                  style={{ flex:1, padding:'11px 10px', borderRadius:9, fontSize:13, fontWeight:800, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
-                  Fusionner
-                </button>
+                <button onClick={() => groupUnder(tgt, src)} style={btn(false)} title={`Garder « ${nom(tgt)} »`}>Sous « {nom(tgt)} »</button>
+                <button onClick={() => groupUnder(src, tgt)} style={btn(false)} title={`Garder « ${nom(src)} »`}>Sous « {nom(src)} »</button>
               </div>
+              <button onClick={justMove}
+                style={{ display:'block', width:'100%', marginTop:6, padding:'9px', borderRadius:9, fontSize:12.5, fontWeight:700, border:'none', background:'none', color:DA.gray, cursor:'pointer' }}>
+                Non, juste déplacer la zone
+              </button>
             </div>
           </div>
         );

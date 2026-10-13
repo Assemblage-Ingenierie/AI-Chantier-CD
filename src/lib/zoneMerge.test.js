@@ -103,3 +103,19 @@ describe('fusion : annotations du plan partagé (incident R+4)', () => {
     expect(v.originLocId).toBeUndefined();
   });
 });
+
+describe('regroupement fait dans le mauvais sens puis réparé (Thomas : tout sous M. Phung au lieu de R+4)', () => {
+  it('recréer « R+4 » et y regrouper « M. Phung » : titres d\'origine rétablis, appartement préfixé', () => {
+    const start = [
+      { id: 'r4', nom: 'R+4', items: [{ id: 'a', titre: 'Couloir' }, { id: 'n', titre: '' }] },
+      { id: 'ph', nom: 'M. Phung', items: [{ id: 'f', titre: 'Fissure plafond' }] },
+    ];
+    // Erreur : R+4 regroupé SOUS M. Phung
+    const wrong = mergeZones(start, 'r4', 'ph').filter(l => l.id !== 'r4');
+    expect(wrong[0].items.map(i => i.titre)).toEqual(['Fissure plafond', 'R+4 · Couloir', 'R+4']);
+    // Réparation : nouvelle zone « R+4 », puis M. Phung regroupé dessous
+    const fixed = mergeZones([...wrong, { id: 'r4b', nom: 'R+4', items: [] }], 'ph', 'r4b');
+    expect(fixed.find(l => l.id === 'r4b').items.map(i => `${i.id}:${i.titre}`))
+      .toEqual(['f:M. Phung · Fissure plafond', 'a:Couloir', 'n:']);
+  });
+});

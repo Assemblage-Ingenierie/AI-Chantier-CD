@@ -115,7 +115,14 @@ export function mergeZones(locs, srcId, tgtId) {
   if (!canMergeZones(locs, srcId, tgtId)) return locs;
   const src = locs.find(l => l.id === srcId);
   const tgt = locs.find(l => l.id === tgtId);
-  const moved = (src.items || []).map(it => ({ ...it, titre: mergedTitle(src.nom, it.titre) }));
+  // Titre : nom de la zone d'origine ajouté devant (« M. Phung · Fissure »). SAUF si l'observation
+  // portait déjà le préfixe de la CIBLE (regroupement fait dans le mauvais sens puis refait dans le
+  // bon — Thomas : « tout regroupé sous M. Phung au lieu de R+4 ») : elle revient chez elle, son
+  // titre d'origine est simplement rétabli (« R+4 · Couloir » → « Couloir »).
+  const moved = (src.items || []).map(it => {
+    const back = unmergedTitle(it.titre, tgt.nom);
+    return { ...it, titre: back !== (it.titre || '') ? back : mergedTitle(src.nom, it.titre) };
+  });
   const srcKeys = flatZonePhotos(zonePlanItems(locs, src)).map(photoKey);
 
   const next = locs.map(l => {
