@@ -7,6 +7,17 @@ const MAX_TOKENS_CAP = 4096;
 const ANTHROPIC_API  = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VER  = '2023-06-01';
 
+// ── BUDGET DE TEMPS (retour Thomas 13/10/2026 : « de temps en temps j'ai un Timeout IA ») ──
+// Avant : chaque appel pouvait attendre 55 s, et Gemini essayait plusieurs modèles À LA SUITE →
+// un Gemini lent/surchargé mangeait tout le temps et l'app abandonnait (55 s) AVANT que le
+// secours Mistral ne soit essayé. Désormais : budget GLOBAL de 48 s (l'app attend 55 s, Vercel
+// coupe à 60 s) et, tant qu'un autre moteur reste disponible, un appel ne peut pas dépasser 30 s
+// → il reste toujours du temps pour basculer. Le dernier moteur dispose de tout le temps restant.
+const TOTAL_BUDGET_MS = 48000;
+const CALL_CAP_MS     = 30000;
+const MIN_CALL_MS     = 3000;
+const callTimeout = (budget) => Math.max(0, Math.min(budget?.cap ?? CALL_CAP_MS, (budget?.end ?? Date.now() + 55000) - Date.now() - 1000));
+
 // Rate limiting serveur : 20 appels/minute par IP (protection contre abus avec token volé)
 const _rl = new Map();
 function checkRateLimit(ip) {
@@ -77,15 +88,17 @@ function toMistralContent(content) {
   return parts.every(p => p.type === 'text') ? parts.map(p => p.text).join('\n') : parts;
 }
 
-async function callMistral(payload, apiKey, maxTokens, timeoutMs = 55000) {
+async function callMistral(payload, apiKey, maxTokens, budget) {
   const requested = typeof payload.model === 'string' && /^(mistral|magistral|pixtral|ministral|open-mistral)/.test(payload.model) ? payload.model : null;
   const models = [...new Set([requested, MISTRAL_DEFAULT].filter(Boolean))];
   const messages = [
     ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
     ...(payload.messages || []).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: toMistralContent(m.content) })),
   ];
-  let last = { status: 504, data: { error: { message: 'Timeout IA (55s) — réessaie' } }, model: models[0] };
+  let last = { status: 504, data: { error: { message: 'Timeout IA — réessaie' } }, model: models[0] };
   for (const model of models) {
+    const timeoutMs = callTimeout(budget);
+    if (timeoutMs < MIN_CALL_MS) break;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -103,6 +116,7 @@ async function callMistral(payload, apiKey, maxTokens, timeoutMs = 55000) {
       if (res.status === 401 || res.status === 429) break; // clé / quota : inutile d'essayer un autre modèle
     } catch {
       clearTimeout(t);
+      break; // délai dépassé : on laisse le temps restant au moteur suivant
     }
   }
   return last;
@@ -131,7 +145,7 @@ async function discoverGeminiModel(apiKey, wantPro) {
   if (wantPro && _discovered.pro) return _discovered.pro;
   if (!wantPro && _discovered.flash) return _discovered.flash;
   try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`);
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${encodeURIComponent(apiKey)}`, { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return null;
     const d = await r.json();
     const names = (d.models || [])
@@ -204,8 +218,8 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, 
 
 // ── Exécuteurs par moteur : renvoient { status, json } (json = corps à renvoyer au client) ──
 
-async function runMistral(payload, apiKey, maxTokens) {
-  const out = await callMistral(payload, apiKey, maxTokens);
+async function runMistral(payload, apiKey, maxTokens, budget) {
+  const out = await callMistral(payload, apiKey, maxTokens, budget);
   const { status, data, model } = out;
   if (status === 401) return { status: 401, json: { error: 'Clé API Mistral invalide. Vérifie MISTRAL_API_KEY dans Vercel.' } };
   if (status === 429) return { status: 429, json: { error: 'Quota Mistral dépassé — réessaie dans une minute' } };
@@ -221,7 +235,7 @@ async function runMistral(payload, apiKey, maxTokens) {
   return { status: 200, json: { content: [{ type: 'text', text }], _model: data?.model || model, _finish: finish } };
 }
 
-async function runGemini(payload, geminiKey, maxTokens) {
+async function runGemini(payload, geminiKey, maxTokens, budget) {
   const requested = (typeof payload.model === 'string' && payload.model.startsWith('gemini-')) ? payload.model : null;
   const wantPro = requested ? /pro/i.test(requested) : false;
 
@@ -244,20 +258,24 @@ async function runGemini(payload, geminiKey, maxTokens) {
   const runOne = async (cand) => {
     // Flash : réflexion coupée (rapide) SAUF si la requête demande un budget de réflexion.
     const fast = /flash/i.test(cand) && !Number.isFinite(payload.thinkingBudget);
-    const r = await callGemini(cand, payload, geminiKey, maxTokens, 55000, fast);
+    const r = await callGemini(cand, payload, geminiKey, maxTokens, callTimeout(budget), fast);
     if (r.timedOut || !r.res) return { timedOut: true };
     let d; try { d = await r.res.json(); } catch { return { res: r.res, data: null }; }
     // Réglage refusé (thinking/responseMimeType) → on réessaie le MÊME modèle sans les extras.
     if (r.res.status === 400 && /invalid.?argument/i.test(JSON.stringify(d?.error || ''))) {
-      const rt = await callGemini(cand, { ...payload, json: false }, geminiKey, maxTokens, 55000, false);
+      if (callTimeout(budget) < MIN_CALL_MS) return { res: r.res, data: d };
+      const rt = await callGemini(cand, { ...payload, json: false }, geminiKey, maxTokens, callTimeout(budget), false);
       if (!rt.timedOut && rt.res) { try { const d2 = await rt.res.json(); return { res: rt.res, data: d2 }; } catch { /* garde d'origine */ } }
     }
     return { res: r.res, data: d };
   };
 
   for (const cand of tryModels) {
+    if (callTimeout(budget) < MIN_CALL_MS) break;
     const out = await runOne(cand);
-    if (out.timedOut) continue;
+    // Gemini ne répond pas (surcharge) : inutile d'essayer ses autres modèles l'un après l'autre
+    // → on rend la main tout de suite pour basculer sur un autre moteur (Mistral).
+    if (out.timedOut) break;
     timedOutAll = false;
     gUp = out.res; gData = out.data; gModel = cand;
     if (out.res.ok) { if (wantPro) _discovered.pro = cand; else _discovered.flash = cand; break; }
@@ -267,7 +285,7 @@ async function runGemini(payload, geminiKey, maxTokens) {
 
   // DERNIER RECOURS : aucun modèle connu n'a marché → on demande à Google la liste réelle et on
   // essaie le meilleur modèle disponible. Rend l'IA insensible aux renommages/retraits de Google.
-  if ((!gUp || !gUp.ok) && !(gUp && isTerminal(gUp.status, gData))) {
+  if ((!gUp || !gUp.ok) && !timedOutAll && !(gUp && isTerminal(gUp.status, gData)) && callTimeout(budget) > 8000) {
     const disc = await discoverGeminiModel(geminiKey, wantPro);
     if (disc && !seen.has(disc)) {
       const out = await runOne(disc);
@@ -275,7 +293,7 @@ async function runGemini(payload, geminiKey, maxTokens) {
     }
   }
 
-  if (timedOutAll || !gUp) return { status: 504, json: { error: 'Timeout IA (55s) — réessaie' } };
+  if (timedOutAll || !gUp) return { status: 504, json: { error: 'Gemini ne répond pas (surcharge) — réessaie' } };
   if (gUp.status === 429) return { status: 429, json: { error: 'Quota Gemini dépassé — réessaie dans quelques minutes' } };
   if (gUp.status === 400 && /api[_ ]?key/i.test(JSON.stringify(gData?.error || ''))) {
     return { status: 401, json: { error: 'Clé API Gemini invalide. Vérifie GEMINI_API_KEY dans Vercel.' } };
@@ -290,17 +308,17 @@ async function runGemini(payload, geminiKey, maxTokens) {
   return { status: 200, json: { content: [{ type: 'text', text: gText }], _model: gModel, _finish: gData.candidates?.[0]?.finishReason || null } };
 }
 
-async function runClaude(payload, anthropicKey, maxTokens) {
+async function runClaude(payload, anthropicKey, maxTokens, budget) {
   const model = resolveModel(payload.model);
-  let { res: upstream, timedOut } = await callClaude(model, payload, anthropicKey, maxTokens);
-  if (timedOut || !upstream) return { status: 504, json: { error: 'Timeout IA (55s) — réessaie' } };
+  let { res: upstream, timedOut } = await callClaude(model, payload, anthropicKey, maxTokens, callTimeout(budget));
+  if (timedOut || !upstream) return { status: 504, json: { error: 'Timeout IA — réessaie' } };
   let data;
   try { data = await upstream.json(); } catch {
     return { status: 502, json: { error: 'Réponse invalide du modèle' } };
   }
   // Si overloaded ou erreur serveur, retry avec le modèle de fallback
-  if ((upstream.status === 529 || upstream.status === 503) && model !== FALLBACK_MODEL) {
-    const fb = await callClaude(FALLBACK_MODEL, payload, anthropicKey, maxTokens);
+  if ((upstream.status === 529 || upstream.status === 503) && model !== FALLBACK_MODEL && callTimeout(budget) >= MIN_CALL_MS) {
+    const fb = await callClaude(FALLBACK_MODEL, payload, anthropicKey, maxTokens, callTimeout(budget));
     if (!fb.timedOut && fb.res) {
       try { data = await fb.res.json(); upstream = fb.res; } catch { /* garde la 1re réponse */ }
     }
@@ -367,13 +385,17 @@ export default async function handler(req, res) {
     : ['claude', 'gemini', 'mistral'];
   const runners = { gemini: runGemini, mistral: runMistral, claude: runClaude };
   let firstFail = null;
-  const t0 = Date.now();
-  for (const prov of order) {
-    if (!keys[prov]) continue;
-    if (firstFail && Date.now() - t0 > 40000) break; // la fonction Vercel s'arrête à 60 s
+  const end = Date.now() + TOTAL_BUDGET_MS;
+  const available = order.filter(prov => keys[prov]);
+  for (let i = 0; i < available.length; i++) {
+    const prov = available[i];
+    // Plus assez de temps pour un essai utile → on renvoie l'échec précédent (pas de coupure Vercel).
+    if (callTimeout({ end, cap: Infinity }) < MIN_CALL_MS) break;
+    // Un autre moteur reste derrière → plafond par appel (30 s) ; sinon tout le temps restant.
+    const budget = { end, cap: i < available.length - 1 ? CALL_CAP_MS : Infinity };
     // Moteur de SECOURS : on ne lui impose pas le modèle demandé pour un autre moteur.
     const p = prov === payload.provider || (prov === 'claude' && !payload.provider) ? payload : { ...payload, model: null };
-    const out = await runners[prov](p, keys[prov], maxTokens);
+    const out = await runners[prov](p, keys[prov], maxTokens, budget);
     if (out.status === 200) return res.status(200).json(out.json);
     if (!firstFail) firstFail = out;
   }

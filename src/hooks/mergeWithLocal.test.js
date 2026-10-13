@@ -125,3 +125,14 @@ describe('mergeWithLocal — résolution local/remote', () => {
     expect(items).toEqual(['it1', 'it2']);
   });
 });
+
+describe('mergeWithLocal — observation déplacée ailleurs (fusion de zones)', () => {
+  it('une zone locale-seulement ne garde pas en double une observation que le serveur a dans une autre zone', () => {
+    const remote = [proj('p', { locs: [loc('r4', [{ id: 'a' }, { id: 'b' }])] })];
+    const local  = [proj('p', { locs: [loc('r4', [{ id: 'a' }]), loc('scap', [{ id: 'b' }, { id: 'n' }])] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(), new Set(['p']), new Set());
+    const locs = allMerged[0].visites[0].localisations;
+    expect(locs.map(l => l.id)).toEqual(['r4', 'scap']);
+    expect(locs[1].items.map(i => i.id)).toEqual(['n']); // b est dans R+4 (serveur), n (non synchro) est gardée
+  });
+});

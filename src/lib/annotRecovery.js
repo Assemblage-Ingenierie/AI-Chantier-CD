@@ -16,6 +16,50 @@
 
 import { zonePlanItems } from './zoneGroups.js';
 import { flatZonePhotos, remapViewpoints, addPlansToZone, zonePlansOf } from './zoneMerge.js';
+import { annotFp } from './vpNumbering.js';
+
+// ── Annotations DISPARUES des plans de zones qui existent TOUJOURS (corbeille) ──
+// Effacement, ou écrasement par un appareil au state périmé. Pour chaque zone/plan d'un projet,
+// on garde la version (instantané) qui contient le PLUS d'annotations absentes aujourd'hui ; à
+// égalité, la plus récente. Comparaison par EMPREINTE (texte = contenu, autres = position
+// arrondie) → une annotation simplement déplacée de quelques pixels n'est pas « disparue ».
+export function createLostAnnotScanner(projet) {
+  const best = new Map(); // `${visiteId}|${locId}|${planId}` → entrée
+  const curZones = new Map();
+  for (const v of (projet?.visites || [])) for (const l of (v.localisations || [])) {
+    if (!l?.id || l._mergedInto) continue;
+    const fps = new Map(zonePlansOf(l).filter(pl => pl.planId).map(pl => [pl.planId, new Set(pl.paths.map(annotFp))]));
+    curZones.set(`${v.id}|${l.id}`, { l, fps });
+  }
+  const add = (snapshot) => {
+    const sp = (snapshot?.data || []).find(p => p?.id === projet?.id);
+    if (!sp) return;
+    for (const sv of (sp.visites || [])) for (const sl of (sv.localisations || [])) {
+      const cz = curZones.get(`${sv.id}|${sl?.id}`);
+      if (!cz || sl._mergedInto) continue;
+      for (const pl of zonePlansOf(sl)) {
+        if (!pl.planId || !pl.paths.length) continue;
+        const have = cz.fps.get(pl.planId) || new Set();
+        const seen = new Set();
+        const missing = pl.paths.filter(p => { const f = annotFp(p); if (have.has(f) || seen.has(f)) return false; seen.add(f); return true; });
+        if (!missing.length) continue;
+        const key = `${sv.id}|${sl.id}|${pl.planId}`;
+        if (missing.length > (best.get(key)?.missing.length ?? 0)) {
+          best.set(key, { projectId: projet.id, visiteId: sv.id, locId: sl.id, locNom: cz.l.nom || sl.nom || '', planId: pl.planId, missing, count: missing.length, ts: snapshot.ts });
+        }
+      }
+    }
+  };
+  return { add, entries: () => [...best.values()].sort((a, b) => b.ts - a.ts) };
+}
+
+// Remet des annotations disparues sur le plan d'une zone (additif, sans doublon). → { locs, added }
+export function applyLostAnnots(locs, entry) {
+  const z = (locs || []).find(l => l.id === entry?.locId);
+  if (!z) return { locs, added: 0 };
+  const r = addPlansToZone(z, [{ planId: entry.planId, paths: entry.missing || [] }]);
+  return r.added ? { locs: locs.map(l => (l.id === z.id ? r.loc : l)), added: r.added } : { locs, added: 0 };
+}
 
 const photoKey = (ph) => (ph ? (ph._id ?? ph.id ?? null) : null);
 // Instantanés : les photos base64 y ont data=null (blobs retirés) → filtre permissif pour garder

@@ -37,6 +37,16 @@ let _knownPhotoIdsByItem    = new Map();
 // (remote.updated_at avancé au-delà de cette valeur) avant qu'on n'écrase — pour LOGGER
 // le conflit au lieu de l'écraser silencieusement (last-write-wins tracé, cf. audit point 1).
 let _loadedUpdatedAtByProject = new Map();
+// ANTI-ÉCRASEMENT DES ANNOTATIONS DE PLAN DE ZONE (incident 13/10/2026 « toutes mes annotations
+// du R+4 ont disparu »). Une zone est enregistrée en BLOC (une ligne, plan_annotations = tous ses
+// plans + annotations) : un appareil au state périmé (ex. téléphone avec une modif en attente)
+// renvoyait SA version et effaçait les annotations ajoutées entre-temps sur un autre appareil.
+// On mémorise ici tout ce que CET appareil a VU pour chaque zone (chargé du serveur ou enregistré
+// par lui). À la sauvegarde, une annotation présente en base mais JAMAIS vue ici a été ajoutée
+// ailleurs → elle est CONSERVÉE. Une annotation vue puis retirée localement → supprimée (normal).
+// locId → { paths:Set<`${planKey}|json`>, plans:Set<planKey> }. Absent (jamais chargé, ex.
+// démarrage hors ligne) → comportement d'avant, inchangé.
+let _seenLocAnnot = new Map();
 
 function canLS() {
   try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return true; } catch { return false; }
@@ -75,6 +85,74 @@ function tryParseJson(val) {
   if (!val) return null;
   if (typeof val !== 'string') return val; // déjà parsé (colonne JSONB Supabase)
   try { return JSON.parse(val); } catch { return null; }
+}
+
+// ── Anti-écrasement des annotations de zone (voir _seenLocAnnot) ──
+// Plans d'une valeur plan_annotations : [{ key, planId, paths, extra }] — key = plan principal
+// (`m:${planId}`) ou plan supplémentaire (`x:${planId}`).
+function annotPlansOf(obj) {
+  if (!obj || typeof obj !== 'object') return [];
+  const out = [{ key: `m:${obj._planId ?? ''}`, planId: obj._planId ?? null, paths: Array.isArray(obj.paths) ? obj.paths : [], extra: false }];
+  for (const ep of (Array.isArray(obj._extraPlans) ? obj._extraPlans : [])) {
+    if (ep?.planId) out.push({ key: `x:${ep.planId}`, planId: ep.planId, paths: Array.isArray(ep.paths) ? ep.paths : [], extra: true, ep });
+  }
+  return out;
+}
+const annotPathKey = (planKey, path) => `${planKey}|${JSON.stringify(path)}`;
+
+function rememberLocAnnot(locId, obj) {
+  if (!locId) return;
+  const seen = _seenLocAnnot.get(locId) ?? { paths: new Set(), plans: new Set() };
+  for (const pl of annotPlansOf(obj)) {
+    if (pl.planId) seen.plans.add(pl.key);
+    for (const p of pl.paths) seen.paths.add(annotPathKey(pl.key, p));
+  }
+  _seenLocAnnot.set(locId, seen);
+}
+
+// Ajoute à l'objet plan_annotations LOCAL d'une zone ce que la base contient et que cet appareil
+// n'a JAMAIS vu (ajouté par un autre appareil). Ne retire jamais rien du local.
+// Exporté pour les tests. → { obj, kept }
+export function preserveUnseenLocAnnot(locId, localObj, dbRaw) {
+  const seen = _seenLocAnnot.get(locId);
+  const db = tryParseJson(dbRaw);
+  if (!seen || !db || typeof db !== 'object') return { obj: localObj, kept: 0 };
+  const out = localObj ? { ...localObj } : {};
+  let kept = 0;
+  const unseen = (key, paths, localPaths) => {
+    const have = new Set((localPaths || []).map(p => annotPathKey(key, p)));
+    return (paths || []).filter(p => { const k = annotPathKey(key, p); return !seen.paths.has(k) && !have.has(k); });
+  };
+  for (const pl of annotPlansOf(db)) {
+    if (!pl.extra) {
+      const localKey = `m:${out._planId ?? ''}`;
+      if (pl.key === localKey) {
+        const add = unseen(pl.key, pl.paths, out.paths);
+        if (add.length) { out.paths = [...(out.paths || []), ...add]; kept += add.length; }
+      } else if (!out._planId && pl.planId && !seen.plans.has(pl.key)) {
+        // Plan principal affecté AILLEURS (jamais vu ici) alors que cette zone n'en a pas en local.
+        out._planId = pl.planId;
+        const add = unseen(pl.key, pl.paths, null);
+        if (add.length) { out.paths = [...(out.paths || []), ...add]; kept += add.length; }
+      }
+      continue;
+    }
+    const eps = Array.isArray(out._extraPlans) ? out._extraPlans : [];
+    const i = eps.findIndex(ep => ep.planId === pl.planId);
+    if (i >= 0) {
+      const add = unseen(pl.key, pl.paths, eps[i].paths);
+      if (add.length) {
+        out._extraPlans = eps.map((ep, j) => (j === i ? { ...ep, paths: [...(ep.paths || []), ...add] } : ep));
+        kept += add.length;
+      }
+    } else if (!seen.plans.has(pl.key)) {
+      // Plan supplémentaire ajouté AILLEURS (jamais vu ici) → conservé tel quel.
+      const add = unseen(pl.key, pl.paths, null);
+      out._extraPlans = [...eps, { ...pl.ep, ...(add.length ? { paths: add } : {}) }];
+      kept += add.length || 1;
+    }
+  }
+  return { obj: Object.keys(out).length ? out : null, kept };
 }
 
 // Supprime le PNG exporté des annotations (régénéré à la demande, peut faire ~15 MB)
@@ -319,6 +397,8 @@ async function loadRemote() {
     // les locs/items/visites ajoutés par un autre utilisateur après notre chargement.
     _knownVisitIdsByProject.set(c.id, new Set(visites.map(v => v.id)));
     _knownLocIdsByProject.set(c.id, new Set(allLocs.map(l => l.id)));
+    // Annotations vues par cet appareil (anti-écrasement, cf. _seenLocAnnot). Union : on n'oublie rien.
+    allLocs.forEach(l => rememberLocAnnot(l.id, tryParseJson(l.plan_annotations)));
     // updated_at distant à ce chargement — référence pour détecter un conflit d'écriture concurrent.
     if (c.updated_at) _loadedUpdatedAtByProject.set(c.id, c.updated_at);
     const _allKnownItemIds = new Set();
@@ -1266,7 +1346,8 @@ async function saveRemote(ps, dirtyIds = null) {
     }
 
     // ── Lecture des locs DB actuelles (pour détection des locs orphelines à supprimer) ──
-    const dbLocsRes = await sb.from('aichantier_chantier_localisations').select('id,visite_id').eq('chantier_id', p.id);
+    const dbLocsRes = await sb.from('aichantier_chantier_localisations').select('id,visite_id,plan_annotations').eq('chantier_id', p.id);
+    const dbAnnotByLoc = new Map((dbLocsRes.data || []).map(l => [l.id, l.plan_annotations]));
 
     // Visites : base = état local (l'utilisateur fait autorité sur SES visites).
     // On fusionne en plus les visites créées par un autre utilisateur après notre chargement :
@@ -1355,6 +1436,10 @@ async function saveRemote(ps, dirtyIds = null) {
       continue;
     }
 
+    // Version LOCALE (sans les annotations conservées d'ailleurs) de chaque zone envoyée → devient
+    // « vue » après une écriture réussie. Les annotations conservées ne le deviennent PAS : sinon,
+    // absentes du state local, elles seraient prises pour une suppression à la sauvegarde suivante.
+    const savedLocalAnnot = new Map();
     // Loc rows — plan_bg/plan_data jamais envoyés dans les locs (timeout 57014).
     // planId est encodé dans plan_annotations._planId pour éviter une colonne dédiée.
     const locRows = allLocsFlat.map((l, i) => {
@@ -1371,6 +1456,16 @@ async function saveRemote(ps, dirtyIds = null) {
         if (l.planAnnotations?.paths?.length) annotObj.paths = l.planAnnotations.paths;
         if (extraPlansToStore.length) annotObj._extraPlans = extraPlansToStore;
       }
+      // Anti-écrasement : annotations ajoutées sur un AUTRE appareil (jamais vues ici) conservées.
+      if (l.id && dbAnnotByLoc.has(l.id)) {
+        const localObj = annotObj;
+        const r = preserveUnseenLocAnnot(l.id, annotObj, dbAnnotByLoc.get(l.id));
+        if (r.kept) {
+          annotObj = r.obj;
+          logWarn('saveRemote.annotPreserved', { projet: p.id, loc: l.id, kept: r.kept });
+        }
+        savedLocalAnnot.set(l.id, localObj);
+      } else if (l.id) savedLocalAnnot.set(l.id, annotObj);
       return {
         id: l.id || crypto.randomUUID(), chantier_id: p.id, nom: l.nom ?? '',
         plan_annotations: annotObj ? JSON.stringify(annotObj) : null,
@@ -1426,6 +1521,7 @@ async function saveRemote(ps, dirtyIds = null) {
     }
     // Mettre à jour les IDs de locs connus (pour qu'une loc créée en session soit supprimable plus tard)
     { const _s = _knownLocIdsByProject.get(p.id) ?? new Set(); locRows.forEach(l => { if (l.id) _s.add(l.id); }); _knownLocIdsByProject.set(p.id, _s); }
+    savedLocalAnnot.forEach((obj, locId) => rememberLocAnnot(locId, obj));
 
     // Plans (fire-and-forget) — UPSERT + DELETE ciblé (évite perte si insert échoue)
     const plansPromise = (async () => {
@@ -1807,6 +1903,7 @@ export function clearLocalData() {
   _knownLocIdsByProject   = new Map();
   _knownItemIdsByProject  = new Map();
   _loadedUpdatedAtByProject = new Map();
+  _seenLocAnnot = new Map();
 }
 
 // Récupère uniquement id + updated_at depuis Supabase — poll léger pour détecter les MàJ distantes

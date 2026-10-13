@@ -74,6 +74,41 @@ export async function addDeletedItem(item, ctx = {}) {
   });
 }
 
+// ZONE supprimée (ou fusionnée dans une autre) : copie COMPLÈTE de la zone — observations, photos,
+// plans et annotations — pour pouvoir la remettre telle quelle (corbeille par projet, Thomas
+// 13/10/2026). `ctx` = { projectId, projectNom, visiteId, reason: 'suppression'|'fusion',
+// mergedInto: { id, nom }, index }. Même base que les observations (champ kind: 'loc').
+export async function addDeletedZone(loc, ctx = {}) {
+  if (!loc?.id) return;
+  const db = await openDb();
+  if (!db) return;
+  const ts = Date.now();
+  const entry = {
+    recId: `${ts}_${Math.random().toString(36).slice(2, 8)}`,
+    ts,
+    deletedAt: new Date(ts).toISOString(),
+    kind: 'loc',
+    reason: ctx.reason === 'fusion' ? 'fusion' : 'suppression',
+    projectId: ctx.projectId ?? null,
+    projectNom: ctx.projectNom ?? '',
+    visiteId: ctx.visiteId ?? null,
+    locId: loc.id,
+    locNom: loc.nom ?? '',
+    mergedInto: ctx.mergedInto ?? null,
+    index: ctx.index ?? null,
+    loc,
+  };
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(entry);
+      tx.oncomplete = () => resolve();
+      tx.onerror    = () => resolve();
+      tx.onabort    = () => resolve();
+    } catch { resolve(); }
+  });
+}
+
 // Liste toutes les observations supprimées, la plus récente d'abord.
 export async function listDeletedItems() {
   const db = await openDb();
