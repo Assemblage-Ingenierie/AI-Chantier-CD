@@ -4,7 +4,8 @@ import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '.
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
-import { applyAnnotRecovery } from '../lib/annotRecovery.js';
+import { applyAnnotRecovery, applyLostAnnots } from '../lib/annotRecovery.js';
+import { restoreItemInLocs, restoreZoneInLocs } from '../lib/trash.js';
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
@@ -145,7 +146,15 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
         if (!lv) return rv;
         // Union strategy for locs: keep local-only zones (added but not yet in DB)
         const remoteLocIds = new Set((rv.localisations || []).map(l => l.id));
-        const localOnlyLocs = (lv.localisations || []).filter(ll => !remoteLocIds.has(ll.id));
+        // Une observation d'une zone locale-seulement qui existe DÉJÀ côté serveur (dans une autre
+        // zone) y a été déplacée ailleurs (fusion de zones, « 📍 Zone ») → on ne la garde pas en
+        // double ici : un même id deux fois faisait échouer TOUTE la sauvegarde des observations
+        // (upsert « cannot affect row a second time »). Elle reste, bien sûr, dans sa nouvelle zone.
+        const remoteItemIds = new Set((rv.localisations || []).flatMap(l => (l.items || []).map(i => i?.id)).filter(Boolean));
+        const localOnlyLocs = (lv.localisations || []).filter(ll => !remoteLocIds.has(ll.id))
+          .map(ll => ((ll.items || []).some(it => remoteItemIds.has(it?.id))
+            ? { ...ll, items: (ll.items || []).filter(it => !remoteItemIds.has(it?.id)) }
+            : ll));
         if (localOnlyLocs.length > 0) {
           keptLocalIds.add(rp.id);
           keptLocal = true;
@@ -629,29 +638,45 @@ export function useProjets(onSyncStatus) {
   // Restaure une observation depuis la bibliothèque « Récupération » (filet demandé par Thomas).
   // Ré-insère l'item dans sa zone d'origine SI le projet / la visite / la zone existent encore.
   // Passe par updateProjet → marque dirty + sauvegarde normale (aucune logique de sync dupliquée).
+  // Applique une restauration (corbeille / récupération) aux zones d'UNE visite. `fn(locs)` est
+  // une fonction PURE (lib/trash.js, lib/annotRecovery.js) → { locs, ok, liftIds }. Les pierres
+  // tombales sont levées AVANT la ré-insertion, sinon la prochaine fusion re-supprimerait aussitôt
+  // l'élément restauré. Passe par updateProjet → sauvegarde normale (aucune logique dupliquée).
+  const applyVisitRecovery = (projectId, visiteId, fn) => {
+    const proj = projetsRef.current.find(p => p.id === projectId);
+    if (!proj) return { ok: false, reason: 'project' };
+    const visite = (proj.visites || []).find(v => v.id === visiteId);
+    if (!visite) return { ok: false, reason: 'visite' };
+    const res = fn(visite.localisations || []);
+    if (!res.ok) return res;
+    (res.liftIds || []).forEach(id => liftTombstone(id)); // local + serveur (partagé entre appareils)
+    if (res.locs !== visite.localisations) {
+      updateProjet(projectId, (p) => ({
+        visites: (p.visites || []).map(v => v.id !== visiteId ? v : { ...v, localisations: fn(v.localisations || []).locs }),
+      }));
+    }
+    return res;
+  };
+
+  // Zone d'origine disparue → l'observation est remise dans une zone recréée du même nom.
   const restoreObservation = (entry) => {
     if (!entry?.item || !entry.projectId) return { ok: false, reason: 'invalid' };
-    const proj = projetsRef.current.find(p => p.id === entry.projectId);
-    if (!proj) return { ok: false, reason: 'project' };
-    const visite = (proj.visites || []).find(v => v.id === entry.visiteId);
-    if (!visite) return { ok: false, reason: 'visite' };
-    const loc = (visite.localisations || []).find(l => l.id === entry.locId);
-    if (!loc) return { ok: false, reason: 'loc' };
-    const already = (loc.items || []).some(i => i.id === entry.item.id);
-    // Lève la pierre tombale AVANT de ré-insérer, sinon la prochaine fusion re-supprimerait
-    // aussitôt l'observation restaurée (anti-résurrection de la partie A).
-    liftTombstone(entry.item.id); // local + serveur (partagé entre appareils)
-    updateProjet(entry.projectId, (p) => ({
-      ...p,
-      visites: (p.visites || []).map(v => v.id !== entry.visiteId ? v : {
-        ...v,
-        localisations: (v.localisations || []).map(l => l.id !== entry.locId ? l : {
-          ...l,
-          items: already ? (l.items || []) : [...(l.items || []), entry.item],
-        }),
-      }),
-    }));
-    return { ok: true, already };
+    return applyVisitRecovery(entry.projectId, entry.visiteId, locs => restoreItemInLocs(locs, entry));
+  };
+
+  // Corbeille : zone supprimée ou fusionnée (« annuler la fusion »), avec plans et observations.
+  const restoreZone = (entry) => {
+    if (!entry?.loc || !entry.projectId) return { ok: false, reason: 'invalid' };
+    return applyVisitRecovery(entry.projectId, entry.visiteId, locs => restoreZoneInLocs(locs, entry));
+  };
+
+  // Corbeille : annotations disparues du plan d'une zone (retrouvées dans la boîte noire).
+  const restoreLostAnnots = (entry) => {
+    if (!entry?.projectId) return { ok: false, reason: 'invalid' };
+    return applyVisitRecovery(entry.projectId, entry.visiteId, locs => {
+      const r = applyLostAnnots(locs, entry);
+      return { ...r, ok: true, already: !r.added };
+    });
   };
 
   // Remet les annotations de plan perdues lors d'une fusion de zones (lib/annotRecovery.js,
@@ -1310,5 +1335,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots };
 }

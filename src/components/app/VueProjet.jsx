@@ -18,7 +18,8 @@ import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js'
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
-import { addDeletedItem } from '../../lib/recoveryBin.js';
+import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
+import TrashPanel from '../vue/TrashPanel.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { orderZones, childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
@@ -141,7 +142,9 @@ const VISIT_FIELDS = new Set([
   'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes',
 ]);
 
-export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false }) {
+export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
+  onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null }) {
+  const [trashOpen, setTrashOpen] = useState(false); // corbeille du projet (PC)
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
@@ -345,6 +348,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const next = mergeZones(prevLocs, srcId, tgtId);
     if (next === prevLocs) return;
     const tgt = prevLocs.find(l => l.id === tgtId);
+    // Corbeille : copie COMPLÈTE de la zone d'origine avant fusion → « Annuler la fusion » possible
+    // à tout moment (pas seulement pendant les 4 s du toast).
+    const src = prevLocs.find(l => l.id === srcId);
+    addDeletedZone(src, { projectId: projet.id, projectNom: projet.nom, visiteId: selectedVisiteId, reason: 'fusion',
+      mergedInto: { id: tgtId, nom: tgt?.nom || '' }, index: prevLocs.indexOf(src) });
     onUpdateVisit({ localisations: next });
     pendingMerges.current.set(srcId, { needFresh: syncStatusRef.current === 'saving', sawSaving: false });
     setOpenLocIds(prev => new Set([...prev, tgtId]));
@@ -496,6 +504,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     // Supprimer un GROUPE (« R+4 ») ne supprime JAMAIS ses sous-zones : elles redeviennent des
     // zones normales, avec toutes leurs observations (« Annuler » remet le groupe tel quel).
     const kidIds = new Set(childrenOf(prevLocs, locId).map(k => k.id));
+    // Corbeille : copie complète de la zone (observations, photos, plans, annotations).
+    const victim = prevLocs.find(l => l.id === locId);
+    if (victim) addDeletedZone(victim, { projectId: projet.id, projectNom: projet.nom, visiteId: selectedVisiteId,
+      reason: 'suppression', index: prevLocs.indexOf(victim) });
     onUpdateVisit({ localisations: prevLocs
       .filter(l => l.id !== locId)
       .map(l => (kidIds.has(l.id) ? { ...l, parentId: null } : l)) });
@@ -708,6 +720,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             </div>
 
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+              {/* Corbeille du projet (PC) : tout ce qui a été supprimé, restaurable en un clic. */}
+              {onRestoreZone && (
+                <button onClick={() => setTrashOpen(true)} aria-label="Corbeille du projet" title="Corbeille du projet — restaurer ce qui a été supprimé"
+                  style={{ width:40, height:40, flexShrink:0, background: trashOpen ? 'rgba(255,255,255,0.12)' : 'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <Ic n="del" s={17}/>
+                </button>
+              )}
               {onRefresh && (
                 <button onClick={onRefresh} disabled={refreshing} aria-label="Actualiser" title="Actualiser depuis le serveur"
                   style={{ width:40, height:40, flexShrink:0, background:'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:refreshing?'default':'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -1106,6 +1125,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
           il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
       {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed/>}
+      {trashOpen && (
+        <TrashPanel projet={projet} onClose={() => setTrashOpen(false)}
+          onRestoreZone={onRestoreZone} onRestoreObservation={onRestoreObservation}
+          onRestoreLostAnnots={onRestoreLostAnnots} onRestoreZoneAnnotations={onRestoreZoneAnnotations}/>
+      )}
 
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>

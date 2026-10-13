@@ -42,7 +42,7 @@ function localStorageBytes() {
   } catch { return 0; }
 }
 
-export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null, onRestoreObservation = null, onRestoreZoneAnnotations = null }) {
+export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null, onRestoreObservation = null, onRestoreZoneAnnotations = null, onRestoreZone = null }) {
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
   const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: octets PHOTOS }
   const [detailByProject, setDetailByProject] = useState({}); // { projectId: { plans, donnees } }
@@ -145,7 +145,8 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
 
   const handleRestore = async (entry) => {
     setRecBusy(entry.recId);
-    const res = onRestoreObservation ? onRestoreObservation(entry) : { ok: false, reason: 'unavailable' };
+    const restore = entry.kind === 'loc' ? onRestoreZone : onRestoreObservation;
+    const res = restore ? restore(entry) : { ok: false, reason: 'unavailable' };
     if (res?.ok) {
       await removeDeletedItem(entry.recId);
       await refreshRecovery();
@@ -295,16 +296,20 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               <>
                 <div style={{ border:`1px solid ${DA.border}`, borderRadius:10, padding:'4px 12px', maxHeight:260, overflowY:'auto' }}>
                   {recovery.map((entry, i) => {
-                    const photoN = (entry.item?.photos || []).filter(p => p && (p.data || p.annotated || p.storage_url)).length;
+                    const isZone = entry.kind === 'loc';
+                    const photoN = (isZone ? (entry.loc?.items || []).flatMap(it => it.photos || []) : (entry.item?.photos || []))
+                      .filter(p => p && (p.data || p.annotated || p.storage_url)).length;
                     const date = new Date(entry.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
                     return (
                       <div key={entry.recId} style={{ ...row, alignItems:'flex-start', ...(i > 0 ? { borderTop:`1px solid ${DA.grayXL}` } : {}) }}>
                         <div style={{ minWidth:0, flex:1 }}>
                           <div style={{ fontSize:13, color:DA.black, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {entry.item?.titre || 'Observation'}
+                            {isZone
+                              ? `Zone « ${entry.locNom || 'sans nom'} »${entry.reason === 'fusion' ? ` (fusionnée dans « ${entry.mergedInto?.nom || 'zone'} »)` : ''}`
+                              : (entry.item?.titre || 'Observation')}
                           </div>
                           <div style={{ fontSize:11, color:DA.grayL, marginTop:2, lineHeight:1.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {(entry.projectNom || 'Projet')}{entry.locNom ? ` › ${entry.locNom}` : ''} · {date}{photoN > 0 ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}
+                            {(entry.projectNom || 'Projet')}{entry.locNom && !isZone ? ` › ${entry.locNom}` : ''}{isZone ? ` · ${(entry.loc?.items || []).length} obs.` : ''} · {date}{photoN > 0 ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}
                           </div>
                           {recMsg[entry.recId] && <div style={{ fontSize:11, color:DA.red, marginTop:3 }}>{recMsg[entry.recId]}</div>}
                         </div>

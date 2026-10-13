@@ -36,7 +36,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -641,6 +641,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onDeletePlan={id => deletePlanFromLibrary(ouvert.id, id)}
             setBackHandler={setBackHandler}
             syncStatus={syncStatus}
+            onRestoreZone={restoreZone}
+            onRestoreObservation={restoreObservation}
+            onRestoreLostAnnots={restoreLostAnnots}
+            onRestoreZoneAnnotations={restoreZoneAnnotations}
           />
         ) : ouvert ? (
           <VisitesScreen
@@ -693,7 +697,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         <AccountModal profile={profile} session={session} forceComplete={isProfileIncomplete(profile)}
           onClose={() => setShowAccount(false)} onSaved={onProfileSaved}/>
       )}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} projets={projets} profile={profile} onPrecacheProject={precacheProjectOffline} onRestoreObservation={restoreObservation} onRestoreZoneAnnotations={restoreZoneAnnotations}/>}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} projets={projets} profile={profile} onPrecacheProject={precacheProjectOffline} onRestoreObservation={restoreObservation} onRestoreZoneAnnotations={restoreZoneAnnotations} onRestoreZone={restoreZone}/>}
       {showContacts && <ContactsManagerModal projets={projets} onClose={() => setShowContacts(false)}/>}
 
       {undoToast && (

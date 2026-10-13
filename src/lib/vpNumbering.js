@@ -170,7 +170,7 @@ export function getVpNum(vpNumByPath, vp) {
 // Empreinte stable pour le DÉDOUBLONNAGE d'affichage (ignore label/_vpId/textW/vpNum…).
 // Position arrondie à une grille grossière → attrape les quasi-doublons superposés (ex. deux
 // « Façade Nord » décalés de quelques pixels par la propagation).
-function annotFp(p) {
+export function annotFp(p) {
   const r = (v) => Math.round((v ?? 0) / 12);
   switch (p.type) {
     case 'viewpoint': return p._vpId ? `vp:${p._vpId}` : `vp|${r(p.x)}|${r(p.y)}|${p.photoIdx ?? '_'}`;
