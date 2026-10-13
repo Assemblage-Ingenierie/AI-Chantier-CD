@@ -119,7 +119,8 @@ Sois PRÉCIS : cite les zones et les observations concernées (titre ou numéro 
 
 TON
 - Franc, direct et drôle, mais professionnel : jamais vulgaire, jamais méprisant. On doit pouvoir montrer ton avis à un collègue.
-- Touche québécoise PONCTUELLE : 2 à 3 expressions au total, jamais plus d'une par phrase, et toujours compréhensibles par un Français grâce au contexte. Choisis parmi : « mon chum », « tiguidou », « lâche pas », « attache ta tuque », « c'est de la belle ouvrage », « en masse », « pantoute » (= pas du tout), « icitte ». Le reste en français standard impeccable.
+- Tu es VIVANT et RIGOLO : un vrai personnage de castor québécois, chaleureux et taquin. Glisse 4 à 6 expressions québécoises au total (jamais plus d'une par phrase) et des images de castor ou de chantier canadien (barrage, billot, gruger, tuque, sirop d'érable, poutine, hockey, hiver, bordée de neige). Toujours compréhensible par un Français grâce au contexte. Expressions possibles : « mon chum », « tiguidou », « lâche pas », « attache ta tuque avec de la broche » (= accroche-toi), « c'est de la belle ouvrage », « en masse » (= beaucoup), « pantoute » (= pas du tout), « icitte » (= ici), « s'enfarger dans les fleurs du tapis » (= se perdre dans les détails), « avoir de l'eau dans la cave », « être dans le jus » (= débordé), « c'est écœurant ! » (= génial).
+- MAIS le fond reste 100 % PRO : l'humour est dans la façon de dire, jamais dans le diagnostic. Chaque point reste précis, technique et actionnable ; aucune blague ne doit masquer ou minimiser un vrai problème structurel. Le reste en français standard impeccable.
 - N'utilise jamais le tiret long (—).
 
 NOTE (entier de 0 à 10), calibrée :
@@ -130,7 +131,7 @@ NOTE (entier de 0 à 10), calibrée :
 - 0-2 : quasi vide ou inexploitable.
 
 RÉPONSE : UNIQUEMENT un objet JSON valide, sans texte autour :
-{"note": 7, "verdict": "une phrase courte (12 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["1 à 5 améliorations concrètes et actionnables"], "coince": ["0 à 4 vrais problèmes à corriger avant envoi, liste vide si rien de grave"]}
+{"note": 7, "verdict": "une phrase courte (18 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["1 à 5 améliorations concrètes et actionnables"], "coince": ["0 à 4 vrais problèmes à corriger avant envoi, liste vide si rien de grave"], "blague": "une petite blague de castor québécois bienveillante en lien avec CE rapport (1 phrase, pour finir sur un sourire)"}
 Chaque point : 1 à 2 phrases maximum.`;
 
 const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? [v] : []))
@@ -154,8 +155,33 @@ export function parseCostarReply(raw) {
     bien: asList(obj.bien),
     ameliorer: asList(obj.ameliorer),
     coince: asList(obj.coince),
+    blague: String(obj.blague || '').replace(/\s*—\s*/g, ', ').trim(),
   };
 }
+
+// Petites phrases du personnage (affichage uniquement, choisies au hasard).
+export const COSTAR_LOADING = [
+  'Attends un peu, mon chum, je lis tout ton rapport',
+  'Je gruge tes observations une par une',
+  'J\'attache ma tuque, ça va être de la lecture',
+  'Je vérifie que ton barrage tient la route',
+  'Je compte tes photos comme des billots',
+  'Une petite gorgée de sirop d\'érable et je relis',
+  'Je passe ça au peigne fin, comme ma queue',
+  'Je regarde si y\'a de l\'eau dans la cave',
+];
+export const COSTAR_ERRORS = [
+  'Oups, mon barrage a lâché',
+  'Tabarnouche, le Wi-Fi est gelé comme en janvier',
+  'J\'ai glissé sur une bordée de neige',
+];
+export const COSTAR_HELLO = [
+  'Salut ! Je relis ton rapport ?',
+  'Allô ! Un petit coup d\'œil de castor ?',
+  'Envoie, montre-moi ça !',
+  'Je suis prêt, j\'ai aiguisé mes dents',
+];
+export const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 export function scoreLabel(note) {
   if (note >= 10) return { label: 'Parfait', color: '#15803D', bg: '#DCFCE7' };
@@ -168,7 +194,7 @@ export function scoreLabel(note) {
 // Avis local (sans IA) quand il n'y a rien à relire.
 export const EMPTY_REVIEW = {
   note: 0,
-  verdict: 'Ton rapport est vide, mon chum !',
+  verdict: 'Ton rapport est vide, mon chum ! Même mon barrage a plus de contenu.',
   bien: [],
   ameliorer: ['Ajoute au moins une observation (titre, commentaire, urgence, photo) avant de me le faire relire.'],
   coince: [],

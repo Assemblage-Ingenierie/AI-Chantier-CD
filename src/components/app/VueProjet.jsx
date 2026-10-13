@@ -8,6 +8,7 @@ import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
 import RapportTab from '../vue/RapportTab.jsx';
+import Costar from '../vue/Costar.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import PlanDragBar from '../vue/PlanDragBar.jsx';
@@ -782,7 +783,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {tab === 'visite' && (
-            <div className={uiScaleClass(uiScale)} style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
+            <div className={uiScaleClass(uiScale)} style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10,
+              // PC : place réservée à Costar (en bas à droite) pour qu'il ne masque jamais les boutons
+              // des cartes — seulement si la marge naturelle de l'écran ne suffit pas.
+              ...(isDesktop ? { paddingRight:'max(14px, calc(124px - max(0px, (100vw - 1400px) / 2)))', paddingBottom:130 } : {}) }}>
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -1098,6 +1102,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           )}
         </div>
       </div>
+
+      {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
+          il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
+      {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed/>}
 
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
