@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from './Icons.jsx';
 import { estimatePlanCacheBytes, estimatePlanBytesByIds, clearPlanCache } from '../../lib/planThumbCache.js';
-import { estimateSnapshotBytes } from '../../lib/backupVault.js';
+import { estimateSnapshotBytes, listSnapshots, getSnapshot } from '../../lib/backupVault.js';
+import { createAnnotScanner } from '../../lib/annotRecovery.js';
 import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
@@ -41,7 +42,7 @@ function localStorageBytes() {
   } catch { return 0; }
 }
 
-export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null, onRestoreObservation = null }) {
+export default function SettingsModal({ onClose, projets = [], profile = null, onPrecacheProject = null, onRestoreObservation = null, onRestoreZoneAnnotations = null }) {
   const [sizes, setSizes] = useState({ plans: null, snapshots: null, pending: null, local: null });
   const [offlineByProject, setOfflineByProject] = useState(null); // { projectId: octets PHOTOS }
   const [detailByProject, setDetailByProject] = useState({}); // { projectId: { plans, donnees } }
@@ -65,6 +66,11 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [recMsg, setRecMsg] = useState({});   // { [recId]: 'texte' } messages par entrée
   const [recBusy, setRecBusy] = useState(null); // recId en cours de restauration
   const [recConfirmClear, setRecConfirmClear] = useState(false);
+  // Annotations de plan perdues lors d'une fusion de zones, retrouvées dans la boîte noire.
+  // null = recherche en cours ; [] = rien à récupérer (bloc invisible).
+  const [annotRec, setAnnotRec] = useState(null);
+  const [annotMsg, setAnnotMsg] = useState('');
+  const [annotBusy, setAnnotBusy] = useState(false);
 
   const refreshSizes = async () => {
     const [plans, snapshots, pending, byProject] = await Promise.all([
@@ -154,6 +160,32 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
     setRecBusy(null);
   };
 
+  // Parcourt les instantanés un par un (du plus récent au plus ancien) → mémoire bornée.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const scan = createAnnotScanner(projets);
+        for (const m of await listSnapshots()) {
+          if (!alive) return;
+          scan.add(await getSnapshot(m.ts));
+        }
+        if (alive) setAnnotRec(scan.entries());
+      } catch { if (alive) setAnnotRec([]); }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRestoreAnnots = () => {
+    setAnnotBusy(true);
+    const res = onRestoreZoneAnnotations ? onRestoreZoneAnnotations(annotRec || []) : { added: 0 };
+    setAnnotMsg(res?.added
+      ? `✓ ${res.added} annotation${res.added > 1 ? 's' : ''} remise${res.added > 1 ? 's' : ''} sur les plans.`
+      : 'Rien à remettre : les annotations sont déjà sur les plans.');
+    setAnnotRec([]);
+    setAnnotBusy(false);
+  };
+
   const handleDeleteOneRecovery = async (recId) => {
     await removeDeletedItem(recId);
     await refreshRecovery();
@@ -226,6 +258,32 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
           {/* ── RÉCUPÉRATION : observations supprimées, restaurables (demande Thomas) ── */}
           <div style={{ marginBottom:22 }}>
             <p style={sectionTitle}>Récupération{Array.isArray(recovery) && recovery.length > 0 ? ` (${recovery.length})` : ''}</p>
+            {/* Annotations de plan perdues lors d'une fusion de zones — visible SEULEMENT s'il y a
+                quelque chose à récupérer (ou juste après une récupération). */}
+            {(annotRec?.length > 0 || annotMsg) && (
+              <div style={{ border:`1.5px solid ${annotMsg ? '#8FD3A6' : DA.red}`, background: annotMsg ? '#EAF7EE' : '#FFF5F5', borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+                {annotMsg ? (
+                  <div style={{ fontSize:13, fontWeight:700, color:'#1E7A3D' }}>{annotMsg}</div>
+                ) : (
+                  <>
+                    <div style={{ fontSize:13, fontWeight:800, color:DA.black }}>Annotations de plan retrouvées</div>
+                    <div style={{ fontSize:12, color:DA.gray, margin:'3px 0 8px', lineHeight:1.45 }}>
+                      Perdues lors d'une fusion de zones, retrouvées dans la sauvegarde de cet appareil.
+                      Elles seront <strong>ajoutées</strong> aux plans — rien de ce que vous avez fait depuis n'est retiré.
+                    </div>
+                    {annotRec.map(e => (
+                      <div key={`${e.projectId}|${e.srcLocId}`} style={{ fontSize:12, color:DA.black, padding:'3px 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {e.projectNom ? `${e.projectNom} · ` : ''}<strong>{e.srcNom || 'Zone'}</strong> → {e.dstNom || 'zone'} · {e.count} annotation{e.count > 1 ? 's' : ''}
+                      </div>
+                    ))}
+                    <button onClick={handleRestoreAnnots} disabled={annotBusy}
+                      style={{ width:'100%', marginTop:10, padding:'11px', borderRadius:9, fontSize:13, fontWeight:800, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
+                      Remettre les annotations
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {recovery == null ? (
               <p style={{ fontSize:12, color:DA.grayL, margin:0, padding:'10px 12px', border:`1px solid ${DA.border}`, borderRadius:10 }}>…</p>
             ) : recovery.length === 0 ? (

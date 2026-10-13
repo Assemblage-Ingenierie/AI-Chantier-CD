@@ -74,3 +74,32 @@ describe('sortir une observation fusionnée', () => {
     expect(out[1].items.map(i => `${i.id}:${i.titre ?? ''}`)).toEqual(['z:', 'a:Humidité']);
   });
 });
+
+describe('fusion : annotations du plan partagé (incident R+4)', () => {
+  const vp = (o) => ({ type: 'viewpoint', x: 1, y: 2, ...o });
+  const mk = () => [
+    { id: 'r4', nom: 'R+4', planId: 'P4', planAnnotations: { paths: [{ type: 'text', text: 'Palier' }] },
+      items: [{ id: 'a', photos: [{ _id: 'pa', data: 'u' }] }] },
+    { id: 'scap', nom: 'Mme Scapolo', planId: 'P4',
+      planAnnotations: { paths: [{ type: 'text', text: 'Palier' }, { type: 'stroke', points: [{ x: 1, y: 1 }] }, vp({ photoIdx: 1, _vpId: 'v1' })] },
+      extraPlans: [{ id: 'e', planId: 'COUPE', planAnnotations: { paths: [{ type: 'text', text: 'Coupe' }] } }],
+      items: [{ id: 'b', photos: [{ _id: 'pb1', data: 'u' }, { _id: 'pb2', data: 'u' }] }] },
+  ];
+
+  it('les annotations de la zone fusionnée sont AJOUTÉES au plan déjà présent dans la cible', () => {
+    const r4 = mergeZones(mk(), 'scap', 'r4').find(l => l.id === 'r4');
+    const types = r4.planAnnotations.paths.map(p => p.type);
+    expect(types).toEqual(['text', 'stroke', 'viewpoint']); // « Palier » pas en double
+    expect(r4.extraPlans.map(e => e.planId)).toEqual(['COUPE']);
+    expect(r4.extraPlans[0].planAnnotations.paths).toHaveLength(1);
+  });
+
+  it('les repères photo pointent vers la même photo dans la zone cible', () => {
+    const r4 = mergeZones(mk(), 'scap', 'r4').find(l => l.id === 'r4');
+    const v = r4.planAnnotations.paths.find(p => p.type === 'viewpoint');
+    // photos de R+4 après fusion : pa, pb1, pb2 → pb2 est à l'index 2
+    expect(v.photoIdx).toBe(2);
+    expect(v.photoId).toBe('pb2');
+    expect(v.originLocId).toBeUndefined();
+  });
+});
