@@ -34,10 +34,16 @@ export async function callAIProxy(params) {
   }
   _lastCall[feature] = Date.now();
 
+  // Modèle préféré PAR MOTEUR (ex. Costar : Mistral Medium, plus fin que Small) — facultatif.
+  const modelFor = params.modelFor || null;
+  delete params.modelFor;
   // Moteur IA choisi dans les Paramètres (défaut Claude) — le proxy route en conséquence.
   if (!params.provider) {
     const engine = getAIProvider();
-    if (engine === 'mistral') {
+    if (engine === 'mistral' && modelFor?.mistral) {
+      params.provider = 'mistral';
+      params.model = modelFor.mistral;
+    } else if (engine === 'mistral') {
       // Mistral (offre gratuite) : modèle par défaut du proxy sauf si un modèle Mistral est demandé.
       params.provider = 'mistral';
       if (!params.model || !/^(mistral|magistral|pixtral|ministral)/.test(String(params.model))) params.model = 'mistral-small-latest';
