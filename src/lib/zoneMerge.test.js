@@ -47,3 +47,30 @@ describe('fusion de zones', () => {
     expect(canMergeZones(once, 'scap', 'cave')).toBe(false);
   });
 });
+
+import { unmergedTitle, mergePrefix, moveItemToZone } from './zoneMerge.js';
+
+describe('sortir une observation fusionnée', () => {
+  it('le préfixe de fusion est retiré quand elle retourne dans sa zone', () => {
+    expect(unmergedTitle('Appartement Mme Scapolo · Toilette', 'Appartement Mme Scapolo')).toBe('Toilette');
+    expect(unmergedTitle('Appartement M.Albert Thomas - R+4', 'Appartement M.Albert Thomas - R+4')).toBe('');
+    expect(unmergedTitle('Fissure', 'Cave')).toBe('Fissure');
+    expect(mergePrefix('Appartement Mme Scapolo · Toilette')).toBe('Appartement Mme Scapolo');
+    expect(mergePrefix('Fissure')).toBe('');
+  });
+
+  it('vers une nouvelle zone : créée juste après, observation retirée de la zone d\'origine', () => {
+    const locs = [{ id: 'r4', nom: 'R+4', items: [{ id: 'a' }, { id: 'b', titre: 'Mme Scapolo · Toilette', photos: [1] }] }, { id: 'cave', nom: 'Cave', items: [] }];
+    const out = moveItemToZone(locs, 'r4', locs[0].items[1], { nom: 'Mme Scapolo' });
+    expect(out.map(l => l.nom)).toEqual(['R+4', 'Mme Scapolo', 'Cave']);
+    expect(out[0].items.map(i => i.id)).toEqual(['a']);
+    expect(out[1].items).toEqual([{ id: 'b', titre: 'Toilette', photos: [1] }]);
+  });
+
+  it('vers une zone existante', () => {
+    const locs = [{ id: 'r4', nom: 'R+4', items: [{ id: 'a', titre: 'Cave · Humidité' }] }, { id: 'cave', nom: 'Cave', items: [{ id: 'z' }] }];
+    const out = moveItemToZone(locs, 'r4', locs[0].items[0], 'cave');
+    expect(out[0].items).toEqual([]);
+    expect(out[1].items.map(i => `${i.id}:${i.titre ?? ''}`)).toEqual(['z:', 'a:Humidité']);
+  });
+});

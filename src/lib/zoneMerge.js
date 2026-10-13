@@ -60,3 +60,48 @@ export function mergeZones(locs, srcId, tgtId) {
     return l;
   });
 }
+
+// SORTIR une observation fusionnée (ou en déplacer une) : si son titre porte le préfixe de la
+// zone qu'elle rejoint (« Appartement Mme Scapolo · Toilette »), on le retire — elle retrouve
+// son titre d'origine. Titre égal au nom de la zone (observation sans titre fusionnée) → vide.
+export function unmergedTitle(titre, zoneNom) {
+  const t = titre || '';
+  const z = (zoneNom || '').trim();
+  if (!z) return t;
+  if (t.trim().toLowerCase() === z.toLowerCase()) return '';
+  const pre = `${z}${MERGE_SEP}`;
+  return t.toLowerCase().startsWith(pre.toLowerCase()) ? t.slice(pre.length) : t;
+}
+
+// Nom de zone suggéré pour ressortir une observation fusionnée : la partie avant « · ».
+export function mergePrefix(titre) {
+  const t = titre || '';
+  const i = t.indexOf(MERGE_SEP);
+  return i > 0 ? t.slice(0, i).trim() : '';
+}
+
+// Déplace l'observation `item` de `fromId` vers `toId` (zone existante) ou vers une NOUVELLE
+// zone `{ nom }` insérée juste après la zone d'origine. Même id → photos et plans intacts.
+export function moveItemToZone(locs, fromId, item, to) {
+  const from = locs.find(l => l.id === fromId);
+  if (!from || !item?.id) return locs;
+  let target = typeof to === 'string' ? locs.find(l => l.id === to) : null;
+  let created = null;
+  if (!target) {
+    if (!to || typeof to !== 'object') return locs;
+    created = { id: crypto.randomUUID(), nom: (to.nom || '').trim() || 'Nouvelle zone', items: [], planBg: null, planData: null, planAnnotations: null };
+    target = created;
+  }
+  if (target.id === fromId) return locs;
+  const moved = { ...item, titre: unmergedTitle(item.titre, target.nom) };
+  const out = [];
+  for (const l of locs) {
+    if (l.id === fromId) {
+      out.push({ ...l, items: (l.items || []).filter(i => i.id !== item.id) });
+      if (created) out.push({ ...created, items: [moved] });
+    } else if (l.id === target.id) {
+      out.push({ ...l, items: [...(l.items || []).filter(i => i.id !== item.id), moved] });
+    } else out.push(l);
+  }
+  return out;
+}

@@ -49,7 +49,7 @@ describe('Costar — lecture du rapport', () => {
 describe('Costar — réponse IA', () => {
   it('JSON pur', () => {
     const r = parseCostarReply('{"note":7,"verdict":"Tiguidou","bien":["a"],"ameliorer":["b","c"],"coince":[]}');
-    expect(r).toEqual({ note: 7, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [] });
+    expect(r).toEqual({ note: 7, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], blague: '' });
   });
 
   it('JSON entouré de texte / balises, note bornée', () => {

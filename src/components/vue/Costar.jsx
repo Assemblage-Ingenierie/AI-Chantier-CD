@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW } from '../../lib/costar.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick } from '../../lib/costar.js';
 
 // Costar : castor québécois en casque de chantier (dessin original, SVG) — mascotte qui relit
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
@@ -81,7 +81,18 @@ function Section({ title, color, items }) {
   );
 }
 
-export default function Costar({ projet }) {
+// fixed = position fixe dans la fenêtre (onglet Visite, qui défile) ; sinon ancré au conteneur
+// (onglet Rapport). Costar est réservé au PC : masqué sous 900 px de large.
+export default function Costar({ projet, fixed = false }) {
+  const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 900);
+  useEffect(() => {
+    const onResize = () => setIsPc(window.innerWidth >= 900);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const [hello] = useState(() => pick(COSTAR_HELLO));
+  const [loadMsg, setLoadMsg] = useState(COSTAR_LOADING[0]);
+  const [errMsg, setErrMsg] = useState(COSTAR_ERRORS[0]);
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | loading | done | error
   const [review, setReview] = useState(null);
@@ -92,6 +103,13 @@ export default function Costar({ projet }) {
   projetRef.current = projet;
 
   useEffect(() => () => abortRef.current?.abort(), []);
+  // Pendant la lecture : une nouvelle petite phrase toutes les ~2,5 s (Costar « vit »).
+  useEffect(() => {
+    if (status !== 'loading') return;
+    setLoadMsg(pick(COSTAR_LOADING));
+    const t = setInterval(() => setLoadMsg(m => { let n = m; while (n === m && COSTAR_LOADING.length > 1) n = pick(COSTAR_LOADING); return n; }), 2500);
+    return () => clearInterval(t);
+  }, [status]);
 
   const ask = async () => {
     setWiggle(false);
@@ -130,6 +148,7 @@ export default function Costar({ projet }) {
     } catch (e) {
       if (ctrl.signal.aborted) return;
       setError(e.message || 'Erreur de connexion');
+      setErrMsg(pick(COSTAR_ERRORS));
       setStatus('error');
     }
   };
@@ -143,9 +162,10 @@ export default function Costar({ projet }) {
 
   const sc = review ? scoreLabel(review.note) : null;
   const loading = status === 'loading';
+  if (!isPc) return null;
 
   return (
-    <div style={{ position: 'absolute', right: 26, bottom: 14, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
+    <div style={{ position: fixed ? 'fixed' : 'absolute', right: 26, bottom: fixed ? 18 : 14, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
       {open && (
         <div className="costar-bubble" role="dialog" aria-label="Avis de Costar"
           style={{ pointerEvents: 'auto', position: 'relative', width: 370, marginBottom: 14 }}>
@@ -161,13 +181,13 @@ export default function Costar({ projet }) {
 
           {loading && (
             <div style={{ fontSize: 13, color: DA.black, lineHeight: 1.5, paddingRight: 22 }}>
-              Attends un peu, mon chum, je lis tout ton rapport<span className="costar-dots"><span>.</span><span>.</span><span>.</span></span>
+              {loadMsg}<span className="costar-dots"><span>.</span><span>.</span><span>.</span></span>
             </div>
           )}
 
           {status === 'error' && (
             <div style={{ fontSize: 13, color: DA.black, lineHeight: 1.5, paddingRight: 22 }}>
-              Oups, j'ai pas réussi à lire ton rapport : <span style={{ color: '#B91C1C' }}>{error}</span>
+              {errMsg}… j'ai pas réussi à lire ton rapport : <span style={{ color: '#B91C1C' }}>{error}</span>
               <div><button onClick={ask} style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: DA.red, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>Réessayer</button></div>
             </div>
           )}
@@ -186,6 +206,11 @@ export default function Costar({ projet }) {
               <Section title="Ce qui est bien" color="#15803D" items={review.bien}/>
               <Section title="À améliorer" color="#C2410C" items={review.ameliorer}/>
               <Section title="Ce qui coince" color="#B91C1C" items={review.coince}/>
+              {review.blague && (
+                <p style={{ margin: '12px 0 0', padding: '8px 10px', background: '#FFF7ED', borderRadius: 10, fontSize: 12.5, color: '#9A3412', lineHeight: 1.45 }}>
+                  🦫 {review.blague}
+                </p>
+              )}
               <button onClick={ask}
                 style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: DA.gray, background: 'white', border: `1px solid ${DA.border}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
                 Relire mon rapport
@@ -201,7 +226,7 @@ export default function Costar({ projet }) {
           Ask Costar
         </div>
       )}
-      <button onClick={open && !loading ? close : ask} title={open ? 'Fermer' : 'Demande à Costar son avis sur ton rapport'}
+      <button onClick={open && !loading ? close : ask} title={open ? 'Fermer' : hello}
         aria-label="Ask Costar : avis sur le rapport"
         style={{ pointerEvents: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0, filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.25))' }}>
         <CostarSvg className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>

@@ -13,6 +13,7 @@ import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
 import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
+import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
@@ -235,7 +236,11 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+  // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
+  // nouvelle zone, nommée par défaut d'après le préfixe de fusion (« Appartement Mme Scapolo »).
+  const [moveTo, setMoveTo] = useState(zoneId);
+  const [newZoneName, setNewZoneName] = useState(() => mergePrefix(item?.titre) || item?.titre || '');
   const [form, setForm] = useState(() => {
     // id stable dès le départ : sert d'ORIGINE aux marqueurs Vxx posés sur les plans de
     // l'observation (numérotation par photo de l'observation, cf. vpNumbering).
@@ -386,7 +391,9 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
         logEvent('comment.save', { itemId: form.id, len: c.length, imgs: (c.match(/<img/g) || []).length, cimg: (c.match(/data-cimg/g) || []).length, pending: c.includes('__pending'), uploading: c.includes('data-uploading') });
       }
     } catch { /* ignore */ }
-    onSave(form);
+    const move = item?.id && zoneId && moveTo && moveTo !== zoneId
+      ? (moveTo === '__new__' ? { nom: newZoneName } : moveTo) : null;
+    onSave(move ? { ...form, _moveTo: move } : form);
     onClose();
   };
 
@@ -1051,6 +1058,27 @@ export default function ItemModal({ item, planBg, planId, extraPlans = [], planA
               placeholder="Ex: Fissures, Humidité…"
               style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
               onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
+            {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
+                par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
+                seulement pour une observation existante. */}
+            {item?.id && zoneId && zones.length > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, flexWrap:'wrap' }}>
+                <span style={{ fontSize:12, color:DA.grayL, display:'inline-flex', alignItems:'center', gap:4 }}><Ic n="pin" s={12}/> Zone</span>
+                <select value={moveTo || ''} onChange={e => setMoveTo(e.target.value)}
+                  style={{ flex:'1 1 160px', minWidth:0, fontSize:13, padding:'6px 8px', borderRadius:8, border:`1px solid ${moveTo !== zoneId ? DA.red : DA.border}`, background:'white', color:DA.black }}>
+                  {zones.map(z => <option key={z.id} value={z.id}>{z.nom || 'Zone sans nom'}</option>)}
+                  <option value="__new__">+ Nouvelle zone…</option>
+                </select>
+                {moveTo === '__new__' && (
+                  <input value={newZoneName} onChange={e => setNewZoneName(e.target.value)} placeholder="Nom de la nouvelle zone"
+                    draggable={false} onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+                    style={{ flex:'1 1 100%', fontSize:14, padding:'8px 10px', borderRadius:8, border:`1px solid ${DA.red}`, outline:'none', boxSizing:'border-box' }}/>
+                )}
+                {moveTo !== zoneId && (
+                  <span style={{ flexBasis:'100%', fontSize:11, color:DA.red }}>L'observation sera déplacée à l'enregistrement.</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Niveau + Suivi — une seule ligne */}

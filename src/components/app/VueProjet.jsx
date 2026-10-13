@@ -8,6 +8,7 @@ import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
 import RapportTab from '../vue/RapportTab.jsx';
+import Costar from '../vue/Costar.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import PlanDragBar from '../vue/PlanDragBar.jsx';
@@ -20,7 +21,7 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { orderZones, childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
-import { mergeZones, canMergeZones } from '../../lib/zoneMerge.js';
+import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -782,7 +783,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {tab === 'visite' && (
-            <div className={uiScaleClass(uiScale)} style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10 }}>
+            <div className={uiScaleClass(uiScale)} style={{ maxWidth:1400, margin:'0 auto', padding:'12px 14px', display:'flex', flexDirection:'column', gap:10,
+              // PC : place réservée à Costar (en bas à droite) pour qu'il ne masque jamais les boutons
+              // des cartes — seulement si la marge naturelle de l'écran ne suffit pas.
+              ...(isDesktop ? { paddingRight:'max(14px, calc(124px - max(0px, (100vw - 1400px) / 2)))', paddingBottom:130 } : {}) }}>
               {visitProjet.localisations.length === 0 ? (
                 <div style={{ padding:'48px 24px', textAlign:'center' }}>
                   <div style={{ width:48, height:48, borderRadius:12, background:DA.redL, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px', color:DA.red }}>
@@ -1099,6 +1103,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         </div>
       </div>
 
+      {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
+          il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
+      {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed/>}
+
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
           <span>{undoToast.label}</span>
@@ -1119,6 +1127,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           <ItemModal
             key={modal.savedForm ? 'annotated' : 'normal'}
             item={initItem}
+            zones={visitProjet.localisations.filter(l => !l._mergedInto).map(l => ({ id: l.id, nom: l.nom }))}
+            zoneId={modal.item?.id ? modal.locId : null}
             planBg={loc?.planBg ?? null}
             planId={loc?.planId ?? null}
             extraPlans={loc?.extraPlans ?? []}
@@ -1127,7 +1137,25 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             vpNumByPath={vpNumGlobal}
             vpBase={vpMaxGlobal}
             onClose={() => { itemModalBackRef.current = null; setModal(null); }}
-            onSave={form => { itemModalBackRef.current = null; saveItem(modal.locId, { ...form, id: form.id || crypto.randomUUID() }); setModal(null); }}
+            onSave={form => {
+              itemModalBackRef.current = null;
+              // eslint-disable-next-line no-unused-vars
+              const { _moveTo, ...clean } = form;
+              const saved = { ...clean, id: clean.id || crypto.randomUUID() };
+              if (_moveTo) {
+                // Déplacement vers une autre zone (ou nouvelle zone) : l'observation garde son id →
+                // la sauvegarde la ré-enregistre sous sa nouvelle zone (garde anti-perte saveRemote).
+                const next = moveItemToZone(visitProjet.localisations, modal.locId, saved, _moveTo);
+                if (next !== visitProjet.localisations) {
+                  onUpdateVisit({ localisations: next });
+                  const dest = typeof _moveTo === 'string' ? _moveTo : next.find(l => !visitProjet.localisations.some(o => o.id === l.id))?.id;
+                  if (dest) setOpenLocIds(prev => new Set([...prev, dest]));
+                }
+              } else {
+                saveItem(modal.locId, saved);
+              }
+              setModal(null);
+            }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
             onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
