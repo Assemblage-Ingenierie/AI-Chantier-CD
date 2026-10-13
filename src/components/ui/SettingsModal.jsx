@@ -305,7 +305,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
                         <div style={{ minWidth:0, flex:1 }}>
                           <div style={{ fontSize:13, color:DA.black, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {isZone
-                              ? `Zone « ${entry.locNom || 'sans nom'} »${entry.reason === 'fusion' ? ` (fusionnée dans « ${entry.mergedInto?.nom || 'zone'} »)` : ''}`
+                              ? `Zone « ${entry.locNom || 'sans nom'} »${entry.reason === 'fusion' ? ` (regroupée sous « ${entry.mergedInto?.nom || 'zone'} »)` : ''}`
                               : (entry.item?.titre || 'Observation')}
                           </div>
                           <div style={{ fontSize:11, color:DA.grayL, marginTop:2, lineHeight:1.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>

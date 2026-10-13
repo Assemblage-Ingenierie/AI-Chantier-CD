@@ -114,8 +114,8 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
           <Section title="Zones" n={zones.length}>
             {zones.map(e => (
               <Row key={e.recId} k={e.recId} icon="📍" title={e.locNom || 'Zone'}
-                sub={`${e.reason === 'fusion' ? `Fusionnée dans « ${e.mergedInto?.nom || 'zone'} »` : 'Supprimée'} · ${(e.loc?.items || []).length} obs. · ${fmtDate(e.ts)}${multiVisits ? ` · ${present.visitNom.get(e.visiteId) || ''}` : ''}`}
-                label={e.reason === 'fusion' ? 'Annuler la fusion' : 'Restaurer'}
+                sub={`${e.reason === 'fusion' ? `Regroupée sous « ${e.mergedInto?.nom || 'zone'} »` : 'Supprimée'} · ${(e.loc?.items || []).length} obs. · ${fmtDate(e.ts)}${multiVisits ? ` · ${present.visitNom.get(e.visiteId) || ''}` : ''}`}
+                label={e.reason === 'fusion' ? 'Défaire le regroupement' : 'Restaurer'}
                 onRestore={() => run(e.recId, onRestoreZone, e)}/>
             ))}
           </Section>
@@ -136,7 +136,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               const k = e._merge ? `m|${e.srcLocId}` : `a|${e.visiteId}|${e.locId}|${e.planId}`;
               return e._merge ? (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} de « ${e.srcNom || 'zone'} »`}
-                  sub={`Perdues à la fusion dans « ${e.dstNom || 'zone'} » · vues le ${fmtDate(e.ts)}`} label="Remettre"
+                  sub={`Perdues au regroupement sous « ${e.dstNom || 'zone'} » · vues le ${fmtDate(e.ts)}`} label="Remettre"
                   onRestore={() => run(k, onRestoreZoneAnnotations ? (x) => { const r = onRestoreZoneAnnotations([x]); return { ok: !!r?.added, added: r?.added }; } : null, e)}/>
               ) : (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} effacée${e.count > 1 ? 's' : ''} · ${planNom(e.planId)}`}
