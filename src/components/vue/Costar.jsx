@@ -105,11 +105,16 @@ export default function Costar({ projet, fixed = false }) {
   projetRef.current = projet;
 
   useEffect(() => () => abortRef.current?.abort(), []);
-  // Pendant la lecture : une nouvelle petite phrase toutes les ~2,5 s (Costar « vit »).
+  // Pendant la lecture : 3 petites phrases AU PLUS, espacées de 7 s (retour Thomas : « il en
+  // dit 15, deux ou trois suffisent »). Après la 3e, il se tait jusqu'à la réponse.
   useEffect(() => {
     if (status !== 'loading') return;
     setLoadMsg(pick(COSTAR_LOADING));
-    const t = setInterval(() => setLoadMsg(m => { let n = m; while (n === m && COSTAR_LOADING.length > 1) n = pick(COSTAR_LOADING); return n; }), 2500);
+    let shown = 1;
+    const t = setInterval(() => {
+      setLoadMsg(m => { let n = m; while (n === m && COSTAR_LOADING.length > 1) n = pick(COSTAR_LOADING); return n; });
+      if (++shown >= 3) clearInterval(t);
+    }, 7000);
     return () => clearInterval(t);
   }, [status]);
 
@@ -135,8 +140,9 @@ export default function Costar({ projet, fixed = false }) {
         feature: 'costar',
         model: 'claude-sonnet-4-6',
         modelFor: { mistral: 'mistral-medium-latest' }, // relecture fine : Medium plutôt que Small
+        // Pas de « réflexion » Gemini : elle doublait le temps de réponse et faisait dépasser le
+        // délai quand Gemini est chargé (« Gemini ne répond pas ») ; la consigne détaillée suffit.
         max_tokens: 4096,
-        thinkingBudget: 1536,
         json: true,
         system: COSTAR_SYSTEM,
         messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.\n\n${digest.text}` }],
