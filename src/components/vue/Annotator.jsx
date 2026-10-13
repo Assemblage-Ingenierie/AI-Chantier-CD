@@ -472,6 +472,49 @@ function nearShapeOutline(p, pos, r) {
     || distToSeg(pos.x, pos.y, x2, y2, x1, y2) < r || distToSeg(pos.x, pos.y, x1, y2, x1, y1) < r;
 }
 
+// ── TRACÉ ASSISTÉ (Thomas : « appli de dessin moderne ») ──
+// Points d'accroche d'une annotation : extrémités, sommets, coins.
+function snapPointsOf(p) {
+  if (!p) return [];
+  if (p.type === 'shape') {
+    if (p.pts?.length) return p.pts;
+    if (p.x1 == null) return [];
+    if (p.shape === 'line' || p.shape === 'arrow') return [{ x: p.x1, y: p.y1 }, { x: p.x2, y: p.y2 }];
+    const x1 = Math.min(p.x1, p.x2), x2 = Math.max(p.x1, p.x2), y1 = Math.min(p.y1, p.y2), y2 = Math.max(p.y1, p.y2);
+    if (p.shape === 'ellipse') return [{ x: (x1 + x2) / 2, y: y1 }, { x: x2, y: (y1 + y2) / 2 }, { x: (x1 + x2) / 2, y: y2 }, { x: x1, y: (y1 + y2) / 2 }];
+    return [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+  }
+  if (p.type === 'symbol' && p.x1 != null) return [{ x: p.x1, y: p.y1 }, { x: p.x2, y: p.y2 }];
+  if (p.type === 'stroke' && p.points?.length > 1) return [p.points[0], p.points[p.points.length - 1]];
+  return [];
+}
+// Segments d'une annotation (pour s'accrocher SUR un trait, pas seulement à ses bouts).
+function snapSegmentsOf(p) {
+  if (!p || p.type !== 'shape') return [];
+  if (p.pts?.length > 1) {
+    const segs = [];
+    for (let i = 0; i < p.pts.length - 1; i++) segs.push([p.pts[i], p.pts[i + 1]]);
+    if (p.shape === 'poly') segs.push([p.pts[p.pts.length - 1], p.pts[0]]);
+    return segs;
+  }
+  if (p.x1 == null || p.shape === 'ellipse') return [];
+  if (p.shape === 'line' || p.shape === 'arrow') return [[{ x: p.x1, y: p.y1 }, { x: p.x2, y: p.y2 }]];
+  const c = snapPointsOf(p);
+  return [[c[0], c[1]], [c[1], c[2]], [c[2], c[3]], [c[3], c[0]]];
+}
+// Maj : angle multiple de 45° (même longueur).
+function constrainAngle(from, to) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  const len = Math.hypot(dx, dy);
+  return { x: from.x + Math.cos(a) * len, y: from.y + Math.sin(a) * len };
+}
+// Maj : carré / cercle parfait.
+function squareFrom(from, to) {
+  const dx = to.x - from.x, dy = to.y - from.y, m = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: from.x + (dx < 0 ? -m : m), y: from.y + (dy < 0 ? -m : m) };
+}
+
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
   const cvRef          = useRef();
   const bgRef          = useRef(null);
@@ -656,6 +699,38 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Les opérations SYSTÈME (chargement, passage du plan en haute définition) ne sont pas des pas :
   // elles recalent l'historique (mise à l'échelle) sans rien annuler.
   const polyPtsRef = useRef(polyPts); polyPtsRef.current = polyPts;
+  // Repère visuel « ça s'aimante ici » (point ou trait existant).
+  const [snapHint, setSnapHint] = useState(null); // { x, y, kind:'point'|'seg' } | null
+  const updateSnapHint = (h) => setSnapHint(prev => ((prev?.x === h?.x && prev?.y === h?.y && prev?.kind === h?.kind) ? prev : (h || null)));
+  // Position assistée : Maj = contrainte (angle 45° depuis `from`, ou carré si `square`) ;
+  // sinon aimantation sur les points/traits existants (Alt = désactivée). `exclude` = index des
+  // annotations en cours de modification (on ne s'accroche pas à soi-même).
+  const assistPos = (pos, e, { from = null, square = false, exclude = null, extraPts = null } = {}) => {
+    if (e?.shiftKey && from) return { pos: square ? squareFrom(from, pos) : constrainAngle(from, pos), hint: null };
+    if (e?.altKey) return { pos, hint: null };
+    const cv = cvRef.current;
+    if (!cv || !cv.clientWidth) return { pos, hint: null };
+    const R = 12 * (cv.width / cv.clientWidth) / (vtRef.current.z || 1);
+    let best = null, bd = R;
+    const tryPt = (q) => { const d = Math.hypot(q.x - pos.x, q.y - pos.y); if (d < bd) { bd = d; best = { x: q.x, y: q.y, kind: 'point' }; } };
+    pathsRef.current.forEach((p, i) => { if (!exclude || !exclude.has(i)) snapPointsOf(p).forEach(tryPt); });
+    (extraPts || []).forEach(tryPt);
+    if (!best) {
+      bd = R;
+      pathsRef.current.forEach((p, i) => {
+        if (exclude && exclude.has(i)) return;
+        for (const [a, b] of snapSegmentsOf(p)) {
+          const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+          if (!l2) continue;
+          const t = Math.max(0, Math.min(1, ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / l2));
+          const q = { x: a.x + t * dx, y: a.y + t * dy };
+          const d = Math.hypot(q.x - pos.x, q.y - pos.y);
+          if (d < bd) { bd = d; best = { ...q, kind: 'seg' }; }
+        }
+      });
+    }
+    return best ? { pos: { x: best.x, y: best.y }, hint: best } : { pos, hint: null };
+  };
   const histRef = useRef({ undo: [], redo: [] });
   const committedRef = useRef(paths);   // dernier état « validé » (référence de comparaison)
   const baselineRef = useRef(paths);    // état à l'ouverture (→ modifications non enregistrées ?)
@@ -1020,6 +1095,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ctx.restore();
     }
 
+    // Repère d'aimantation (vert) : le point ou le trait sur lequel le tracé va s'accrocher.
+    if (snapHint) {
+      const zz = vtRef.current.z || 1;
+      const r = 9 * ratio / zz;
+      ctx.save();
+      ctx.strokeStyle = '#16A34A'; ctx.fillStyle = 'rgba(22,163,74,0.22)'; ctx.lineWidth = 2.5 * ratio / zz;
+      ctx.beginPath(); ctx.arc(snapHint.x, snapHint.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (snapHint.kind === 'point') { ctx.fillStyle = '#16A34A'; ctx.beginPath(); ctx.arc(snapHint.x, snapHint.y, r * 0.35, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
+
     // Indicateur de sélection : symbole/viewpoint
     if (selAnnot !== null && paths[selAnnot.idx]) {
       const ap = paths[selAnnot.idx];
@@ -1068,7 +1154,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     } else {
       vpRotateHandleRef.current = null;
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale, snapHint]);
 
   useEffect(() => { redraw(); }, [redraw]);
   // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
@@ -1653,16 +1739,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           setPolyPts([]); setPolyMousePos(null);
           return;
         }
+        // Point ASSISTÉ : Maj = angle à 45° depuis le point précédent ; sinon aimanté sur les
+        // points/traits existants (et sur les sommets déjà posés → fermer / rejoindre pile).
+        const ppos = assistPos(pos, e, { from: polyPts.length ? polyPts[polyPts.length - 1] : null, extraPts: polyPts.slice(0, -1) }).pos;
         // Snap au premier sommet pour fermer — POLYGONE uniquement (la polyligne reste ouverte)
         if (!isPolyline && polyPts.length >= 3) {
           const closeR = 18 * (cv.width / cv.clientWidth);
-          if (Math.hypot(pos.x - polyPts[0].x, pos.y - polyPts[0].y) < closeR) {
+          if (Math.hypot(ppos.x - polyPts[0].x, ppos.y - polyPts[0].y) < closeR) {
             setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
             setPolyPts([]); setPolyMousePos(null);
             return;
           }
         }
-        setPolyPts(prev => [...prev, pos]);
+        setPolyPts(prev => [...prev, ppos]);
         return;
       }
 
@@ -1692,8 +1781,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         return;
       }
       setSelAnnot(null);
-      shapeStartRef.current = pos;
-      setPendingShape({ x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y });
+      const spos = assistPos(pos, e).pos; // départ aimanté sur un point/trait existant
+      shapeStartRef.current = spos;
+      setPendingShape({ x1: spos.x, y1: spos.y, x2: spos.x, y2: spos.y });
       setDrawing(true);
       return;
     }
@@ -1802,17 +1892,27 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Resize forme
     if (drawing && resizeDragRef.current) {
       const { handle, origData, idx } = resizeDragRef.current;
+      // Point fixe pour Maj (angle/carré) : l'autre bout, le coin opposé ou le sommet voisin.
+      const od = origData;
+      const vi0 = handle.startsWith('v') ? parseInt(handle.slice(1)) : -1;
+      const anchor = handle === 'p1' ? { x: od.x2, y: od.y2 } : handle === 'p2' ? { x: od.x1, y: od.y1 }
+        : handle === 'se' ? { x: od.x1, y: od.y1 } : handle === 'nw' ? { x: od.x2, y: od.y2 }
+        : handle === 'ne' ? { x: od.x1, y: od.y2 } : handle === 'sw' ? { x: od.x2, y: od.y1 }
+        : (vi0 >= 0 && od.pts) ? (od.pts[vi0 - 1] || od.pts[vi0 + 1] || null) : null;
+      const a = assistPos(pos, e, { from: anchor, square: od.shape === 'rect' || od.shape === 'ellipse', exclude: new Set([idx]) });
+      updateSnapHint(a.hint);
+      const P = a.pos;
       setPaths(prev => prev.map((p, i) => {
         if (i !== idx) return p;
-        if (handle === 'se') return { ...p, x2: pos.x, y2: pos.y };
-        if (handle === 'sw') return { ...p, x1: pos.x, y2: pos.y };
-        if (handle === 'ne') return { ...p, x2: pos.x, y1: pos.y };
-        if (handle === 'nw') return { ...p, x1: pos.x, y1: pos.y };
-        if (handle === 'p1') return { ...p, x1: pos.x, y1: pos.y };
-        if (handle === 'p2') return { ...p, x2: pos.x, y2: pos.y };
+        if (handle === 'se') return { ...p, x2: P.x, y2: P.y };
+        if (handle === 'sw') return { ...p, x1: P.x, y2: P.y };
+        if (handle === 'ne') return { ...p, x2: P.x, y1: P.y };
+        if (handle === 'nw') return { ...p, x1: P.x, y1: P.y };
+        if (handle === 'p1') return { ...p, x1: P.x, y1: P.y };
+        if (handle === 'p2') return { ...p, x2: P.x, y2: P.y };
         if (handle.startsWith('v')) {
           const vi = parseInt(handle.slice(1));
-          return { ...p, pts: p.pts.map((pt, j) => j === vi ? { x: pos.x, y: pos.y } : pt) };
+          return { ...p, pts: p.pts.map((pt, j) => j === vi ? { x: P.x, y: P.y } : pt) };
         }
         return p;
       }));
@@ -1838,6 +1938,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }));
       return;
     }
+    // Polyligne / zone : trait d'aperçu jusqu'au curseur (bouton relâché), assisté.
+    if (tool === 'shape' && (shapeTool === 'poly' || shapeTool === 'polyline') && polyPts.length > 0) {
+      const a = assistPos(pos, e, { from: polyPts[polyPts.length - 1], extraPts: polyPts.slice(0, -1) });
+      updateSnapHint(a.hint);
+      setPolyMousePos(a.pos);
+      return;
+    }
+    // Survol en mode Formes : on montre où le prochain tracé s'aimantera.
+    if (tool === 'shape' && !drawing) { updateSnapHint(assistPos(pos, e).hint); return; }
     if (!drawing) return;
     if (tool === 'viewpoint' && vpStart.current) {
       const dx = pos.x - vpStart.current.x;
@@ -1847,17 +1956,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     // Portée en cours de tracé
     if (tool === 'symbol' && (sym.id === 'portee' || sym.id === 'pente_sol') && porteeStartRef.current) {
-      setPendingPortee({ symbolId: sym.id, x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pos.x, y2: pos.y });
-      return;
-    }
-    // Polygone / polyligne : mise à jour position curseur pour preview
-    if (tool === 'shape' && (shapeTool === 'poly' || shapeTool === 'polyline') && polyPts.length > 0) {
-      setPolyMousePos(pos);
+      const pe = e?.shiftKey ? constrainAngle(porteeStartRef.current, pos) : pos;
+      setPendingPortee({ symbolId: sym.id, x1: porteeStartRef.current.x, y1: porteeStartRef.current.y, x2: pe.x, y2: pe.y });
       return;
     }
     // Forme en cours de tracé
     if (tool === 'shape' && drawing && shapeStartRef.current && !annotDragRef.current) {
-      setPendingShape({ x1: shapeStartRef.current.x, y1: shapeStartRef.current.y, x2: pos.x, y2: pos.y });
+      const st = shapeStartRef.current;
+      // Maj : ligne/flèche à 45°, rectangle/ellipse parfaits ; sinon fin aimantée.
+      const a = assistPos(pos, e, { from: st, square: shapeTool === 'rect' || shapeTool === 'ellipse' });
+      updateSnapHint(a.hint);
+      setPendingShape({ x1: st.x, y1: st.y, x2: a.pos.x, y2: a.pos.y });
       return;
     }
     setCur(prev => [...prev, pos]);
@@ -1865,6 +1974,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const onEnd = e => {
     e.preventDefault();
+    if (snapHint) setSnapHint(null);
     // Fin d'un pan à un doigt (plan zoomé) : si on a réellement glissé, on NE finalise PAS de
     // tracé/placement. Si c'était un simple tap (jamais passé en pan), on laisse onEnd continuer.
     if (oneFingerPanRef.current) {
