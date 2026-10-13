@@ -234,7 +234,10 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
     } else if (p.type === 'shape') {
       ctx.save();
       ctx.strokeStyle = p.color;
-      ctx.lineWidth = (p.size || 2) * ss * sShape;
+      // Épaisseur PROPRE à la forme (sizeMul, réglée sur la forme sélectionnée) × réglage global
+      // (curseur « Formes » du rapport). Absent = 1 → rendu strictement identique à avant.
+      const shMul = Number.isFinite(p.sizeMul) && p.sizeMul > 0 ? p.sizeMul : 1;
+      ctx.lineWidth = (p.size || 2) * ss * sShape * shMul;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.globalAlpha = 1;
@@ -257,7 +260,7 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         ctx.globalAlpha = p.strokeOpacity ?? 1;
         const angle = Math.atan2(p.y2 - p.y1, p.x2 - p.x1);
         const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
-        const aLen = Math.max(12 * sShape, Math.min(len * 0.35, 28 * ss * sShape));
+        const aLen = Math.max(12 * sShape * shMul, Math.min(len * 0.35, 28 * ss * sShape * shMul));
         ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
         ctx.fillStyle = p.color;
         ctx.beginPath();
@@ -524,6 +527,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [scaleText,   setScaleText]   = useState(() => _readScale(SCALE_KEY('text'),   isPhotoCtx ? 1 : _oldAnnot));
   const [scaleSymbol, setScaleSymbol] = useState(() => _readScale(SCALE_KEY('symbol'), isPhotoCtx ? 1 : _oldAnnot));
   const [scaleShape,  setScaleShape]  = useState(() => _readScale(SCALE_KEY('shape'),  1));
+  // Épaisseur des PROCHAINES formes (retour Thomas : « je change la taille de mon trait, ça change
+  // tout »). Le curseur « Formes » de l'annotateur ne touche plus le réglage global (partagé avec
+  // le rapport) : forme sélectionnée → SA taille ; rien de sélectionné → les formes à venir.
+  const [newShapeScale, setNewShapeScale] = useState(() => _readScale(SCALE_KEY('shape_new'), _readScale(SCALE_KEY('shape'), 1)));
+  const newShapeMul = scaleShape > 0 ? newShapeScale / scaleShape : 1;
+  const shapeMulProp = Math.abs(newShapeMul - 1) > 0.001 ? { sizeMul: Math.round(newShapeMul * 1000) / 1000 } : {};
   const [shapeTool,     setShapeTool]     = useState('rect'); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(false);
@@ -531,6 +540,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [strokeOpacity, setStrokeOpacity] = useState(1);
   const [polyPts,       setPolyPts]       = useState([]);   // sommets du polygone en cours
   const [polyMousePos,  setPolyMousePos]  = useState(null); // prévisualisation curseur
+  // TERMINER une polyligne / zone en cours (retour Thomas : « je veux juste deux traits joints,
+  // ça ne s'arrête pas si je ne ferme pas »). Avant : seul un double-clic au même endroit
+  // terminait. Désormais aussi : Entrée, clic droit, bouton « ✓ Terminer », changer d'outil,
+  // Sauvegarder (le tracé n'est plus jamais perdu). Échap = ANNULER le tracé en cours (Thomas).
+  const polyMinPts = shapeTool === 'polyline' ? 2 : 3;
+  const pendingPolyShape = () => (
+    tool === 'shape' && (shapeTool === 'poly' || shapeTool === 'polyline') && polyPts.length >= polyMinPts
+      ? { type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: shapeTool === 'polyline' ? false : shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }
+      : null);
+  const finishPoly = () => {
+    const shp = pendingPolyShape();
+    if (shp) setPaths(prev => [...prev, shp]);
+    if (polyPts.length) { setPolyPts([]); setPolyMousePos(null); }
+    return !!shp;
+  };
+  const finishPolyRef = useRef(finishPoly);
+  finishPolyRef.current = finishPoly;
   const lastTapRef = useRef({ time: 0, x: -9999, y: -9999 });
   const lastSymPlaceRef = useRef(0);
   const [stripZoom,  setStripZoom]  = useState(null);
@@ -757,7 +783,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
 
     if (pendingShape && tool === 'shape') {
-      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }], drawScales, strokeScale);
+      drawAnnotationPaths(ctx, [{ type: 'shape', shape: shapeTool, ...pendingShape, color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }], drawScales, strokeScale);
     }
 
     // Poignées des textes (visibles en mode Texte ET Sélect. → on peut bouger cadre + flèche)
@@ -927,7 +953,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     } else {
       vpRotateHandleRef.current = null;
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale]);
 
   useEffect(() => { redraw(); }, [redraw]);
   // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
@@ -983,6 +1009,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (copy.points) copy.points = src.points.map(pt => ({ x: pt.x + OFF, y: pt.y + OFF }));
         setPaths(prev => [...prev, copy]);
       }
+      if (e.key === 'Enter' && finishPolyRef.current()) { e.preventDefault(); return; }
       if (e.key === 'Escape') {
         setPolyPts([]); setPolyMousePos(null);
         setTool('select');
@@ -1504,7 +1531,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         lastTapRef.current = { time: now, x: pos.x, y: pos.y };
         if (isDbl) {
           if (polyPts.length >= minPts) {
-            setPaths(prev => [...prev, { type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: isPolyline ? false : shapeFilled, fillOpacity, strokeOpacity }]);
+            setPaths(prev => [...prev, { type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: isPolyline ? false : shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
           }
           setPolyPts([]); setPolyMousePos(null);
           return;
@@ -1513,7 +1540,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (!isPolyline && polyPts.length >= 3) {
           const closeR = 18 * (cv.width / cv.clientWidth);
           if (Math.hypot(pos.x - polyPts[0].x, pos.y - polyPts[0].y) < closeR) {
-            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
+            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
             setPolyPts([]); setPolyMousePos(null);
             return;
           }
@@ -1777,7 +1804,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (pendingShape) {
         const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
         if (len > 6) {
-          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity }]);
+          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
         }
       }
       setPendingShape(null);
@@ -1969,6 +1996,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Marqueur viewpoint sélectionné (pour lier/relier une photo via la bande de photos).
   const selVp = (selAnnot !== null && paths[selAnnot.idx]?.type === 'viewpoint') ? paths[selAnnot.idx] : null;
   const isMob = typeof window !== 'undefined' && window.innerWidth < 640;
+  // Hauteur de la bande des menus sur PC (tuiles symboles agrandies + curseur de taille, ou
+  // panneau d'édition de texte). Constante → le plan ne change jamais de taille.
+  const PANEL_SLOT_H = 160;
 
   const duplicateAnnot = (src) => {
     if (!src) return;
@@ -2006,9 +2036,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   // Trois curseurs de taille (Texte / Formes / Symboles), comme l'éditeur de rapport, affichés
   // ensemble au niveau des couleurs. Chacun pilote son type indépendamment (clés partagées).
+  const _scaleSelShapeIdx = selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' ? selAnnot.idx : -1;
+  const _scaleSelShape = _scaleSelShapeIdx >= 0 ? paths[_scaleSelShapeIdx] : null;
   const scaleCtls = [
     { lbl: 'Texte',    val: scaleText,   set: setScaleText,   key: SCALE_KEY('text') },
-    { lbl: 'Formes',   val: scaleShape,  set: setScaleShape,  key: SCALE_KEY('shape') },
+    // Formes : forme SÉLECTIONNÉE → seulement elle ; sinon → épaisseur des prochaines formes.
+    // Jamais toutes les formes existantes d'un coup (réglage global = onglet Rapport).
+    _scaleSelShape
+      ? { lbl: 'Formes', title: 'Forme sélect.', val: scaleShape * (_scaleSelShape.sizeMul ?? 1), key: null,
+          set: (v) => { const mul = scaleShape > 0 ? v / scaleShape : 1;
+            setPaths(prev => prev.map((p, i) => i === _scaleSelShapeIdx ? { ...p, sizeMul: Math.round(mul * 1000) / 1000 } : p)); } }
+      : { lbl: 'Formes', title: 'Nouv. formes', val: newShapeScale, set: setNewShapeScale, key: SCALE_KEY('shape_new') },
     { lbl: 'Symboles', val: scaleSymbol, set: setScaleSymbol, key: SCALE_KEY('symbol') },
   ];
 
@@ -2037,11 +2075,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     return (
     <button onClick={() => setSizeOpen(v => !v)} title="Régler la taille"
       style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:1,
-        margin:'6px 0 7px 10px', padding:'5px 4px', borderRadius:8, cursor:'pointer', width:56, boxSizing:'border-box', color:'#fff',
+        margin:'6px 0 7px 10px', padding:'5px 4px', borderRadius:8, cursor:'pointer', width:isMob?56:72, boxSizing:'border-box', color:'#fff',
         border:`2px solid ${sizeOpen ? '#fff' : '#8a8a8a'}`, background: sizeOpen ? DA.red : '#4d4d4d' }}>
       <Ic n="sld" s={18}/>
-      <span style={{ fontSize:8.5, fontWeight:800, color:'#fff', letterSpacing:0.2 }}>Taille</span>
-      {ctl && <span style={{ fontSize:8, fontWeight:800, color: sizeOpen ? '#fff' : '#FFC9C9', lineHeight:1 }}>{ctl.val.toFixed(1)}×</span>}
+      <span style={{ fontSize:isMob?8.5:11, fontWeight:800, color:'#fff', letterSpacing:0.2 }}>Taille</span>
+      {ctl && <span style={{ fontSize:isMob?8:11, fontWeight:800, color: sizeOpen ? '#fff' : '#FFC9C9', lineHeight:1 }}>{ctl.val.toFixed(1)}×</span>}
     </button>
     );
   };
@@ -2050,9 +2088,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (!ctl) return null;
     return (
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 12px 8px' }}>
-        <span style={{ fontSize:9, color:'#ddd', fontWeight:700, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {ctl.lbl.toUpperCase()}</span>
+        <span style={{ fontSize:isMob?9:11, color:'#ddd', fontWeight:700, letterSpacing:0.3, whiteSpace:'nowrap' }}>TAILLE {(ctl.title || ctl.lbl).toUpperCase()}</span>
         <input type="range" min="0.3" max="5" step="0.1" value={ctl.val}
-          onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); _lsSet(ctl.key, String(v)); }}
+          onChange={e => { const v = parseFloat(e.target.value); ctl.set(v); if (ctl.key) _lsSet(ctl.key, String(v)); }}
           style={{ flex:1, accentColor:DA.red, cursor:'pointer', height:22 }}/>
         <span style={{ color:'#fff', fontSize:12, fontWeight:800, minWidth:30, textAlign:'right' }}>{ctl.val.toFixed(1)}×</span>
       </div>
@@ -2115,6 +2153,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               ].map(t => (
                 <button key={t.k}
                   onClick={() => {
+                    finishPoly(); // tracé en cours (polyligne/zone) conservé, pas jeté
                     setTool(t.k);
                     if (t.k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
                     setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
@@ -2124,11 +2163,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                     if (t.k !== 'shape') { setPendingShape(null); shapeStartRef.current = null; }
                     setSelAnnot(null); annotDragRef.current = null;
                   }}
-                  style={{ padding:isMob?'9px 4px':'8px 11px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
+                  style={{ padding:isMob?'9px 4px':'8px 14px',borderRadius:8,background:tool===t.k?DA.red:'transparent',
                     color:tool===t.k?'white':'#aaa',transition:'all 0.15s',flex:isMob?1:'none',
-                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?0:52 }}>
+                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:isMob?0:66 }}>
                   <Ic n={t.n} s={26}/>
-                  <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
+                  <span style={{ fontSize:isMob?9:12,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
                 </button>
               ))}
               {/* Palette — dans le groupe sur mobile */}
@@ -2151,14 +2190,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Fermer">
               <Ic n="x" s={26}/>
-              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Fermer</span>
+              <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Fermer</span>
             </button>
             <button onClick={undoLast}
               style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
               title="Annuler dernière action (Ctrl+Z)">
               <Ic n="und" s={26}/>
-              <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Annuler</span>
+              <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Annuler</span>
             </button>
             {/* Rétablir — PC (demande Thomas). Grisé tant qu'il n'y a rien à rétablir. */}
             {!isMob && (
@@ -2168,14 +2207,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
                 title="Rétablir (Ctrl+Y)">
                 <span style={{ display:'inline-flex', transform:'scaleX(-1)' }}><Ic n="und" s={26}/></span>
-                <span style={{ fontSize:8,color:'#888',letterSpacing:0.3 }}>Rétablir</span>
+                <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Rétablir</span>
               </button>
             )}
             <button onClick={() => {
               // Flush du texte inline EN COURS (si le champ est encore ouvert/focus) → valider
               // sauvegarde tout tel quel, sans devoir d'abord sortir du champ (demande Thomas).
-              const fp = applyInlineEdit(paths);
+              let fp = applyInlineEdit(paths);
               if (fp !== paths) { setPaths(fp); cancelInlineEdit(); }
+              const pendPoly = pendingPolyShape(); // polyligne/zone non terminée → enregistrée telle quelle
+              if (pendPoly) fp = [...fp, pendPoly];
               const cv = cvRef.current;
               if (!cv || !bgRef.current) { onSave(fp, null, null); onClose(); return; }
               // Exporter à max 1400px — scale calée sur le display réel pour cohérence visuelle
@@ -2198,7 +2239,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               style={{ padding:isMob?'8px 12px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
                 display:'flex',flexDirection:'column',alignItems:'center',gap:3 }}>
               <Ic n="chk" s={isMob?24:20}/>
-              <span style={{ fontSize:isMob?9:9,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
+              <span style={{ fontSize:isMob?9:12,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
             </button>
           </div>
         </div>
@@ -2208,14 +2249,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ display:'flex',gap:6,flexShrink:0 }}>
             {ANNOT_COLORS.map(cl => (
               <button key={cl} onClick={() => recolorSelection(cl)}
-                style={{ width:26,height:26,borderRadius:'50%',background:cl,
+                style={{ width:30,height:30,borderRadius:'50%',background:cl,
                   border:`3px solid ${color===cl?'white':'transparent'}`,
                   boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',
                   cursor:'pointer',flexShrink:0,transition:'all 0.1s' }}/>
             ))}
           </div>
           <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-            <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3 }}>ÉPAISSEUR</span>
+            <span style={{ fontSize:11,color:'#aaa',fontWeight:700,letterSpacing:0.3 }}>ÉPAISSEUR</span>
             {[1,3,6].map(sz => (
               <button key={sz} onClick={() => resizeSelection(sz)}
                 style={{ width:sz*3+14,height:sz*3+14,borderRadius:'50%',
@@ -2228,11 +2269,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           {/* Tailles Texte / Formes / Symboles — comme l'éditeur de rapport, au niveau des couleurs */}
           {scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
-              <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,whiteSpace:'nowrap' }}>{s.lbl}</span>
+              <span style={{ fontSize:12,color:'#bbb',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap' }}>{s.title || s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
-                onChange={e => { const v = parseFloat(e.target.value); s.set(v); _lsSet(s.key, String(v)); }}
-                style={{ width:74,accentColor:DA.red,cursor:'pointer' }}/>
-              <span style={{ color:'#bbb',fontSize:10,fontWeight:700,minWidth:26,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); if (s.key) _lsSet(s.key, String(v)); }}
+                style={{ width:96,accentColor:DA.red,cursor:'pointer' }}/>
+              <span style={{ color:'#eee',fontSize:12,fontWeight:800,minWidth:30,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
           ))}
         </div>}
@@ -2265,9 +2306,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               le bouton « Tailles ▾ » les cachait trop). La palette entière se replie au toucher du plan. */}
           {scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:10 }}>
-              <span style={{ fontSize:11,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:66 }}>{s.lbl}</span>
+              <span style={{ fontSize:11,color:'#ddd',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:66 }}>{s.title || s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
-                onChange={e => { const v = parseFloat(e.target.value); s.set(v); _lsSet(s.key, String(v)); }}
+                onChange={e => { const v = parseFloat(e.target.value); s.set(v); if (s.key) _lsSet(s.key, String(v)); }}
                 style={{ flex:1,accentColor:DA.red,cursor:'pointer',height:26 }}/>
               <span style={{ color:'#fff',fontSize:13,fontWeight:800,minWidth:32,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
             </div>
@@ -2275,6 +2316,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
+      {/* ── EMPLACEMENT FIXE DES MENUS (PC) — retour Thomas : « quand le menu s'ouvre, la taille du
+             plan change ». Sur PC, tous les menus contextuels (symboles, formes, texte, élément
+             sélectionné, aides) vivent dans une bande de hauteur CONSTANTE → le plan garde
+             exactement la même taille et la même place, menu ouvert ou fermé. Mobile : inchangé
+             (display:contents = comme si cette enveloppe n'existait pas). ── */}
+      <div style={isMob ? { display:'contents' } : { height:PANEL_SLOT_H, flexShrink:0, overflowY:'auto', background:'#1a1a1a', borderBottom:'1px solid #333' }}>
       {/* ── Symbol picker — rangée UNIFIÉE (demande Thomas : plus d'onglets, une seule ligne
              défilante avec séparateurs de catégories, et le NOM COMPLET sous chaque picto —
              sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
@@ -2286,7 +2333,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {SYMBOL_CATEGORIES.flatMap(cat => ([
               // Séparateur de catégorie : étiquette verticale discrète
               <div key={`cat-${cat.id}`} style={{ flexShrink:0, display:'flex', alignItems:'center', padding:'0 3px' }}>
-                <span style={{ fontSize:8.5, fontWeight:800, color:'#666', letterSpacing:1.2, textTransform:'uppercase',
+                <span style={{ fontSize:isMob?8.5:10.5, fontWeight:800, color:isMob?'#666':'#999', letterSpacing:1.2, textTransform:'uppercase',
                   writingMode:'vertical-rl', transform:'rotate(180deg)', lineHeight:1 }}>{cat.label}</span>
               </div>,
               ...cat.ids.map(id => {
@@ -2296,15 +2343,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 return (
                   <button key={sm.id} onClick={() => setSym(sm)} title={sm.label}
                     style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                      padding:'5px 6px', borderRadius:8, cursor:'pointer', width:68, boxSizing:'border-box',
+                      padding:'5px 6px', borderRadius:8, cursor:'pointer', width:isMob?68:104, boxSizing:'border-box',
                       /* Sélection = LISERÉ rouge (fond sombre conservé : le picto rouge reste visible,
                          le fond rouge le rendait invisible — retour Thomas) */
                       border:`2px solid ${isActive ? DA.red : 'transparent'}`,
                       background:'#2a2a2a' }}>
-                    <SymMiniCanvas sm={sm} color={color} />
+                    <SymMiniCanvas sm={sm} color={color} size={isMob ? 40 : 48} />
                     {/* NOM COMPLET — zone COMPACTE (2 lignes max) pour garder la bande basse
                         et laisser le plan visible (retour Thomas : « je vois plus rien sur le plan »). */}
-                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>
+                    <span style={{ fontSize:isMob?8:11, fontWeight:600, color:isActive?'white':(isMob?'#aaa':'#ddd'), lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>
                       {sm.label}
                     </span>
                   </button>
@@ -2318,11 +2365,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 <div key={sm.id} style={{ position:'relative', flexShrink:0 }}>
                   <button onClick={() => setSym(sm)}
                     style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                      padding:'5px 6px', borderRadius:8, cursor:'pointer', width:68, boxSizing:'border-box',
+                      padding:'5px 6px', borderRadius:8, cursor:'pointer', width:isMob?68:104, boxSizing:'border-box',
                       border:`2px solid ${isActive ? DA.red : 'transparent'}`,
                       background:'#2a2a2a' }}>
-                    <SymMiniCanvas sm={sm} color={color} />
-                    <span style={{ fontSize:8, fontWeight:600, color:isActive?'white':'#aaa', lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>{sm.label}</span>
+                    <SymMiniCanvas sm={sm} color={color} size={isMob ? 40 : 48} />
+                    <span style={{ fontSize:isMob?8:11, fontWeight:600, color:isActive?'white':(isMob?'#aaa':'#ddd'), lineHeight:1.15, textAlign:'center', display:'block', whiteSpace:'normal', wordBreak:'break-word' }}>{sm.label}</span>
                   </button>
                   <button onClick={() => delCustomSym(sm.id)} title="Supprimer"
                     style={{ position:'absolute',top:-4,right:-5,width:15,height:15,borderRadius:'50%',background:'#B91C1C',color:'white',border:'none',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1,zIndex:2 }}>×</button>
@@ -2332,7 +2379,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {/* Créer custom */}
             {(!showNewSym
               ? <button onClick={() => setShowNewSym(true)}
-                  style={{ flexShrink:0,padding:'6px 10px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF',alignSelf:'center' }}>
+                  style={{ flexShrink:0,padding:'6px 10px',borderRadius:8,background:'transparent',color:'#4A9EFF',fontSize:isMob?11:13,fontWeight:700,whiteSpace:'nowrap',cursor:'pointer',border:'1.5px dashed #4A9EFF',alignSelf:'center' }}>
                   + Créer
                 </button>
               : <div style={{ display:'flex',gap:5,alignItems:'center',flexShrink:0,alignSelf:'center' }}>
@@ -2369,12 +2416,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 { k:'poly',     g:'⬠', lbl:'Zone libre' },
                 { k:'polyline', g:'∠', lbl:'Polyligne'  },
               ].map(s => (
-                <button key={s.k} onClick={() => { if (s.k !== shapeTool) { setPolyPts([]); setPolyMousePos(null); } setShapeTool(s.k); }}
+                <button key={s.k} onClick={() => { if (s.k !== shapeTool) finishPoly(); setShapeTool(s.k); }}
                   style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                    padding:'6px 4px', borderRadius:8, cursor:'pointer', width:74, boxSizing:'border-box',
+                    padding:'6px 4px', borderRadius:8, cursor:'pointer', width:isMob?74:96, boxSizing:'border-box',
                     border:`2px solid ${shapeTool===s.k ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
-                  <span style={{ fontSize:22, lineHeight:1, color:shapeTool===s.k?'white':'#ccc' }}>{s.g}</span>
-                  <span style={{ fontSize:8.5, fontWeight:600, color:shapeTool===s.k?'white':'#aaa', whiteSpace:'nowrap' }}>{s.lbl}</span>
+                  <span style={{ fontSize:isMob?22:27, lineHeight:1, color:shapeTool===s.k?'white':'#ccc' }}>{s.g}</span>
+                  <span style={{ fontSize:isMob?8.5:12, fontWeight:600, color:shapeTool===s.k?'white':(isMob?'#aaa':'#ddd'), whiteSpace:'nowrap' }}>{s.lbl}</span>
                 </button>
               ))}
               <div style={{ width:1,height:28,background:'#333',flexShrink:0,margin:'0 4px' }}/>
@@ -2384,12 +2431,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,filled:!p.filled} : p));
             if (tool === 'shape') setShapeFilled(prev => !prev);
           }}
-            style={{ padding:'5px 13px',borderRadius:7,fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+            style={{ padding:'5px 13px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
               background:shapeFillDisplay?DA.red:'#333',color:shapeFillDisplay?'white':'#aaa',border:'none' }}>
             {shapeFillDisplay ? '◼ Rempli' : '◻ Contour'}
           </button>
           <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-          <span style={{ fontSize:9,color:'#888',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>{shapePanelOpLabel}</span>
+          <span style={{ fontSize:isMob?9:11,color:isMob?'#888':'#aaa',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>{shapePanelOpLabel}</span>
           <input type="range" min="0.05" max="1" step="0.05" value={shapePanelOpVal}
             onChange={e => {
               const nv = parseFloat(e.target.value);
@@ -2401,11 +2448,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
           <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(shapePanelOpVal*100)}%</span>
           {tool === 'shape' && (
-            <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
+            <span style={{ fontSize:isMob?10:12,color:isMob?'#555':'#999',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
               {shapeTool === 'poly'
-                ? 'Clic = sommet · Double-clic/snap = fermer · Échap = annuler'
+                ? 'Clic = sommet · Clic sur le 1er point, Entrée ou clic droit = fermer · Échap = annuler'
                 : shapeTool === 'polyline'
-                ? 'Clic = point · Double-clic = terminer · Échap = annuler'
+                ? 'Clic = point · Entrée, clic droit ou double-clic = terminer · Échap = annuler'
                 : 'Glisser = dessiner · Clic = sélect. · Poignées = resize · Suppr = effacer'}
             </span>
           )}
@@ -2429,13 +2476,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ].map(m => (
             <button key={m.k} onClick={() => setTextMode(m.k)}
               style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
-                padding:'6px 4px', borderRadius:8, cursor:'pointer', width:74, boxSizing:'border-box',
+                padding:'6px 4px', borderRadius:8, cursor:'pointer', width:isMob?74:96, boxSizing:'border-box',
                 border:`2px solid ${textMode===m.k ? DA.red : 'transparent'}`, background:'#2a2a2a' }}>
-              <span style={{ fontSize:22, lineHeight:1, color:textMode===m.k?'white':'#ccc' }}>{m.g}</span>
-              <span style={{ fontSize:8.5, fontWeight:600, color:textMode===m.k?'white':'#aaa', whiteSpace:'nowrap' }}>{m.lbl}</span>
+              <span style={{ fontSize:isMob?22:27, lineHeight:1, color:textMode===m.k?'white':'#ccc' }}>{m.g}</span>
+              <span style={{ fontSize:isMob?8.5:12, fontWeight:600, color:textMode===m.k?'white':(isMob?'#aaa':'#ddd'), whiteSpace:'nowrap' }}>{m.lbl}</span>
             </button>
           ))}
-          <span style={{ fontSize:10,color:'#555',marginLeft:4,flex:1 }}>
+          <span style={{ fontSize:isMob?10:12,color:isMob?'#555':'#999',marginLeft:4,flex:1 }}>
             {textMode === 'arrow' ? '① Appuyez là où pointe la flèche  ② Glissez jusqu\'au texte' : 'Tapez pour écrire — tapez sur un texte existant pour le modifier directement'}
           </span>
           </div>
@@ -2513,15 +2560,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Panneau symbole/viewpoint sélectionné ── */}
       {selAnnot !== null && paths[selAnnot.idx] && (
         <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-          <span style={{ fontSize:10,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
-            {paths[selAnnot.idx].type === 'viewpoint'
+          <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
+            Sélection : {paths[selAnnot.idx].type === 'viewpoint'
               ? 'Vue'
               : paths[selAnnot.idx].type === 'shape'
                 ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone', polyline:'Polyligne' }[paths[selAnnot.idx].shape] || 'Forme')
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
-            } sélectionné
+            }
           </span>
-          <span style={{ fontSize:10,color:'#666',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}</span>
+          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}</span>
           <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
@@ -2545,7 +2592,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {tool === 'viewpoint' && !selAnnot && (
         <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
           <Ic n="eye" s={12}/>
-          <span style={{ fontSize:11,color:'#888' }}>
+          <span style={{ fontSize:isMob?11:12.5,color:isMob?'#888':'#aaa' }}>
             {activePh
               ? <><span style={{ color:DA.red,fontWeight:700 }}>{activePh.label}</span> sélectionnée — cliquer-glisser pour placer et orienter</>
               : 'Cliquer-glisser pour placer. Cliquer sur un existant pour le déplacer.'}
@@ -2556,9 +2603,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* ── Aide symboles orientables ── */}
       {tool === 'symbol' && (sym?.id === 'portee' || sym?.id === 'pente_sol') && !selAnnot && (
         <div style={{ background:'#1a1a1a',padding:'5px 14px',borderBottom:'1px solid #333',flexShrink:0,display:'flex',alignItems:'center',gap:8 }}>
-          <span style={{ fontSize:11,color:'#888' }}>Cliquer-glisser pour orienter. Cliquer sur un existant pour le déplacer.</span>
+          <span style={{ fontSize:isMob?11:12.5,color:isMob?'#888':'#aaa' }}>Cliquer-glisser pour orienter. Cliquer sur un existant pour le déplacer.</span>
         </div>
       )}
+
+      </div>
 
       {/* ── Canvas ── */}
       <div ref={canvasWrapRef} style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
@@ -2568,13 +2617,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
               onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
               onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
-              onContextMenu={e => e.preventDefault()}/>
+              onContextMenu={e => { e.preventDefault(); finishPoly(); }}/>
             {vt.z > 1.05 && (
               <button
                 onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}
                 onClick={() => setVt({ z:1, px:0, py:0 })}
                 style={{ position:'absolute',top:8,right:8,background:'rgba(0,0,0,0.72)',border:'none',color:'white',borderRadius:8,padding:'5px 11px',fontSize:11,fontWeight:700,cursor:'pointer',zIndex:5,letterSpacing:0.3 }}>
                 ×{vt.z.toFixed(1)} ↺
+              </button>
+            )}
+            {/* Bouton « Terminer » visible dès qu'une polyligne/zone en cours peut être terminée. */}
+            {tool === 'shape' && (shapeTool === 'polyline' || shapeTool === 'poly') && polyPts.length >= polyMinPts && (
+              <button onClick={finishPoly}
+                style={{ position:'absolute', top:8, left:8, zIndex:6, background:DA.red, color:'white', border:'none', borderRadius:9,
+                  padding:'8px 14px', fontSize:13, fontWeight:800, cursor:'pointer', boxShadow:'0 3px 12px rgba(0,0,0,0.45)' }}>
+                ✓ {shapeTool === 'polyline' ? 'Terminer la ligne' : 'Fermer la zone'}
               </button>
             )}
             {/* Saisie inline — apparaît directement au point de tap */}
@@ -2663,16 +2720,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   );
 });
 
-function SymMiniCanvas({ sm, color }) {
+// `size` = taille affichée (40 par défaut, plus grand sur PC). Le dessin reste dans un repère
+// 40×40 mis à l'échelle → net quelle que soit la taille (et la densité d'écran).
+function SymMiniCanvas({ sm, color, size = 40 }) {
   const canvasRef = useRef(null);
+  const k = (size / 40) * (typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1);
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !sm?.draw) return;
     const ctx = cv.getContext('2d');
+    ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.clearRect(0, 0, 40, 40);
     sm.draw(ctx, 20, 20, 1, color);
-  }, [sm, color]);
-  return <canvas ref={canvasRef} width={40} height={40} style={{ display:'block', width:40, height:40 }} />;
+  }, [sm, color, k]);
+  return <canvas ref={canvasRef} width={Math.round(40 * k)} height={Math.round(40 * k)} style={{ display:'block', width:size, height:size }} />;
 }
 
 export default Annotator;
