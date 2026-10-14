@@ -75,8 +75,24 @@ describe('Costar — réponse IA', () => {
   it('points perdus : la note = 10 − total, chaque retrait justifié', () => {
     const r = parseCostarReply(JSON.stringify({ note: 9, points_perdus: [{ points: 2, raison: 'Obs 3 : cause non argumentée' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou' }, { points: 2, raison: '' }] }));
     expect(r.note).toBe(7); // 10 − 2 − 1 (la ligne sans raison est ignorée), pas le 9 annoncé
-    expect(r.pertes).toEqual([{ points: 2, raison: 'Obs 3 : cause non argumentée' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou' }]);
+    expect(r.pertes).toEqual([{ points: 2, raison: 'Obs 3 : cause non argumentée', citation: '' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou', citation: '' }]);
     expect(parseCostarReply('{"points_perdus":[]}').note).toBe(10);
+  });
+
+  it('garde-fou : un point retiré sans citation EXACTE du rapport est annulé', () => {
+    const src = "[Obs 1] Fissure limon\n  Fisure traversante au 2e, à surveiller.\n[Obs 2] Plancher\n  Flèche visible, l’étaiement est à prévoir.";
+    const reply = JSON.stringify({ points_perdus: [
+      { points: 1, raison: 'Faute', citation: 'Fisure traversante' },                 // présent → compte
+      { points: 2, raison: 'Sur-interprétation', citation: 'risque d’effondrement' }, // inventé → annulé
+      { points: 1, raison: 'Flou', citation: '« à surveiller. »' },                  // guillemets/ponctuation tolérés
+      { points: 1, raison: 'Apostrophe', citation: "l'étaiement est … prévoir" },     // ’ vs ' et morceaux « … »
+      { points: 1, raison: 'Sans citation' },                                         // pas de preuve → annulé
+    ] });
+    const r = parseCostarReply(reply, src);
+    expect(r.pertes.map(x => x.raison)).toEqual(['Faute', 'Flou', 'Apostrophe']);
+    expect(r.note).toBe(7);
+    // Fautes corrigées : la citation n'existe plus → plus de pénalité (retour Thomas : 9 → 5).
+    expect(parseCostarReply(reply, src.replace('Fisure', 'Fissure')).note).toBe(8);
   });
 
   it('réponse illisible → null', () => {

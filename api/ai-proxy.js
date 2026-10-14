@@ -48,6 +48,7 @@ async function callClaude(model, payload, apiKey, maxTokens, timeoutMs = 55000) 
       messages: payload.messages || [],
     };
     if (payload.system) body.system = payload.system;
+    if (Number.isFinite(payload.temperature)) body.temperature = payload.temperature;
 
     const res = await fetch(ANTHROPIC_API, {
       method: 'POST',
@@ -102,7 +103,8 @@ async function callMistral(payload, apiKey, maxTokens, budget) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const body = { model, messages, max_tokens: maxTokens, ...(payload.json ? { response_format: { type: 'json_object' } } : {}) };
+      const body = { model, messages, max_tokens: maxTokens, ...(payload.json ? { response_format: { type: 'json_object' } } : {}),
+        ...(Number.isFinite(payload.temperature) ? { temperature: payload.temperature } : {}) };
       const res = await fetch(MISTRAL_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -188,6 +190,8 @@ async function callGemini(model, payload, apiKey, maxTokens, timeoutMs = 55000, 
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const genCfg = { maxOutputTokens: maxTokens };
+    // Température demandée (ex. Costar : basse → même rapport = même note, pas de loterie).
+    if (Number.isFinite(payload.temperature)) genCfg.temperature = payload.temperature;
     // Coupe la « réflexion » (thinking) → réponse rapide. Valide sur Flash (budget 0), refusé par
     // Pro (400) → le handler réessaie alors sans ce réglage. N'activer que quand demandé (Flash).
     if (disableThinking) genCfg.thinkingConfig = { thinkingBudget: 0 };

@@ -90,3 +90,14 @@ describe('proxy IA — transparence du moteur', () => {
     expect(res.body._fallbackFrom).toBeUndefined();
   });
 });
+
+describe('proxy IA — température', () => {
+  it('température demandée transmise au moteur (Costar : note stable)', async () => {
+    const bodies = [];
+    vi.stubGlobal('fetch', vi.fn((url, opts) => { bodies.push(JSON.parse(opts.body)); return ok(MISTRAL_OK); }));
+    const { done } = call({ provider: 'mistral', temperature: 0.1, max_tokens: 500, messages: [{ role: 'user', content: 'x' }] });
+    await vi.advanceTimersByTimeAsync(100);
+    await done;
+    expect(bodies[0].temperature).toBe(0.1);
+  });
+});

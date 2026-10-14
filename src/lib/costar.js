@@ -118,9 +118,10 @@ NOTE : pars de 10 et retire des points UNIQUEMENT pour les défauts ci-dessous, 
 - fautes d'orthographe ou de grammaire : -1 si elles sont plusieurs, -2 si elles gênent vraiment la lecture ;
 - erreur technique manifeste ou contradiction nette entre deux textes : -1 à -2.
 INTERDIT de retirer des points pour : un manque de précision (dimensions, mesures, cause probable, témoins, délais, investigations), l'absence de chiffrage, un titre manquant, une observation courte, la longueur, une conclusion absente, la mise en page, les champs de formulaire, les photos. Le manque de précision va dans « ameliorer » sous forme de suggestion, sans retirer de point. Regroupe un même défaut répété en UNE seule ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide, 10/10.
+PREUVE OBLIGATOIRE : chaque point retiré doit citer, dans "citation", l'extrait du rapport COPIÉ MOT POUR MOT (même orthographe, même ponctuation) où se trouve le défaut. L'app vérifie : un retrait dont la citation ne figure pas dans le rapport est ANNULÉ. Pour une faute, cite le mot fautif tel qu'il est écrit. Si tu ne peux pas citer le texte exact, ne retire pas de point. Sois constant : le même rapport doit toujours recevoir la même note.
 
 RÉPONSE : UNIQUEMENT un objet JSON valide, sans texte autour :
-{"points_perdus": [{"points": 2, "raison": "Obs N : le défaut de fond précis, en une phrase"}], "verdict": "une phrase courte et punchy (20 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["0 à 5 suggestions concrètes (« tu pourrais… »), chacune avec l'observation visée, sans exiger de chiffrage ni de mesure"], "coince": ["0 à 3 vrais problèmes à corriger AVANT envoi (risque sans action, phrase incompréhensible, erreur manifeste), liste vide si rien de grave"], "priorite": "LA chose à faire en premier avant d'envoyer (1 phrase)", "reecriture": {"obs": "Obs N ou titre de l'observation la plus faible", "avant": "la phrase actuelle, citée telle quelle", "apres": "ta version réécrite, complète et professionnelle (sans inventer de mesure : mets [à compléter] si une donnée manque)"}, "blague": "une blague de castor québécois bienveillante et vraiment drôle, en lien avec CE rapport (1 à 2 phrases, pour finir sur un sourire)"}
+{"points_perdus": [{"points": 1, "raison": "Obs N : le défaut précis, en une phrase", "citation": "l'extrait EXACT du rapport qui pose problème, copié mot pour mot (4 à 15 mots)"}], "verdict": "une phrase courte et punchy (20 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["0 à 5 suggestions concrètes (« tu pourrais… »), chacune avec l'observation visée, sans exiger de chiffrage ni de mesure"], "coince": ["0 à 3 vrais problèmes à corriger AVANT envoi (risque sans action, phrase incompréhensible, erreur manifeste), liste vide si rien de grave"], "priorite": "LA chose à faire en premier avant d'envoyer (1 phrase)", "reecriture": {"obs": "Obs N ou titre de l'observation la plus faible", "avant": "la phrase actuelle, citée telle quelle", "apres": "ta version réécrite, complète et professionnelle (sans inventer de mesure : mets [à compléter] si une donnée manque)"}, "blague": "une blague de castor québécois bienveillante et vraiment drôle, en lien avec CE rapport (1 à 2 phrases, pour finir sur un sourire)"}
 Chaque point : 1 à 2 phrases maximum. Si aucune observation n'a de texte à réécrire, mets "reecriture": null.`;
 
 const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? [v] : []))
@@ -128,8 +129,21 @@ const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim()
 
 const clean = (v) => (typeof v === 'string' ? v : '').replace(/\s*—\s*/g, ', ').trim();
 
+// Normalisation pour comparer une citation au rapport (apostrophes, guillemets, espaces, casse).
+const norm = (t) => String(t || '').toLowerCase()
+  .replace(/[’‘`´]/g, "'").replace(/[«»“”"]/g, '').replace(/…/g, '...')
+  .replace(/\s+/g, ' ').trim();
+// La citation figure-t-elle dans le rapport ? (morceaux séparés par « … » acceptés)
+export function citationInReport(citation, sourceNorm) {
+  const parts = norm(citation).split('...').map(x => x.replace(/^[\s.,;:!?'()-]+|[\s.,;:!?'()-]+$/g, '')).filter(x => x.length >= 3);
+  return parts.length > 0 && parts.every(x => sourceNorm.includes(x));
+}
+
 // Lit la réponse du modèle (JSON pur, ou JSON entouré de texte / de balises ```).
-export function parseCostarReply(raw) {
+// `source` (texte envoyé à l'IA) : si fourni, un point retiré dont la citation n'existe pas
+// dans le rapport est ANNULÉ (garde-fou contre la sur-interprétation, retour Thomas : « j'ai
+// corrigé mes fautes, j'étais à 9 et il m'a mis 5 »).
+export function parseCostarReply(raw, source = null) {
   if (!raw || typeof raw !== 'string') return null;
   let s = raw.replace(/```(?:json)?/gi, '').trim();
   let obj = null;
@@ -139,9 +153,10 @@ export function parseCostarReply(raw) {
   }
   if (!obj || typeof obj !== 'object') return null;
   // Points retirés, chacun justifié : la note = 10 − total (cohérente avec ce qui est affiché).
+  const srcN = source != null ? norm(source) : null;
   const pertes = Array.isArray(obj.points_perdus)
-    ? obj.points_perdus.map(x => ({ points: Math.max(1, Math.min(5, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison) }))
-        .filter(x => x.raison).slice(0, 8)
+    ? obj.points_perdus.map(x => ({ points: Math.max(1, Math.min(3, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison), citation: clean(x?.citation) }))
+        .filter(x => x.raison && (srcN == null || citationInReport(x.citation, srcN))).slice(0, 8)
     : null;
   const note = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
   if (!Number.isFinite(note)) return null;

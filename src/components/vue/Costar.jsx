@@ -143,6 +143,7 @@ export default function Costar({ projet, fixed = false }) {
         // Pas de « réflexion » Gemini : elle doublait le temps de réponse et faisait dépasser le
         // délai quand Gemini est chargé (« Gemini ne répond pas ») ; la consigne détaillée suffit.
         max_tokens: 4096,
+        temperature: 0.1, // même rapport → même note (pas de loterie d'un essai à l'autre)
         json: true,
         system: COSTAR_SYSTEM,
         messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.\n\n${digest.text}` }],
@@ -151,7 +152,7 @@ export default function Costar({ projet, fixed = false }) {
       });
       if (ctrl.signal.aborted) return;
       const raw = (d.content || []).map(c => c?.text || '').join('');
-      const parsed = parseCostarReply(raw);
+      const parsed = parseCostarReply(raw, digest.text); // points sans citation exacte = annulés
       if (!parsed) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
       setReview(parsed);
       setQuip(scoreQuip(parsed.note));
@@ -228,7 +229,7 @@ export default function Costar({ projet, fixed = false }) {
                     {review.pertes.map((x, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
                         <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#B91C1C', background: '#FEE2E2', borderRadius: 6, padding: '0 4px' }}>−{x.points}</span>
-                        <span>{x.raison}</span>
+                        <span>{x.raison}{x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL }}>« {x.citation} »</span>}</span>
                       </div>
                     ))}
                   </div>
