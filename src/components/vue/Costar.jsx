@@ -235,7 +235,7 @@ export default function Costar({ projet, fixed = false }) {
                 </div>
               )}
               <Section title="Ce qui est bien" color="#15803D" items={review.bien}/>
-              <Section title="À améliorer" color="#C2410C" items={review.ameliorer}/>
+              <Section title="Suggestions (sans pénalité)" color="#C2410C" items={review.ameliorer}/>
               <Section title="Ce qui coince" color="#B91C1C" items={review.coince}/>
               {review.priorite && (
                 <div style={{ marginTop: 10, padding: '8px 10px', background: '#FEF2F2', borderRadius: 10, fontSize: 12.5, color: DA.black, lineHeight: 1.45 }}>
