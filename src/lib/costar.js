@@ -57,12 +57,18 @@ export function buildReportDigest(projet, { maxChars = 90000 } = {}) {
     lines.push('');
     lines.push(`=== ZONE : ${zoneLabel(locs, l) || '(sans nom)'} ===`);
     items.forEach((it) => {
-      n++;
-      lines.push(`[Obs ${n}] ${it.titre?.trim() || '(sans titre)'}`);
+      // Seul ce qui est ÉCRIT compte : pas de « (sans titre) » ni « (pas de texte) » à
+      // reprocher ; une observation totalement vide n'est pas envoyée du tout.
+      const titre = it.titre?.trim() || '';
       const txt = plainText(it.commentaire);
-      const idx = lines.length;
-      lines.push(`  ${txt || '(pas de texte)'}`);
-      if (txt.length > 1500) longComments.push({ idx, txt });
+      if (!titre && !txt) return;
+      n++;
+      lines.push(titre ? `[Obs ${n}] ${titre}` : `[Obs ${n}]`);
+      if (txt) {
+        const idx = lines.length;
+        lines.push(`  ${txt}`);
+        if (txt.length > 1500) longComments.push({ idx, txt });
+      }
     });
   });
 
@@ -93,7 +99,7 @@ TA MÉTHODE DE RELECTURE (dans cet ordre)
 3. Précision des constats : pour chaque désordre important, le lecteur doit savoir QUOI (nature, dimensions : ouverture de fissure en mm, longueur, orientation, flèche, surface), OÙ (élément, niveau, position précise), ÉVOLUTIF OU NON (témoins, comparaison avec avant), POURQUOI (cause probable) et QUE FAIRE (investigation, réparation, surveillance, par qui, sous quel délai). Signale précisément ce qui manque dans le texte.
 4. Cohérence entre les textes : contradictions d'une zone à l'autre, constats répétés mot pour mot, conclusion qui ne reflète pas les constats graves.
 5. Rédaction : fautes, style télégraphique illisible, jargon non expliqué pour un maître d'ouvrage, formulations floues (« à surveiller » sans dire quoi ni comment, « RAS » sur un désordre décrit, « voir photo » à la place d'une description, « reprendre » sans dire comment).
-Une observation sans texte : signale-le au plus UNE fois, en groupe, sans t'y attarder.
+Tu ne juges QUE ce qui est écrit. Ne reproche jamais (et ne mentionne même pas) : un titre absent, une observation courte ou réduite à son titre, une zone vide, une conclusion absente, la mise en forme. Une observation courte n'est un problème QUE si elle décrit un désordre important sans le minimum utile (quoi, où, que faire).
 Sois PRÉCIS : cite les zones et les observations (« Obs N » ou titre) ; quand tu critiques une phrase, cite-la entre guillemets. Zéro généralité creuse du genre « ajoute plus de détails ». Si quelque chose est bien fait, dis-le aussi précisément.
 
 TON
@@ -103,16 +109,17 @@ TON
 - MAIS le fond reste 100 % PRO : l'humour est dans la façon de dire, jamais dans le diagnostic. Chaque point reste précis, technique et actionnable ; aucune blague ne doit masquer ou minimiser un vrai problème structurel. Le reste en français standard impeccable.
 - N'utilise jamais le tiret long (—).
 
-NOTE (entier de 0 à 10), calibrée et exigeante :
-- 9-10 : exemplaire, prêt à envoyer tel quel (rare).
-- 7-8 : solide, quelques retouches.
-- 5-6 : correct mais des manques réels.
-- 3-4 : faible, à reprendre sérieusement.
-- 0-2 : quasi vide ou inexploitable.
-Un risque pour la sécurité décrit sans action immédiate dans le texte plafonne la note à 5. La note ne dépend QUE du fond des textes.
+NOTE : pars de 10 et retire des points UNIQUEMENT pour des défauts de FOND, chacun listé et justifié dans "points_perdus" (la note affichée = 10 moins le total, l'app fait le calcul). Barème indicatif, par défaut :
+- diagnostic douteux, cause invraisemblable, préconisation inadaptée ou disproportionnée : -2 à -3 ;
+- risque pour la sécurité décrit sans action immédiate dans le texte : -3 ;
+- désordre important décrit sans le minimum utile (dimensions, cause probable, que faire) : -1 à -2 ;
+- contradiction entre textes, conclusion qui oublie un constat grave : -1 à -2 ;
+- formulation floue qui rend un constat inexploitable (« à surveiller » sans dire quoi ni comment, « voir photo », « reprendre » sans dire comment) : -1 ;
+- fautes ou style si nombreux qu'ils gênent la lecture : -1.
+INTERDIT de retirer des points pour : titre manquant, observation courte, longueur du rapport, conclusion absente, mise en page, champs de formulaire, photos. Regroupe un même défaut répété en UNE seule ligne. Rien de grave → liste vide (10/10, ça arrive).
 
 RÉPONSE : UNIQUEMENT un objet JSON valide, sans texte autour :
-{"note": 7, "verdict": "une phrase courte et punchy (20 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["2 à 6 améliorations concrètes et actionnables, chacune avec l'observation visée"], "coince": ["0 à 4 vrais problèmes à corriger AVANT envoi, liste vide si rien de grave"], "priorite": "LA chose à faire en premier avant d'envoyer (1 phrase)", "reecriture": {"obs": "Obs N ou titre de l'observation la plus faible", "avant": "la phrase actuelle, citée telle quelle", "apres": "ta version réécrite, complète et professionnelle (sans inventer de mesure : mets [à compléter] si une donnée manque)"}, "blague": "une blague de castor québécois bienveillante et vraiment drôle, en lien avec CE rapport (1 à 2 phrases, pour finir sur un sourire)"}
+{"points_perdus": [{"points": 2, "raison": "Obs N : le défaut de fond précis, en une phrase"}], "verdict": "une phrase courte et punchy (20 mots max) qui résume, avec ta touche québécoise", "bien": ["1 à 4 points forts concrets"], "ameliorer": ["2 à 6 améliorations concrètes et actionnables, chacune avec l'observation visée"], "coince": ["0 à 4 vrais problèmes à corriger AVANT envoi, liste vide si rien de grave"], "priorite": "LA chose à faire en premier avant d'envoyer (1 phrase)", "reecriture": {"obs": "Obs N ou titre de l'observation la plus faible", "avant": "la phrase actuelle, citée telle quelle", "apres": "ta version réécrite, complète et professionnelle (sans inventer de mesure : mets [à compléter] si une donnée manque)"}, "blague": "une blague de castor québécois bienveillante et vraiment drôle, en lien avec CE rapport (1 à 2 phrases, pour finir sur un sourire)"}
 Chaque point : 1 à 2 phrases maximum. Si aucune observation n'a de texte à réécrire, mets "reecriture": null.`;
 
 const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? [v] : []))
@@ -130,12 +137,18 @@ export function parseCostarReply(raw) {
     if (a >= 0 && b > a) { try { obj = JSON.parse(s.slice(a, b + 1)); } catch { obj = null; } }
   }
   if (!obj || typeof obj !== 'object') return null;
-  const note = Math.round(Number(obj.note));
+  // Points retirés, chacun justifié : la note = 10 − total (cohérente avec ce qui est affiché).
+  const pertes = Array.isArray(obj.points_perdus)
+    ? obj.points_perdus.map(x => ({ points: Math.max(1, Math.min(5, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison) }))
+        .filter(x => x.raison).slice(0, 8)
+    : null;
+  const note = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
   if (!Number.isFinite(note)) return null;
   const r = obj.reecriture && typeof obj.reecriture === 'object' ? obj.reecriture : null;
   const rw = r ? { obs: clean(r.obs), avant: clean(r.avant), apres: clean(r.apres) } : null;
   return {
     note: Math.max(0, Math.min(10, note)),
+    pertes: pertes || [],
     verdict: String(obj.verdict || '').replace(/\s*—\s*/g, ', ').trim(),
     bien: asList(obj.bien),
     ameliorer: asList(obj.ameliorer),

@@ -17,14 +17,15 @@ const projet = {
 describe('Costar — lecture du rapport', () => {
   it('le digest contient le FOND du rapport (textes), sans les champs de formulaire', () => {
     const d = buildReportDigest(projet);
-    expect(d.observations).toBe(2);
+    expect(d.observations).toBe(1); // l'obs totalement vide de la Cave n'est pas envoyée
     expect(d.zones).toBe(2);
     expect(d.text).toContain('503_SDC_86RDCLERY');
     expect(d.text).toContain('[Obs 1] Fissure limon');
     expect(d.text).toContain('Fissure traversante au 2e.');
     expect(d.text).toContain('• surveiller');
-    expect(d.text).toContain('(sans titre)');
-    expect(d.text).toContain('(pas de texte)');
+    // Rien à reprocher sur la forme : pas de « (sans titre) » / « (pas de texte) », obs vide non envoyée.
+    expect(d.text).not.toContain('sans titre');
+    expect(d.text).not.toContain('pas de texte');
     expect(d.text).toContain('CONCLUSION : Travaux à planifier.');
     expect(d.text).not.toContain('ne doit pas apparaître');
     // Costar juge le fond : ni présences, ni urgence/suivi, ni photos, ni date (demande Thomas).
@@ -52,7 +53,7 @@ describe('Costar — lecture du rapport', () => {
 describe('Costar — réponse IA', () => {
   it('JSON pur', () => {
     const r = parseCostarReply('{"note":7,"verdict":"Tiguidou","bien":["a"],"ameliorer":["b","c"],"coince":[]}');
-    expect(r).toEqual({ note: 7, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
+    expect(r).toEqual({ note: 7, pertes: [], verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
   });
 
   it('JSON entouré de texte / balises, note bornée', () => {
@@ -69,6 +70,13 @@ describe('Costar — réponse IA', () => {
     expect(r.reecriture).toEqual({ obs: 'Obs 2', avant: 'fissure', apres: 'Fissure traversante de [à compléter] mm' });
     expect(parseCostarReply('{"note":5,"reecriture":null}').reecriture).toBeNull();
     expect(parseCostarReply('{"note":5,"reecriture":{"avant":"x"}}').reecriture).toBeNull(); // sans version réécrite → rien
+  });
+
+  it('points perdus : la note = 10 − total, chaque retrait justifié', () => {
+    const r = parseCostarReply(JSON.stringify({ note: 9, points_perdus: [{ points: 2, raison: 'Obs 3 : cause non argumentée' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou' }, { points: 2, raison: '' }] }));
+    expect(r.note).toBe(7); // 10 − 2 − 1 (la ligne sans raison est ignorée), pas le 9 annoncé
+    expect(r.pertes).toEqual([{ points: 2, raison: 'Obs 3 : cause non argumentée' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou' }]);
+    expect(parseCostarReply('{"points_perdus":[]}').note).toBe(10);
   });
 
   it('réponse illisible → null', () => {
