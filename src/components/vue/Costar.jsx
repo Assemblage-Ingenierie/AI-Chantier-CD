@@ -218,6 +218,22 @@ export default function Costar({ projet, fixed = false }) {
               {review.verdict && (
                 <p style={{ margin: '8px 0 0', fontSize: 13.5, fontWeight: 600, fontStyle: 'italic', color: DA.black, lineHeight: 1.4 }}>« {review.verdict} »</p>
               )}
+              {review.pertes?.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 800, color: '#B91C1C', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#B91C1C', flexShrink: 0 }}/>
+                    Où je t'ai enlevé des points
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {review.pertes.map((x, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
+                        <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#B91C1C', background: '#FEE2E2', borderRadius: 6, padding: '0 4px' }}>−{x.points}</span>
+                        <span>{x.raison}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <Section title="Ce qui est bien" color="#15803D" items={review.bien}/>
               <Section title="À améliorer" color="#C2410C" items={review.ameliorer}/>
               <Section title="Ce qui coince" color="#B91C1C" items={review.coince}/>
