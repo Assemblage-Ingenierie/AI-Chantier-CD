@@ -559,6 +559,12 @@ export async function hydrateChantierPhotos(chantierIds) {
         if (row.photo) continue;
         const slug = `${slugify(row.nom)}_${String(row.id).slice(0, 8)}`;
         const candidates = [`${slug}/cover/${row.id}.webp`, `${slug}/cover/${row.id}.jpg`, `cover_${row.id}/cover.webp`, `cover_${row.id}/cover.jpg`];
+        // Couvertures par contenu (…/cover/{id}/c<empreinte>.webp) : la plus récente du dossier.
+        try {
+          const { data: files } = await sb.storage.from('photos').list(`${slug}/cover/${row.id}`, { sortBy: { column: 'created_at', order: 'desc' } });
+          const f = (files || []).find(x => x?.name && x.metadata);
+          if (f) candidates.unshift(`${slug}/cover/${row.id}/${f.name}`);
+        } catch { /* dossier absent : candidats classiques */ }
         for (const cand of candidates) {
           const { data: sg, error: sgErr } = await sb.storage.from('photos').createSignedUrl(cand, SIGNED_URL_TTL);
           if (!sgErr && sg?.signedUrl) {
@@ -768,6 +774,14 @@ export async function migratePhotosToStorage(legacyPhotoIds) {
 // (`{slug}/{itemId}/{key}.{ext}`), donc ré-uploader la même photo écrase le même fichier
 // (upsert) au lieu de créer un nouveau chemin à chaque save (ancien `Date.now()` → fichiers
 // orphelins + storage_url différents indétectables par le dédoublonnage). Retourne le chemin.
+// Empreinte courte (FNV-1a 32 bits + longueur) d'une data URL : nom de fichier stable par contenu.
+export function contentKey(str) {
+  const s = String(str || '');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return `${(h >>> 0).toString(36)}${s.length.toString(36)}`;
+}
+
 async function uploadPhotoToStorage(sb, projectSlug, itemId, key, name, base64) {
   try {
     const resp = await fetch(base64);
@@ -1315,10 +1329,16 @@ async function saveRemote(ps, dirtyIds = null) {
     const slug = `${slugify(p.nom)}_${String(p.id).slice(0, 8)}`;
     const newCoverPath = `${slug}/cover/${p.id}.webp`;
 
-    // Migrer la photo couverture si c'est encore un base64 → Storage
+    // Migrer la photo couverture si c'est encore un base64 → Storage.
+    // ⚠️ INCIDENT 2026-10-15 « j'ai pris une photo pour la page de garde, elle a disparu » :
+    // le fichier était TOUJOURS écrit au même chemin (…/cover/{id}/0.webp, cache 1 an) → la
+    // nouvelle photo écrasait l'ancienne en base, mais l'URL (identique) servait l'ANCIENNE image
+    // depuis les caches. Désormais : un chemin PAR PHOTO (empreinte du contenu) → une nouvelle
+    // photo a une nouvelle adresse, l'ancienne n'est jamais écrasée (rien n'est perdu), et la
+    // même photo ré-envoyée retombe sur le même fichier (pas de doublons à chaque sauvegarde).
     let coverPhotoUrl = p.photo ?? null;
     if (coverPhotoUrl?.startsWith('data:')) {
-      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, 0, 'cover.webp', coverPhotoUrl);
+      const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, `c${contentKey(coverPhotoUrl)}`, 'cover.webp', coverPhotoUrl);
       if (uploaded) coverPhotoUrl = uploaded;
     }
 

@@ -201,3 +201,62 @@ describe('annotations de zone : un appareil périmé n\'efface plus celles ajout
     expect(dbAnnot('r4').paths).toBeUndefined();
   });
 });
+
+describe('archiver / réactiver — rien ne disparaît (incident 2026-10-15)', () => {
+  const archive = (ps, statut) => [{ ...ps[0], statut, updatedAt: new Date().toISOString() }];
+
+  it('archiver sur A, réactiver sur B (sans cache) puis recharger : observations, photos et annotations intactes', async () => {
+    const A = await device('A');
+    let ps = hydrate(await A.storage.loadData());
+    expect(await A.storage.saveData(archive(ps, 'archive'), null, DIRTY())).toBe(true);
+    expect(db.rows('aichantier_chantiers')[0].statut).toBe('archive');
+
+    // B : appareil neuf, AUCUN cache local — le projet archivé arrive AVEC ses observations.
+    const B = await device('B');
+    let pb = await B.storage.loadData();
+    expect(pb[0].statut).toBe('archive');
+    expect(locsOf(pb).flatMap(l => l.items.map(i => i.id)).sort()).toEqual(['a', 'b', 'c']);
+
+    // Réactivation sur B (photos pas encore chargées) → sauvegarde : rien n'est supprimé.
+    expect(await B.storage.saveData(archive(pb, 'en_cours'), null, DIRTY())).toBe(true);
+    expect(itemIds()).toEqual(['a', 'b', 'c']);
+    expect(photoIds()).toEqual(['pa', 'pb1', 'pb2']);
+    expect(lostData()).toEqual([]);
+
+    // Rechargement sur A : tout est là, annotations comprises.
+    const A2 = await device('A');
+    const back = await A2.storage.loadData();
+    expect(back[0].statut).toBe('en_cours');
+    expect(locsOf(back).flatMap(l => l.items.map(i => i.id)).sort()).toEqual(['a', 'b', 'c']);
+    expect(locsOf(back).find(l => l.id === 'scap').planAnnotations.paths).toHaveLength(2);
+  });
+
+  it('ancien état local VIDE (cache sans observations) réactivé puis rechargé : la base n\'est jamais vidée', async () => {
+    const A = await device('A');
+    let ps = await A.storage.loadData();
+    const empty = withLocs(ps, locsOf(ps).map(l => ({ ...l, items: [] })));
+    // Fusion « local plus récent / dirty » avec l'état vide → le garde-fou reprend les observations.
+    const { allMerged } = A.mergeWithLocal(ps, archive(empty, 'en_cours'), DIRTY(), new Set(['P']), new Set());
+    expect(locsOf(allMerged).flatMap(l => l.items.map(i => i.id)).sort()).toEqual(['a', 'b', 'c']);
+    expect(await A.storage.saveData(allMerged, null, DIRTY())).toBe(true);
+    expect(itemIds()).toEqual(['a', 'b', 'c']);
+    expect(photoIds()).toEqual(['pa', 'pb1', 'pb2']);
+    expect(lostData()).toEqual([]);
+  });
+});
+
+describe('page de garde — une nouvelle photo ne « disparaît » plus (incident 2026-10-15)', () => {
+  it('chaque photo de couverture a son propre fichier ; la même photo ré-envoyée garde le même', async () => {
+    const A = await device('A');
+    const ps = await A.storage.loadData();
+    const img = (c) => `data:image/webp;base64,${c.repeat(40)}`;
+    expect(await A.storage.saveData([{ ...ps[0], photo: img('A') }], null, DIRTY())).toBe(true);
+    const first = db.rows('aichantier_chantiers')[0].photo;
+    expect(first).toMatch(/\/cover\/P\/c[0-9a-z]+\.webp$/);
+    expect(await A.storage.saveData([{ ...ps[0], photo: img('A') }], null, DIRTY())).toBe(true);
+    expect(db.rows('aichantier_chantiers')[0].photo).toBe(first); // même contenu → même fichier
+    expect(await A.storage.saveData([{ ...ps[0], photo: img('B') }], null, DIRTY())).toBe(true);
+    const second = db.rows('aichantier_chantiers')[0].photo;
+    expect(second).not.toBe(first); // nouvelle photo → nouvelle adresse (plus d'ancienne image en cache)
+  });
+});
