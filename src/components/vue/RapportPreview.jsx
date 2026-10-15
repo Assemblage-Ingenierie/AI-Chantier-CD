@@ -1015,7 +1015,7 @@ function imgNaturalWidth(src) {
 const _planImgCache = new Map();
 const _PLAN_IMG_CACHE_MAX = 30;
 
-function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null, onOrient = null }) {
+function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNumByPath = null, onOrient = null, fill = false }) {
   const exported = annotations?.exported;
   const paths    = annotations?.paths;
   const deferredAnnotScale = React.useDeferredValue(annotScale);
@@ -1133,6 +1133,11 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
     </div>
   );
   if (!renderedImg) return null;
+  // fill : l'image remplit son conteneur (page « plan en grand » paysage), sans cadre ni plafond.
+  if (fill) return (
+    <img src={renderedImg} alt={alt || 'Plan'} data-role="plan"
+      style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', display:'block' }}/>
+  );
   const maxH = isPortrait ? PLAN_PORTRAIT_MAXH : 340;
   return (
     <div style={{ borderTop:`1px solid ${DA.border}`, background:'#f9f9f9', maxHeight:maxH, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -2122,7 +2127,42 @@ function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPages, loa
   );
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+// ── Page PLAN EN GRAND (A4 PAYSAGE) ─────────────────────────────────────────────────────
+// Option « Plan annoté en paysage en fin de rapport » (demande Thomas) : le plan annoté occupe
+// toute une page A4 PAYSAGE (891×630 px dans le repère de l'aperçu), avec sa légende.
+function LandscapePlanPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath }) {
+  const paths = plan.annotations?.paths || [];
+  const usedIds = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
+  const legendSy = getAllSymbols().filter(s => usedIds.has(s.id));
+  const hasVp = paths.some(p => p.type === 'viewpoint');
+  const dateStr = projet.dateVisite
+    ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
+    : new Date().toLocaleDateString('fr-FR');
+  return (
+    <div style={{ width:PH, height:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', overflow:'hidden', fontFamily:"'Open Sans', sans-serif", display:'flex', flexDirection:'column' }}>
+      <HdrBar projet={projet} dateStr={dateStr}/>
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:`8px ${MX}px 6px`, borderBottom:`2px solid ${DA.red}`, margin:`0 ${MX}px`, paddingLeft:0, paddingRight:0 }}>
+        <span style={{ fontSize:9, fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>{title}</span>
+        {(legendSy.length > 0 || hasVp) && (
+          <span style={{ marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:'2px 12px', justifyContent:'flex-end' }}>
+            {legendSy.map(s => (
+              <span key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D' }}><SymbolIcon sym={s} size={13}/>{s.label}</span>
+            ))}
+            {hasVp && <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D' }}><ViewpointIcon size={13}/>Vue photo</span>}
+          </span>
+        )}
+      </div>
+      <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} fill/>
+      </div>
+      <div style={{ position:'absolute', top:PW - FTR, left:0, right:0 }}>
+        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+      </div>
+    </div>
+  );
+}
+
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2251,6 +2291,25 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null),
     [allBlocks, ppl, breaks, measuredH]
   );
+  // Plans du rapport repris EN GRAND sur une page A4 paysage chacun, en fin de rapport (option).
+  // Mêmes plans que ceux affichés dans le rapport (zones + plans d'observation), mêmes annotations.
+  const landscapePlans = useMemo(() => {
+    if (!planPagesPaysage) return [];
+    const lib = projet.planLibrary || [];
+    const out = [];
+    for (const b of allBlocks) {
+      if (b.type === 'plan') {
+        const list = (b.plansSubset ?? splitPlanGroups(b.loc, lib, new Set()).flatMap(g => g.plans))
+          .filter(p => p.bg || p.planId || p.annotations?.exported);
+        list.forEach((p, k) => out.push({ key: `${b.id}-${k}`, plan: p,
+          title: `Plan — ${b.loc.nom}${list.length > 1 ? ` (${k + 1}/${list.length})` : ''}` }));
+      } else if (b.type === 'itemplan') {
+        out.push({ key: b.id, plan: b.plan, title: b.planNom || `Plan — ${b.item?.titre || 'observation'}` });
+      }
+    }
+    return out;
+  }, [planPagesPaysage, allBlocks, projet.planLibrary]);
+
   const containerRef = useRef();
   const scrollRef    = useRef();
   const pageRefs     = useRef([]);
@@ -2321,7 +2380,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annexList, projet.id]);
 
-  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + annexPageCount;
+  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length + annexPageCount;
 
   // Suivi de la page courante via scroll
   useEffect(() => {
@@ -2477,14 +2536,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     toPdfBlob: async () => {
       const pages = pageRefs.current.filter(Boolean);
       if (!pages.length) return null;
+      const land = pages.map(el => el.dataset?.landscape === '1'); // pages A4 PAYSAGE (plans en grand)
       const clones = await encodePageClones(pages);
       const [{ toJpeg }, { PDFDocument }] = await Promise.all([import('html-to-image'), import('pdf-lib')]);
       const host = document.createElement('div');
       host.setAttribute('aria-hidden', 'true');
-      host.style.cssText = 'position:fixed;left:-20000px;top:0;width:630px;pointer-events:none;z-index:-1;';
-      const boxes = clones.map(c => {
+      host.style.cssText = 'position:fixed;left:-20000px;top:0;width:891px;pointer-events:none;z-index:-1;';
+      const boxes = clones.map((c, i) => {
         const box = document.createElement('div');
-        box.style.cssText = "width:630px;height:891px;overflow:hidden;position:relative;background:#fff;box-sizing:border-box;font-family:'Open Sans','Inter',system-ui,sans-serif;";
+        box.style.cssText = `width:${land[i] ? 891 : 630}px;height:${land[i] ? 630 : 891}px;overflow:hidden;position:relative;background:#fff;box-sizing:border-box;font-family:'Open Sans','Inter',system-ui,sans-serif;`;
         box.innerHTML = c.innerHTML;
         host.appendChild(box);
         return box;
@@ -2501,8 +2561,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         let shots = null;
         for (const [ratio, quality] of TIERS) {
           shots = [];
-          for (const box of boxes) {
-            shots.push(await toJpeg(box, { pixelRatio: ratio, quality, backgroundColor: '#ffffff', width: 630, height: 891, cacheBust: false, imagePlaceholder: BLANK_PX }));
+          for (const [i, box] of boxes.entries()) {
+            shots.push(await toJpeg(box, { pixelRatio: ratio, quality, backgroundColor: '#ffffff', width: land[i] ? 891 : 630, height: land[i] ? 630 : 891, cacheBust: false, imagePlaceholder: BLANK_PX }));
           }
           const bytes = shots.reduce((t, d) => t + Math.round((d.length - d.indexOf(',') - 1) * 0.75), 0);
           console.log(`[PDF zip] ${boxes.length} pages ~${(bytes / 1048576).toFixed(1)} Mo (×${ratio}, q${quality})`);
@@ -2511,10 +2571,11 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         const pdf = await PDFDocument.create();
         pdf.setTitle(projet.visiteNom ? `${projet.nom || 'Projet'} - CR ${projet.visiteNom}` : `${projet.nom || 'Projet'} - CR`);
         const A4W = 595.28, A4H = 841.89;
-        for (const d of shots) {
+        for (const [i, d] of shots.entries()) {
           const jpg = await pdf.embedJpg(d);
-          const page = pdf.addPage([A4W, A4H]);
-          page.drawImage(jpg, { x: 0, y: 0, width: A4W, height: A4H });
+          const [w, h] = land[i] ? [A4H, A4W] : [A4W, A4H];
+          const page = pdf.addPage([w, h]);
+          page.drawImage(jpg, { x: 0, y: 0, width: w, height: h });
         }
         const bytes = await pdf.save();
         return new Blob([bytes], { type: 'application/pdf' });
@@ -2529,9 +2590,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       const win = window.open('', '_blank');
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
+      const land = pages.map(el => el.dataset?.landscape === '1'); // pages A4 PAYSAGE (plans en grand)
       const clones = await encodePageClones(pages);
 
-      const pagesHtml = clones.map(c => `<div class="pdf-page">${c.innerHTML}</div>`).join('\n');
+      const pagesHtml = clones.map((c, i) => `<div class="pdf-page${land[i] ? ' land' : ''}">${c.innerHTML}</div>`).join('\n');
 
       // CSS : 1px CSS = 1/96 inch, 1mm = 3.7795px → PW=630px = 166.7mm.
       // On scale html à 210mm/630px ≈ 1.2597 pour A4 exact.
@@ -2545,10 +2607,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800&family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   @page { size: A4 portrait; margin: 0; }
+  @page land { size: A4 landscape; margin: 0; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; font-family: 'Open Sans', 'Inter', system-ui, -apple-system, sans-serif; }
   html, body { margin: 0; padding: 0; background: white; }
   .pdf-page { width: 630px; height: 891px; overflow: hidden; position: relative; display: block; page-break-after: always; break-after: page; }
   .pdf-page:last-child { page-break-after: avoid; break-after: avoid; }
+  .pdf-page.land { width: 891px; height: 630px; page: land; }
   @media screen { body { background: #555; display: flex; flex-direction: column; align-items: center; padding: 20px 0; gap: 16px; } .pdf-page { box-shadow: 0 2px 20px rgba(0,0,0,0.35); } }
   @media print { html { zoom: 1.2597; } body { background: white; padding: 0; } .pdf-page { box-shadow: none; } }
 </style>
@@ -2879,9 +2943,25 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           );
         })}
 
+        {/* ── PLANS EN GRAND (A4 paysage) — affichés réduits dans l'aperçu, exportés en paysage ── */}
+        {landscapePlans.map((lp, k) => {
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + k;
+          const pageNum = pageIdx + 1;
+          return (
+            <React.Fragment key={`land-${lp.key}`}>
+              <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
+              <div style={{ zoom: PW / PH }}>
+                <div ref={el => { pageRefs.current[pageIdx] = el; }} data-landscape="1">
+                  <LandscapePlanPage plan={lp.plan} title={lp.title} projet={projet} pageNum={pageNum} totalPages={totalPages} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
         {/* ── ANNEXES : page de garde récap + une page par page de PDF joint ── */}
         {annexPageCount > 0 && (() => {
-          const base = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length;
+          const base = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length;
           return (
             <React.Fragment key="annexes">
               {/* Page de garde « Annexes » (récap des noms) */}

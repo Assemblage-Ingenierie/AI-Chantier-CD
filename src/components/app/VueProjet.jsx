@@ -140,7 +140,7 @@ function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
   'photosParLigne','plansEnFin','plansNoBreak','rapportPageBreaks','includeTableauRecap',
-  'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes',
+  'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes','planPagesPaysage',
 ]);
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
