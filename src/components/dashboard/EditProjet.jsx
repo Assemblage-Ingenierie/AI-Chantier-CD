@@ -6,7 +6,7 @@ import IngenieursEditor from '../ui/IngenieursEditor.jsx';
 import { CoverSourcesHint } from './NewProjet.jsx';
 import { pdfFileToImageDataUrl } from '../../lib/pdfUtils.js';
 import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
-import { getAffaireNum, setAffaireNum } from '../../lib/driveUpload.js';
+import { getAffaireNum, setAffaireNum, uploadToDrive } from '../../lib/driveUpload.js';
 
 const FIELDS = [
   { k: 'nom',          l: 'Nom du projet *',  ph: 'Ex: Résidence Les Acacias'     },
@@ -37,7 +37,29 @@ export default function EditProjet({ projet, onClose, onSave }) {
   };
   useEffect(() => releaseOriginal, []);
 
-  const handleFile = async (file) => {
+  // Photo de page de garde PRISE À L'APPAREIL : même filet de sécurité que les photos d'observation
+  // (demande Thomas, couverture perdue) → copie dans le téléphone (Android/PC : téléchargement ;
+  // iOS interdit l'écriture silencieuse dans Photos) + dossier Drive de l'affaire, AVANT tout recadrage.
+  const backupCameraCover = (file, compressedDataUrl) => {
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    const name = `page_de_garde_${String(projet.nom || 'projet').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40)}_${stamp}.jpg`;
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (!isIOS) {
+      try {
+        const url = URL.createObjectURL(file); // original pleine résolution
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch { /* ignore */ }
+    }
+    if (compressedDataUrl) {
+      uploadToDrive({ data: compressedDataUrl, name, projetNom: projet.nom, projetNum: affNum || getAffaireNum(projet.id),
+        visiteLabel: 'Page de garde', visiteDate: new Date().toISOString().slice(0, 10) });
+    }
+  };
+
+  const handleFile = async (file, fromCamera = false) => {
     if (!file) return;
     if (file.size > 25 * 1024 * 1024) { alert('Fichier trop grand (max 25 Mo)'); return; }
     let src;
@@ -52,7 +74,10 @@ export default function EditProjet({ projet, onClose, onSave }) {
       src = URL.createObjectURL(file);
       // Conserver l'ORIGINAL (compressé) en local : « Recadrer » repartira toujours de
       // l'image source, même dans une prochaine session → on peut « dé-recadrer ».
-      fileToCompressedDataUrl(file).then(dataUrl => { if (dataUrl) setCoverOriginal(projet.id, dataUrl); });
+      fileToCompressedDataUrl(file).then(dataUrl => {
+        if (dataUrl) setCoverOriginal(projet.id, dataUrl);
+        if (fromCamera) backupCameraCover(file, dataUrl);
+      });
     }
     releaseOriginal();
     originalSrcRef.current = src;
@@ -167,7 +192,7 @@ export default function EditProjet({ projet, onClose, onSave }) {
         <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display:'none' }}
           onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }}
-          onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = ''; }}/>
+          onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file, true); e.target.value = ''; }}/>
         {pdfBusy && (
           <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 10px', display:'flex', alignItems:'center', gap:6 }}>
             <Ic n="spn" s={12}/> Lecture du PDF…
