@@ -114,6 +114,21 @@ function drawPenteSolPath(ctx, x1, y1, x2, y2, s, c) {
 // skipTypes (optionnel) : Set de types d'annotation à NE PAS dessiner (ex : new Set(['viewpoint'])).
 // Sert au PDF, qui redessine les Vxx en VECTORIEL par-dessus l'image (nets à tout zoom) et ne veut
 // donc pas de version cuite dans le raster. Par défaut (null) : tout est dessiné → aperçu écran inchangé.
+// ── ÉCHELLE UNIQUE DES ANNOTATIONS DE PLAN (WYSIWYG) ──────────────────────────────────────
+// Retour Thomas : « dans l'annotateur c'est joli, dans la vue Visite et le PDF le texte est tout
+// gros ». L'annotateur dimensionnait le texte des PLANS par rapport à l'ÉCRAN (taille constante à
+// l'écran) alors que la vue Visite et le rapport le dimensionnaient par rapport au PLAN.
+// Désormais une seule règle partout : tailles proportionnelles à la LARGEUR du plan (référence
+// PLAN_REF_W, calée sur l'annotateur PC), × curseurs Texte / Symboles / Formes de l'utilisateur.
+export const PLAN_REF_W = 2000;
+export function planAnnotScales(width, scales = {}) {
+  const b = (Number(width) || PLAN_REF_W) / PLAN_REF_W;
+  return {
+    sizes: { text: b * (scales.text ?? 1), symbol: b * (scales.symbol ?? 1), shape: scales.shape ?? 1 },
+    stroke: 2 * b, // épaisseur des traits : celle de l'annotateur PC (indépendante du curseur Symboles)
+  };
+}
+
 export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = null, skipTypes = null) {
   const _o   = sizeScale && typeof sizeScale === 'object';
   const sT   = _o ? (sizeScale.text   ?? 1) : sizeScale; // texte
@@ -794,10 +809,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       ectx.scale(EW / cv.width, EH / cv.height);
       const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
       // Même base que l'affichage live et le rapport : photos = cv.width/1400 (uniforme,
-      // indépendant de l'écran), plans = ratio*0.5 (inchangé).
-      const baseScale = isPhotoCtx ? cv.width / 1400 : ratio * 0.5;
-      const drawScales = { text: baseScale * scaleText, symbol: baseScale * scaleSymbol, shape: scaleShape };
-      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(fp, vpNumByPath, vpBase) : fp, drawScales, ratio);
+      // indépendant de l'écran), plans = planAnnotScales (largeur du plan, WYSIWYG).
+      const _pl = planAnnotScales(cv.width, { text: scaleText, symbol: scaleSymbol, shape: scaleShape });
+      const baseScale = isPhotoCtx ? cv.width / 1400 : _pl.sizes.text / scaleText;
+      const drawScales = isPhotoCtx ? { text: baseScale * scaleText, symbol: baseScale * scaleSymbol, shape: scaleShape } : _pl.sizes;
+      drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(fp, vpNumByPath, vpBase) : fp, drawScales, isPhotoCtx ? ratio : _pl.stroke);
       ectx.restore();
       const sc = hqScaleRef.current;
       return { paths: scalePaths(fp, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol };
@@ -1017,7 +1033,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   // ── ÉDITION RAPIDE : sélection courante, copier/coller/dupliquer, flèches ──
   const cvRatio = () => { const cv = cvRef.current; return cv && cv.clientWidth ? cv.width / cv.clientWidth : 1; };
-  const boundsOf = (p) => pathBounds(p, 22 * cvRatio(), cvRatio() * 0.5 * scaleText);
+  // Échelle du TEXTE en pixels canvas (hit-tests, cadres, redimensionnement) — même règle que le dessin.
+  const textScaleNow = () => {
+    const cv = cvRef.current;
+    if (!cv) return scaleText;
+    return isPhotoCtx ? cvRatio() * 0.5 * scaleText : planAnnotScales(cv.width, { text: scaleText }).sizes.text;
+  };
+  const boundsOf = (p) => pathBounds(p, 22 * cvRatio(), textScaleNow());
   // Sélection courante en index : groupe > forme/symbole/viewpoint > texte.
   const selectedIdxs = () => multiSelRef.current.length ? multiSelRef.current
     : selAnnotRef.current ? [selAnnotRef.current.idx]
@@ -1271,10 +1293,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Photos : échelle texte/symboles = largeur naturelle / 1400 (indépendante de l'écran),
     // IDENTIQUE au rapport → l'aperçu reflète exactement le rendu final, et toutes les photos
     // sont uniformes. Plans : inchangé (ratio*0.5, comportement validé).
-    const baseScale = isPhotoCtx ? cv.width / 1400 : ratio * 0.5;
+    // Plans : échelle UNIQUE proportionnelle au plan (planAnnotScales) — identique vue Visite + rapport.
+    const _pl = planAnnotScales(cv.width, { text: scaleText, symbol: scaleSymbol, shape: scaleShape });
+    const baseScale = isPhotoCtx ? cv.width / 1400 : _pl.sizes.text / scaleText;
     const sText = baseScale * scaleText;   // échelle texte
     const sSym  = baseScale * scaleSymbol; // échelle symboles + viewpoints
-    const strokeScale = ratio;               // tracés : normalisés en pixels écran
+    const strokeScale = isPhotoCtx ? ratio : _pl.stroke; // photos : pixels écran (inchangé) ; plans : proportionnel au plan
     const drawScales = { text: sText, symbol: sSym, shape: scaleShape };
 
     const all = [...paths, ...(cur.length > 1 && (tool === 'pen' || tool === 'eraser') ? [{ type:'stroke', tool, points:cur, color, size }] : [])];
@@ -1456,7 +1480,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Groupe sélectionné (cadres pointillés) + cadre de sélection en cours.
     if (multiSel.length || marquee) {
       const zz = vtRef.current.z || 1;
-      const sT = ratio * 0.5 * scaleText;
+      const sT = textScaleNow();
       ctx.save();
       ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 1.5 * ratio / zz; ctx.setLineDash([5 * ratio / zz, 4 * ratio / zz]);
       const pad = 6 * ratio / zz;
@@ -1977,7 +2001,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             textDragRef.current = { mode: 'tip', origArrowX: p.arrowX, origArrowY: p.arrowY, tapX: pos.x, tapY: pos.y };
             setDrawing(true); return;
           }
-          const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
+          const txtScale = cv ? textScaleNow() : 1;
           const fs = (20 + p.size * 4) * txtScale;
           const _ls = String(p.text ?? '').split('\n');
           const _extraH = (_ls.length - 1) * fs * 1.2;
@@ -2102,7 +2126,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       for (let i = paths.length - 1; i >= 0; i--) {
         const p = paths[i];
         if (p.type !== 'text') continue;
-        const txtScale = cv ? (cv.width / cv.clientWidth) * 0.5 * scaleText : 1;
+        const txtScale = cv ? textScaleNow() : 1;
         const fs = (20 + p.size * 4) * txtScale;
         const _ls = String(p.text ?? '').split('\n');
         const _extraH = (_ls.length - 1) * fs * 1.2;
@@ -2340,8 +2364,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Resize largeur du cadre texte (drag poignée droite)
     if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'resize') {
       const cv = cvRef.current;
-      const ratio = cv.width / cv.clientWidth;
-      const sT = ratio * 0.5 * scaleText;
+      const sT = textScaleNow();
       const { origTextW, tapX } = textDragRef.current;
       const newW = Math.max(60, origTextW + (pos.x - tapX) / sT);
       setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, textW: newW } : p));
@@ -2742,7 +2765,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     ectx.save();
     ectx.scale(EW / cv.width, EH / cv.height);
     const ratio = cv.clientWidth > 0 ? cv.width / cv.clientWidth : exportSizeMultiplier;
-    drawAnnotationPaths(ectx, relabel(fp), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
+    if (isPhotoCtx) drawAnnotationPaths(ectx, relabel(fp), { text: ratio * 0.5 * scaleText, symbol: ratio * 0.5 * scaleSymbol, shape: scaleShape }, ratio);
+    else { const _pl = planAnnotScales(cv.width, { text: scaleText, symbol: scaleSymbol, shape: scaleShape }); drawAnnotationPaths(ectx, relabel(fp), _pl.sizes, _pl.stroke); }
     ectx.restore();
     // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
     const sc = hqScaleRef.current;

@@ -13,7 +13,7 @@ import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
 import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
-import Annotator, { drawAnnotationPaths } from '../vue/Annotator.jsx';
+import Annotator, { drawAnnotationPaths, planAnnotScales } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
@@ -135,10 +135,10 @@ function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0
     ctx.save();
     ctx.scale(k, k);
     const labeled = relabelViewpoints(paths, vpNumByPath, vpBase);
-    // Même formule que le rapport (RapportPreview > SinglePlanImage) : base = largeur / 1400,
-    // × échelles Texte / Symboles / Formes réglées par l'utilisateur.
-    const b = Math.max(0.5, (srcW || 1400) / 1400);
-    drawAnnotationPaths(ctx, labeled, { text: b * scales.text, symbol: b * scales.symbol, shape: scales.shape }, b * scales.symbol);
+    // Échelle UNIQUE des plans (planAnnotScales) : identique à l'annotateur et au rapport,
+    // × curseurs Texte / Symboles / Formes réglés par l'utilisateur.
+    const _pl = planAnnotScales(srcW || 1400, scales);
+    drawAnnotationPaths(ctx, labeled, _pl.sizes, _pl.stroke);
     ctx.restore();
     setReady(true);
   }, [srcImg, paths, vpNumByPath, vpBase, hasVp, scales]);

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallba
 import { createPortal } from 'react-dom';
 import { DA, URGENCE, SUIVI, isBrouillon } from '../../lib/constants.js';
 import { renderMarkup, stripMarkup } from '../../lib/markup.jsx';
-import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths } from './Annotator.jsx';
+import { getAllSymbols, drawAnnotationPaths, drawVP, scalePaths, planAnnotScales } from './Annotator.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import ItemModal from './ItemModal.jsx';
 import { useBrandingLogo } from '../../lib/branding.js';
@@ -1103,9 +1103,7 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
         cv.height = ch;
         const ctx = cv.getContext('2d');
         ctx.drawImage(el, 0, 0, cv.width, cv.height);
-        // Échelles par type (texte/forme/symbole). base = largeur canvas / 1400 → taille des
-        // marqueurs INCHANGÉE à l'écran (elle suit la largeur), seule la NETTETÉ augmente.
-        const base = cv.width / 1400;
+        // Échelles par type (texte/forme/symbole) réglées par l'utilisateur.
         const _o = deferredAnnotScale && typeof deferredAnnotScale === 'object';
         const textF  = _o ? (deferredAnnotScale.text   ?? 1) : (deferredAnnotScale ?? 1);
         const symF   = _o ? (deferredAnnotScale.symbol ?? 1) : (deferredAnnotScale ?? 1);
@@ -1115,7 +1113,10 @@ function SinglePlanImage({ bg, planId = null, annotations, annotScale, alt, vpNu
         // dans l'espace du canvas → marqueurs au bon endroit, quelle que soit la résolution.
         const pathsSpaceW = usedHd ? bgW : el.naturalWidth;
         const coordScale = pathsSpaceW ? cv.width / pathsSpaceW : 1;
-        drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), { text: base * textF, symbol: base * symF, shape: shapeF }, base * symF);
+        // Échelle UNIQUE des plans (planAnnotScales) : identique à l'annotateur et à la vue Visite
+        // → ce qui est imprimé est ce qu'on a vu en annotant (retour Thomas 15/10).
+        const _pl = planAnnotScales(cv.width, { text: textF, symbol: symF, shape: shapeF });
+        drawAnnotationPaths(ctx, scalePaths(drawPaths, coordScale, coordScale), _pl.sizes, _pl.stroke);
         // JPEG 0.95 : qualité supérieure pour ne pas flouter le texte fin des marqueurs (le plan
         // reste opaque → pas de transparence perdue), data-URL toujours raisonnable.
         commitImg(cv.toDataURL('image/jpeg', 0.95));
