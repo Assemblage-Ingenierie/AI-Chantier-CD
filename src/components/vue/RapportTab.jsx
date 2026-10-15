@@ -161,6 +161,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
     if (kind === 'text')   { setScaleText(v);   localStorage.setItem('chantierai_scale_text', String(v)); }
     if (kind === 'shape')  { setScaleShape(v);  localStorage.setItem('chantierai_scale_shape', String(v)); }
     if (kind === 'symbol') { setScaleSymbol(v); localStorage.setItem('chantierai_scale_symbol', String(v)); }
+    try { window.dispatchEvent(new Event('chantierai:annotscale')); } catch { /* ignore */ }
   };
 
   // Échelles SÉPARÉES pour les annotations des PHOTOS (indépendantes des plans). Défaut 1× (le

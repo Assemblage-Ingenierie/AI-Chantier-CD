@@ -387,7 +387,11 @@ export const SYMBOL_CATEGORIES = [
 // (ErrorBoundary « Recharger l'app ») dès qu'on ouvrait une photo sur ces appareils — alors
 // que le reste de l'app est déjà protégé (cf. _hasLS dans supabase.js / useAuth.js).
 const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+const _lsSet = (k, v) => {
+  try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ }
+  // Échelles d'annotation : les vignettes de plan (vue Visite) se redessinent à la même échelle.
+  if (String(k).startsWith('chantierai_scale_')) { try { window.dispatchEvent(new Event('chantierai:annotscale')); } catch { /* ignore */ } }
+};
 const ANNOT_PREFS_KEY = 'chantierai_annot_prefs_v1';
 const SHAPE_KEYS = ['rect', 'ellipse', 'arrow', 'line', 'poly', 'polyline'];
 // Le clavier sert-il à TAPER du texte ? (champ texte, zone de texte, contenu éditable). Un

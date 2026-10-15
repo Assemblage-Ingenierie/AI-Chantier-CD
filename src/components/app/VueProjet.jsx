@@ -79,8 +79,27 @@ async function rotateBg90CW(dataUrl) {
 //    Indispensable car (a) l'image `exported` est retirée à la sauvegarde Supabase
 //    (les marqueurs disparaîtraient après rechargement) et (b) ses labels Vxx seraient
 //    locaux au plan → doublons. Le redessin garantit marqueurs visibles + numéros uniques.
+// Échelles d'annotation des PLANS réglées par l'utilisateur (curseurs Texte / Formes / Symboles de
+// l'annotateur et de l'onglet Rapport — mêmes clés localStorage). Les vignettes les appliquent
+// comme le rapport (retour Thomas : « dans la vue Visite le texte est tout gros, mal rangé »).
+function readPlanAnnotScales() {
+  // Mêmes règles de lecture que RapportTab / Annotator (bornes 0.3–5, ancienne clé unique en repli).
+  const rd = (k, fb) => { try { const v = parseFloat(localStorage.getItem(k) ?? String(fb)); return isNaN(v) ? fb : Math.max(0.3, Math.min(5, v)); } catch { return fb; } };
+  let old = 1;
+  try { const v = parseFloat(localStorage.getItem('chantierai_annot_scale') ?? '1'); old = (isNaN(v) || v > 1.5) ? 1 : Math.max(0.3, Math.min(5, v)); } catch { /* ignore */ }
+  return { text: rd('chantierai_scale_text', old), symbol: rd('chantierai_scale_symbol', old), shape: rd('chantierai_scale_shape', 1) };
+}
+
 function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0 }) {
   const canvasRef = useRef(null);
+  const [scales, setScales] = useState(readPlanAnnotScales);
+  useEffect(() => {
+    const upd = () => setScales(prev => { const n = readPlanAnnotScales(); return (n.text === prev.text && n.symbol === prev.symbol && n.shape === prev.shape) ? prev : n; });
+    window.addEventListener('chantierai:annotscale', upd);
+    window.addEventListener('storage', upd);
+    window.addEventListener('focus', upd);
+    return () => { window.removeEventListener('chantierai:annotscale', upd); window.removeEventListener('storage', upd); window.removeEventListener('focus', upd); };
+  }, []);
   const [ready, setReady] = useState(false);
   const [srcImg, setSrcImg] = useState(null); // fond décodé UNE fois par `bg`, réutilisé aux redraws
   const paths = annotations?.paths;
@@ -116,10 +135,13 @@ function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0
     ctx.save();
     ctx.scale(k, k);
     const labeled = relabelViewpoints(paths, vpNumByPath, vpBase);
-    drawAnnotationPaths(ctx, labeled, Math.max(0.5, (srcW || 1400) / 1400));
+    // Même formule que le rapport (RapportPreview > SinglePlanImage) : base = largeur / 1400,
+    // × échelles Texte / Symboles / Formes réglées par l'utilisateur.
+    const b = Math.max(0.5, (srcW || 1400) / 1400);
+    drawAnnotationPaths(ctx, labeled, { text: b * scales.text, symbol: b * scales.symbol, shape: scales.shape }, b * scales.symbol);
     ctx.restore();
     setReady(true);
-  }, [srcImg, paths, vpNumByPath, vpBase, hasVp]);
+  }, [srcImg, paths, vpNumByPath, vpBase, hasVp, scales]);
 
   if (!hasVp) {
     return <img src={bg} alt="" decoding="async" style={{ ...style, objectFit:'contain', display:'block' }} />;
