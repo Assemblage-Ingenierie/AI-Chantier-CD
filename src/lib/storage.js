@@ -340,18 +340,13 @@ async function loadRemote() {
   const plansByChantier = groupBy(r2.data ?? [], 'chantier_id');
   const locsByChantier  = groupBy(r3.data ?? [], 'chantier_id');
 
-  // Les items des projets archivés viennent du cache local — pas de la DB.
-  // On les exclut de itemsByLoc pour ne pas les stocker en mémoire inutilement.
-  const archivedChantierIds = new Set(
-    (r1.data ?? []).filter(c => c.statut === 'archive').map(c => c.id)
-  );
-  const archivedLocIds = new Set(
-    (r3.data ?? []).filter(l => archivedChantierIds.has(l.chantier_id)).map(l => l.id)
-  );
-  const itemsByLoc = groupBy(
-    (r4.data ?? []).filter(item => !archivedLocIds.has(item.localisation_id)),
-    'localisation_id'
-  );
+  // ⚠️ INCIDENT 2026-10-15 « j'ai archivé puis réactivé une affaire : toutes les observations
+  // ont disparu » (Thomas, 2 projets). AVANT : les observations des projets ARCHIVÉS n'étaient
+  // pas lues en base (« elles viennent du cache local ») → un appareil dont le cache ne les avait
+  // pas (ou plus) affichait des zones VIDES, et la réactivation repartait de cet état vide.
+  // DÉSORMAIS : les observations sont TOUJOURS lues en base, projet archivé ou non (texte léger ;
+  // les photos restent chargées à la demande). La base fait foi, jamais un cache incomplet.
+  const itemsByLoc = groupBy(r4.data ?? [], 'localisation_id');
 
   return (r1.data ?? []).map(c => {
     const allLocs      = locsByChantier[c.id] ?? [];

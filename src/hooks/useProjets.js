@@ -68,6 +68,8 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
         const lpl = localPlanById_d.get(rpl.id);
         return lpl ? { ...rpl, bg: lpl.bg ?? rpl.bg, data: lpl.data ?? rpl.data } : rpl;
       });
+      // Toutes les observations présentes localement (garde-fou des zones vidées, plus bas).
+      const localItemIds_d = new Set((lp.visites || []).flatMap(v => (v.localisations || []).flatMap(l => (l.items || []).map(i => i?.id))).filter(Boolean));
       // Visites distantes inconnues localement (créées sur un autre appareil pendant qu'on était dirty).
       const localVisitIds = new Set((lp.visites || []).map(v => v.id));
       const newRemoteVisits = (rp.visites || []).filter(rv => !localVisitIds.has(rv.id));
@@ -91,6 +93,18 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
                 if (!rl) return ll;
                 return {
                   ...ll,
+                  // GARDE-FOU (incident 2026-10-15) : une zone locale SANS AUCUNE observation alors
+                  // que la même zone en a en base = état local incomplet (cache d'un projet
+                  // archivé…), jamais une suppression volontaire (celles-ci sont tombstonées et
+                  // retirées plus bas). On reprend les observations du serveur : sinon la
+                  // sauvegarde suivante les effacerait de la base.
+                  // (seulement celles absentes de TOUT le projet local : une observation déplacée
+                  // dans une autre zone n'est pas dupliquée — un id en double ferait échouer l'upsert.)
+                  ...(() => {
+                    if ((ll.items || []).length || !(rl.items || []).length) return {};
+                    const back = rl.items.filter(it => it?.id && !localItemIds_d.has(it.id));
+                    return back.length ? { items: back } : {};
+                  })(),
                   planBg: rl.planBg ?? ll.planBg ?? (ll.planId ? localPlanById_d.get(ll.planId)?.bg : null) ?? null,
                   planData: rl.planData ?? ll.planData,
                   planId: ll.planId ?? rl.planId,
@@ -119,7 +133,10 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
     // autorité (une chaîne vide distante est respectée), le local ne sert de repli que si
     // la colonne n'existe pas encore côté DB (loadRemote renvoie alors null, pas '').
     const ingenieurs = rp.ingenieurs ?? lp.ingenieurs ?? '';
-    if (rp.statut === 'archive') return { ...rp, photo, ingenieurs, visites: lp.visites ?? rp.visites };
+    // (Projet archivé : plus de branche spéciale « visites locales ». Ses observations sont
+    // désormais lues en base comme pour un projet actif → même fusion, la base fait foi. Avant,
+    // un cache local sans observations remplaçait la version serveur → zones vides à la
+    // réactivation — incident 2026-10-15.)
 
     // Non-dirty path → le serveur fait autorité sur la MEMBERSHIP de la bibliothèque de plans
     // (cet appareil n'a aucune modif en attente et n'est pas plus récent que le remote).
