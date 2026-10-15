@@ -8,6 +8,7 @@ import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { buildDiffSegments, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
+import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
@@ -524,27 +525,42 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     setSpellDiff(null);
     try {
       const plain = htmlToPlain(form.commentaire);
-      const d = await callAIProxy({
-        feature: 'spell-correction',
-        model: 'gemini-3.6-flash',
-        // Réflexion BORNÉE (plus fiable sur accords / mots manquants qu'une réponse « à froid ») +
-        // marge de sortie suffisante pour renvoyer le texte INTÉGRAL après réflexion.
-        thinkingBudget: 1024,
-        max_tokens: 4096,
-        system: 'Tu es un correcteur orthographique et grammatical français, relecteur de rapports d\'ingénieur structure. Relis TOUT le texte, du premier au dernier mot, et corrige TOUTES les fautes : orthographe, grammaire, accords (genre, nombre, participes), conjugaison, ponctuation évidente, doubles espaces. Corrige aussi les fautes de frappe évidentes : lettres manquantes, en trop ou inversées (ex. « ddu » → « du », « tirantss » → « tirants », « de u mur » → « d\'un mur ») et ajoute un petit mot manquant quand la phrase est clairement incorrecte sans lui (ex. « la présence plusieurs fissures » → « la présence de plusieurs fissures »). En revanche : ne reformule pas, ne résume pas, ne coupe rien, ne change ni le sens, ni l\'ordre des idées, ni le vocabulaire technique, ni les retours à la ligne, ni les puces, ni le style des apostrophes et guillemets. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.',
-        messages: [{ role: 'user', content: plain }],
-      });
-      // Réponse COUPÉE par la limite de longueur → on refuse : sinon la fin manquante apparaîtrait
-      // comme « à supprimer » dans le diff et pourrait effacer la fin du commentaire.
-      if (d._finish === 'MAX_TOKENS' || d.stop_reason === 'max_tokens')
-        throw new Error('Texte trop long pour une correction en une fois — réessaie ou corrige par morceaux');
-      const raw = d.content?.[0]?.text?.trim();
-      if (!raw) throw new Error('Réponse vide du modèle');
-      // Une correction ne raccourcit quasiment jamais un texte : en dessous de 85 % → réponse tronquée.
-      if (raw.length < Math.floor(plain.trim().length * 0.85)) throw new Error('Réponse IA tronquée — réessaie');
-      // On remet les blancs de début/fin d'origine (la réponse est « trim ») : le diff ne doit
-      // porter QUE sur les vraies corrections, et les segments doivent recomposer le texte exact.
-      const corrected = plain.match(/^\s*/)[0] + raw + plain.match(/\s*$/)[0];
+      // Texte LONG (retour Thomas : « mes textes sont trop longs ») : on le corrige PAR MORCEAUX
+      // (~3000 caractères, coupés entre paragraphes / fins de phrase) puis on recolle. Chaque
+      // réponse reste ainsi loin de la limite de sortie du modèle. Texte court = 1 seul appel,
+      // comme avant. Le diff ci-dessous porte toujours sur le texte ENTIER.
+      const SPELL_SYSTEM = 'Tu es un correcteur orthographique et grammatical français, relecteur de rapports d\'ingénieur structure. Relis TOUT le texte, du premier au dernier mot, et corrige TOUTES les fautes : orthographe, grammaire, accords (genre, nombre, participes), conjugaison, ponctuation évidente, doubles espaces. Corrige aussi les fautes de frappe évidentes : lettres manquantes, en trop ou inversées (ex. « ddu » → « du », « tirantss » → « tirants », « de u mur » → « d\'un mur ») et ajoute un petit mot manquant quand la phrase est clairement incorrecte sans lui (ex. « la présence plusieurs fissures » → « la présence de plusieurs fissures »). En revanche : ne reformule pas, ne résume pas, ne coupe rien, ne change ni le sens, ni l\'ordre des idées, ni le vocabulaire technique, ni les retours à la ligne, ni les puces, ni le style des apostrophes et guillemets. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.';
+      const correctChunk = async (chunk, k) => {
+        if (!chunk.trim()) return chunk;
+        const once = async (retry) => {
+          const d = await callAIProxy({
+            // 1 « feature » par morceau : l'anti-rafale client (15 s par feature) ne bloque pas les morceaux.
+            feature: k === 0 ? 'spell-correction' : `spell-correction-${k}`,
+            model: 'gemini-3.6-flash',
+            // Réflexion BORNÉE (plus fiable sur accords / mots manquants qu'une réponse « à froid ») +
+            // marge de sortie suffisante pour renvoyer le texte INTÉGRAL après réflexion.
+            thinkingBudget: 1024,
+            max_tokens: 4096,
+            system: SPELL_SYSTEM,
+            messages: [{ role: 'user', content: chunk }],
+            ...(retry ? { _waitOk: true } : {}), // nouvel essai : attend l'anti-rafale au lieu d'échouer
+          });
+          // Réponse COUPÉE par la limite de longueur → on refuse : sinon la fin manquante apparaîtrait
+          // comme « à supprimer » dans le diff et pourrait effacer la fin du commentaire.
+          if (d._finish === 'MAX_TOKENS' || d.stop_reason === 'max_tokens') throw new Error('Réponse IA coupée — réessaie');
+          const raw = d.content?.[0]?.text?.trim();
+          if (!raw) throw new Error('Réponse vide du modèle');
+          // Une correction ne raccourcit quasiment jamais un texte : en dessous de 85 % → réponse tronquée.
+          if (raw.length < Math.floor(chunk.trim().length * 0.85)) throw new Error('Réponse IA tronquée — réessaie');
+          // On remet les blancs de début/fin d'origine (la réponse est « trim ») : le diff ne doit
+          // porter QUE sur les vraies corrections, et les segments doivent recomposer le texte exact.
+          return chunk.match(/^\s*/)[0] + raw + chunk.match(/\s*$/)[0];
+        };
+        try { return await once(false); }
+        catch (e) { if (/Attends/.test(e.message || '')) throw e; return await once(true); } // 1 nouvel essai par morceau
+      };
+      const chunks = chunkForCorrection(plain);
+      const corrected = (await mapLimit(chunks, 3, correctChunk)).join('');
       const segments = buildDiffSegments(plain, corrected);
       // Filet : un diff qui se TERMINE par la suppression d'un long passage = réponse tronquée.
       const lastFix = [...segments].reverse().find(s => s.type === 'fix' || (s.type === 'eq' && s.text.trim()));
