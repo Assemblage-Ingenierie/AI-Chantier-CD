@@ -176,6 +176,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
     if (kind === 'text')   { setScaleTextPhoto(v);   localStorage.setItem('chantierai_scale_photo_text', String(v)); }
     if (kind === 'shape')  { setScaleShapePhoto(v);  localStorage.setItem('chantierai_scale_photo_shape', String(v)); }
     if (kind === 'symbol') { setScaleSymbolPhoto(v); localStorage.setItem('chantierai_scale_photo_symbol', String(v)); }
+    try { window.dispatchEvent(new Event('chantierai:annotscale')); } catch { /* ignore */ }
   };
 
   const pageBreaks = projet.rapportPageBreaks || [];

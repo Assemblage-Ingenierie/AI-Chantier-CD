@@ -57,6 +57,13 @@ if (typeof window !== 'undefined') {
   window.addEventListener('drop', stop);
 }
 
+// Échelles PHOTOS réglées par l'utilisateur (curseurs de l'annotateur photo et de l'onglet
+// Rapport — mêmes clés localStorage, mêmes bornes).
+function readPhotoAnnotScales() {
+  const rd = (k) => { try { const v = parseFloat(localStorage.getItem(k) ?? '1'); return isNaN(v) ? 1 : Math.max(0.3, Math.min(5, v)); } catch { return 1; } };
+  return { text: rd('chantierai_scale_photo_text'), symbol: rd('chantierai_scale_photo_symbol'), shape: rd('chantierai_scale_photo_shape') };
+}
+
 // Vignette photo de l'éditeur. Affiche le composite cuit (ph.annotated) s'il existe. Sinon,
 // si la photo porte des annotations (paths) mais que le composite manque (upload jamais abouti),
 // on superpose un CANVAS qui dessine UNIQUEMENT les annotations (pas l'image) par-dessus la photo
@@ -71,18 +78,31 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   const [dims, setDims] = useState(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const imgElRef = useRef(null);
-  const hasAnnot = !photo.annotated && photo.annotations?.length > 0 && !!photo.data;
+  // Annotations dessinées EN DIRECT sur la photo brute, aux échelles PHOTOS réglées par
+  // l'utilisateur (comme le rapport) — retour Thomas : le composite « cuit » (photo.annotated)
+  // gardait l'échelle du moment de l'annotation (texte « tout gros, mal rangé »). Le composite
+  // reste affiché en attendant (et en repli s'il n'y a pas de photo brute).
+  const hasAnnot = photo.annotations?.length > 0 && !!photo.data;
+  const [scales, setScales] = useState(readPhotoAnnotScales);
+  useEffect(() => {
+    const upd = () => setScales(prev => { const n = readPhotoAnnotScales(); return (n.text === prev.text && n.symbol === prev.symbol && n.shape === prev.shape) ? prev : n; });
+    window.addEventListener('chantierai:annotscale', upd);
+    window.addEventListener('storage', upd);
+    return () => { window.removeEventListener('chantierai:annotscale', upd); window.removeEventListener('storage', upd); };
+  }, []);
 
-  // Dimensions naturelles (repère des paths) — lecture de naturalWidth/Height seulement, jamais
-  // les pixels → autorisé en cross-origin, aucun risque de canvas tainted.
+  // Repère des paths : dimensions d'export mémorisées (annotW/annotH, comme le rapport), sinon
+  // dimensions naturelles — lecture de naturalWidth/Height seulement, jamais les pixels
+  // (cross-origin autorisé, aucun canvas « tainted »).
   useEffect(() => {
     if (!hasAnnot) { setDims(null); return; }
+    if (photo.annotW && photo.annotH) { setDims({ w: photo.annotW, h: photo.annotH }); return; }
     let cancelled = false;
     const img = new window.Image();
     img.onload = () => { if (!cancelled && img.naturalWidth) setDims({ w: img.naturalWidth, h: img.naturalHeight }); };
     img.src = photo.data;
     return () => { cancelled = true; };
-  }, [hasAnnot, photo.data]);
+  }, [hasAnnot, photo.data, photo.annotW, photo.annotH]);
 
   useEffect(() => {
     const cv = cvRef.current;
@@ -90,14 +110,16 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
     cv.width = dims.w; cv.height = dims.h;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, dims.w, dims.h);
-    const scale = photo.annotSizeScale != null ? photo.annotSizeScale : dims.w / 1400;
-    drawAnnotationPaths(ctx, photo.annotations, scale);
-  }, [dims, photo.annotations, photo.annotSizeScale]);
+    // Même formule que le rapport (PhotoAnnotCanvas) : base = largeur / 1400 × curseurs PHOTOS.
+    const b = dims.w / 1400;
+    drawAnnotationPaths(ctx, photo.annotations, { text: b * scales.text, symbol: b * scales.symbol, shape: scales.shape }, b * scales.symbol);
+  }, [dims, photo.annotations, scales]);
 
   // fullSrc = photo d'origine (aperçu plein écran à l'appui long) ; src = VIGNETTE allégée
   // affichée dans la grille (~6-10× plus légère, repli automatique sur l'original).
   const fullSrc = photo.annotated || photo.data;
-  const thumb = useThumb(fullSrc, 640);
+  const live = hasAnnot && !!dims;           // photo brute + annotations en direct
+  const thumb = useThumb(live ? photo.data : fullSrc, 640);
   const src = thumb.src;
   // Squelette gris tant que la vignette n'est pas chargée : quand BEAUCOUP de photos chargent en
   // même temps (file d'attente réseau du navigateur), on voit des cases grises qui se remplissent
@@ -121,7 +143,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
         onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
         style={{ ...imgStyle, opacity: imgLoaded ? 1 : 0, transition:'opacity 0.2s ease' }}/>
-      {hasAnnot && dims && (
+      {live && (
         <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', borderRadius: imgStyle?.borderRadius }}/>
       )}
     </span>
