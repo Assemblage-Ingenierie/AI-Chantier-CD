@@ -20,6 +20,7 @@ export function buildVisitProjet(projet, visite) {
     conclusionAlign:     visite?.conclusionAlign      ?? 'left',
     annexes:             visite?.annexes              ?? [],
     planPagesPaysage:    visite?.planPagesPaysage     ?? false,
+    planPages:           visite?.planPages            ?? null,
     visiteNom:           visite?.label                 ?? '',
     ingenieur:           visite?.ingenieur             ?? '',
   };

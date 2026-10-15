@@ -541,20 +541,6 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
             </label>
           </div>
 
-          {/* Plans annotés EN GRAND, une page A4 paysage chacun en fin de rapport (PC) */}
-          {isPc && (
-            <div>
-              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={projet.planPagesPaysage ?? false}
-                  onChange={e => onUpdate({ planPagesPaysage: e.target.checked })}
-                  style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
-                />
-                <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Plan annoté en grand (page paysage à la fin)</span>
-              </label>
-            </div>
-          )}
 
           {/* Sauts de page */}
           <button
@@ -657,6 +643,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
         conclusion={projet.conclusion ?? ''}
         conclusionAlign={projet.conclusionAlign ?? 'left'}
         planPagesPaysage={projet.planPagesPaysage ?? false}
+        planPages={projet.planPages ?? null}
+        onSetPlanPages={(m) => onUpdate({ planPages: m })}
         annexes={annexes}
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}

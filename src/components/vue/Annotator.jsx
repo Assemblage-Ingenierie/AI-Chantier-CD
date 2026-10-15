@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useEditLock } from '../../lib/editLock.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
@@ -610,6 +611,8 @@ function movePath(p, dx, dy) {
 }
 
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
+  // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
+  useEditLock();
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -967,8 +970,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     let d = null;
     try { d = JSON.parse(_lsGet(draftKey) || 'null'); } catch { d = null; }
     if (!d || !Array.isArray(d.paths)) return;
-    const stale = d.base !== baseHash || Date.now() - (d.ts || 0) > 7 * 24 * 3600 * 1000;
-    if (stale) { _lsDel(draftKey); return; } // enregistré depuis, ou trop ancien → on oublie
+    // Seul l'ÂGE invalide un brouillon (30 j). Avant, un brouillon était EFFACÉ dès que l'état
+    // enregistré du plan avait changé entre-temps (autre appareil, synchro…) → travail perdu
+    // (incident 15/10). On le propose désormais quand même ; « Ignorer » le supprime.
+    const stale = Date.now() - (d.ts || 0) > 30 * 24 * 3600 * 1000;
+    if (stale) { _lsDel(draftKey); return; }
     if (JSON.stringify(d.paths) === JSON.stringify(savedPaths || [])) { _lsDel(draftKey); return; }
     setDraftOffer(d);
   }, [bgOk, draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
