@@ -76,11 +76,12 @@ describe('observations disparues (incident archiver / réactiver)', () => {
     const snap = (ts, items) => ({ ts, data: [{ id: 'p', visites: [{ id: 'v', localisations: [{ id: 'z', nom: 'R+4', items }] }] }] });
     const sc = createLostItemScanner(now, new Set(['deleted']));
     sc.add(snap(1, [{ id: 'keep' }, { id: 'lost', titre: 'ancien' }, { id: 'deleted' }]));
-    sc.add(snap(2, [{ id: 'keep' }, { id: 'lost', titre: 'récent' }, { id: 'lost2' }]));
+    sc.add(snap(2, [{ id: 'keep' }, { id: 'lost', titre: 'récent', _photosHydrated: true }, { id: 'lost2' }]));
     sc.add({ ts: 3, data: [{ id: 'autre-projet', visites: [] }] });
     const e = sc.entries();
     expect(e.map(x => x.item.id)).toEqual(['lost', 'lost2']);
     expect(e[0].item.titre).toBe('récent');
+    expect(e[0].item._photosHydrated).toBeUndefined(); // photos rechargées depuis le serveur
     expect(e[0]).toMatchObject({ projectId: 'p', visiteId: 'v', locId: 'z', locNom: 'R+4' });
   });
 });

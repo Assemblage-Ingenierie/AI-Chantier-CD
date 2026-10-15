@@ -70,7 +70,10 @@ export function createLostItemScanner(projet, tombItemIds = new Set()) {
         if (!it?.id || present.has(it.id) || tombItemIds.has(it.id)) return;
         const prev = best.get(it.id);
         if (prev && prev.ts >= (snapshot.ts || 0)) return;
-        best.set(it.id, { kind: 'lostItem', projectId: projet.id, visiteId: sv.id, locId: sl.id, locNom: sl.nom || '', item: it, idx, ts: snapshot.ts || 0 });
+        // `_photosHydrated` retiré : les photos (octets absents des sauvegardes) seront rechargées
+        // depuis le serveur à l'ouverture, au lieu de rester des vignettes vides.
+        const { _photosHydrated, ...item } = it;
+        best.set(it.id, { kind: 'lostItem', projectId: projet.id, visiteId: sv.id, locId: sl.id, locNom: sl.nom || '', item, idx, ts: snapshot.ts || 0 });
       });
     }
   };
