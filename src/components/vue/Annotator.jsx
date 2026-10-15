@@ -625,6 +625,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // est affiché (la largeur mesurée diffère de l'approximation par nb de caractères).
   const resizeHandleRef = useRef(null); // { idx, x, y, twU } | null
   const arrowBaseHandleRef = useRef(null); // { idx, x, y, box:{bx,by,bw,bh,rad} } | null — base de flèche du texte sélectionné
+  // Écran tactile (téléphone/tablette) : on y garde la zone de saisie du panneau texte, la saisie
+  // directe sur le plan n'étant qu'un complément (clavier virtuel iOS capricieux sur focus différé).
+  const isTouchUI = typeof window !== 'undefined' && (window.innerWidth < 640 || !!window.matchMedia?.('(pointer: coarse)').matches);
   const vpRotateHandleRef = useRef(null); // { idx, x, y, cx, cy } poignée de rotation du viewpoint sélectionné
   const vpRotateDragRef   = useRef(null); // { idx, cx, cy } rotation en cours
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
@@ -1083,6 +1086,36 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     setPaths(prev => prev.map((p, i) => set.has(i) ? movePath(p, ux * step, uy * step) : p));
     return true;
   };
+  // Ordre des calques (demande Thomas) : dir = +1 « Avancer », -1 « Reculer ». Un élément seul passe
+  // au-dessus (ou au-dessous) du PROCHAIN élément qui le chevauche → effet visible à chaque clic
+  // (sinon tout en haut / tout en bas) ; un groupe passe d'un coup au premier / à l'arrière-plan.
+  // Les vues (V1, V2…) ne bougent pas. Les objets ne sont que réordonnés : aucune donnée modifiée.
+  const reorderSelection = (dir) => {
+    const ps = pathsRef.current;
+    const idxs = selectedIdxs().filter(i => ps[i] && ps[i].type !== 'viewpoint');
+    if (!idxs.length) return false;
+    const set = new Set(idxs);
+    let order; // nouvel ordre = liste d'index d'origine
+    if (idxs.length === 1) {
+      const i = idxs[0], bi = boundsOf(ps[i]);
+      const overlaps = (j) => { const b = boundsOf(ps[j]); return bi && b && b.x1 <= bi.x2 && b.x2 >= bi.x1 && b.y1 <= bi.y2 && b.y2 >= bi.y1; };
+      let j = -1;
+      if (dir > 0) { for (let k = i + 1; k < ps.length; k++) if (overlaps(k)) { j = k; break; } if (j < 0) j = ps.length - 1; }
+      else { for (let k = i - 1; k >= 0; k--) if (overlaps(k)) { j = k; break; } if (j < 0) j = 0; }
+      if (j === i) return true;
+      order = ps.map((_, k) => k).filter(k => k !== i);
+      order.splice(j, 0, i);
+    } else {
+      const rest = ps.map((_, k) => k).filter(k => !set.has(k));
+      order = dir > 0 ? [...rest, ...idxs] : [...idxs, ...rest];
+    }
+    const pos = new Map(order.map((orig, k) => [orig, k]));
+    setPaths(order.map(k => ps[k]));
+    if (multiSelRef.current.length) setMultiSel(multiSelRef.current.map(k => pos.get(k)));
+    else if (selAnnotRef.current) setSelAnnot({ ...selAnnotRef.current, idx: pos.get(selAnnotRef.current.idx) });
+    else if (selTextIdxRef.current != null) setSelTextIdx(pos.get(selTextIdxRef.current));
+    return true;
+  };
   const deleteSelectionGroup = () => {
     const idxs = multiSelRef.current;
     if (!idxs.length) return false;
@@ -1164,7 +1197,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     return true;
   };
   const editOpsRef = useRef(null);
-  editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll, selectTool, pickShape, zoomTo };
+  editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll, selectTool, pickShape, zoomTo, reorderSelection };
   const relabel = (arr) => {
     if (!vpNumByPath) return arr;
     let extra = 0;
@@ -1271,7 +1304,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       paths.forEach((p, i) => {
         if (p.type !== 'text') return;
         const isSel = i === selTextIdx;
-        const hr = (isSel ? 10 : 7) * ratio / zH; // taille écran ~constante (indépendante du zoom)
+        // Pendant le DÉPLACEMENT du texte, on n'affiche pas les pastilles (elles masquaient la position).
+        if (isSel && textDragRef.current?.mode === 'box' && textDragRef.current.moved) return;
+        // PC : pastilles plus petites → placement précis (retour Thomas). Tactile : inchangé.
+        const hr = (isTouchUI ? (isSel ? 10 : 7) : (isSel ? 6.5 : 4.5)) * ratio / zH; // taille écran ~constante (indépendante du zoom)
         ctx.save();
         ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = (isSel ? 2.5 : 1.5) * ratio / zH;
         // Boîte de texte : fond blanc + bordure bleue (visible)
@@ -1324,7 +1360,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.strokeRect(bx, by, bw, bh);
           ctx.setLineDash([]);
           if (p.textMode === 'boxed' || p.textMode === 'arrow') {
-            const rhs = 8 * ratio / zH;
+            const rhs = (isTouchUI ? 8 : 5.5) * ratio / zH;
             const hrX = bx + bw, hrY = by;
             // Mémorise la position EXACTE du carré pour le hit-test (twU = largeur non scalée).
             resizeHandleRef.current = { idx: i, x: hrX, y: hrY, twU };
@@ -1342,7 +1378,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               else { const s2 = ddy > 0 ? 1 : -1; b = { x: cx + (ddx / ddy) * s2 * bh / 2, y: cy + s2 * bh / 2 }; }
             }
             arrowBaseHandleRef.current = { idx: i, x: b.x, y: b.y, box: { bx, by, bw, bh, rad } };
-            const dh = 7 * ratio / zH;
+            const dh = (isTouchUI ? 7 : 5.5) * ratio / zH;
             ctx.fillStyle = 'white'; ctx.strokeStyle = '#FF9500'; ctx.lineWidth = 2 * ratio / zH;
             ctx.beginPath(); ctx.moveTo(b.x, b.y - dh); ctx.lineTo(b.x + dh, b.y); ctx.lineTo(b.x, b.y + dh); ctx.lineTo(b.x - dh, b.y); ctx.closePath();
             ctx.fill(); ctx.stroke();
@@ -1436,8 +1472,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         ctx.beginPath(); ctx.arc(ap.x1, ap.y1, 8, 0, Math.PI * 2); ctx.stroke();
         ctx.beginPath(); ctx.arc(ap.x2, ap.y2, 8, 0, Math.PI * 2); ctx.stroke();
       } else if (ap.type === 'shape') {
-        // Contour de sélection + poignées de redimensionnement
-        ctx.setLineDash([4 * ratio, 3 * ratio]);
+        // Contour de sélection + poignées de redimensionnement — taille écran constante quel que soit
+        // le zoom, et plus fines sur PC (retour Thomas : « trop gros, délicat d'être précis »).
+        const zS = vtRef.current.z || 1;
+        ctx.lineWidth = 1.5 * ratio / zS;
+        ctx.setLineDash([4 * ratio / zS, 3 * ratio / zS]);
         if ((ap.shape === 'poly' || ap.shape === 'polyline') && ap.pts?.length > 1) {
           const xs = ap.pts.map(pt => pt.x), ys = ap.pts.map(pt => pt.y);
           ctx.beginPath(); ctx.rect(Math.min(...xs)-8, Math.min(...ys)-8, Math.max(...xs)-Math.min(...xs)+16, Math.max(...ys)-Math.min(...ys)+16); ctx.stroke();
@@ -1447,10 +1486,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         }
         ctx.setLineDash([]);
         // Poignées carrées blanches (pas sur une forme « fraîche » en mode Formes : non saisissables)
-        const handles = (selAnnot.fresh && tool === 'shape') ? [] : getShapeHandles(ap);
-        const hr = 7 * ratio;
+        // (ni pendant un DÉPLACEMENT : la forme reste dégagée sous la souris)
+        const handles = ((selAnnot.fresh && tool === 'shape') || annotDragRef.current) ? [] : getShapeHandles(ap);
+        const hr = (isTouchUI ? 7 : 4.5) * ratio / zS;
         handles.forEach(h => {
-          ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
+          ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = (isTouchUI ? 2 : 1.5) * ratio / zS;
           ctx.beginPath(); ctx.rect(h.x - hr, h.y - hr, hr * 2, hr * 2); ctx.fill(); ctx.stroke();
         });
       } else if (ap.x != null) {
@@ -1474,7 +1514,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     } else {
       vpRotateHandleRef.current = null;
     }
-  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale, snapHint, multiSel, marquee]);
+  }, [paths, cur, color, size, tool, bgOk, bgVersion, pendingVP, pendingPortee, activePh, vpCount, scaleText, scaleShape, scaleSymbol, selTextIdx, selAnnot, pendingArrowLine, pendingShape, shapeTool, shapeFilled, fillOpacity, strokeOpacity, polyPts, polyMousePos, vpNumByPath, vpBase, nextVpLabel, newShapeScale, snapHint, multiSel, marquee, drawing]);
 
   useEffect(() => { redraw(); }, [redraw]);
   // Redessine quand le ZOOM change → les poignées de texte (divisées par le zoom) reprennent une
@@ -1522,6 +1562,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }
       if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); ops.duplicateSelection(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { if (ops.selectAll()) e.preventDefault(); return; }
+      // Calques : Ctrl+] avancer, Ctrl+[ reculer (code physique → marche aussi en AZERTY).
+      if (mod && (e.code === 'BracketRight' || e.key === ']')) { if (ops.reorderSelection(1)) e.preventDefault(); return; }
+      if (mod && (e.code === 'BracketLeft' || e.key === '[')) { if (ops.reorderSelection(-1)) e.preventDefault(); return; }
       if (e.key === 'Enter' && finishPolyRef.current()) { e.preventDefault(); return; }
       // Échap = on QUITTE ce qu'on était en train de faire (retour Thomas) : tracé en cours
       // annulé, outil → Sélection, plus rien de sélectionné, focus rendu au plan.
@@ -1727,9 +1770,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
   };
 
-  // Écran tactile (téléphone/tablette) : on y garde la zone de saisie du panneau texte, la saisie
-  // directe sur le plan n'étant qu'un complément (clavier virtuel iOS capricieux sur focus différé).
-  const isTouchUI = typeof window !== 'undefined' && (window.innerWidth < 640 || !!window.matchMedia?.('(pointer: coarse)').matches);
 
   // Losange orange (base de la flèche) du texte sélectionné → on le fait glisser sur le pourtour.
   const grabArrowBase = (pos, ratio) => {
@@ -1884,7 +1924,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       // Resize handles first (if a shape is currently selected)
       if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
         const ap = paths[selAnnot.idx];
-        const rhr = 14 * (cv.width / cv.clientWidth);
+        const rhr = 14 * (cv.width / cv.clientWidth) / (vtRef.current.z || 1);
         const handles = getShapeHandles(ap);
         for (const h of handles) {
           if (Math.hypot(pos.x - h.x, pos.y - h.y) < rhr) {
@@ -2108,7 +2148,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           if (e.shiftKey && !e.touches && toggleSelAt(pos)) return; // Maj+clic = sélection multiple
           if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
             const ap = paths[selAnnot.idx];
-            const rhr = 14 * (cv.width / cv.clientWidth);
+            const rhr = 14 * (cv.width / cv.clientWidth) / (vtRef.current.z || 1);
             for (const h of getShapeHandles(ap)) {
               if (Math.hypot(pos.x - h.x, pos.y - h.y) < rhr) {
                 resizeDragRef.current = { handle: h.id, origData: { ...ap, pts: ap.pts ? ap.pts.map(pt => ({...pt})) : undefined }, idx: selAnnot.idx };
@@ -2158,7 +2198,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       // ── Resize : poignées de la forme sélectionnée (pas une forme « fraîche ») ──
       if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
         const ap = paths[selAnnot.idx];
-        const rhr = 14 * (cv.width / cv.clientWidth);
+        const rhr = 14 * (cv.width / cv.clientWidth) / (vtRef.current.z || 1);
         const handles = getShapeHandles(ap);
         for (const h of handles) {
           if (Math.hypot(pos.x - h.x, pos.y - h.y) < rhr) {
@@ -2813,6 +2853,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     );
   };
 
+  // Boutons « Avancer / Reculer » (ordre des calques) — PC uniquement (demande Thomas).
+  const renderLayerBtns = () => (isTouchUI ? null : (
+    <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+      {[{ d:1, g:'▲', lbl:'Avancer', k:']' }, { d:-1, g:'▼', lbl:'Reculer', k:'[' }].map(b => (
+        <button key={b.d} onClick={() => { if (inlineEditPos === null) reorderSelection(b.d); }}
+          title={`${b.lbl} : passer ${b.d > 0 ? 'devant' : 'derrière'} l'élément qui chevauche (Ctrl+${b.k})`}
+          style={{ padding:'4px 8px', background:'#333', color:'#ddd', border:'none', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+          {b.g} {b.lbl}
+        </button>
+      ))}
+    </div>
+  ));
+
   return (
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column',
       paddingTop:'env(safe-area-inset-top, 0px)',paddingBottom:'env(safe-area-inset-bottom, 0px)',
@@ -3148,6 +3201,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             }}
             style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
           <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(shapePanelOpVal*100)}%</span>
+          {selAnnot?.fresh && _selShape && renderLayerBtns()}
           {tool === 'shape' && (
             <span style={{ fontSize:isMob?10:12,color:isMob?'#555':'#999',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
               {shapeTool === 'poly'
@@ -3235,6 +3289,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 );
               })}
             </div>
+            {renderLayerBtns()}
             <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }} title="Dupliquer"
               style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#1d4ed8', color:'white', border:'none', fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>⊕</button>
             <button onClick={() => { if (inlineEditIdx === selTextIdx) cancelInlineEdit(); setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }} title="Supprimer"
@@ -3277,6 +3332,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             }
           </span>
           <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}{isMob ? '' : ' · Ctrl+clic = en sélectionner plusieurs'}</span>
+          {paths[selAnnot.idx].type !== 'viewpoint' && renderLayerBtns()}
           <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
@@ -3303,6 +3359,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             Sélection : {multiSel.length} élément{multiSel.length > 1 ? 's' : ''}
           </span>
           <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer · flèches = au pixel · couleur = pour tous</span>
+          {renderLayerBtns()}
           <button onClick={() => duplicateSelection()}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
@@ -3377,7 +3434,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   ['Formes', [['R', 'Rectangle'], ['E', 'Ellipse'], ['A', 'Flèche'], ['L', 'Ligne'], ['Z', 'Zone libre'], ['P', 'Polyligne'], ['Entrée', 'Terminer la ligne / zone']]],
                   ['Tracé', [['Maj', 'Angles droits · carré / cercle'], ['Alt', 'Sans aimantation']]],
                   ['Édition', [['Glisser (vide)', 'Cadre de sélection'], ['Ctrl+clic', 'Ajouter / retirer de la sélection'], ['Ctrl+A', 'Tout sélectionner'], ['Ctrl+C / V', 'Copier / coller sous la souris'],
-                    ['Ctrl+D', 'Dupliquer'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Quitter le tracé / la sélection']]],
+                    ['Ctrl+D', 'Dupliquer'], ['Ctrl+] / [', 'Avancer / reculer (calques)'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Quitter le tracé / la sélection']]],
                   ['Vue', [['Molette', 'Zoom'], ['Espace + glisser', 'Déplacer la vue'], ['Ctrl+0', 'Vue entière'], ['Ctrl+ + / −', 'Zoom avant / arrière']]],
                 ].map(([sec, rows]) => (
                   <div key={sec} style={{ marginBottom:8, breakInside:'avoid' }}>
