@@ -63,6 +63,26 @@ export function drawPorteePath(ctx, x1, y1, x2, y2, s, c) {
   ctx.restore();
 }
 
+// Base de la flèche d'un texte-flèche, CHOISIE par l'utilisateur (demande Thomas : « déplacer la
+// base sur le pourtour de la case »). Stockée en fraction du cadre (p.arrowAt = { fx, fy } ∈ [0,1])
+// → elle suit le cadre quand on le déplace / l'agrandit. Absente = base auto (comportement d'avant).
+// Projette (px,py) sur le pourtour du cadre, en évitant les coins arrondis (rayon rad).
+function snapToBoxEdge(px, py, bx, by, bw, bh, rad = 0) {
+  let x = Math.max(bx, Math.min(bx + bw, px)), y = Math.max(by, Math.min(by + bh, py));
+  const dL = x - bx, dR = bx + bw - x, dT = y - by, dB = by + bh - y;
+  const m = Math.min(dL, dR, dT, dB);
+  if (m > 0) { if (m === dL) x = bx; else if (m === dR) x = bx + bw; else if (m === dT) y = by; else y = by + bh; }
+  const onH = y === by || y === by + bh;
+  if (onH && bw > rad * 2) x = Math.max(bx + rad, Math.min(bx + bw - rad, x));
+  else if (!onH && bh > rad * 2) y = Math.max(by + rad, Math.min(by + bh - rad, y));
+  return { x, y, fx: bw > 0 ? (x - bx) / bw : 0.5, fy: bh > 0 ? (y - by) / bh : 0.5 };
+}
+function arrowAtPoint(p, bx, by, bw, bh) {
+  const a = p.arrowAt;
+  if (!a || !Number.isFinite(a.fx) || !Number.isFinite(a.fy)) return null;
+  return snapToBoxEdge(bx + a.fx * bw, by + a.fy * bh, bx, by, bw, bh);
+}
+
 // Pente sol — flèche simple orientable (drag x1,y1→x2,y2) + label "Sol"
 function drawPenteSolPath(ctx, x1, y1, x2, y2, s, c) {
   const angle = Math.atan2(y2 - y1, x2 - x1);
@@ -182,7 +202,9 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
         const tipY = p.arrowY ?? (absBy + absBh + 16 * ss);
         const ddx = tipX - bcx, ddy = tipY - bcy;
         let ex = bcx, ey = bcy;
-        if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
+        const _at = arrowAtPoint(p, absBx, absBy, absBw, absBh);
+        if (_at) { ex = _at.x; ey = _at.y; }
+        else if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
           const hw = absBw / 2, hh = absBh / 2;
           if (hw * Math.abs(ddy) <= hh * Math.abs(ddx)) {
             const s2 = ddx > 0 ? 1 : -1; ex = bcx + s2 * hw; ey = bcy + (ddy / ddx) * s2 * hw;
@@ -367,6 +389,15 @@ const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return n
 const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
 const ANNOT_PREFS_KEY = 'chantierai_annot_prefs_v1';
 const SHAPE_KEYS = ['rect', 'ellipse', 'arrow', 'line', 'poly', 'polyline'];
+// Le clavier sert-il à TAPER du texte ? (champ texte, zone de texte, contenu éditable). Un
+// curseur (range), une case ou un bouton n'en font pas partie : sinon Échap et les raccourcis
+// étaient ignorés juste après avoir réglé une taille (retour Thomas : « Échap ne quitte pas »).
+const TYPING_INPUTS = new Set(['text', 'search', 'number', 'email', 'url', 'tel', 'password', 'date', 'time', 'datetime-local']);
+function isTypingTarget(t) {
+  if (!t) return false;
+  if (t.isContentEditable || t.tagName === 'TEXTAREA') return true;
+  return t.tagName === 'INPUT' && TYPING_INPUTS.has(String(t.type || 'text').toLowerCase());
+}
 // Raccourcis clavier « une touche » (PC) : outils et formes.
 const TOOL_KEYS  = { v: 'select', d: 'pen', t: 'text', f: 'shape', s: 'symbol' };
 const SHAPE_HOTKEYS = { r: 'rect', e: 'ellipse', a: 'arrow', l: 'line', z: 'poly', p: 'polyline' };
@@ -593,6 +624,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // renseignée pendant le dessin → garantit que le hit-test coïncide pixel-près avec ce qui
   // est affiché (la largeur mesurée diffère de l'approximation par nb de caractères).
   const resizeHandleRef = useRef(null); // { idx, x, y, twU } | null
+  const arrowBaseHandleRef = useRef(null); // { idx, x, y, box:{bx,by,bw,bh,rad} } | null — base de flèche du texte sélectionné
   const vpRotateHandleRef = useRef(null); // { idx, x, y, cx, cy } poignée de rotation du viewpoint sélectionné
   const vpRotateDragRef   = useRef(null); // { idx, cx, cy } rotation en cours
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
@@ -1112,6 +1144,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [spaceDown, setSpaceDown] = useState(false); // Espace maintenu → curseur « main »
   const [showHelp, setShowHelp] = useState(false);   // aide des raccourcis (touche ?)
 
+  // Maj + clic sur une forme DEPUIS l'outil Formes : l'ajoute (ou la retire) de la sélection et
+  // passe en Sélection → on peut prendre 2 lignes et leur appliquer les mêmes réglages.
+  const toggleShapeAt = (pos) => {
+    const r = 18 * cvRatio();
+    const ps = pathsRef.current;
+    let hit = -1;
+    for (let i = ps.length - 1; i >= 0; i--) { if (ps[i]?.type === 'shape' && hitsShape(ps[i], pos, r)) { hit = i; break; } }
+    if (hit < 0) return false;
+    const cur = selectedIdxs();
+    setTool('select'); setPolyPts([]); setPolyMousePos(null);
+    selectIdxs(cur.includes(hit) ? cur.filter(i => i !== hit) : [...cur, hit]);
+    return true;
+  };
   const editOpsRef = useRef(null);
   editOpsRef.current = { copySelection, pasteAnnots, duplicateSelection, nudgeSelection, deleteSelectionGroup, selectAll, selectTool, pickShape, zoomTo };
   const relabel = (arr) => {
@@ -1212,6 +1257,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Poignées des textes (visibles en mode Texte ET Sélect. → on peut bouger cadre + flèche)
     if (tool === 'text' || tool === 'select') {
       resizeHandleRef.current = null; // recalculé ci-dessous si un texte encadré est sélectionné
+      arrowBaseHandleRef.current = null;
       // zH = zoom courant : les poignées sont dessinées dans le canvas puis AGRANDIES par le
       // transform CSS scale(vt.z). On divise par zH pour qu'elles gardent une taille ~constante à
       // l'écran quel que soit le zoom (sinon, zoomé ×5, la pastille bleue devient énorme).
@@ -1278,6 +1324,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             resizeHandleRef.current = { idx: i, x: hrX, y: hrY, twU };
             ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio / zH;
             ctx.beginPath(); ctx.rect(hrX - rhs, hrY - rhs, rhs * 2, rhs * 2); ctx.fill(); ctx.stroke();
+          }
+          // Base de la flèche : losange orange GLISSABLE le long du pourtour du cadre.
+          if (p.textMode === 'arrow' && p.arrowX != null) {
+            const rad = 8 * sText;
+            let b = arrowAtPoint(p, bx, by, bw, bh);
+            if (!b) { // base auto : même calcul que le rendu (rayon centre → pointe)
+              const cx = bx + bw / 2, cy = by + bh / 2, ddx = p.arrowX - cx, ddy = p.arrowY - cy;
+              if (Math.abs(ddx) < 0.5 && Math.abs(ddy) < 0.5) b = { x: cx, y: by + bh };
+              else if ((bw / 2) * Math.abs(ddy) <= (bh / 2) * Math.abs(ddx)) { const s2 = ddx > 0 ? 1 : -1; b = { x: cx + s2 * bw / 2, y: cy + (ddy / ddx) * s2 * bw / 2 }; }
+              else { const s2 = ddy > 0 ? 1 : -1; b = { x: cx + (ddx / ddy) * s2 * bh / 2, y: cy + s2 * bh / 2 }; }
+            }
+            arrowBaseHandleRef.current = { idx: i, x: b.x, y: b.y, box: { bx, by, bw, bh, rad } };
+            const dh = 7 * ratio / zH;
+            ctx.fillStyle = 'white'; ctx.strokeStyle = '#FF9500'; ctx.lineWidth = 2 * ratio / zH;
+            ctx.beginPath(); ctx.moveTo(b.x, b.y - dh); ctx.lineTo(b.x + dh, b.y); ctx.lineTo(b.x, b.y + dh); ctx.lineTo(b.x - dh, b.y); ctx.closePath();
+            ctx.fill(); ctx.stroke();
           }
         }
         ctx.restore();
@@ -1422,7 +1484,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Deps [] : les refs pathsRef/selTextIdxRef/selAnnotRef sont toujours à jour, pas de closure stale.
   useEffect(() => {
     const onKey = e => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (isTypingTarget(e.target)) return;
       const ops = editOpsRef.current;
       const mod = e.ctrlKey || e.metaKey;
       // Espace maintenu = main (glisser déplace la vue). Jamais de défilement/clic de bouton.
@@ -1455,14 +1517,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); ops.duplicateSelection(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { if (ops.selectAll()) e.preventDefault(); return; }
       if (e.key === 'Enter' && finishPolyRef.current()) { e.preventDefault(); return; }
+      // Échap = on QUITTE ce qu'on était en train de faire (retour Thomas) : tracé en cours
+      // annulé, outil → Sélection, plus rien de sélectionné, focus rendu au plan.
       if (e.key === 'Escape') {
         setMultiSel([]);
         setPolyPts([]); setPolyMousePos(null);
         setTool('select');
         setShowSyms(false);
         setSelTextIdx(null); textDragRef.current = null;
+        setSelAnnot(null); annotDragRef.current = null; resizeDragRef.current = null; groupDragRef.current = null;
         setActivePh(null);
         setPendingShape(null); shapeStartRef.current = null;
+        if (marqueeRef.current) { marqueeRef.current = null; setMarquee(null); }
+        setDrawing(false); setCur([]);
+        try { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); } catch { /* ignore */ }
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (ops.deleteSelectionGroup()) { e.preventDefault(); return; }
@@ -1498,7 +1566,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     };
     const onKeyUp = e => {
       if (e.code === 'Space' || e.key === ' ') {
-        if (!(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) e.preventDefault();
+        if (!isTypingTarget(e.target)) e.preventDefault();
         spaceRef.current = false; setSpaceDown(false);
       }
     };
@@ -1653,6 +1721,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
   };
 
+  // Écran tactile (téléphone/tablette) : on y garde la zone de saisie du panneau texte, la saisie
+  // directe sur le plan n'étant qu'un complément (clavier virtuel iOS capricieux sur focus différé).
+  const isTouchUI = typeof window !== 'undefined' && (window.innerWidth < 640 || !!window.matchMedia?.('(pointer: coarse)').matches);
+
+  // Losange orange (base de la flèche) du texte sélectionné → on le fait glisser sur le pourtour.
+  const grabArrowBase = (pos, ratio) => {
+    const ab = arrowBaseHandleRef.current;
+    if (!ab || ab.idx !== selTextIdx || Math.hypot(pos.x - ab.x, pos.y - ab.y) > 14 * ratio) return false;
+    textDragRef.current = { mode: 'base', box: ab.box };
+    setDrawing(true);
+    return true;
+  };
+
   const onStart = e => {
     e.preventDefault();
     if (e.touches?.length >= 2) {
@@ -1782,6 +1863,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       }
       // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
       // Position lue depuis resizeHandleRef (dessinée au pixel près) → plus d'approximation.
+      if (grabArrowBase(pos, ratio_s)) return;
       const rh_s = resizeHandleRef.current;
       if (rh_s && rh_s.idx === selTextIdx &&
           Math.abs(pos.x - rh_s.x) < 24 * ratio_s && Math.abs(pos.y - rh_s.y) < 24 * ratio_s) {
@@ -1935,6 +2017,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       const ratio_t = cv.width / cv.clientWidth;
       // Poignée resize du texte sélectionné : priorité ABSOLUE avant tout autre hit-test.
       // Position lue depuis resizeHandleRef (dessinée au pixel près) → plus d'approximation.
+      if (grabArrowBase(pos, ratio_t)) return;
       const rh_t = resizeHandleRef.current;
       if (rh_t && rh_t.idx === selTextIdx &&
           Math.abs(pos.x - rh_t.x) < 24 * ratio_t && Math.abs(pos.y - rh_t.y) < 24 * ratio_t) {
@@ -2011,6 +2094,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         // existante la MANIPULE (poignée de resize, ou sélection + déplacement) au lieu de
         // démarrer un nouveau polygone → on peut enfin re-sélectionner/recolorer une zone.
         if (polyPts.length === 0) {
+          if (e.shiftKey && !e.touches && toggleShapeAt(pos)) return; // Maj+clic = sélection multiple
           if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
             const ap = paths[selAnnot.idx];
             const rhr = 14 * (cv.width / cv.clientWidth);
@@ -2085,7 +2169,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         setDrawing(true);
         return;
       }
-      setSelAnnot(null);
+      // Maj enfoncée : on GARDE la sélection courante (un Maj+clic sans tracer l'enrichira au relâchement).
+      if (!(e.shiftKey && !e.touches)) setSelAnnot(null);
       const spos = assistPos(pos, e).pos; // départ aimanté sur un point/trait existant
       shapeStartRef.current = spos;
       setPendingShape({ x1: spos.x, y1: spos.y, x2: spos.x, y2: spos.y });
@@ -2182,6 +2267,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     // Placement flèche : mise à jour de la ligne de prévisualisation
     if (tool === 'text' && drawing && arrowPlaceRef.current) {
       setPendingArrowLine({ tipX: arrowPlaceRef.current.x, tipY: arrowPlaceRef.current.y, boxX: pos.x, boxY: pos.y });
+      return;
+    }
+    // Base de la flèche glissée le long du pourtour du cadre (le cadre ne bouge pas pendant le drag)
+    if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'base') {
+      const { bx, by, bw, bh, rad } = textDragRef.current.box;
+      const s = snapToBoxEdge(pos.x, pos.y, bx, by, bw, bh, rad);
+      setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, arrowAt: { fx: s.fx, fy: s.fy } } : p));
       return;
     }
     // Resize largeur du cadre texte (drag poignée droite)
@@ -2363,6 +2455,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     if (tool === 'shape' && shapeStartRef.current) {
       if (pendingShape) {
         const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
+        // Maj + simple clic (sans tracer) sur une forme = sélection multiple (Maj + glisser reste
+        // le tracé à angle droit / carré).
+        if (len <= 6 && e?.shiftKey && !e.touches && toggleShapeAt(shapeStartRef.current)) {
+          setPendingShape(null); shapeStartRef.current = null; setDrawing(false); return;
+        }
         if (len > 6) {
           addNewShape({ type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp });
         }
@@ -2382,13 +2479,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       textDragRef.current = null;
       setDrawing(false);
       if (moved) return; // déplacement terminé → on garde la sélection
-      if (tool === 'text' && wasSelected) {
-        // 2e tap sur un texte déjà sélectionné → édition du contenu
+      if (wasSelected) {
+        // 2e tap (ou double-clic) sur un texte déjà sélectionné → réécriture DIRECTE sur le plan,
+        // en mode Texte comme en Sélection (demande Thomas : « je re-clique sur le texte, je veux réécrire »).
         setPaths(prev => prev.map((p, i) => i === selTextIdx ? { ...p, x: origX, y: origY } : p));
         setInlineEditIdx(selTextIdx);
         setInlineEditPos(toScreenPos(origX, origY));
         setInlineEditVal(textVal);
-        setSelTextIdx(null);
+        // PC : la sélection (et son panneau, sans zone de texte) reste → le plan ne se décale pas
+        // sous la saisie. Tactile : comportement d'avant (panneau fermé).
+        if (isTouchUI) setSelTextIdx(null);
       }
       // 1er tap → la sélection est conservée (le prochain tap ouvrira l'édition)
       return;
@@ -2617,14 +2717,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
 
   // Derived values for shape sub-panel (computed before return to avoid IIFE-in-JSX minification issues)
-  const _selShapeIdx = selAnnot !== null ? selAnnot.idx : -1;
-  const _selShape = _selShapeIdx >= 0 && paths[_selShapeIdx]?.type === 'shape' ? paths[_selShapeIdx] : null;
+  // Formes SÉLECTIONNÉES : le groupe (multi-sélection) ou la forme seule. Les réglages du panneau
+  // Formes (contour, tirets, opacité, épaisseur) s'appliquent à TOUTES (demande Thomas : « sélectionner
+  // 2 lignes et leur appliquer les mêmes modifs »). La 1re forme sert de référence d'affichage.
+  const _selShapeIdxs = multiSel.length
+    ? multiSel.filter(i => paths[i]?.type === 'shape')
+    : (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' ? [selAnnot.idx] : []);
+  const _selShapeSet = new Set(_selShapeIdxs);
+  const _selShapeIdx = _selShapeIdxs.length ? _selShapeIdxs[0] : -1;
+  const _selShape = _selShapeIdx >= 0 ? paths[_selShapeIdx] : null;
   const shapePanelVisible = tool === 'shape' || (tool === 'select' && _selShape !== null);
   const shapeFillDisplay = _selShape ? isShapeFilled(_selShape) : shapeFilled;
   const shapePanelFilled = shapeFillDisplay;
   const shapeDashDisplay = _selShape ? !!_selShape.dash : shapeDash;
   // Contour/Rempli n'a de sens que pour rectangle, ellipse et zone (pas ligne, flèche, polyligne).
-  const shapeFillable = FILLABLE.has(_selShape ? _selShape.shape : shapeTool);
+  const shapeFillable = _selShape ? _selShapeIdxs.some(i => FILLABLE.has(paths[i].shape)) : FILLABLE.has(shapeTool);
+  const updateSelShapes = (fn) => setPaths(prev => prev.map((p, i) => _selShapeSet.has(i) ? fn(p) : p));
   const shapePanelOpVal = _selShape
     ? (shapePanelFilled ? (_selShape.fillOpacity ?? 0.3) : (_selShape.strokeOpacity ?? 1))
     : (shapeFilled ? fillOpacity : strokeOpacity);
@@ -2634,16 +2742,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   // Trois curseurs de taille (Texte / Formes / Symboles), comme l'éditeur de rapport, affichés
   // ensemble au niveau des couleurs. Chacun pilote son type indépendamment (clés partagées).
-  const _scaleSelShapeIdx = selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' ? selAnnot.idx : -1;
-  const _scaleSelShape = _scaleSelShapeIdx >= 0 ? paths[_scaleSelShapeIdx] : null;
+  const _scaleSelShape = _selShape;
   const scaleCtls = [
     { lbl: 'Texte',    val: scaleText,   set: setScaleText,   key: SCALE_KEY('text') },
     // Formes : forme SÉLECTIONNÉE → seulement elle ; sinon → épaisseur des prochaines formes.
     // Jamais toutes les formes existantes d'un coup (réglage global = onglet Rapport).
     _scaleSelShape
-      ? { lbl: 'Formes', title: 'Forme sélect.', val: scaleShape * (_scaleSelShape.sizeMul ?? 1), key: null,
+      ? { lbl: 'Formes', title: _selShapeIdxs.length > 1 ? 'Formes sélect.' : 'Forme sélect.', val: scaleShape * (_scaleSelShape.sizeMul ?? 1), key: null,
           set: (v) => { const mul = scaleShape > 0 ? v / scaleShape : 1;
-            setPaths(prev => prev.map((p, i) => i === _scaleSelShapeIdx ? { ...p, sizeMul: Math.round(mul * 1000) / 1000 } : p)); } }
+            updateSelShapes(p => ({ ...p, sizeMul: Math.round(mul * 1000) / 1000 })); } }
       : { lbl: 'Formes', title: 'Nouv. formes', val: newShapeScale, set: setNewShapeScale, key: SCALE_KEY('shape_new') },
     { lbl: 'Symboles', val: scaleSymbol, set: setScaleSymbol, key: SCALE_KEY('symbol') },
   ];
@@ -2832,7 +2939,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           {/* Tailles Texte / Formes / Symboles — comme l'éditeur de rapport, au niveau des couleurs */}
           {scaleCtls.map(s => (
             <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
-              <span style={{ fontSize:12,color:'#bbb',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap' }}>{s.title || s.lbl}</span>
+              <span style={{ fontSize:12,color:'#bbb',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:s.lbl === 'Formes' ? 104 : 0,textAlign:'right' }}>{s.title || s.lbl}</span>
               <input type="range" min="0.3" max="5" step="0.1" value={s.val}
                 onChange={e => { const v = parseFloat(e.target.value); s.set(v); if (s.key) _lsSet(s.key, String(v)); }}
                 style={{ width:96,accentColor:DA.red,cursor:'pointer' }}/>
@@ -2998,11 +3105,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           {shapeFillable && (
             <button onClick={() => {
               const nv = !shapeFillDisplay;
-              if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,filled:nv} : p));
+              if (_selShape) updateSelShapes(p => (FILLABLE.has(p.shape) ? { ...p, filled: nv } : p));
               setShapeFilled(nv);
             }}
               title={shapeFillDisplay ? 'Forme remplie — cliquer pour un simple contour' : 'Simple contour — cliquer pour remplir'}
-              style={{ padding:'5px 13px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+              style={{ width:isMob?92:108,textAlign:'center',padding:'5px 8px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
                 background:shapeFillDisplay?DA.red:'#333',color:shapeFillDisplay?'white':'#aaa',border:'none' }}>
               {shapeFillDisplay ? '◼ Rempli' : '◻ Contour'}
             </button>
@@ -3010,22 +3117,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           {/* Trait plein / en tirets (demande Thomas) — même logique que Contour/Rempli. */}
           <button onClick={() => {
             const nv = !shapeDashDisplay;
-            if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,dash:nv} : p));
+            if (_selShape) updateSelShapes(p => ({ ...p, dash: nv }));
             setShapeDash(nv);
           }}
             title={shapeDashDisplay ? 'Trait en tirets — cliquer pour un trait plein' : 'Trait plein — cliquer pour des tirets'}
-            style={{ padding:'5px 13px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+            style={{ width:isMob?80:94,textAlign:'center',padding:'5px 8px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
               background:shapeDashDisplay?DA.red:'#333',color:shapeDashDisplay?'white':'#aaa',border:'none' }}>
             {shapeDashDisplay ? '┄ Tirets' : '─ Plein'}
           </button>
           <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
-          <span style={{ fontSize:isMob?9:11,color:isMob?'#888':'#aaa',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>{shapePanelOpLabel}</span>
+          <span style={{ fontSize:isMob?9:11,color:isMob?'#888':'#aaa',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap',width:isMob?110:142,textAlign:'right' }}>{shapePanelOpLabel}</span>
           <input type="range" min="0.05" max="1" step="0.05" value={shapePanelOpVal}
             onChange={e => {
               const nv = parseFloat(e.target.value);
               if (_selShape) {
                 const opKey = shapePanelFilled ? 'fillOpacity' : 'strokeOpacity';
-                setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,[opKey]:nv} : p));
+                updateSelShapes(p => ({ ...p, [opKey]: nv }));
               } else if (shapeFilled) { setFillOpacity(nv); } else { setStrokeOpacity(nv); }
             }}
             style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
@@ -3079,12 +3186,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         <div style={{ background:'#1a1a1a', padding:'8px 10px', borderBottom:'1px solid #333', display:'flex', flexDirection:'column', gap:8, flexShrink:0 }}>
           {/* Rangée 1 : zone de texte multi-ligne (Entrée = nouvelle ligne, la boîte s'adapte) +
               fermer. fontSize 16 → pas de zoom iOS ; hauteur auto jusqu'à ~5 lignes. */}
-          <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+          <div style={{ display:'flex', alignItems: isTouchUI ? 'flex-start' : 'center', gap:8 }}>
+            {isTouchUI ? (
             <textarea
               value={selText.text || ''} placeholder="Votre texte…  (Entrée = nouvelle ligne)"
               rows={Math.min(5, Math.max(1, String(selText.text || '').split('\n').length))}
               onChange={e => setPaths(prev => prev.map((p,i) => i===selTextIdx ? {...p,text:e.target.value} : p))}
               style={{ flex:1, minWidth:0, fontSize:16, padding:'9px 12px', borderRadius:9, border:'1px solid #555', background:'#222', color:'white', outline:'none', fontFamily:'inherit', resize:'none', lineHeight:1.3 }}/>
+            ) : (
+              // PC : on réécrit DIRECTEMENT sur le plan (re-clic sur le texte) → plus de zone en doublon ici.
+              <span style={{ flex:1, minWidth:0, fontSize:12.5, color:'#999' }}>
+                Recliquez sur le texte pour le réécrire{selText.textMode === 'arrow' ? ' · glissez le losange orange pour déplacer la base de la flèche' : ''}
+              </span>
+            )}
             <button onClick={() => setSelTextIdx(null)} title="Fermer"
               style={{ width:40, height:40, flexShrink:0, borderRadius:9, background:'#333', color:'#ccc', border:'none', fontSize:16, cursor:'pointer' }}>✕</button>
           </div>
@@ -3112,7 +3226,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             </div>
             <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }} title="Dupliquer"
               style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#1d4ed8', color:'white', border:'none', fontSize:20, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>⊕</button>
-            <button onClick={() => { setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }} title="Supprimer"
+            <button onClick={() => { if (inlineEditIdx === selTextIdx) cancelInlineEdit(); setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }} title="Supprimer"
               style={{ width:46, height:46, flexShrink:0, borderRadius:10, background:'#B91C1C', color:'white', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <Ic n="del" s={17}/>
             </button>
