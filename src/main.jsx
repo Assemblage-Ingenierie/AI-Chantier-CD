@@ -48,10 +48,19 @@ try {
 // et les données sont sauvegardées en continu (localStorage + boîte noire) → reload sans risque.
 if ('serviceWorker' in navigator) {
   let refreshing = false;
+  // INCIDENT 2026-10-15 : le reload tombait AU MILIEU d'une annotation non enregistrée (plan perdu).
+  // On attend qu'aucun éditeur ne soit ouvert (verrou lib/editLock.js) avant de recharger.
+  const reloadWhenIdle = () => {
+    if ((Number(window.__chantieraiEditLocks) || 0) > 0) {
+      window.addEventListener('chantierai:editlock', reloadWhenIdle, { once: true });
+      return;
+    }
+    window.location.reload();
+  };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (refreshing) return;
     refreshing = true;
-    window.location.reload();
+    reloadWhenIdle();
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then(reg => {

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useEditLock } from '../../lib/editLock.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
@@ -386,7 +387,11 @@ export const SYMBOL_CATEGORIES = [
 // (ErrorBoundary « Recharger l'app ») dès qu'on ouvrait une photo sur ces appareils — alors
 // que le reste de l'app est déjà protégé (cf. _hasLS dans supabase.js / useAuth.js).
 const _lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-const _lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+const _lsSet = (k, v) => {
+  try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ }
+  // Échelles d'annotation : les vignettes de plan (vue Visite) se redessinent à la même échelle.
+  if (String(k).startsWith('chantierai_scale_')) { try { window.dispatchEvent(new Event('chantierai:annotscale')); } catch { /* ignore */ } }
+};
 const ANNOT_PREFS_KEY = 'chantierai_annot_prefs_v1';
 const SHAPE_KEYS = ['rect', 'ellipse', 'arrow', 'line', 'poly', 'polyline'];
 // Le clavier sert-il à TAPER du texte ? (champ texte, zone de texte, contenu éditable). Un
@@ -610,6 +615,8 @@ function movePath(p, dx, dy) {
 }
 
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
+  // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
+  useEditLock();
   const cvRef          = useRef();
   const bgRef          = useRef(null);
   const vpStart        = useRef(null);
@@ -967,8 +974,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     let d = null;
     try { d = JSON.parse(_lsGet(draftKey) || 'null'); } catch { d = null; }
     if (!d || !Array.isArray(d.paths)) return;
-    const stale = d.base !== baseHash || Date.now() - (d.ts || 0) > 7 * 24 * 3600 * 1000;
-    if (stale) { _lsDel(draftKey); return; } // enregistré depuis, ou trop ancien → on oublie
+    // Seul l'ÂGE invalide un brouillon (30 j). Avant, un brouillon était EFFACÉ dès que l'état
+    // enregistré du plan avait changé entre-temps (autre appareil, synchro…) → travail perdu
+    // (incident 15/10). On le propose désormais quand même ; « Ignorer » le supprime.
+    const stale = Date.now() - (d.ts || 0) > 30 * 24 * 3600 * 1000;
+    if (stale) { _lsDel(draftKey); return; }
     if (JSON.stringify(d.paths) === JSON.stringify(savedPaths || [])) { _lsDel(draftKey); return; }
     setDraftOffer(d);
   }, [bgOk, draftKey]); // eslint-disable-line react-hooks/exhaustive-deps

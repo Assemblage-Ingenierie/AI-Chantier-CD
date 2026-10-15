@@ -1160,12 +1160,13 @@ function splitPlanGroups(loc, planLibrary, breaks) {
   const allPlans = [];
   if (loc.planId || loc.planBg) {
     if (loc.planReportHidden) collectHidden(loc.planId, loc.planAnnotations);
-    else allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null });
+    else allPlans.push({ bg: primaryBg, annotations: loc.planAnnotations, breakId: null, planId: loc.planId || null, epIdx: null });
   }
   (loc.extraPlans || []).forEach((ep, i) => {
     if (ep.reportHidden) { collectHidden(ep.planId, ep.planAnnotations); return; }
     const epBg = ep.planBg || (ep.planId && lib.find(p => p.id === ep.planId)?.bg) || null;
-    allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null });
+    if (!epBg && !ep.planId && !ep.planAnnotations?.exported) return; // plan vide (ou mis sur une page à part)
+    allPlans.push({ bg: epBg, annotations: ep.planAnnotations, breakId: `plan-${loc.id}_ep_${i}`, planId: ep.planId || null, epIdx: i });
   });
   if (hiddenPaths.size > 0) {
     allPlans.forEach((p, i) => {
@@ -1187,7 +1188,7 @@ function splitPlanGroups(loc, planLibrary, breaks) {
 // Rendu d'UN plan propre à une observation dans l'aperçu, calqué sur le PDF (section « Plans
 // additionnels annotés » de generateRapport, juste après les photos de l'observation). Réutilise
 // SinglePlanImage (fond + annotations + numérotation Vxx globale). Titre = nom du plan si connu.
-function ItemPlanBlock({ plan, planNom = null, annotScale = 1, vpNumByPath = null }) {
+function ItemPlanBlock({ plan, planNom = null, annotScale = 1, vpNumByPath = null, onFullPage = null }) {
   if (!plan) return null;
   return (
     <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
@@ -1196,13 +1197,16 @@ function ItemPlanBlock({ plan, planNom = null, annotScale = 1, vpNumByPath = nul
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>{planNom}</span>
         </div>
       )}
-      <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations}
-        annotScale={annotScale} alt={planNom || 'Plan observation'} vpNumByPath={vpNumByPath}/>
+      <div style={{ position:'relative' }}>
+        <PlanPageButton onClick={onFullPage}/>
+        <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations}
+          annotScale={annotScale} alt={planNom || 'Plan observation'} vpNumByPath={vpNumByPath}/>
+      </div>
     </div>
   );
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null }) {
+function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null, onFullPage = null }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override).
   // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
   // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
@@ -1288,7 +1292,10 @@ function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMo
             {i > 0 && !cutMode && forced && (
               <div style={{ height:2, background:DA.red, opacity:0.3 }}/>
             )}
-            <SinglePlanImage bg={p.bg} planId={p.planId} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath} onOrient={onOrient}/>
+            <div style={{ position:'relative' }}>
+              <PlanPageButton onClick={onFullPage ? () => onFullPage(p.epIdx == null ? `z:${loc.id}` : `z:${loc.id}:${p.epIdx}`) : null}/>
+              <SinglePlanImage bg={p.bg} planId={p.planId} annotations={p.annotations} annotScale={annotScale} alt={`Plan ${loc.nom} ${i + 1}`} vpNumByPath={vpNumByPath} onOrient={onOrient}/>
+            </div>
           </React.Fragment>
         );
       })}
@@ -2127,10 +2134,14 @@ function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPages, loa
   );
 }
 
-// ── Page PLAN EN GRAND (A4 PAYSAGE) ─────────────────────────────────────────────────────
-// Option « Plan annoté en paysage en fin de rapport » (demande Thomas) : le plan annoté occupe
-// toute une page A4 PAYSAGE (891×630 px dans le repère de l'aperçu), avec sa légende.
-function LandscapePlanPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath }) {
+// ── PLAN SUR PAGE À PART (A4 PAYSAGE ou PORTRAIT) ─────────────────────────────────────────
+// Demande Thomas : chaque plan peut être sorti du texte et mis EN GRAND sur sa propre page en fin
+// de rapport, au choix en paysage ou en portrait. Clé du plan : `z:<zone>` (plan de zone),
+// `z:<zone>:<i>` (plan supplémentaire de zone), `i:<observation>:<k>` (plan d'observation).
+// orientation = 'landscape' | 'portrait'.
+function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath, orientation, onChange }) {
+  const land = orientation !== 'portrait';
+  const W = land ? PH : PW, H = land ? PW : PH;
   const paths = plan.annotations?.paths || [];
   const usedIds = new Set(paths.filter(p => p.type === 'symbol').map(p => p.symbolId));
   const legendSy = getAllSymbols().filter(s => usedIds.has(s.id));
@@ -2138,10 +2149,11 @@ function LandscapePlanPage({ plan, title, projet, pageNum, totalPages, annotScal
   const dateStr = projet.dateVisite
     ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR')
     : new Date().toLocaleDateString('fr-FR');
+  const btn = (active) => ({ padding:'3px 9px', borderRadius:6, border:`1px solid ${active ? DA.red : DA.border}`, background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, fontSize:9, fontWeight:700, cursor:'pointer' });
   return (
-    <div style={{ width:PH, height:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', overflow:'hidden', fontFamily:"'Open Sans', sans-serif", display:'flex', flexDirection:'column' }}>
+    <div style={{ width:W, height:H, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, position:'relative', overflow:'hidden', fontFamily:"'Open Sans', sans-serif", display:'flex', flexDirection:'column' }}>
       <HdrBar projet={projet} dateStr={dateStr}/>
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:`8px ${MX}px 6px`, borderBottom:`2px solid ${DA.red}`, margin:`0 ${MX}px`, paddingLeft:0, paddingRight:0 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0 6px', borderBottom:`2px solid ${DA.red}`, margin:`0 ${MX}px` }}>
         <span style={{ fontSize:9, fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>{title}</span>
         {(legendSy.length > 0 || hasVp) && (
           <span style={{ marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:'2px 12px', justifyContent:'flex-end' }}>
@@ -2155,14 +2167,49 @@ function LandscapePlanPage({ plan, title, projet, pageNum, totalPages, annotScal
       <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center' }}>
         <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} fill/>
       </div>
-      <div style={{ position:'absolute', top:PW - FTR, left:0, right:0 }}>
+      {onChange && (
+        <div data-print="hide" style={{ position:'absolute', top:HDR + 34, right:MX, display:'flex', gap:4, background:'rgba(255,255,255,0.92)', padding:4, borderRadius:8, boxShadow:'0 1px 6px rgba(0,0,0,0.15)' }}>
+          <button onClick={() => onChange('landscape')} style={btn(land)}>▭ A4 paysage</button>
+          <button onClick={() => onChange('portrait')} style={btn(!land)}>▯ A4 portrait</button>
+          <button onClick={() => onChange(null)} title="Remettre ce plan à sa place dans le rapport" style={btn(false)}>↩ Dans le texte</button>
+        </div>
+      )}
+      <div style={{ position:'absolute', top:H - FTR, left:0, right:0 }}>
         <PageFtr pageNum={pageNum} totalPages={totalPages}/>
       </div>
     </div>
   );
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+// Bouton (aperçu PC uniquement, jamais imprimé) posé sur un plan : le sortir sur une page à part.
+function PlanPageButton({ onClick }) {
+  if (!onClick) return null;
+  return (
+    <button data-print="hide" onClick={onClick} title="Mettre ce plan en grand sur une page à part (fin du rapport)"
+      style={{ position:'absolute', top:6, right:6, zIndex:3, padding:'3px 9px', borderRadius:6, border:`1px solid ${DA.border}`, background:'rgba(255,255,255,0.94)', color:DA.gray, fontSize:9, fontWeight:700, cursor:'pointer', boxShadow:'0 1px 4px rgba(0,0,0,0.12)' }}>
+      ⤢ Page à part
+    </button>
+  );
+}
+
+// Retire du CORPS du rapport les plans mis sur une page à part (copie, données intactes).
+function stripFullPagePlans(locs, full) {
+  if (!full || !Object.keys(full).length) return locs;
+  const blank = (o) => ({ ...o, planId: null, planBg: null, planAnnotations: null });
+  return locs.map(loc => {
+    let l = loc;
+    if (full[`z:${loc.id}`]) l = { ...l, planId: null, planBg: null, planAnnotations: null };
+    if ((loc.extraPlans || []).some((_, i) => full[`z:${loc.id}:${i}`]))
+      l = { ...l, extraPlans: loc.extraPlans.map((ep, i) => full[`z:${loc.id}:${i}`] ? blank(ep) : ep) };
+    const items = loc.items || [];
+    if (items.some(it => (it.plans || []).some((_, k) => full[`i:${it.id}:${k}`])))
+      l = { ...l, items: items.map(it => (it.plans || []).some((_, k) => full[`i:${it.id}:${k}`])
+        ? { ...it, plans: it.plans.map((pl, k) => full[`i:${it.id}:${k}`] ? { ...pl, planAnnotations: null } : pl) } : it) };
+    return l;
+  });
+}
+
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2176,6 +2223,49 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
   const vxxDebugData = useMemo(() => VXX_DEBUG ? debugVpNumbering(localisations) : null, [localisations]);
+
+  // ── Plans sur PAGE À PART (fin de rapport, paysage ou portrait) — choix PAR PLAN ──
+  // Tous les plans du rapport, avec leur clé. L'ancienne case « tous les plans en paysage »
+  // (planPagesPaysage) reste honorée tant qu'aucun choix plan par plan n'a été fait.
+  const reportPlans = useMemo(() => {
+    const lib = projet.planLibrary || [];
+    const nomOf = (id) => (id && lib.find(p => p.id === id)?.nom) || '';
+    const out = [];
+    for (const loc of locs) {
+      const groups = splitPlanGroups(loc, lib, new Set()).flatMap(g => g.plans);
+      groups.forEach((p, k) => {
+        if (!p.bg && !p.planId && !p.annotations?.exported) return;
+        out.push({ key: p.epIdx == null ? `z:${loc.id}` : `z:${loc.id}:${p.epIdx}`, plan: p,
+          title: `Plan — ${loc.nom}${groups.length > 1 ? ` (${k + 1}/${groups.length})` : ''}` });
+      });
+      for (const it of (loc.items || [])) {
+        if (isBrouillon(it) || !itemHasReportContent(it)) continue;
+        (it.plans || []).forEach((pl, k) => {
+          if (!pl.planAnnotations?.paths?.length) return;
+          const bg = pl.planBg || (lib.find(p => p.id === pl.planId)?.bg) || null;
+          if (!bg && !pl.planAnnotations?.exported) return;
+          out.push({ key: `i:${it.id}:${k}`, plan: { bg, planId: pl.planId || null, annotations: pl.planAnnotations },
+            title: (nomOf(pl.planId) ? `${nomOf(pl.planId)} — ` : 'Plan — ') + (it.titre || 'observation') });
+        });
+      }
+    }
+    return out;
+  }, [locs, projet.planLibrary]);
+  const fullPageMap = useMemo(() => {
+    if (planPages && typeof planPages === 'object') return planPages;
+    if (planPagesPaysage) return Object.fromEntries(reportPlans.map(p => [p.key, 'landscape']));
+    return {};
+  }, [planPages, planPagesPaysage, reportPlans]);
+  const setPlanPage = useCallback((key, val) => {
+    if (!onSetPlanPages) return;
+    const next = { ...fullPageMap };
+    if (val) next[key] = val; else delete next[key];
+    onSetPlanPages(next);
+  }, [onSetPlanPages, fullPageMap]);
+  const isPcWide = typeof window !== 'undefined' && window.innerWidth >= 900;
+  const onFullPage = isPcWide && onSetPlanPages ? (key) => setPlanPage(key, 'landscape') : null;
+  // Corps du rapport : les plans sortis sur une page à part n'y apparaissent plus.
+  const bodyLocs = useMemo(() => stripFullPagePlans(locs, fullPageMap), [locs, fullPageMap]);
 
   // breaks effectifs = breaks manuels + breaks dérivés des découpages de paragraphes
   const paraBreaks = useMemo(() =>
@@ -2200,7 +2290,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     const lib = projet.planLibrary || [];
     const bgResolvable = (planId, planBg, ann) =>
       !!(ann?.exported || planBg || (planId && lib.find(p => p.id === planId)?.bg));
-    for (const loc of locs) {
+    for (const loc of bodyLocs) {
       const list = [];
       if ((loc.planId || loc.planBg) && !loc.planReportHidden && bgResolvable(loc.planId, loc.planBg, loc.planAnnotations))
         list.push({ planId: loc.planId, breakId: `plan-${loc.id}` });
@@ -2217,7 +2307,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       });
     }
     return s;
-  }, [locs, planOrient, plansEnFin, projet.planLibrary]);
+  }, [bodyLocs, planOrient, plansEnFin, projet.planLibrary]);
 
   const breaks = useMemo(() => {
     const s = new Set(pageBreaks || []);
@@ -2260,7 +2350,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [planPageSegments, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || [], breaks), [locs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary, breaks]);
+  const allBlocks   = useMemo(() => flattenBlocks(bodyLocs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || [], breaks), [bodyLocs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary, breaks]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -2291,24 +2381,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null),
     [allBlocks, ppl, breaks, measuredH]
   );
-  // Plans du rapport repris EN GRAND sur une page A4 paysage chacun, en fin de rapport (option).
-  // Mêmes plans que ceux affichés dans le rapport (zones + plans d'observation), mêmes annotations.
-  const landscapePlans = useMemo(() => {
-    if (!planPagesPaysage) return [];
-    const lib = projet.planLibrary || [];
-    const out = [];
-    for (const b of allBlocks) {
-      if (b.type === 'plan') {
-        const list = (b.plansSubset ?? splitPlanGroups(b.loc, lib, new Set()).flatMap(g => g.plans))
-          .filter(p => p.bg || p.planId || p.annotations?.exported);
-        list.forEach((p, k) => out.push({ key: `${b.id}-${k}`, plan: p,
-          title: `Plan — ${b.loc.nom}${list.length > 1 ? ` (${k + 1}/${list.length})` : ''}` }));
-      } else if (b.type === 'itemplan') {
-        out.push({ key: b.id, plan: b.plan, title: b.planNom || `Plan — ${b.item?.titre || 'observation'}` });
-      }
-    }
-    return out;
-  }, [planPagesPaysage, allBlocks, projet.planLibrary]);
+  // Pages « plan à part » dans l'ordre du rapport.
+  const landscapePlans = useMemo(() => reportPlans.filter(p => fullPageMap[p.key])
+    .map(p => ({ ...p, orient: fullPageMap[p.key] === 'portrait' ? 'portrait' : 'landscape' })), [reportPlans, fullPageMap]);
 
   const containerRef = useRef();
   const scrollRef    = useRef();
@@ -2760,9 +2835,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
                   : block.type === 'plan'
-                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
+                  ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                   : block.type === 'itemplan'
-                  ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
+                  ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath} onFullPage={onFullPage ? () => onFullPage(block.id.replace(/^(.*)_iplan(\d+)$/, 'i:$1:$2')) : null}/>
                   : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
                 }
               </div>
@@ -2823,9 +2898,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
                           : block.type === 'plan'
-                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient}/>
+                          ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                           : block.type === 'itemplan'
-                          ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
+                          ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath} onFullPage={onFullPage ? () => onFullPage(block.id.replace(/^(.*)_iplan(\d+)$/, 'i:$1:$2')) : null}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
@@ -2943,16 +3018,18 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           );
         })}
 
-        {/* ── PLANS EN GRAND (A4 paysage) — affichés réduits dans l'aperçu, exportés en paysage ── */}
+        {/* ── PLANS SUR PAGE À PART (A4 paysage ou portrait), en fin de rapport ── */}
         {landscapePlans.map((lp, k) => {
           const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + k;
           const pageNum = pageIdx + 1;
           return (
             <React.Fragment key={`land-${lp.key}`}>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-              <div style={{ zoom: PW / PH }}>
-                <div ref={el => { pageRefs.current[pageIdx] = el; }} data-landscape="1">
-                  <LandscapePlanPage plan={lp.plan} title={lp.title} projet={projet} pageNum={pageNum} totalPages={totalPages} annotScale={annotScale} vpNumByPath={vpNumByPath}/>
+              {/* Paysage : A4 couché (297×210) affiché à la largeur des pages de l'aperçu ; exporté en vrai A4 paysage. */}
+              <div style={lp.orient === 'landscape' ? { zoom: PW / PH } : undefined}>
+                <div ref={el => { pageRefs.current[pageIdx] = el; }} data-landscape={lp.orient === 'landscape' ? '1' : undefined}>
+                  <PlanFullPage plan={lp.plan} title={lp.title} projet={projet} pageNum={pageNum} totalPages={totalPages} annotScale={annotScale} vpNumByPath={vpNumByPath}
+                    orientation={lp.orient} onChange={isPcWide && onSetPlanPages ? (v) => setPlanPage(lp.key, v) : null}/>
                 </div>
               </div>
             </React.Fragment>

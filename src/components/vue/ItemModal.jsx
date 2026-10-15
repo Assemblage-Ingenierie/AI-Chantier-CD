@@ -9,6 +9,7 @@ import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { buildDiffSegments, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
 import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
+import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
@@ -238,6 +239,8 @@ function TableSizePicker({ onPick, onClose }) {
 }
 
 export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+  // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
+  useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
   // nouvelle zone, nommée par défaut d'après le préfixe de fusion (« Appartement Mme Scapolo »).
   const [moveTo, setMoveTo] = useState(zoneId);

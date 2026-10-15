@@ -96,8 +96,13 @@ export default function CropTool({ src, ratio = 16/9, outputWidth = 1200, output
     const iLeft = cw/2 + dx - nat.w*s/2, iTop = ch/2 + dy - nat.h*s/2;
     const canvas = document.createElement('canvas');
     canvas.width = outputWidth; canvas.height = outputHeight;
-    canvas.getContext('2d').drawImage(img, -iLeft/s, -iTop/s, cw/s, ch/s, 0, 0, outputWidth, outputHeight);
-    onDone(canvas.toDataURL('image/webp', 0.85));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, outputWidth, outputHeight); // fond blanc (JPEG sans transparence)
+    ctx.drawImage(img, -iLeft/s, -iTop/s, cw/s, ch/s, 0, 0, outputWidth, outputHeight);
+    // Safari (iPhone) ne sait pas ENCODER en WebP : toDataURL('image/webp') y renvoie un PNG
+    // ~10× plus lourd (couverture lente à charger — retour Thomas). Repli JPEG compressé.
+    const webp = canvas.toDataURL('image/webp', 0.85);
+    onDone(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85));
   };
 
   const nat = natRef.current;
