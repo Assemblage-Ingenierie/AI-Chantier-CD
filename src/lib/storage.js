@@ -1306,6 +1306,7 @@ async function saveRemote(ps, dirtyIds = null) {
       includeConclusion: v.includeConclusion ?? false,
       conclusion: v.conclusion ?? '',
       conclusionAlign: v.conclusionAlign ?? 'left',
+      planPagesPaysage: v.planPagesPaysage ?? false, // option « plans en grand (A4 paysage) en fin de rapport »
       annexes: v.annexes ?? [], // métadonnées uniquement (octets PDF dans Storage) — cf. uploadAnnexPdf
     }));
 
