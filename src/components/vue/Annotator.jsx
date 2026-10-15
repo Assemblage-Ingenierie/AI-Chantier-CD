@@ -1144,13 +1144,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [spaceDown, setSpaceDown] = useState(false); // Espace maintenu → curseur « main »
   const [showHelp, setShowHelp] = useState(false);   // aide des raccourcis (touche ?)
 
-  // Maj + clic sur une forme DEPUIS l'outil Formes : l'ajoute (ou la retire) de la sélection et
-  // passe en Sélection → on peut prendre 2 lignes et leur appliquer les mêmes réglages.
-  const toggleShapeAt = (pos) => {
-    const r = 18 * cvRatio();
+  // Ctrl/Cmd + clic (ou Maj + clic) sur un élément DEPUIS un outil de tracé : l'ajoute (ou le retire)
+  // de la sélection et passe en Sélection → on peut prendre 2 lignes et leur appliquer les mêmes réglages.
+  const toggleSelAt = (pos) => {
+    const r = 18 * cvRatio(), pad = 11 * cvRatio();
     const ps = pathsRef.current;
+    const hitOne = (q) => {
+      if (!q) return false;
+      if (q.type === 'shape') return hitsShape(q, pos, r);
+      const b = boundsOf(q);
+      return !!b && pos.x >= b.x1 - pad && pos.x <= b.x2 + pad && pos.y >= b.y1 - pad && pos.y <= b.y2 + pad;
+    };
     let hit = -1;
-    for (let i = ps.length - 1; i >= 0; i--) { if (ps[i]?.type === 'shape' && hitsShape(ps[i], pos, r)) { hit = i; break; } }
+    for (let i = ps.length - 1; i >= 0; i--) { if (hitOne(ps[i])) { hit = i; break; } }
     if (hit < 0) return false;
     const cur = selectedIdxs();
     setTool('select'); setPolyPts([]); setPolyMousePos(null);
@@ -1805,6 +1811,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
     const cv = cvRef.current;
     const pos = getXY(e, cv);
+    // Sélection multiple (PC) : Ctrl/Cmd + clic — ou Maj + clic — ajoute / retire l'élément cliqué.
+    const addKey = !e.touches && (e.shiftKey || e.ctrlKey || e.metaKey);
+    if (!e.touches && (e.ctrlKey || e.metaKey) && tool !== 'select' && polyPts.length === 0) {
+      toggleSelAt(pos); return; // Ctrl + clic ne trace jamais
+    }
 
     // Poignée de ROTATION d'un viewpoint sélectionné : priorité absolue, quel que soit l'outil.
     {
@@ -1844,15 +1855,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           setDrawing(true); return;
         }
       }
-      if (multiSel.length && !e.shiftKey) {
+      if (multiSel.length && !addKey) {
         if (multiSel.some(i => hitAt(paths[i]))) {
           groupDragRef.current = { orig: multiSel.map(i => [i, paths[i]]), tapX: pos.x, tapY: pos.y };
           setDrawing(true); return;
         }
         setMultiSel([]);
       }
-      // ── Maj+clic : ajoute / retire un élément de la sélection ──
-      if (e.shiftKey && !e.touches) {
+      // ── Ctrl/Cmd+clic ou Maj+clic : ajoute / retire un élément de la sélection ──
+      if (addKey) {
         let hitI = -1;
         for (let i = paths.length - 1; i >= 0; i--) { if (hitAt(paths[i])) { hitI = i; break; } }
         if (hitI >= 0) {
@@ -1947,7 +1958,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         }
       }
       // Clic dans le vide : désélectionne ; glisser (souris) = CADRE de sélection (Maj = ajoute).
-      const addTo = e.shiftKey ? selectedIdxs() : [];
+      const addTo = addKey ? selectedIdxs() : [];
       setSelAnnot(null); setSelTextIdx(null);
       if (!e.touches) {
         marqueeRef.current = { x0: pos.x, y0: pos.y, add: addTo };
@@ -2094,7 +2105,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         // existante la MANIPULE (poignée de resize, ou sélection + déplacement) au lieu de
         // démarrer un nouveau polygone → on peut enfin re-sélectionner/recolorer une zone.
         if (polyPts.length === 0) {
-          if (e.shiftKey && !e.touches && toggleShapeAt(pos)) return; // Maj+clic = sélection multiple
+          if (e.shiftKey && !e.touches && toggleSelAt(pos)) return; // Maj+clic = sélection multiple
           if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
             const ap = paths[selAnnot.idx];
             const rhr = 14 * (cv.width / cv.clientWidth);
@@ -2457,7 +2468,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
         // Maj + simple clic (sans tracer) sur une forme = sélection multiple (Maj + glisser reste
         // le tracé à angle droit / carré).
-        if (len <= 6 && e?.shiftKey && !e.touches && toggleShapeAt(shapeStartRef.current)) {
+        if (len <= 6 && e?.shiftKey && !e.touches && toggleSelAt(shapeStartRef.current)) {
           setPendingShape(null); shapeStartRef.current = null; setDrawing(false); return;
         }
         if (len > 6) {
@@ -3265,7 +3276,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
             }
           </span>
-          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}</span>
+          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}{isMob ? '' : ' · Ctrl+clic = en sélectionner plusieurs'}</span>
           <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
             style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
             ⊕ Dupliquer
@@ -3365,8 +3376,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   ['Outils', [['V', 'Sélection'], ['D', 'Dessin'], ['T', 'Texte'], ['F', 'Formes'], ['S', 'Symboles']]],
                   ['Formes', [['R', 'Rectangle'], ['E', 'Ellipse'], ['A', 'Flèche'], ['L', 'Ligne'], ['Z', 'Zone libre'], ['P', 'Polyligne'], ['Entrée', 'Terminer la ligne / zone']]],
                   ['Tracé', [['Maj', 'Angles droits · carré / cercle'], ['Alt', 'Sans aimantation']]],
-                  ['Édition', [['Glisser (vide)', 'Cadre de sélection'], ['Maj+clic', 'Ajouter à la sélection'], ['Ctrl+A', 'Tout sélectionner'], ['Ctrl+C / V', 'Copier / coller sous la souris'],
-                    ['Ctrl+D', 'Dupliquer'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Annuler le tracé en cours']]],
+                  ['Édition', [['Glisser (vide)', 'Cadre de sélection'], ['Ctrl+clic', 'Ajouter / retirer de la sélection'], ['Ctrl+A', 'Tout sélectionner'], ['Ctrl+C / V', 'Copier / coller sous la souris'],
+                    ['Ctrl+D', 'Dupliquer'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Quitter le tracé / la sélection']]],
                   ['Vue', [['Molette', 'Zoom'], ['Espace + glisser', 'Déplacer la vue'], ['Ctrl+0', 'Vue entière'], ['Ctrl+ + / −', 'Zoom avant / arrière']]],
                 ].map(([sec, rows]) => (
                   <div key={sec} style={{ marginBottom:8, breakInside:'avoid' }}>
