@@ -136,3 +136,37 @@ describe('mergeWithLocal — observation déplacée ailleurs (fusion de zones)',
     expect(locs[1].items.map(i => i.id)).toEqual(['n']); // b est dans R+4 (serveur), n (non synchro) est gardée
   });
 });
+
+describe('mergeWithLocal — incident 2026-10-15 (archiver / réactiver : observations disparues)', () => {
+  const items = [{ id: 'i1', titre: 'Fissure' }, { id: 'i2', titre: 'Plancher' }];
+
+  it('projet archivé : le cache local sans observations ne remplace plus la version serveur', () => {
+    const remote = [proj('a', { statut: 'archive', locs: [loc('z1', items)] })];
+    const local  = [proj('a', { statut: 'archive', locs: [loc('z1', [])] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(), new Set(['a']), new Set());
+    expect(allMerged[0].visites[0].localisations[0].items.map(i => i.id)).toEqual(['i1', 'i2']);
+  });
+
+  it('réactivation (dirty) depuis un état local vide : les observations du serveur sont reprises (jamais effacées)', () => {
+    const remote = [proj('a', { locs: [loc('z1', items)] })];
+    const local  = [proj('a', { locs: [loc('z1', [])], updatedAt: '2026-06-10T00:00:00.000Z' })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(['a']), new Set(['a']), new Set());
+    expect(allMerged[0].visites[0].localisations[0].items.map(i => i.id)).toEqual(['i1', 'i2']);
+  });
+
+  it('garde-fou : une observation déplacée dans une autre zone n\'est pas dupliquée', () => {
+    const remote = [proj('a', { locs: [loc('z1', items), loc('z2', [])] })];
+    const local  = [proj('a', { locs: [loc('z1', []), loc('z2', items)] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(['a']), new Set(['a']), new Set());
+    const [z1, z2] = allMerged[0].visites[0].localisations;
+    expect(z1.items).toEqual([]);
+    expect(z2.items.map(i => i.id)).toEqual(['i1', 'i2']);
+  });
+
+  it('garde-fou : une observation SUPPRIMÉE volontairement (tombstone) ne revient pas', () => {
+    const remote = [proj('a', { locs: [loc('z1', items)] })];
+    const local  = [proj('a', { locs: [loc('z1', [])] })];
+    const { allMerged } = mergeWithLocal(remote, local, new Set(['a']), new Set(['a']), new Set(), new Set(['i1', 'i2']));
+    expect(allMerged[0].visites[0].localisations[0].items).toEqual([]);
+  });
+});

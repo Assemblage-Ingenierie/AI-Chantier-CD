@@ -3,7 +3,8 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { listSnapshots, getSnapshot } from '../../lib/backupVault.js';
-import { createAnnotScanner, createLostAnnotScanner } from '../../lib/annotRecovery.js';
+import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner } from '../../lib/annotRecovery.js';
+import { getDeletedIds } from '../../lib/tombstones.js';
 
 // CORBEILLE DU PROJET (PC — demande Thomas 13/10/2026) : tout ce qui a été supprimé dans CE
 // projet, au même endroit, restaurable en un clic — sans jamais rien écraser :
@@ -18,6 +19,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   const [bin, setBin] = useState(null);       // entrées zones + observations de CE projet
   const [lost, setLost] = useState(null);     // annotations disparues (zones existantes)
   const [mergeLost, setMergeLost] = useState(null); // annotations de zones fusionnées (ancienne fusion)
+  const [lostItems, setLostItems] = useState(null); // observations disparues (sauvegardes de l'appareil)
   const [done, setDone] = useState({});       // clé → message après restauration
   const multiVisits = (projet.visites || []).length > 1;
 
@@ -28,13 +30,16 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
       try {
         const lostScan = createLostAnnotScanner(projet);
         const mergeScan = createAnnotScanner([projet]);
+        let tomb = new Set();
+        try { tomb = getDeletedIds('item') || new Set(); } catch { /* sans pierres tombales : tout est proposé */ }
+        const itemScan = createLostItemScanner(projet, tomb);
         for (const m of await listSnapshots()) {
           if (!alive) return;
           const s = await getSnapshot(m.ts);
-          lostScan.add(s); mergeScan.add(s);
+          lostScan.add(s); mergeScan.add(s); itemScan.add(s);
         }
-        if (alive) { setLost(lostScan.entries()); setMergeLost(mergeScan.entries([projet])); }
-      } catch { if (alive) { setLost([]); setMergeLost([]); } }
+        if (alive) { setLost(lostScan.entries()); setMergeLost(mergeScan.entries([projet])); setLostItems(itemScan.entries()); }
+      } catch { if (alive) { setLost([]); setMergeLost([]); setLostItems([]); } }
     })();
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -55,9 +60,13 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
 
   const zones = (bin || []).filter(e => e.kind === 'loc' && !present.locs.has(e.locId));
   const obs = (bin || []).filter(e => e.kind !== 'loc' && e.item?.id && !present.items.has(e.item.id));
+  // Observations disparues hors suppression (archiver/réactiver…), retrouvées dans les sauvegardes
+  // de l'appareil ; celles déjà proposées par la corbeille (suppression volontaire) n'y sont pas.
+  const binItemIds = new Set(obs.map(e => e.item.id));
+  const lostObs = (lostItems || []).filter(e => !present.items.has(e.item.id) && !binItemIds.has(e.item.id));
   const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])];
-  const scanning = lost == null || mergeLost == null;
-  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length;
+  const scanning = lost == null || mergeLost == null || lostItems == null;
+  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length;
 
   const run = (key, fn, entry) => {
     const res = fn ? fn(entry) : { ok: false };
@@ -67,6 +76,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
       : (res?.reason === 'visite' ? 'Visite introuvable' : 'Impossible') }));
   };
 
+  const restoreAllLost = () => { for (const e of lostObs) if (!done[`l|${e.item.id}`]) run(`l|${e.item.id}`, onRestoreObservation, e); };
   const where = (e) => [multiVisits ? present.visitNom.get(e.visiteId) : null, e.locNom].filter(Boolean).join(' › ');
 
   const Row = ({ k, icon, title, sub, onRestore, label = 'Restaurer' }) => (
@@ -127,6 +137,27 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
                 <Row key={e.recId} k={e.recId} icon="📝" title={e.item?.titre || 'Observation sans titre'}
                   sub={`${where(e) || 'Zone'} · ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
                   onRestore={() => run(e.recId, onRestoreObservation, e)}/>
+              );
+            })}
+          </Section>
+
+          <Section title="Observations disparues" n={lostObs.length}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0 8px' }}>
+              <span style={{ flex:1, fontSize:11.5, color:DA.gray, lineHeight:1.4 }}>Présentes dans les sauvegardes de cet ordinateur mais plus dans le projet (sans avoir été supprimées).</span>
+              {lostObs.some(e => !done[`l|${e.item.id}`]) && (
+                <button onClick={restoreAllLost}
+                  style={{ flexShrink:0, padding:'7px 12px', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', border:'none', background:DA.red, color:'white', whiteSpace:'nowrap' }}>
+                  Tout restaurer ({lostObs.filter(e => !done[`l|${e.item.id}`]).length})
+                </button>
+              )}
+            </div>
+            {lostObs.map(e => {
+              const k = `l|${e.item.id}`;
+              const photoN = (e.item?.photos || []).filter(p => p && (p.data || p.storage_url || p._id)).length;
+              return (
+                <Row key={k} k={k} icon="🩹" title={e.item?.titre || 'Observation sans titre'}
+                  sub={`${where(e) || 'Zone'} · sauvegarde du ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
+                  onRestore={() => run(k, onRestoreObservation, e)}/>
               );
             })}
           </Section>

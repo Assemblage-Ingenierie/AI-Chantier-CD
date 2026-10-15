@@ -53,6 +53,34 @@ export function createLostAnnotScanner(projet) {
   return { add, entries: () => [...best.values()].sort((a, b) => b.ts - a.ts) };
 }
 
+// OBSERVATIONS DISPARUES (incident 2026-10-15 « archiver / réactiver : tout a disparu ») :
+// observations présentes dans les sauvegardes automatiques de l'appareil (boîte noire) pour CE
+// projet mais absentes aujourd'hui — hors suppressions volontaires (pierres tombales), qui ont
+// leur propre corbeille. Version la plus RÉCENTE gardée. Restauration additive (restoreItemInLocs).
+export function createLostItemScanner(projet, tombItemIds = new Set()) {
+  const present = new Set();
+  for (const v of (projet?.visites || [])) for (const l of (v.localisations || [])) for (const it of (l.items || [])) if (it?.id) present.add(it.id);
+  const best = new Map(); // itemId → entrée
+  const add = (snapshot) => {
+    const sp = (snapshot?.data || []).find(p => p?.id === projet?.id);
+    if (!sp) return;
+    for (const sv of (sp.visites || [])) for (const sl of (sv.localisations || [])) {
+      if (!sl || sl._mergedInto) continue;
+      (sl.items || []).forEach((it, idx) => {
+        if (!it?.id || present.has(it.id) || tombItemIds.has(it.id)) return;
+        const prev = best.get(it.id);
+        if (prev && prev.ts >= (snapshot.ts || 0)) return;
+        // `_photosHydrated` retiré : les photos (octets absents des sauvegardes) seront rechargées
+        // depuis le serveur à l'ouverture, au lieu de rester des vignettes vides.
+        const { _photosHydrated, ...item } = it;
+        best.set(it.id, { kind: 'lostItem', projectId: projet.id, visiteId: sv.id, locId: sl.id, locNom: sl.nom || '', item, idx, ts: snapshot.ts || 0 });
+      });
+    }
+  };
+  // Tri : par zone puis dans l'ordre d'origine (restauration « tout » = ordre retrouvé).
+  return { add, entries: () => [...best.values()].sort((a, b) => (a.locNom || '').localeCompare(b.locNom || '') || a.locId.localeCompare(b.locId) || a.idx - b.idx) };
+}
+
 // Remet des annotations disparues sur le plan d'une zone (additif, sans doublon). → { locs, added }
 export function applyLostAnnots(locs, entry) {
   const z = (locs || []).find(l => l.id === entry?.locId);
