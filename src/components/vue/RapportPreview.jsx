@@ -2363,7 +2363,165 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [cutMode, onCutModeChange]);
 
   // ── Impression navigateur (preview = PDF pixel-perfect) ──────────────────────────────────
+  // Clones des pages + encodage des images avec le BUDGET DE POIDS (< 5 Mo) — partagé par
+  // print() (impression navigateur) et toPdfBlob() (export groupé en zip). Une seule source de
+  // vérité pour le poids des PDF (exigence Thomas, cf. CLAUDE.md).
+  const encodePageClones = async (pages) => {
+    // ── Encodage des images + BUDGET DE POIDS (cible < 5 Mo — exigence Thomas) ─────────────
+    // C'est ICI que se joue le poids du PDF : sans réduction, le navigateur embarque chaque
+    // photo en pleine résolution capteur → PDF de 100+ Mo.
+    //  • PHOTOS : compressées, et RÉDUITES EN PREMIER si on dépasse le budget.
+    //  • PLANS / ANNEXES (data-role="plan") : gardés NETS (haute résolution, « comme le PDF »),
+    //    réduits seulement EN DERNIER RECOURS. Chaque source n'est décodée qu'UNE fois → le
+    //    ré-encodage par palier (budget) est bon marché. URL distantes (photos Supabase) :
+    //    fetch → blob → object URL (canvas non « tainté »).
+    const TARGET_BYTES = Math.round(5 * 1024 * 1024 * 0.92); // ~4,6 Mo d'images → marge sous 5 Mo
+    const PHOTO_TIERS = [[1280, 0.72], [1040, 0.68], [880, 0.62], [740, 0.56], [620, 0.5]];
+    const PLAN_TIERS  = [[3000, 0.85], [2400, 0.82], [1900, 0.76], [1500, 0.7], [1200, 0.66]];
+    const objUrls = [];
+    const imgCache = new Map(); // src → Promise<HTMLImageElement> décodé UNE fois
+    const loadImg = (src) => {
+      if (imgCache.has(src)) return imgCache.get(src);
+      const p = (async () => {
+        let loadSrc = src;
+        if (!src.startsWith('data:')) {
+          const resp = await fetch(src); if (!resp.ok) throw new Error('fetch');
+          const blob = await resp.blob(); const u = URL.createObjectURL(blob); objUrls.push(u); loadSrc = u;
+        }
+        return await new Promise((res, rej) => { const im = new window.Image(); im.onload = () => res(im); im.onerror = rej; im.src = loadSrc; });
+      })();
+      imgCache.set(src, p);
+      return p;
+    };
+    const encodeAt = async (src, maxW, q) => {
+      try {
+        const im = await loadImg(src);
+        // Logos/sigles (< 1000px) : INTACTS (l'aplatissement JPEG casserait leur transparence →
+        // fond blanc). Vrai pour data: ET http(s) (les logos du bucket Branding se chargent très
+        // bien dans la fenêtre d'impression). SEULES les blob: doivent être cuites (invalides hors
+        // du document d'origine → photo blanche) — elles sont quasi toujours des photos > 1000px.
+        if (!src.startsWith('blob:') && im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
+        const scale = Math.min(1, maxW / im.naturalWidth);
+        const W = Math.max(1, Math.round(im.naturalWidth * scale));
+        const H = Math.max(1, Math.round(im.naturalHeight * scale));
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(im, 0, 0, W, H);
+        const out = cv.toDataURL('image/jpeg', q); cv.width = 0; cv.height = 0;
+        return out && out.length > 50 ? out : src;
+      } catch { return src; }
+    };
+
+    // 1) Construire les clones + inventorier chaque image (photo vs plan).
+    const clones = [];
+    const imgJobs = []; // { el, src, role }
+    for (const el of pages) {
+      const origCanvases = Array.from(el.querySelectorAll('canvas'));
+      const canvasData = origCanvases.map(c => { try { return { src: c.toDataURL(), cssText: c.style.cssText }; } catch { return null; } });
+      origCanvases.forEach((c, i) => { c.dataset._pi = String(i); });
+      const clone = el.cloneNode(true);
+      origCanvases.forEach(c => { delete c.dataset._pi; });
+      clone.querySelectorAll('[data-print="hide"]').forEach(e => e.remove());
+      clone.querySelectorAll('canvas').forEach(canvas => {
+        const i = parseInt(canvas.dataset._pi ?? '-1');
+        const data = i >= 0 ? canvasData[i] : null;
+        if (!data?.src) { canvas.parentNode?.removeChild(canvas); return; }
+        try { const img = document.createElement('img'); img.src = data.src; img.style.cssText = data.cssText; canvas.parentNode?.replaceChild(img, canvas); } catch {}
+      });
+      clone.style.marginTop = '0';
+      Array.from(clone.querySelectorAll('img[src]')).forEach(img => {
+        const src = img.getAttribute('src');
+        if (!src) return;
+        // On traite data:, http(s) ET blob: — un blob: (URL liée au document d'origine) n'est PAS
+        // rendable dans la fenêtre d'impression → il DOIT être cuit en data URL (sinon photo blanche).
+        if (!src.startsWith('data:image/') && !/^https?:/i.test(src) && !src.startsWith('blob:')) return;
+        imgJobs.push({ el: img, src, role: img.getAttribute('data-role') === 'plan' ? 'plan' : 'photo' });
+      });
+      clones.push(clone);
+    }
+
+    // 2) Encodage initial (plans nets, photos compressées) puis budget itératif.
+    let photoTier = 0, planTier = 0;
+    const bytesOf = (s) => (s && s.startsWith('data:')) ? Math.round(s.length * 0.75) : 0;
+    const encoded = new Map(); // el → dataURL courant
+    const reencode = async (role) => {
+      const [pMaxW, pQ] = PHOTO_TIERS[photoTier];
+      const [lMaxW, lQ] = PLAN_TIERS[planTier];
+      await Promise.all(imgJobs.filter(j => role == null || j.role === role).map(async j => {
+        const [mw, q] = j.role === 'plan' ? [lMaxW, lQ] : [pMaxW, pQ];
+        encoded.set(j.el, await encodeAt(j.src, mw, q));
+      }));
+    };
+    await reencode(null);
+    const measure = () => imgJobs.reduce((s, j) => s + bytesOf(encoded.get(j.el)), 0);
+    let total = measure(), guard = 0;
+    while (total > TARGET_BYTES && guard++ < 12) {
+      if (photoTier < PHOTO_TIERS.length - 1) { photoTier++; await reencode('photo'); }
+      else if (planTier < PLAN_TIERS.length - 1) { planTier++; await reencode('plan'); }
+      else break;
+      total = measure();
+    }
+    console.log(`[PDF] Images ~${(total / 1048576).toFixed(1)} Mo (photos palier ${photoTier + 1}/${PHOTO_TIERS.length}, plans palier ${planTier + 1}/${PLAN_TIERS.length}) — avant impression navigateur`);
+    // 3) Appliquer les sources encodées + libérer les object URLs.
+    imgJobs.forEach(j => { j.el.setAttribute('src', encoded.get(j.el) || j.src); });
+    objUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
+    return clones;
+  };
+
   useImperativeHandle(ref, () => ({
+    // EXPORT GROUPÉ (zip de tous les rapports, PC — demande Thomas 15/10/2026) : le rapport est
+    // rendu EXACTEMENT comme l'aperçu (mêmes pages, mêmes images encodées sous budget), chaque
+    // page est photographiée puis assemblée en PDF A4. Budget de poids : si le PDF dépasse ~5 Mo,
+    // on reprend avec une définition / qualité plus basse (texte encore lisible au dernier palier).
+    toPdfBlob: async () => {
+      const pages = pageRefs.current.filter(Boolean);
+      if (!pages.length) return null;
+      const clones = await encodePageClones(pages);
+      const [{ toJpeg }, { PDFDocument }] = await Promise.all([import('html-to-image'), import('pdf-lib')]);
+      const host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:fixed;left:-20000px;top:0;width:630px;pointer-events:none;z-index:-1;';
+      const boxes = clones.map(c => {
+        const box = document.createElement('div');
+        box.style.cssText = "width:630px;height:891px;overflow:hidden;position:relative;background:#fff;box-sizing:border-box;font-family:'Open Sans','Inter',system-ui,sans-serif;";
+        box.innerHTML = c.innerHTML;
+        host.appendChild(box);
+        return box;
+      });
+      document.body.appendChild(host);
+      try {
+        // Images (déjà en data URL) décodées + polices prêtes avant la capture.
+        await Promise.race([document.fonts?.ready ?? Promise.resolve(), new Promise(r => setTimeout(r, 1500))]);
+        await Promise.all(Array.from(host.querySelectorAll('img')).map(im => im.complete ? null : new Promise(r => { im.onload = im.onerror = r; setTimeout(r, 4000); })));
+        // Une image injoignable (réseau) ne doit jamais faire échouer tout le rapport → pixel blanc.
+        const BLANK_PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+        const TARGET = Math.round(5 * 1024 * 1024 * 0.95);
+        const TIERS = [[2.4, 0.82], [2, 0.78], [1.7, 0.74], [1.45, 0.7], [1.25, 0.66]];
+        let shots = null;
+        for (const [ratio, quality] of TIERS) {
+          shots = [];
+          for (const box of boxes) {
+            shots.push(await toJpeg(box, { pixelRatio: ratio, quality, backgroundColor: '#ffffff', width: 630, height: 891, cacheBust: false, imagePlaceholder: BLANK_PX }));
+          }
+          const bytes = shots.reduce((t, d) => t + Math.round((d.length - d.indexOf(',') - 1) * 0.75), 0);
+          console.log(`[PDF zip] ${boxes.length} pages ~${(bytes / 1048576).toFixed(1)} Mo (×${ratio}, q${quality})`);
+          if (bytes <= TARGET) break;
+        }
+        const pdf = await PDFDocument.create();
+        pdf.setTitle(projet.visiteNom ? `${projet.nom || 'Projet'} - CR ${projet.visiteNom}` : `${projet.nom || 'Projet'} - CR`);
+        const A4W = 595.28, A4H = 841.89;
+        for (const d of shots) {
+          const jpg = await pdf.embedJpg(d);
+          const page = pdf.addPage([A4W, A4H]);
+          page.drawImage(jpg, { x: 0, y: 0, width: A4W, height: A4H });
+        }
+        const bytes = await pdf.save();
+        return new Blob([bytes], { type: 'application/pdf' });
+      } finally {
+        host.remove();
+      }
+    },
     print: async () => {
       const pages = pageRefs.current.filter(Boolean);
       if (!pages.length) return;
@@ -2371,105 +2529,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       const win = window.open('', '_blank');
       if (!win) { alert("Autorisez les pop-ups pour exporter le PDF"); return; }
 
-      // ── Encodage des images + BUDGET DE POIDS (cible < 5 Mo — exigence Thomas) ─────────────
-      // C'est ICI que se joue le poids du PDF : sans réduction, le navigateur embarque chaque
-      // photo en pleine résolution capteur → PDF de 100+ Mo.
-      //  • PHOTOS : compressées, et RÉDUITES EN PREMIER si on dépasse le budget.
-      //  • PLANS / ANNEXES (data-role="plan") : gardés NETS (haute résolution, « comme le PDF »),
-      //    réduits seulement EN DERNIER RECOURS. Chaque source n'est décodée qu'UNE fois → le
-      //    ré-encodage par palier (budget) est bon marché. URL distantes (photos Supabase) :
-      //    fetch → blob → object URL (canvas non « tainté »).
-      const TARGET_BYTES = Math.round(5 * 1024 * 1024 * 0.92); // ~4,6 Mo d'images → marge sous 5 Mo
-      const PHOTO_TIERS = [[1280, 0.72], [1040, 0.68], [880, 0.62], [740, 0.56], [620, 0.5]];
-      const PLAN_TIERS  = [[3000, 0.85], [2400, 0.82], [1900, 0.76], [1500, 0.7], [1200, 0.66]];
-      const objUrls = [];
-      const imgCache = new Map(); // src → Promise<HTMLImageElement> décodé UNE fois
-      const loadImg = (src) => {
-        if (imgCache.has(src)) return imgCache.get(src);
-        const p = (async () => {
-          let loadSrc = src;
-          if (!src.startsWith('data:')) {
-            const resp = await fetch(src); if (!resp.ok) throw new Error('fetch');
-            const blob = await resp.blob(); const u = URL.createObjectURL(blob); objUrls.push(u); loadSrc = u;
-          }
-          return await new Promise((res, rej) => { const im = new window.Image(); im.onload = () => res(im); im.onerror = rej; im.src = loadSrc; });
-        })();
-        imgCache.set(src, p);
-        return p;
-      };
-      const encodeAt = async (src, maxW, q) => {
-        try {
-          const im = await loadImg(src);
-          // Logos/sigles (< 1000px) : INTACTS (l'aplatissement JPEG casserait leur transparence →
-          // fond blanc). Vrai pour data: ET http(s) (les logos du bucket Branding se chargent très
-          // bien dans la fenêtre d'impression). SEULES les blob: doivent être cuites (invalides hors
-          // du document d'origine → photo blanche) — elles sont quasi toujours des photos > 1000px.
-          if (!src.startsWith('blob:') && im.naturalWidth < 1000 && im.naturalHeight < 1000) return src;
-          const scale = Math.min(1, maxW / im.naturalWidth);
-          const W = Math.max(1, Math.round(im.naturalWidth * scale));
-          const H = Math.max(1, Math.round(im.naturalHeight * scale));
-          const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-          const ctx = cv.getContext('2d');
-          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-          ctx.drawImage(im, 0, 0, W, H);
-          const out = cv.toDataURL('image/jpeg', q); cv.width = 0; cv.height = 0;
-          return out && out.length > 50 ? out : src;
-        } catch { return src; }
-      };
-
-      // 1) Construire les clones + inventorier chaque image (photo vs plan).
-      const clones = [];
-      const imgJobs = []; // { el, src, role }
-      for (const el of pages) {
-        const origCanvases = Array.from(el.querySelectorAll('canvas'));
-        const canvasData = origCanvases.map(c => { try { return { src: c.toDataURL(), cssText: c.style.cssText }; } catch { return null; } });
-        origCanvases.forEach((c, i) => { c.dataset._pi = String(i); });
-        const clone = el.cloneNode(true);
-        origCanvases.forEach(c => { delete c.dataset._pi; });
-        clone.querySelectorAll('[data-print="hide"]').forEach(e => e.remove());
-        clone.querySelectorAll('canvas').forEach(canvas => {
-          const i = parseInt(canvas.dataset._pi ?? '-1');
-          const data = i >= 0 ? canvasData[i] : null;
-          if (!data?.src) { canvas.parentNode?.removeChild(canvas); return; }
-          try { const img = document.createElement('img'); img.src = data.src; img.style.cssText = data.cssText; canvas.parentNode?.replaceChild(img, canvas); } catch {}
-        });
-        clone.style.marginTop = '0';
-        Array.from(clone.querySelectorAll('img[src]')).forEach(img => {
-          const src = img.getAttribute('src');
-          if (!src) return;
-          // On traite data:, http(s) ET blob: — un blob: (URL liée au document d'origine) n'est PAS
-          // rendable dans la fenêtre d'impression → il DOIT être cuit en data URL (sinon photo blanche).
-          if (!src.startsWith('data:image/') && !/^https?:/i.test(src) && !src.startsWith('blob:')) return;
-          imgJobs.push({ el: img, src, role: img.getAttribute('data-role') === 'plan' ? 'plan' : 'photo' });
-        });
-        clones.push(clone);
-      }
-
-      // 2) Encodage initial (plans nets, photos compressées) puis budget itératif.
-      let photoTier = 0, planTier = 0;
-      const bytesOf = (s) => (s && s.startsWith('data:')) ? Math.round(s.length * 0.75) : 0;
-      const encoded = new Map(); // el → dataURL courant
-      const reencode = async (role) => {
-        const [pMaxW, pQ] = PHOTO_TIERS[photoTier];
-        const [lMaxW, lQ] = PLAN_TIERS[planTier];
-        await Promise.all(imgJobs.filter(j => role == null || j.role === role).map(async j => {
-          const [mw, q] = j.role === 'plan' ? [lMaxW, lQ] : [pMaxW, pQ];
-          encoded.set(j.el, await encodeAt(j.src, mw, q));
-        }));
-      };
-      await reencode(null);
-      const measure = () => imgJobs.reduce((s, j) => s + bytesOf(encoded.get(j.el)), 0);
-      let total = measure(), guard = 0;
-      while (total > TARGET_BYTES && guard++ < 12) {
-        if (photoTier < PHOTO_TIERS.length - 1) { photoTier++; await reencode('photo'); }
-        else if (planTier < PLAN_TIERS.length - 1) { planTier++; await reencode('plan'); }
-        else break;
-        total = measure();
-      }
-      console.log(`[PDF] Images ~${(total / 1048576).toFixed(1)} Mo (photos palier ${photoTier + 1}/${PHOTO_TIERS.length}, plans palier ${planTier + 1}/${PLAN_TIERS.length}) — avant impression navigateur`);
-      // 3) Appliquer les sources encodées + libérer les object URLs.
-      imgJobs.forEach(j => { j.el.setAttribute('src', encoded.get(j.el) || j.src); });
-      objUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
+      const clones = await encodePageClones(pages);
 
       const pagesHtml = clones.map(c => `<div class="pdf-page">${c.innerHTML}</div>`).join('\n');
 

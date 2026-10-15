@@ -240,6 +240,8 @@ export function drawAnnotationPaths(ctx, paths, sizeScale = 1, strokeScale = nul
       ctx.lineWidth = (p.size || 2) * ss * sShape * shMul;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      // Trait en TIRETS (demande Thomas) : proportionnel à l'épaisseur → même aspect à toute taille.
+      if (p.dash) ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 2.2]);
       ctx.globalAlpha = 1;
       const fo = p.fillOpacity ?? 0.3;
       if (p.shape === 'rect') {
@@ -543,9 +545,12 @@ function pathBounds(p, r, sT) {
 }
 // Clic sur une FORME : sur son trait, ou dans son remplissage si elle est remplie. Un contour
 // vide n'attrape pas les clics en son centre → on peut sélectionner (cadre) ce qui est dedans.
+// Remplie ? (une zone libre est remplie par défaut quand `filled` est absent — cf. rendu)
+const isShapeFilled = (p) => (p?.shape === 'poly' ? p.filled !== false : !!p?.filled);
+const FILLABLE = new Set(['rect', 'ellipse', 'poly']);
 function hitsShape(p, pos, r) {
   if (nearShapeOutline(p, pos, r)) return true;
-  if (!p.filled || p.shape === 'polyline' || p.shape === 'line' || p.shape === 'arrow') return false;
+  if (!isShapeFilled(p) || !FILLABLE.has(p.shape)) return false;
   if (p.pts?.length > 2) {
     let inside = false;
     for (let i = 0, j = p.pts.length - 1; i < p.pts.length; j = i++) {
@@ -643,7 +648,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // le rapport) : forme sélectionnée → SA taille ; rien de sélectionné → les formes à venir.
   const [newShapeScale, setNewShapeScale] = useState(() => _readScale(SCALE_KEY('shape_new'), _readScale(SCALE_KEY('shape'), 1)));
   const newShapeMul = scaleShape > 0 ? newShapeScale / scaleShape : 1;
-  const shapeMulProp = Math.abs(newShapeMul - 1) > 0.001 ? { sizeMul: Math.round(newShapeMul * 1000) / 1000 } : {};
+  // Tirets pour les PROCHAINES formes (mémorisé) ; une forme sélectionnée a son propre réglage.
+  const [shapeDash, setShapeDash] = useState(() => prefs0.shapeDash === true);
+  const shapeMulProp = {
+    ...(Math.abs(newShapeMul - 1) > 0.001 ? { sizeMul: Math.round(newShapeMul * 1000) / 1000 } : {}),
+    ...(shapeDash ? { dash: true } : {}),
+  };
   const [shapeTool,     setShapeTool]     = useState(() => (SHAPE_KEYS.includes(prefs0.shapeTool) ? prefs0.shapeTool : 'rect')); // rect | ellipse | arrow | line | poly
   const [pendingShape,  setPendingShape]  = useState(null);
   const [shapeFilled,   setShapeFilled]   = useState(() => prefs0.shapeFilled === true);
@@ -662,7 +672,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       : null);
   const finishPoly = () => {
     const shp = pendingPolyShape();
-    if (shp) setPaths(prev => [...prev, shp]);
+    if (shp) addNewShape(shp);
     if (polyPts.length) { setPolyPts([]); setPolyMousePos(null); }
     return !!shp;
   };
@@ -759,6 +769,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Refs live pour le handler clavier (évite closure stale sur paths/selTextIdx/selAnnot)
   const pathsRef = useRef(paths);
   pathsRef.current = paths;
+  // Une forme qu'on vient de tracer est SÉLECTIONNÉE (« fraîche ») : Contour/Rempli, Tirets,
+  // couleur, épaisseur et Ctrl+C s'appliquent tout de suite à ELLE (retour Thomas : « je fais ma
+  // forme, je clique sur Contour, ça ne marche pas tout de suite »). « Fraîche » = pas de poignées
+  // ni de déplacement en mode Formes : on peut enchaîner une autre forme juste à côté.
+  function addNewShape(shp) {
+    const idx = pathsRef.current.length;
+    setPaths(prev => [...prev, shp]);
+    setSelTextIdx(null);
+    setSelAnnot({ idx, fresh: true });
+  }
 
   // ── HISTORIQUE COMPLET Annuler / Rétablir (Thomas : « appli de dessin moderne ») ──
   // Chaque modification des annotations (tracé, déplacement, couleur, taille, suppression,
@@ -980,6 +1000,9 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
   // Ajoute des copies et les sélectionne. `atMouse` : le groupe est centré sous la souris
   // (Ctrl+V) ; sinon décalé de 40 px (Ctrl+D).
+  // Collages successifs au même endroit : décalés en CASCADE (+24 px à chaque fois) au lieu de
+  // s'empiler pile les uns sur les autres (retour Thomas : « fluidifier les copier-coller »).
+  const pasteCascadeRef = useRef({ key: '', n: 0 });
   const pasteAnnots = (list, atMouse) => {
     if (!list?.length) return;
     let dx = 40, dy = 40;
@@ -990,12 +1013,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const cx = (Math.min(...bs.map(b => b.x1)) + Math.max(...bs.map(b => b.x2))) / 2;
         const cy = (Math.min(...bs.map(b => b.y1)) + Math.max(...bs.map(b => b.y2))) / 2;
         dx = m.x - cx; dy = m.y - cy;
+        // Souris restée sur l'original (Ctrl+C puis Ctrl+V sans bouger) : la copie se posait
+        // PILE dessus → « le copier-coller ne marche pas » (retour Thomas). On la décale.
+        if (Math.hypot(dx, dy) < 30 * cvRatio()) { dx = 40; dy = 40; }
       }
     }
+    const key = `${Math.round(dx)}|${Math.round(dy)}|${list.length}`;
+    const pc = pasteCascadeRef.current;
+    pc.n = pc.key === key ? pc.n + 1 : 0; pc.key = key;
+    const step = 24 * cvRatio() * pc.n;
     const start = pathsRef.current.length;
-    const next = [...pathsRef.current, ...cloneAnnots(list, dx, dy)];
+    const next = [...pathsRef.current, ...cloneAnnots(list, dx + step, dy + step)];
     setPaths(next);
-    setTool('select');
+    // On RESTE dans l'outil en cours (la copie est sélectionnée, déplaçable tout de suite) ;
+    // seul un GROUPE impose l'outil Sélection (la multi-sélection y vit).
+    if (list.length > 1 && tool !== 'select') setTool('select');
     selectIdxs(next.map((_, k) => k).slice(start), next);
   };
   const copySelection = () => {
@@ -1059,8 +1091,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
   // Mémorise les derniers réglages (cf. prefs0).
   useEffect(() => {
-    _lsSet(ANNOT_PREFS_KEY, JSON.stringify({ color, size, symId: sym?.id, shapeTool, shapeFilled, textMode }));
-  }, [color, size, sym, shapeTool, shapeFilled, textMode]);
+    _lsSet(ANNOT_PREFS_KEY, JSON.stringify({ color, size, symId: sym?.id, shapeTool, shapeFilled, shapeDash, textMode }));
+  }, [color, size, sym, shapeTool, shapeFilled, shapeDash, textMode]);
 
   // ── CONFORT DE VUE : zoom clavier, Espace + glisser, double-clic = vue entière ──
   // Zoom vers `z` en gardant fixe le point à (mx, my) px du centre du plan affiché ;
@@ -1346,8 +1378,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ctx.beginPath(); ctx.rect(bx, by, Math.abs(ap.x2-ap.x1)+16, Math.abs(ap.y2-ap.y1)+16); ctx.stroke();
         }
         ctx.setLineDash([]);
-        // Poignées carrées blanches
-        const handles = getShapeHandles(ap);
+        // Poignées carrées blanches (pas sur une forme « fraîche » en mode Formes : non saisissables)
+        const handles = (selAnnot.fresh && tool === 'shape') ? [] : getShapeHandles(ap);
         const hr = 7 * ratio;
         handles.forEach(h => {
           ctx.fillStyle = 'white'; ctx.strokeStyle = '#4A9EFF'; ctx.lineWidth = 2 * ratio;
@@ -1715,6 +1747,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         const b = boundsOf(q), pad = hitR * 0.5;
         return b && pos.x >= b.x1 - pad && pos.x <= b.x2 + pad && pos.y >= b.y1 - pad && pos.y <= b.y2 + pad;
       };
+      // ── Alt + glisser : DUPLIQUE l'élément (ou le groupe) sous la souris et déplace la copie ──
+      if (e.altKey && !e.touches) {
+        let src = null;
+        if (multiSel.length && multiSel.some(i => hitAt(paths[i]))) src = multiSel;
+        else for (let i = paths.length - 1; i >= 0; i--) { if (hitAt(paths[i])) { src = [i]; break; } }
+        if (src) {
+          const copies = cloneAnnots(src.map(i => paths[i]), 0, 0);
+          const start = paths.length;
+          const next = [...paths, ...copies];
+          const newIdxs = copies.map((_, k) => start + k);
+          setPaths(next);
+          selectIdxs(newIdxs, next);
+          groupDragRef.current = { orig: newIdxs.map((ni, k) => [ni, copies[k]]), tapX: pos.x, tapY: pos.y };
+          setDrawing(true); return;
+        }
+      }
       if (multiSel.length && !e.shiftKey) {
         if (multiSel.some(i => hitAt(paths[i]))) {
           groupDragRef.current = { orig: multiSel.map(i => [i, paths[i]]), tapX: pos.x, tapY: pos.y };
@@ -1963,7 +2011,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         // existante la MANIPULE (poignée de resize, ou sélection + déplacement) au lieu de
         // démarrer un nouveau polygone → on peut enfin re-sélectionner/recolorer une zone.
         if (polyPts.length === 0) {
-          if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
+          if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
             const ap = paths[selAnnot.idx];
             const rhr = 14 * (cv.width / cv.clientWidth);
             for (const h of getShapeHandles(ap)) {
@@ -1977,7 +2025,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           // une nouvelle ligne, ça sélectionne le contour d'à côté »). Seule la forme DÉJÀ
           // sélectionnée se déplace, si on clique précisément sur son trait. Pour choisir une autre
           // forme : outil Sélection (ou Échap).
-          if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR)) {
+          if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR)) {
             const p = paths[selAnnot.idx];
             annotDragRef.current = { idx: selAnnot.idx, origData: { ...p, pts: p.pts?.map(pt => ({...pt})) }, tapX: pos.x, tapY: pos.y };
             setDrawing(true); return;
@@ -1991,7 +2039,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         lastTapRef.current = { time: now, x: pos.x, y: pos.y };
         if (isDbl) {
           if (polyPts.length >= minPts) {
-            setPaths(prev => [...prev, { type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: isPolyline ? false : shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
+            addNewShape({ type:'shape', shape: shapeTool, pts:[...polyPts], color, size, filled: isPolyline ? false : shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp });
           }
           setPolyPts([]); setPolyMousePos(null);
           return;
@@ -2003,7 +2051,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         if (!isPolyline && polyPts.length >= 3) {
           const closeR = 18 * (cv.width / cv.clientWidth);
           if (Math.hypot(ppos.x - polyPts[0].x, ppos.y - polyPts[0].y) < closeR) {
-            setPaths(prev => [...prev, { type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
+            addNewShape({ type:'shape', shape:'poly', pts:[...polyPts], color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp });
             setPolyPts([]); setPolyMousePos(null);
             return;
           }
@@ -2012,8 +2060,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         return;
       }
 
-      // ── Resize : poignées de la forme sélectionnée ──
-      if (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape') {
+      // ── Resize : poignées de la forme sélectionnée (pas une forme « fraîche ») ──
+      if (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape') {
         const ap = paths[selAnnot.idx];
         const rhr = 14 * (cv.width / cv.clientWidth);
         const handles = getShapeHandles(ap);
@@ -2029,7 +2077,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       // ── Autres formes (rect/ellipse/arrow/line) : en mode TRACÉ, pas de sélection d'une autre
       // forme (même règle que la polyligne ci-dessus) — seule la forme déjà sélectionnée se
       // déplace si on clique sur son trait ; sinon, on commence une nouvelle forme.
-      const hitIdx = (selAnnot !== null && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR))
+      const hitIdx = (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]?.type === 'shape' && nearShapeOutline(paths[selAnnot.idx], pos, hitR))
         ? selAnnot.idx : -1;
       if (hitIdx >= 0) {
         setSelAnnot({ idx: hitIdx });
@@ -2316,7 +2364,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (pendingShape) {
         const len = Math.hypot(pendingShape.x2 - pendingShape.x1, pendingShape.y2 - pendingShape.y1);
         if (len > 6) {
-          setPaths(prev => [...prev, { type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp }]);
+          addNewShape({ type: 'shape', shape: shapeTool, x1: pendingShape.x1, y1: pendingShape.y1, x2: pendingShape.x2, y2: pendingShape.y2, color, size, filled: shapeFilled, fillOpacity, strokeOpacity, ...shapeMulProp });
         }
       }
       setPendingShape(null);
@@ -2572,8 +2620,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const _selShapeIdx = selAnnot !== null ? selAnnot.idx : -1;
   const _selShape = _selShapeIdx >= 0 && paths[_selShapeIdx]?.type === 'shape' ? paths[_selShapeIdx] : null;
   const shapePanelVisible = tool === 'shape' || (tool === 'select' && _selShape !== null);
-  const shapeFillDisplay = _selShape ? !!_selShape.filled : shapeFilled;
-  const shapePanelFilled = _selShape ? !!_selShape.filled : shapeFilled;
+  const shapeFillDisplay = _selShape ? isShapeFilled(_selShape) : shapeFilled;
+  const shapePanelFilled = shapeFillDisplay;
+  const shapeDashDisplay = _selShape ? !!_selShape.dash : shapeDash;
+  // Contour/Rempli n'a de sens que pour rectangle, ellipse et zone (pas ligne, flèche, polyligne).
+  const shapeFillable = FILLABLE.has(_selShape ? _selShape.shape : shapeTool);
   const shapePanelOpVal = _selShape
     ? (shapePanelFilled ? (_selShape.fillOpacity ?? 0.3) : (_selShape.strokeOpacity ?? 1))
     : (shapeFilled ? fillOpacity : strokeOpacity);
@@ -2940,13 +2991,32 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               <div style={{ width:1,height:28,background:'#333',flexShrink:0,margin:'0 4px' }}/>
             </>
           )}
+          {/* Contour / Rempli : UNE valeur cible (l'inverse de ce qui est affiché), appliquée à la
+              forme sélectionnée (ou qu'on vient de tracer) ET retenue pour les prochaines formes.
+              Avant : la forme et le réglage par défaut basculaient chacun de leur côté → effet
+              « schmilblick » (retour Thomas). */}
+          {shapeFillable && (
+            <button onClick={() => {
+              const nv = !shapeFillDisplay;
+              if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,filled:nv} : p));
+              setShapeFilled(nv);
+            }}
+              title={shapeFillDisplay ? 'Forme remplie — cliquer pour un simple contour' : 'Simple contour — cliquer pour remplir'}
+              style={{ padding:'5px 13px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
+                background:shapeFillDisplay?DA.red:'#333',color:shapeFillDisplay?'white':'#aaa',border:'none' }}>
+              {shapeFillDisplay ? '◼ Rempli' : '◻ Contour'}
+            </button>
+          )}
+          {/* Trait plein / en tirets (demande Thomas) — même logique que Contour/Rempli. */}
           <button onClick={() => {
-            if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,filled:!p.filled} : p));
-            if (tool === 'shape') setShapeFilled(prev => !prev);
+            const nv = !shapeDashDisplay;
+            if (_selShape) setPaths(prev => prev.map((p,i) => i===_selShapeIdx ? {...p,dash:nv} : p));
+            setShapeDash(nv);
           }}
+            title={shapeDashDisplay ? 'Trait en tirets — cliquer pour un trait plein' : 'Trait plein — cliquer pour des tirets'}
             style={{ padding:'5px 13px',borderRadius:7,fontSize:isMob?12:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,
-              background:shapeFillDisplay?DA.red:'#333',color:shapeFillDisplay?'white':'#aaa',border:'none' }}>
-            {shapeFillDisplay ? '◼ Rempli' : '◻ Contour'}
+              background:shapeDashDisplay?DA.red:'#333',color:shapeDashDisplay?'white':'#aaa',border:'none' }}>
+            {shapeDashDisplay ? '┄ Tirets' : '─ Plein'}
           </button>
           <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
           <span style={{ fontSize:isMob?9:11,color:isMob?'#888':'#aaa',fontWeight:600,letterSpacing:0.3,flexShrink:0,whiteSpace:'nowrap' }}>{shapePanelOpLabel}</span>
@@ -3071,7 +3141,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       )}
 
       {/* ── Panneau symbole/viewpoint sélectionné ── */}
-      {selAnnot !== null && paths[selAnnot.idx] && (
+      {selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx] && (
         <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
           <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
             Sélection : {paths[selAnnot.idx].type === 'viewpoint'

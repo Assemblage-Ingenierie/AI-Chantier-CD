@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle } from 'react';
 import { DA, URGENCE, isBrouillon } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
@@ -83,10 +83,13 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
   );
 }
 
-export default function RapportTab({ projet, onUpdate }) {
+// exportRef (optionnel) : rendu HORS ÉCRAN pour l'export groupé en zip (VisitesScreen) → expose
+// toPdfBlob() de l'aperçu ; Costar masqué. onUpdate est alors un no-op (lecture seule).
+export default function RapportTab({ projet, onUpdate, exportRef = null }) {
   const [exporting, setExporting] = useState(false);
   const [cutMode, setCutMode] = useState(false);
   const previewRef = useRef();
+  useImperativeHandle(exportRef, () => ({ toPdfBlob: () => previewRef.current?.toPdfBlob?.() ?? null }), []);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
   const [editingPlan, setEditingPlan] = useState(null); // { locId, epIdx, bg, paths }
   const [editingPhoto, setEditingPhoto] = useState(null); // { locId, itemId, photo, bg, paths }
@@ -664,7 +667,7 @@ export default function RapportTab({ projet, onUpdate }) {
       />
 
       {/* ── Costar : avis honnête + note sur le rapport complet (PC uniquement) ── */}
-      {isPc && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet}/>}
+      {isPc && !exportRef && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet}/>}
 
       {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
       {editingPlan && (

@@ -651,6 +651,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             projet={projets.find(p => p.id === ouvert.id) ?? ouvert}
             onBack={() => { setOuvert(null); setSelectedVisiteId(null); }}
             onSelectVisite={setSelectedVisiteId}
+            onHydrateVisite={vid => hydratePhotos(ouvert.id, vid)}
             onUpdateProjet={upd => updateProjet(ouvert.id, upd)}
             syncStatus={syncStatus}
             onRefresh={handleRefresh}

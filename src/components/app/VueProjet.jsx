@@ -21,7 +21,8 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
-import { orderZones, childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
+import { buildVisitProjet } from '../../lib/visitProjet.js';
+import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
@@ -185,25 +186,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     [visites, selectedVisiteId]
   );
 
-  const visitProjet = useMemo(() => ({
-    ...projet,
-    // Ordre canonique groupe → sous-zones (même tableau, inchangé, s'il n'y a aucun groupe).
-    localisations:       orderZones(selectedVisite?.localisations ?? []),
-    dateVisite:          selectedVisite?.dateVisite           ?? null,
-    participants:        selectedVisite?.participants         ?? [],
-    tableauRecap:        selectedVisite?.tableauRecap         ?? [],
-    photosParLigne:      selectedVisite?.photosParLigne       ?? 2,
-    plansEnFin:          selectedVisite?.plansEnFin           ?? false,
-    plansNoBreak:        selectedVisite?.plansNoBreak         ?? false,
-    rapportPageBreaks:   selectedVisite?.rapportPageBreaks    ?? [],
-    includeTableauRecap: selectedVisite?.includeTableauRecap  !== false,
-    includeConclusion:   selectedVisite?.includeConclusion    ?? false,
-    conclusion:          selectedVisite?.conclusion           ?? '',
-    conclusionAlign:     selectedVisite?.conclusionAlign      ?? 'left',
-    annexes:             selectedVisite?.annexes              ?? [],
-    visiteNom:           selectedVisite?.label                 ?? '',
-    ingenieur:           selectedVisite?.ingenieur             ?? '',
-  }), [projet, selectedVisite]);
+  const visitProjet = useMemo(() => buildVisitProjet(projet, selectedVisite), [projet, selectedVisite]);
 
   // Numérotation Vxx globale sur toute la visite — partagée par les miniatures de plan et
   // l'annotateur. Garantit un seul V1, un seul V2, etc. quel que soit le plan ou l'onglet.

@@ -6,6 +6,7 @@ import SyncBadge from '../ui/SyncBadge.jsx';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import IngenieursEditor, { splitInitials } from '../ui/IngenieursEditor.jsx';
 import { remapParentIds } from '../../lib/zoneGroups.js';
+import BulkReportExport from './BulkReportExport.jsx';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -34,8 +35,11 @@ const loadVRecapCache = () => { try { return JSON.parse(localStorage.getItem(VRE
 const saveVRecapCache = (o) => { try { localStorage.setItem(VRECAP_KEY, JSON.stringify(o)); } catch {}; };
 
 export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdateProjet, syncStatus = 'ok', onRefresh = null, refreshing = false,
-  dirty = false, stale = false, visitMode = false, onToggleVisitMode = null, pinnedVisites = new Set(), onPinVisite = null, onUnpinVisite = null }) {
+  dirty = false, stale = false, visitMode = false, onToggleVisitMode = null, pinnedVisites = new Set(), onPinVisite = null, onUnpinVisite = null, onHydrateVisite = null }) {
   const visites = projet.visites || [];
+  // Export groupé de tous les rapports en zip (PC uniquement — demande Thomas).
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const isPcWide = typeof window !== 'undefined' && window.innerWidth >= 900;
   const uiScale = useUiScale();
   const [pinningId, setPinningId] = useState(null); // visite en cours de pré-téléchargement
 
@@ -416,10 +420,19 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             <p style={{ fontSize:11, fontWeight:700, color:DA.red, textTransform:'uppercase', letterSpacing:1.2, margin:0 }}>Historique des visites</p>
             <p style={{ fontSize:22, fontWeight:900, color:DA.black, margin:'2px 0 0', letterSpacing:-0.5 }}>{visites.length} visite{visites.length !== 1 ? 's' : ''}</p>
           </div>
-          <p style={{ fontSize:11, color:DA.grayL, margin:0, fontStyle:'italic' }}>
-            Glisser pour réorganiser
-          </p>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
+            {isPcWide && visites.length > 0 && (
+              <button onClick={() => setBulkOpen(true)} title="Télécharger les rapports PDF de toutes les visites dans un fichier zip"
+                style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:8, border:`1.5px solid ${DA.red}`, background:'white', color:DA.red, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                <Ic n="dl" s={14}/> Tous les rapports (.zip)
+              </button>
+            )}
+            <p style={{ fontSize:11, color:DA.grayL, margin:0, fontStyle:'italic' }}>
+              Glisser pour réorganiser
+            </p>
+          </div>
         </div>
+        {bulkOpen && <BulkReportExport projet={projet} onHydrateVisite={onHydrateVisite} onClose={() => setBulkOpen(false)}/>}
 
         {visites.length === 0 && (
           <div style={{ background:'white', borderRadius:14, padding:'56px 24px', textAlign:'center', border:`1px solid ${DA.border}`, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
