@@ -4,7 +4,9 @@
 // Cause : sur iPhone, le recadrage encodait la couverture en PNG (Safari ne sait pas produire de
 // WebP) → fichier ~10× plus lourd que les autres. Le recadrage est corrigé (CropTool) ; ici on
 // répare les couvertures DÉJÀ envoyées :
-//   - seulement les couvertures « par contenu » (…/cover/<id>/c<empreinte>.<ext>, le format actuel) ;
+//   - TOUTES les couvertures du bucket : format actuel (…/cover/<id>/c<empreinte>.<ext>) ET anciens
+//     formats (…/cover/<id>.webp, cover_<id>/cover.webp) — v1 ne traitait que le format actuel,
+//     d'où Rue de Cléry toujours lente (retour Thomas 16/10) ;
 //   - si le fichier pèse > 350 Ko ou est un PNG : version compressée (≤ 1600 px, WebP/JPEG)
 //     envoyée À CÔTÉ (nouveau nom), puis la fiche projet pointe dessus ;
 //   - l'ANCIEN fichier n'est jamais supprimé ni écrasé (rien ne se perd) ;
@@ -12,10 +14,11 @@
 //   - toute erreur → on ne touche à rien (affichage inchangé).
 import { getSupabase } from '../supabase.js';
 import { contentKey } from './storage.js';
+import { logEvent } from './logger.js';
 
 const SIGNED_TTL = 2592000; // 30 jours, comme les autres photos
 const HEAVY_BYTES = 350 * 1024;
-const DONE_KEY = 'chantierai_cover_opt_v1';
+const DONE_KEY = 'chantierai_cover_opt_v2'; // v2 : nouvelle passe (formats élargis)
 
 function loadDone() { try { return new Set(JSON.parse(localStorage.getItem(DONE_KEY) || '[]')); } catch { return new Set(); } }
 function markDone(set, path) {
@@ -30,7 +33,26 @@ export function coverPathOf(urlOrPath) {
   let path = m ? m[1] : (/^https?:/i.test(urlOrPath) ? null : urlOrPath);
   if (!path) return null;
   try { path = decodeURIComponent(path); } catch { /* garde tel quel */ }
-  return /\/cover\/[^/]+\/c[\w-]+\.(webp|jpe?g|png)$/i.test(path) ? path : null;
+  return /(^|\/)cover(_[^/]+)?\/[^?]*\.(webp|jpe?g|png)$/i.test(path) ? path : null;
+}
+
+// Dossier où ranger la version allégée : celui de la couverture (format actuel), sinon le dossier
+// « par contenu » du projet (…/cover/<id>/), sinon le dossier d'origine.
+function targetFolderOf(path, id) {
+  const folder = path.slice(0, path.lastIndexOf('/'));
+  if (/\/cover\/[^/]+$/.test(folder)) return folder;                  // …/cover/<id>
+  if (/(^|\/)cover$/.test(folder) && id) return `${folder}/${id}`;     // …/cover/<id>.webp → …/cover/<id>/
+  return folder;                                                     // cover_<id>/cover.webp
+}
+
+// Chemin relatif d'une valeur de la colonne `photo` (chemin, URL signée ou publique).
+function storedPathOf(v) {
+  if (typeof v !== 'string' || !v || v.startsWith('data:')) return null;
+  const m = v.match(/\/storage\/v1\/object\/(?:sign|public)\/photos\/([^?]+)/);
+  let p = m ? m[1] : (/^https?:/i.test(v) ? null : v);
+  if (!p) return null;
+  try { p = decodeURIComponent(p); } catch { /* garde tel quel */ }
+  return p;
 }
 
 function encodeCover(blob) {
@@ -78,6 +100,8 @@ export async function optimizeHeavyCovers(projets) {
       if (!meta) { markDone(done, t.path); continue; }
       const size = Number(meta.size) || 0;
       const isPng = /png/i.test(meta.mimetype || '');
+      // Trace serveur (Vercel Runtime Logs) : taille réelle des couvertures vérifiées → diagnostic.
+      logEvent('cover.check', { id: t.id, kb: Math.round(size / 1024), mime: meta.mimetype || '', heavy: size > HEAVY_BYTES || isPng });
       if (size <= HEAVY_BYTES && !isPng) { markDone(done, t.path); continue; }
       const { data: sg } = await sb.storage.from('photos').createSignedUrl(t.path, 600);
       if (!sg?.signedUrl) continue;
@@ -88,18 +112,22 @@ export async function optimizeHeavyCovers(projets) {
       const newBlob = await (await fetch(dataUrl)).blob();
       if (newBlob.size >= size * 0.8) { markDone(done, t.path); continue; } // pas de gain → on garde
       const ext = newBlob.type === 'image/webp' ? 'webp' : 'jpg';
-      const newPath = `${folder}/c${contentKey(dataUrl)}.${ext}`;
+      const newPath = `${targetFolderOf(t.path, t.id)}/c${contentKey(dataUrl)}.${ext}`;
       const { error: upErr } = await sb.storage.from('photos').upload(newPath, newBlob, { contentType: newBlob.type, upsert: true, cacheControl: '31536000' });
       if (upErr) continue;
       // La fiche ne pointe sur le nouveau fichier QUE s'il pointe encore sur l'ancien (pas d'écrasement
       // d'une couverture changée entre-temps sur un autre appareil).
-      const { data: upd, error: dbErr } = await sb.from('aichantier_chantiers').update({ photo: newPath }).eq('id', t.id).eq('photo', t.path).select('id');
-      if (dbErr) continue;
-      if (!upd?.length) { markDone(done, t.path); continue; } // fiche déjà ailleurs → on ne change rien
+      // Vérifie (chemin normalisé) que la fiche pointe toujours sur cette couverture avant de la repointer.
+      const { data: row, error: rdErr } = await sb.from('aichantier_chantiers').select('photo').eq('id', t.id).maybeSingle();
+      if (rdErr) continue;
+      if (storedPathOf(row?.photo) !== t.path) { markDone(done, t.path); continue; } // changée entre-temps → on ne touche à rien
+      const { data: upd, error: dbErr } = await sb.from('aichantier_chantiers').update({ photo: newPath }).eq('id', t.id).select('id');
+      if (dbErr || !upd?.length) continue; // réessaiera à la prochaine ouverture
       const { data: s2 } = await sb.storage.from('photos').createSignedUrl(newPath, SIGNED_TTL);
       markDone(done, t.path);
       markDone(done, newPath);
       if (s2?.signedUrl) out[t.id] = s2.signedUrl;
+      logEvent('cover.optimized', { id: t.id, fromKb: Math.round(size / 1024), toKb: Math.round(newBlob.size / 1024) });
       console.log(`[cover] couverture allégée ${Math.round(size / 1024)} Ko → ${Math.round(newBlob.size / 1024)} Ko`, t.id);
     } catch { /* on ne touche à rien */ }
   }
