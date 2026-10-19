@@ -2252,11 +2252,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     }
     return out;
   }, [locs, projet.planLibrary]);
-  const fullPageMap = useMemo(() => {
-    if (planPages && typeof planPages === 'object') return planPages;
-    if (planPagesPaysage) return Object.fromEntries(reportPlans.map(p => [p.key, 'landscape']));
-    return {};
-  }, [planPages, planPagesPaysage, reportPlans]);
+  // INCIDENT 2026-10-19 (Thomas : « les plans n'apparaissent plus » dans le rapport) : l'ancienne
+  // case globale planPagesPaysage (retirée de l'interface) envoyait TOUS les plans de la visite en
+  // fin de rapport → disparus du texte. Elle est désormais ignorée : seuls les plans choisis un par
+  // un (« ⤢ Page à part ») quittent le texte.
+  void planPagesPaysage;
+  const fullPageMap = useMemo(() => (planPages && typeof planPages === 'object') ? planPages : {}, [planPages]);
   const setPlanPage = useCallback((key, val) => {
     if (!onSetPlanPages) return;
     const next = { ...fullPageMap };
