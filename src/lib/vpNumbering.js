@@ -200,7 +200,27 @@ export function dedupPlanPaths(paths, vpNumByPath = null, base = 0) {
   const seen = new Set();
   const usedNums = new Set();
   const out = [];
+  // TEXTES : doublon = même contenu ET quasiment au même endroit (cadre ET pointe de flèche).
+  // INCIDENT 2026-10-19 (Thomas) : le dédoublonnage par CONTENU seul supprimait du PDF les textes
+  // répétés volontairement (4 × « Création de ventilation… », 3 × « NV » sur un même plan).
+  // Les vraies copies propagées (fusion de plans masqués, recopies) restent écartées : elles sont
+  // superposées, à quelques pixels près.
+  const NEAR = 60;
+  const keptTexts = [];
+  const isTextDup = (p) => {
+    const t = (p.text || '').trim();
+    const x = p.x ?? 0, y = p.y ?? 0;
+    return keptTexts.some(k => k.t === t && Math.hypot(k.x - x, k.y - y) < NEAR
+      && ((k.ax == null && p.arrowX == null)
+        || (k.ax != null && p.arrowX != null && Math.hypot(k.ax - p.arrowX, k.ay - p.arrowY) < NEAR)));
+  };
   for (const p of paths) {
+    if (p.type === 'text') {
+      if (isTextDup(p)) continue; // copie superposée → affichée une seule fois
+      keptTexts.push({ t: (p.text || '').trim(), x: p.x ?? 0, y: p.y ?? 0, ax: p.arrowX ?? null, ay: p.arrowY ?? null });
+      out.push(p);
+      continue;
+    }
     const f = annotFp(p);
     if (seen.has(f)) continue; // doublon → on n'affiche qu'une fois
     seen.add(f);
