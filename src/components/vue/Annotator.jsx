@@ -667,6 +667,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [size,       setSize]       = useState(() => (Number.isFinite(prefs0.size) && prefs0.size > 0 && prefs0.size <= 40 ? prefs0.size : 3));
   const [sym,        setSym]        = useState(() => [...SYMBOLS, ...getCustomSymbolDefs()].find(x => x.id === prefs0.symId) || SYMBOLS[0]);
   const [paths,      setPaths]      = useState(savedPaths || []);
+  // Cadre du rapport DÉPLACÉ ici par l'utilisateur (photo) : { cropX, cropY } — renvoyé à
+  // l'enregistrement (dims.reportCrop / getAnnotation().reportCrop), null = inchangé.
+  const [frameMove, setFrameMove] = useState(null);
+  const frameMoveRef = useRef(null);
+  frameMoveRef.current = frameMove;
+  useEffect(() => { setFrameMove(null); }, [bgImage]);
   const [cur,        setCur]        = useState([]);
   const [drawing,    setDrawing]    = useState(false);
   const [bgOk,       setBgOk]       = useState(false);
@@ -817,7 +823,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       drawAnnotationPaths(ectx, vpNumByPath ? relabelViewpoints(fp, vpNumByPath, vpBase) : fp, drawScales, isPhotoCtx ? ratio : _pl.stroke);
       ectx.restore();
       const sc = hqScaleRef.current;
-      return { paths: scalePaths(fp, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol };
+      return { paths: scalePaths(fp, 1/sc, 1/sc), annotated: ec.toDataURL('image/webp', 0.85), annotW: cv.width, annotH: cv.height, annotSizeScale: baseScale * scaleSymbol, ...(frameMoveRef.current ? { reportCrop: frameMoveRef.current } : {}) };
     },
   }), [paths, scaleText, scaleSymbol, scaleShape, exportSizeMultiplier, vpNumByPath, vpBase, inlineEditVal, inlineEditIdx, inlineEditPos]);
 
@@ -2771,7 +2777,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     ectx.restore();
     // Ramène les coords dans l'espace LQ (planBg) avant de sauver — invariant inter-sessions
     const sc = hqScaleRef.current;
-    onSave(scalePaths(fp, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height });
+    onSave(scalePaths(fp, 1/sc, 1/sc), ec.toDataURL('image/webp', 0.85), { w: cv.width, h: cv.height, ...(frameMoveRef.current ? { reportCrop: frameMoveRef.current } : {}) });
     onClose();
   };
 
@@ -3089,8 +3095,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
              plan change ». Sur PC, tous les menus contextuels (symboles, formes, texte, élément
              sélectionné, aides) vivent dans une bande de hauteur CONSTANTE → le plan garde
              exactement la même taille et la même place, menu ouvert ou fermé. Mobile : inchangé
-             (display:contents = comme si cette enveloppe n'existait pas). ── */}
-      <div style={isMob ? { display:'contents' } : { height:PANEL_SLOT_H, flexShrink:0, overflowY:'auto', background:'#1a1a1a', borderBottom:'1px solid #333' }}>
+             (display:contents = comme si cette enveloppe n'existait pas).
+             Retour Thomas 20/10 : « le bandeau est énorme, à réduire si pas besoin » → la bande
+             n'occupe plus de place : les menus s'affichent PAR-DESSUS le haut de l'image (calque
+             de hauteur max constante) → aucune place perdue, et l'image ne bouge toujours pas. ── */}
+      <div style={isMob ? { display:'contents' } : { position:'relative', height:0, flexShrink:0, zIndex:30 }}>
+      <div style={isMob ? { display:'contents' } : { position:'absolute', top:0, left:0, right:0, maxHeight:PANEL_SLOT_H, overflowY:'auto', background:'#1a1a1a', boxShadow:'0 6px 16px rgba(0,0,0,0.35)' }}>
       {/* ── Symbol picker — rangée UNIFIÉE (demande Thomas : plus d'onglets, une seule ligne
              défilante avec séparateurs de catégories, et le NOM COMPLET sous chaque picto —
              sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
@@ -3430,6 +3440,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       )}
 
       </div>
+      </div>
 
       {/* ── Canvas ── */}
       <div ref={canvasWrapRef} style={{ flex:1,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',background:'#1a1a1a',padding:8,minHeight:0 }}>
@@ -3451,9 +3462,28 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             {(() => {
               const cv = cvRef.current;
               if (!reportFrame || !dispSize || !cv?.width || !cv?.height) return null;
-              const [cx, cy, cz] = reportCrop({ cropX: reportFrame.cropX, cropY: reportFrame.cropY, cropZoom: reportFrame.cropZoom }, paths, cv.width, cv.height);
-              const r = reportVisibleRect(cv.width, cv.height, { orient: reportFrame.orient, cx, cy, cz, fit: reportFrame.fit });
+              const fr = { ...reportFrame, ...(frameMove || {}) };
+              const [cx, cy, cz] = reportCrop({ cropX: fr.cropX, cropY: fr.cropY, cropZoom: fr.cropZoom }, paths, cv.width, cv.height);
+              const r = reportVisibleRect(cv.width, cv.height, { orient: fr.orient, cx, cy, cz, fit: fr.fit });
               if (!r) return null;
+              // Déplacer le cadre (demande Thomas : « montrer le plafond ou le sol ») : on glisse la
+              // poignée ; la position devient le recadrage de la photo dans le rapport.
+              const startFrameDrag = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                const sx = e.clientX, sy = e.clientY;
+                const W = dispSize.w * vt.z, H = dispSize.h * vt.z;
+                const r0 = r;
+                const move = (ev) => {
+                  const nx = Math.max(0, Math.min(1 - r0.w, r0.x + (ev.clientX - sx) / W));
+                  const ny = Math.max(0, Math.min(1 - r0.h, r0.y + (ev.clientY - sy) / H));
+                  setFrameMove({
+                    cropX: r0.w < 0.999 ? Math.round((nx / (1 - r0.w)) * 1000) / 10 : 50,
+                    cropY: r0.h < 0.999 ? Math.round((ny / (1 - r0.h)) * 1000) / 10 : 50,
+                  });
+                };
+                const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+                window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+              };
               const hole = `M${r.x} ${r.y}h${r.w}v${r.h}h${-r.w}Z`;
               return (
                 <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:2 }}>
@@ -3462,9 +3492,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                       <path d={`M0 0H1V1H0Z${hole}`} fill="rgba(20,20,20,0.5)" fillRule="evenodd"/>
                       <path d={hole} fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="6 4" vectorEffect="non-scaling-stroke"/>
                     </svg>
-                    <span style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${(r.y * 100).toFixed(2)}%`, transform:`scale(${1 / vt.z})`, transformOrigin:'0 0',
-                      background:'rgba(0,0,0,0.65)', color:'white', fontSize:11, fontWeight:700, padding:'2px 7px', borderRadius:5, whiteSpace:'nowrap', margin:'4px 0 0 4px' }}>
-                      Cadre du rapport — le grisé ne sera pas visible
+                    <span onPointerDown={startFrameDrag} title="Glisser pour déplacer le cadre du rapport (montrer le plafond, le sol…)"
+                      style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${(r.y * 100).toFixed(2)}%`, transform:`scale(${1 / vt.z})`, transformOrigin:'0 0',
+                        background:'rgba(0,0,0,0.72)', color:'white', fontSize:11.5, fontWeight:700, padding:'4px 9px', borderRadius:6, whiteSpace:'nowrap', margin:'4px 0 0 4px',
+                        pointerEvents:'auto', cursor:'move', touchAction:'none', userSelect:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontSize:14, lineHeight:1 }}>✥</span>
+                      Cadre du rapport — glisser pour déplacer · le grisé ne sera pas visible
                     </span>
                   </div>
                 </div>
