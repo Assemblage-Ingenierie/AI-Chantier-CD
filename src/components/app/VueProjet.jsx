@@ -610,6 +610,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           ref={annotatorRef}
           bgImage={ph?.data}
           savedPaths={ph?.annotations || []}
+          reportFrame={ph ? { orient: ph.orient, cropX: ph.cropX, cropY: ph.cropY, cropZoom: ph.cropZoom, fit: !!ph.cropFit } : null}
           onPrev={prevRealIdx !== null ? () => switchToPhoto(prevRealIdx) : null}
           onNext={nextRealIdx !== null ? () => switchToPhoto(nextRealIdx) : null}
           photoPosition={validIdxs.length > 1 ? `${navPos + 1} / ${validIdxs.length}` : null}

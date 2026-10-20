@@ -708,6 +708,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
         <Annotator
           bgImage={editingPhoto.bg}
           savedPaths={editingPhoto.paths}
+          reportFrame={editingPhoto.photo ? { orient: editingPhoto.photo.orient, cropX: editingPhoto.photo.cropX, cropY: editingPhoto.photo.cropY, cropZoom: editingPhoto.photo.cropZoom, fit: !!editingPhoto.photo.cropFit } : null}
           title="Annoter la photo"
           onClose={() => setEditingPhoto(null)}
           onSave={(paths, exported, dims) => {

@@ -24,13 +24,13 @@ function writeAll(map) {
 }
 
 // Champs d'affichage que l'on persiste (jamais les pixels de l'image).
-//   - orient / cropX / cropY / cropZoom : recadrage + orientation rapport.
+//   - orient / cropX / cropY / cropZoom / cropFit : recadrage (ou image entière) + orientation rapport.
 //   - annotW / annotH / annotSizeScale : dimensions de référence + échelle calibrée des
 //     ANNOTATIONS de la photo. Ces trois champs ne sont PAS stockés en base (pas de colonne) :
 //     transités par le cache + la fusion + l'hydratation, ils se perdaient (annotSizeScale null
 //     → le rendu repassait sur une estimation grossière → annotations ÉNORMES au rechargement).
 //     Indexés ici par l'ID stable de la ligne photo, ils survivent à toute la chaîne de sync.
-const FIELDS = ['orient', 'cropX', 'cropY', 'cropZoom', 'annotW', 'annotH', 'annotSizeScale'];
+const FIELDS = ['orient', 'cropX', 'cropY', 'cropZoom', 'cropFit', 'annotW', 'annotH', 'annotSizeScale'];
 
 export function getPhotoPref(id) {
   if (!id) return null;
