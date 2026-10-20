@@ -964,7 +964,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             {/* Dates de suivi de la ZONE (choix Thomas : même bouton que les observations,
                                 à côté du plan / de la poubelle ; rien tant qu'on n'y touche pas). PC : la
                                 pastille s'affiche aussi ; téléphone : le bouton teinté suffit. */}
-                            {isDesktop && (() => { const zi = zoneDatesInfo(loc, visitProjet.dateVisite); return zi ? <ObsDatesChip info={zi}/> : null; })()}
+                            {isDesktop && (() => { const zi = zoneDatesInfo(loc, visitProjet.dateVisite); return zi ? <ObsDatesChip info={zi} fontSize={13}/> : null; })()}
                             <ObsDatesControl zone item={loc} visitDate={visitProjet.dateVisite || null}
                               onChange={next => patchLoc(loc.id, { dateOuverture: next.dateOuverture, dateCloture: next.dateCloture })}/>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}

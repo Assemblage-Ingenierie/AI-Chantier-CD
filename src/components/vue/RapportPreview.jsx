@@ -441,7 +441,7 @@ function ZoneHeader({ loc, level = 'zone', parentNom = '', visitDate = null }) {
         {loc.nom}
       </span>
       {/* Dates de suivi de la zone (bouton calendrier du titre de zone) — calées à droite. */}
-      {(() => { const zi = zoneDatesInfo(loc, visitDate); return zi ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={zi} small/></span> : null; })()}
+      {(() => { const zi = zoneDatesInfo(loc, visitDate); return zi ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={zi} fontSize={9}/></span> : null; })()}
     </div>
   );
 }
@@ -786,6 +786,7 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
+  const datesInfo = obsDatesInfo(item, visitDate); // dates de suivi (bouton calendrier), sinon null
   const commentToShow = textContent ?? item.commentaire;
   const showHeader   = mode !== 'photos' && mode !== 'cont';
 
@@ -890,8 +891,10 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
       {/* En-tête normal (titre + badges) */}
       {showHeader && (
         <div style={{ background:'#F7F7F7', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3, borderBottom:`1px solid ${DA.border}` }}>
-          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            {/* Titre long + dates : le titre passe à la ligne au lieu d'être coupé (…). */}
+            <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, minWidth:0, ...(datesInfo ? {} : { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }) }}>{item.titre}</span>
+            {datesInfo && <ObsDatesChip info={datesInfo} fontSize={10}/>}
             {onEdit && (
               <button data-print="hide" onClick={onEdit}
                 style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
@@ -909,8 +912,6 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
                 ↩ {suivi.label}
               </span>
             )}
-            {/* Dates de suivi (observation datée via « Dater ») — calées à DROITE. */}
-            {(() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info} small/></span> : null; })()}
           </div>
         </div>
       )}
@@ -2146,7 +2147,7 @@ function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPages, loa
 // de rapport, au choix en paysage ou en portrait. Clé du plan : `z:<zone>` (plan de zone),
 // `z:<zone>:<i>` (plan supplémentaire de zone), `i:<observation>:<k>` (plan d'observation).
 // orientation = 'landscape' | 'portrait'.
-function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath, orientation, onChange }) {
+function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath, orientation, onChange, onOrient = null }) {
   const land = orientation !== 'portrait';
   const W = land ? PH : PW, H = land ? PW : PH;
   const paths = plan.annotations?.paths || [];
@@ -2172,7 +2173,7 @@ function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vp
         )}
       </div>
       <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} fill/>
+        <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} onOrient={onOrient} fill/>
       </div>
       {onChange && (
         <div data-print="hide" style={{ position:'absolute', top:HDR + 34, right:MX, display:'flex', gap:4, background:'rgba(255,255,255,0.92)', padding:4, borderRadius:8, boxShadow:'0 1px 6px rgba(0,0,0,0.15)' }}>
@@ -2260,6 +2261,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
   const vxxDebugData = useMemo(() => VXX_DEBUG ? debugVpNumbering(localisations) : null, [localisations]);
 
+  // Orientation des plans (détectée au chargement de l'image par SinglePlanImage, remontée ici).
+  // planId → 'portrait' | 'landscape'. Sert à isoler automatiquement les plans portrait sur
+  // leur propre page (demande utilisateur : un plan portrait par page pour qu'il soit lisible).
+  const [planOrient, setPlanOrient] = useState({});
+  const handlePlanOrient = useCallback((planId, o) => {
+    if (!planId) return;
+    setPlanOrient(prev => (prev[planId] === o ? prev : { ...prev, [planId]: o }));
+  }, []);
+
   // ── Plans sur PAGE À PART (fin de rapport, paysage ou portrait) — choix PAR PLAN ──
   // Tous les plans du rapport, avec leur clé. L'ancienne case « tous les plans en paysage »
   // (planPagesPaysage) reste honorée tant qu'aucun choix plan par plan n'a été fait.
@@ -2292,13 +2302,29 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // fin de rapport → disparus du texte. Elle est désormais ignorée : seuls les plans choisis un par
   // un (« ⤢ Page à part ») quittent le texte.
   void planPagesPaysage;
-  const fullPageMap = useMemo(() => (planPages && typeof planPages === 'object') ? planPages : {}, [planPages]);
+  // Case « Plans en fin de rapport » (retour Thomas 20/10 : « ça ne marche pas du tout » — les plans
+  // DISPARAISSAIENT, la liste des pages de fin n'étant plus remplie) : désormais CHAQUE plan part
+  // seul sur une page A4 en fin de rapport (comme « ⤢ Page à part »), orientation automatique
+  // (paysage / portrait selon le plan), modifiable plan par plan ; « ↩ Dans le texte » le garde
+  // dans le texte (valeur 'inline', utile seulement quand la case est cochée).
+  const userPlanPages = useMemo(() => (planPages && typeof planPages === 'object') ? planPages : {}, [planPages]);
+  const fullPageMap = useMemo(() => {
+    const out = {};
+    if (plansEnFin) for (const p of reportPlans) out[p.key] = planOrient[p.plan.planId] === 'portrait' ? 'portrait' : 'landscape';
+    for (const [k, v] of Object.entries(userPlanPages)) {
+      if (v === 'inline') delete out[k];
+      else if (v === 'landscape' || v === 'portrait') out[k] = v;
+    }
+    return out;
+  }, [plansEnFin, reportPlans, planOrient, userPlanPages]);
   const setPlanPage = useCallback((key, val) => {
     if (!onSetPlanPages) return;
-    const next = { ...fullPageMap };
-    if (val) next[key] = val; else delete next[key];
+    const next = { ...userPlanPages };
+    if (val) next[key] = val;
+    else if (plansEnFin) next[key] = 'inline'; // case cochée : le garder dans le texte
+    else delete next[key];
     onSetPlanPages(next);
-  }, [onSetPlanPages, fullPageMap]);
+  }, [onSetPlanPages, userPlanPages, plansEnFin]);
   const isPcWide = typeof window !== 'undefined' && window.innerWidth >= 900;
   const onFullPage = isPcWide && onSetPlanPages ? (key) => setPlanPage(key, 'landscape') : null;
   // Corps du rapport : les plans sortis sur une page à part n'y apparaissent plus.
@@ -2308,14 +2334,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const paraBreaks = useMemo(() =>
     new Set((pageBreaks || []).filter(id => /_p\d+$/.test(id))),
   [pageBreaks]);
-  // Orientation des plans (détectée au chargement de l'image par SinglePlanImage, remontée ici).
-  // planId → 'portrait' | 'landscape'. Sert à isoler automatiquement les plans portrait sur
-  // leur propre page (demande utilisateur : un plan portrait par page pour qu'il soit lisible).
-  const [planOrient, setPlanOrient] = useState({});
-  const handlePlanOrient = useCallback((planId, o) => {
-    if (!planId) return;
-    setPlanOrient(prev => (prev[planId] === o ? prev : { ...prev, [planId]: o }));
-  }, []);
 
   // Sauts de page AUTOMATIQUES dérivés de l'orientation : on isole chaque plan portrait sur sa
   // page. Réutilise les mêmes breakId que les sauts manuels (`plan-${loc.id}` pour le bloc plan,
@@ -2323,7 +2341,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // pour un saut forcé, sans logique de pagination dédiée. Ignoré en mode « plans en fin ».
   const portraitPlanBreaks = useMemo(() => {
     const s = new Set();
-    if (plansEnFin) return s;
     const lib = projet.planLibrary || [];
     const bgResolvable = (planId, planBg, ann) =>
       !!(ann?.exported || planBg || (planId && lib.find(p => p.id === planId)?.bg));
@@ -2344,7 +2361,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       });
     }
     return s;
-  }, [bodyLocs, planOrient, plansEnFin, projet.planLibrary]);
+  }, [bodyLocs, planOrient, projet.planLibrary]);
 
   const breaks = useMemo(() => {
     const s = new Set(pageBreaks || []);
@@ -2387,7 +2404,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [planPageSegments, plansEnFin]);
 
   // ── Mesure des hauteurs réelles ─────────────────────────────────────────────────────────────────────────
-  const allBlocks   = useMemo(() => flattenBlocks(bodyLocs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || [], breaks), [bodyLocs, plansEnFin, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary, breaks]);
+  // Plans en fin : déjà retirés de bodyLocs (pages à part) → le corps traite les plans restants normalement.
+  const allBlocks   = useMemo(() => flattenBlocks(bodyLocs, false, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || [], breaks), [bodyLocs, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary, breaks]);
   const [measuredH, setMeasuredH] = useState({});
   const blockElsRef = useRef({});
 
@@ -3152,7 +3170,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <div style={lp.orient === 'landscape' ? { zoom: PW / PH } : undefined}>
                 <div ref={el => { pageRefs.current[pageIdx] = el; }} data-landscape={lp.orient === 'landscape' ? '1' : undefined}>
                   <PlanFullPage plan={lp.plan} title={lp.title} projet={projet} pageNum={pageNum} totalPages={totalPages} annotScale={annotScale} vpNumByPath={vpNumByPath}
-                    orientation={lp.orient} onChange={isPcWide && onSetPlanPages ? (v) => setPlanPage(lp.key, v) : null}/>
+                    orientation={lp.orient} onOrient={handlePlanOrient} onChange={isPcWide && onSetPlanPages ? (v) => setPlanPage(lp.key, v) : null}/>
                 </div>
               </div>
             </React.Fragment>

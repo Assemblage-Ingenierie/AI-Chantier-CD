@@ -429,8 +429,11 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                     rognait ~90px sur texte ET photos → écran mal optimisé, retour Thomas). */}
                 <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                      <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0 }}>{item.titre}</p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, flexWrap:'wrap', rowGap:4 }}>
+                      <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0, maxWidth:'100%' }}>{item.titre}</p>
+                      {/* Dates de suivi : sur la ligne du titre, à la MÊME taille, en rouge (choix Thomas).
+                          Téléphone : sur sa propre ligne sous l'en-tête (sinon elle passe sous les boutons). */}
+                      {isDesktop && (() => { const info = obsDatesInfo(item, visitDate); return info ? <ObsDatesChip info={info} fontSize={16}/> : null; })()}
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginTop: isDesktop ? 5 : 4, flexWrap:'wrap' }}>
                       {/* Statut Rapport / Brouillon — sur la MÊME ligne que les badges (demande Thomas).
@@ -455,8 +458,6 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                         }}/>
                         <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
                       </span>
-                      {/* Dates de suivi (observation datée via le bouton calendrier) — calées à droite. */}
-                      {(() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info}/></span> : null; })()}
                     </div>
                   </div>
 
@@ -489,6 +490,7 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                     }
                   </div>
                 </div>
+                {!isDesktop && (() => { const info = obsDatesInfo(item, visitDate); return info ? <div style={{ marginTop:6, maxWidth:'100%' }}><ObsDatesChip info={info} fontSize={12} wrap/></div> : null; })()}
                 {item.commentaire && (
                   <p style={{ fontSize: isDesktop ? 14 : 13, color: draft ? DA.grayL : DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(commentFor(item))}</p>
                 )}
