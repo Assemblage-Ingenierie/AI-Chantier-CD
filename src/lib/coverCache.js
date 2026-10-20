@@ -88,9 +88,13 @@ export function onCoverCache(fn) { _listeners.add(fn); return () => _listeners.d
 // MÉMOIRE (incident 20/10 : page blanche juste après la 1re mise en ligne) : chaque copie demande
 // de décoder l'image. Faites TOUTES EN MÊME TEMPS (une par carte, archives comprises) et sur des
 // couvertures lourdes (PNG iPhone, photos 12 Mpx), ça pouvait représenter des centaines de Mo d'un
-// coup → iOS tue la page. Désormais : UNE copie à la fois, après le démarrage, fichiers > 2 Mo
-// ignorés (la carte s'affiche alors comme avant, par le réseau).
-const MAX_BLOB_BYTES = 2 * 1024 * 1024;
+// coup → iOS tue la page. Désormais : UNE copie à la fois, après le démarrage.
+// Retour Thomas 20/10 : Rue de Cléry / Pouvelle toujours lentes — leurs couvertures (PNG iPhone de
+// plusieurs Mo) dépassaient l'ancien plafond de 2 Mo → jamais gardées → réseau à CHAQUE ouverture.
+// Plafond relevé (toujours une seule image à la fois) ; les gros fichiers sont décodés directement
+// en petit quand le navigateur sait le faire (createImageBitmap + resizeWidth) → mémoire contenue.
+const MAX_BLOB_BYTES = 30 * 1024 * 1024;
+const BIG_BLOB_BYTES = 1.5 * 1024 * 1024;
 const _queue = [];
 let _running = false;
 function pump() {
@@ -115,7 +119,14 @@ export function rememberCover(key, url) {
       if (blob.size > MAX_BLOB_BYTES) return;
       let src = null, w = 0, h = 0, close = () => {};
       if (typeof createImageBitmap === 'function') {
-        try { const bm = await createImageBitmap(blob); src = bm; w = bm.width; h = bm.height; close = () => { try { bm.close(); } catch { /* ignore */ } }; } catch { /* repli <img> */ }
+        const tries = blob.size > BIG_BLOB_BYTES ? [{ resizeWidth: WIDTH, resizeQuality: 'medium' }, undefined] : [undefined];
+        for (const opt of tries) {
+          try {
+            const bm = opt ? await createImageBitmap(blob, opt) : await createImageBitmap(blob);
+            src = bm; w = bm.width; h = bm.height; close = () => { try { bm.close(); } catch { /* ignore */ } };
+            break;
+          } catch { /* option non gérée / format → essai suivant, puis repli <img> */ }
+        }
       }
       if (!src) {
         const u = URL.createObjectURL(blob);
