@@ -111,12 +111,29 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
         </g>
       )}
-      {/* Slip (rouge, élastique blanc) */}
+      {/* Slip LÉOPARD : vraie coupe de slip (élastique noir aux hanches, échancrures des cuisses,
+          couture en Y), motif de taches découpé à la forme du slip. */}
       {o.body === 'slip' && (
-        <g strokeLinejoin="round">
-          <path d="M29.5 110 Q58 116.5 86.5 110 L84.6 118.6 Q71.5 120.6 64.5 126.4 L51.5 126.4 Q44.5 120.6 31.4 118.6 Z" fill="#DC2626" stroke="#991B1B" strokeWidth="0.8"/>
-          <path d="M29.5 110 Q58 116.5 86.5 110 L86 113.2 Q58 119.8 30 113.2 Z" fill="white" stroke="#E5E7EB" strokeWidth="0.6"/>
-          <path d="M58 117.4 L58 125.6" stroke="#991B1B" strokeWidth="0.8"/>
+        <g strokeLinejoin="round" transform="translate(0 -3)">
+          <defs>
+            <clipPath id="costar-slip-clip">
+              <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z"/>
+            </clipPath>
+          </defs>
+          <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z" fill="#E9B24E"/>
+          <g clipPath="url(#costar-slip-clip)">
+            {[[36, 110], [44, 113.5], [52, 110.8], [60, 114], [68, 110.6], [76, 112.6], [82, 109.6], [48, 118.6], [57, 120], [65, 117.6], [40, 108.4], [73, 116.6]].map(([x, y], k) => (
+              <g key={k} transform={`translate(${x} ${y}) rotate(${(k * 47) % 180})`}>
+                <ellipse cx="0" cy="0" rx="2.1" ry="1.6" fill="#C9822E"/>
+                <path d="M-2.4 -0.6 Q-2 -2.2 -0.4 -2.2 M0.8 -2 Q2.6 -1.4 2.4 0.4 M2 1.4 Q0.6 2.6 -1 2 M-2.2 1.2 L-2.6 0.6" stroke="#2A1608" strokeWidth="0.95" fill="none" strokeLinecap="round"/>
+              </g>
+            ))}
+            <circle cx="33" cy="114.5" r="0.7" fill="#2A1608"/><circle cx="62.6" cy="108.6" r="0.7" fill="#2A1608"/><circle cx="55" cy="116.4" r="0.6" fill="#2A1608"/><circle cx="79.6" cy="114.6" r="0.7" fill="#2A1608"/>
+          </g>
+          <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z" fill="none" stroke="#7A4A16" strokeWidth="0.8"/>
+          {/* Élastique noir + couture en Y */}
+          <path d="M30 105.6 Q58 111.6 86 105.6 L85.8 108.6 Q58 114.6 30.2 108.6 Z" fill="#111827"/>
+          <path d="M51 112.6 Q58 117 65 112.6 M58 116.8 L58 122" stroke="#7A4A16" strokeWidth="0.9" fill="none"/>
         </g>
       )}
       {/* Ceinture noire de karaté (nœud + deux pans, barrettes dorées) */}

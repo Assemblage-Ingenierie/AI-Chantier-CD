@@ -62,7 +62,7 @@ export const MISSIONS = [
   { id: 'cowboy',    title: 'Shérif du chantier',     desc: 'Faire relire 3 rapports dans la même journée',          reward: 'cowboy',    progress: s => [Math.min(s.bestDay, 3), 3] },
   { id: 'clope',     title: 'Pause clope',            desc: 'Faire relire un rapport pendant la pause de midi (12 h à 14 h)', reward: 'clope', progress: s => [s.noon ? 1 : 0, 1] },
   { id: 'santiags',  title: 'Cavalier solitaire',     desc: 'Faire relire des rapports sur 5 jours différents',      reward: 'santiags',  progress: s => [Math.min(s.days, 5), 5] },
-  { id: 'pull',      title: 'Le pull du dimanche',    desc: 'Faire relire un rapport le week-end. En récompense : ton plus beau pull en cachemire… rétréci au lavage par la femme de ménage. Il serre un peu.', reward: 'pull', progress: s => [s.weekend ? 1 : 0, 1] },
+  { id: 'pull',      title: 'Rétréci au lavage',      desc: 'Fais rétrécir un rapport : fais-le relire, retire-lui des observations, puis fais-le relire à nouveau. Comme ton pull en cachemire préféré, passé à 60 °C par la femme de ménage… il a rétréci, et maintenant il serre un peu.', reward: 'pull', progress: s => [s.shrunk ? 1 : 0, 1] },
   { id: 'citrouille',title: 'Halloween',              desc: 'Faire relire un rapport en octobre',                    reward: 'citrouille',progress: s => [s.october ? 1 : 0, 1] },
   { id: 'noel',      title: 'Joyeux Noël',            desc: 'Faire relire un rapport en décembre',                   reward: 'noel',      progress: s => [s.december ? 1 : 0, 1] },
   { id: 'securite',  title: 'Sécurité d\'abord',       desc: 'Faire relire un rapport de 10 observations ou plus : chaussures de sécurité obligatoires sur le chantier', reward: 'securite', progress: s => [Math.min(s.maxObs, 10), 10] },
@@ -78,7 +78,7 @@ export const MISSIONS = [
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false };
+  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {} };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -98,6 +98,7 @@ export function normalizeState(raw) {
     day: typeof s.day === 'string' ? s.day : '', dayCount: num(s.dayCount, 0), bestDay: num(s.bestDay, 0), // relectures du jour
     days: num(s.days, 0), noon: !!s.noon, weekend: !!s.weekend, october: !!s.october, december: !!s.december,
     shortReport: !!s.shortReport, bigComeback: !!s.bigComeback, perfectBig: !!s.perfectBig,
+    shrunk: !!s.shrunk, reportObs: s.reportObs && typeof s.reportObs === 'object' ? { ...s.reportObs } : {}, // rapport → nb d'observations à la dernière relecture
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -120,7 +121,7 @@ export const unlockedIds = (stats) => MISSIONS.filter(m => missionDone(m, stats)
 export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId }, now = new Date()) {
   const prev = normalizeState(state);
   if (!Number.isFinite(note) || observations <= 0) return { state: prev, completed: [] };
-  const s = { ...prev.stats, projects: { ...prev.stats.projects }, affaires: { ...prev.stats.affaires } };
+  const s = { ...prev.stats, projects: { ...prev.stats.projects }, affaires: { ...prev.stats.affaires }, reportObs: { ...prev.stats.reportObs } };
   s.reviews += 1;
   s.bestNote = Math.max(s.bestNote, note);
   if (note >= 8) s.count8 += 1;
@@ -147,6 +148,9 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
     if (Number.isFinite(last) && note - last >= 2) s.remontada = true;
     if (Number.isFinite(last) && note - last >= 3) s.bigComeback = true;
     s.projects[reportId] = note;
+    const lastObs = s.reportObs[reportId];
+    if (Number.isFinite(lastObs) && observations < lastObs) s.shrunk = true; // le rapport a « rétréci »
+    s.reportObs[reportId] = observations;
   }
   const before = new Set(unlockedIds(prev.stats));
   const completed = MISSIONS.filter(m => missionDone(m, s) && !before.has(m.reward));

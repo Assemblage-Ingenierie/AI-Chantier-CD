@@ -66,17 +66,16 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(st.equipped).toMatchObject({ head: 'casque_or', body: 'gilet', eyes: 'lunettes' });
   });
 
-  it('nouvelle fournée : clope (midi), pull (week-end), citrouille (octobre), Noël (décembre), santiags (5 jours)', () => {
+  it('nouvelle fournée : clope (midi), citrouille (octobre), Noël (décembre), santiags (5 jours)', () => {
     const got = (dates) => { let st = emptyState(); dates.forEach(d => { st = applyReview(st, { note: 6, observations: 2 }, d).state; }); return unlockedIds(st.stats); };
     expect(got([new Date(2026, 9, 20, 12, 30)])).toEqual(expect.arrayContaining(['clope', 'citrouille']));
     expect(got([new Date(2026, 10, 3, 15)])).not.toEqual(expect.arrayContaining(['clope']));
-    expect(got([new Date(2026, 10, 8, 10)])).toContain('pull');          // dimanche
-    expect(got([new Date(2026, 10, 9, 10)])).not.toContain('pull');      // lundi
     expect(got([new Date(2026, 11, 15, 10)])).toContain('noel');
     expect(got([1, 2, 3, 4].map(d => new Date(2026, 10, d + 1, 10)))).not.toContain('santiags');
     expect(got([1, 2, 3, 4, 5].map(d => new Date(2026, 10, d + 1, 10)))).toContain('santiags');
     const pull = MISSIONS.find(m => m.reward === 'pull');
-    expect(pull.desc).toMatch(/rétréci au lavage par la femme de ménage/);
+    expect(pull.desc).toMatch(/femme de ménage/);
+    expect(pull.desc).toMatch(/rétréci/);
   });
 
   it('missions à compteur : 3 × 10/10 → couronne, une seule fois', () => {
@@ -111,6 +110,15 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     st = applyReview(st, { note: 7, observations: 3 }, day).state; // une vraie relecture garde la tenue d'essai
     expect(st.sandbox).toEqual({ head: 'tuque', feet: 'santiags' });
     expect(st.equipped.neck).toBe('noeud');
+  });
+
+  it('pull : rapport « rétréci » (moins d\'observations à la relecture du MÊME rapport)', () => {
+    let st = applyReview(emptyState(), { note: 6, observations: 8, projectId: 'a', reportId: 'a|v1' }, day).state;
+    st = applyReview(st, { note: 6, observations: 8, projectId: 'b' }, day).state;      // autre rapport
+    st = applyReview(st, { note: 6, observations: 9, projectId: 'a', reportId: 'a|v1' }, day).state; // a grossi
+    expect(unlockedIds(st.stats)).not.toContain('pull');
+    const r = applyReview(st, { note: 7, observations: 6, projectId: 'a', reportId: 'a|v1' }, day);
+    expect(r.completed.map(m => m.reward)).toContain('pull');
   });
 
   it('costard trois pièces : 5 notes de 9/10 ou plus', () => {
