@@ -47,6 +47,25 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(unlockedIds(st.stats)).toContain('echarpe');
   });
 
+  it('shérif : 3 relectures le même jour → chapeau de cowboy (pas sur 3 jours différents)', () => {
+    let st = emptyState();
+    for (let d = 1; d <= 3; d++) st = applyReview(st, { note: 6, observations: 2 }, new Date(2026, 9, d, 10)).state;
+    expect(unlockedIds(st.stats)).not.toContain('cowboy');
+    st = applyReview(st, { note: 6, observations: 2 }, new Date(2026, 9, 3, 15)).state;
+    const r = applyReview(st, { note: 6, observations: 2 }, new Date(2026, 9, 3, 17));
+    expect(r.completed.map(m => m.reward)).toContain('cowboy');
+  });
+
+  it('inventaire par catégorie : chapeau de cowboy + gilet jaune + lunettes ensemble, un seul chapeau', () => {
+    let st = emptyState();
+    st = applyReview(st, { note: 5, observations: 2, projectId: 'a' }, new Date(2026, 9, 5, 9)).state;  // lunettes
+    st = applyReview(st, { note: 10, observations: 2, projectId: 'a' }, new Date(2026, 9, 5, 10)).state; // remontada (gilet) + casque or
+    st = applyReview(st, { note: 6, observations: 2, projectId: 'b' }, new Date(2026, 9, 5, 11)).state;  // cowboy
+    expect(st.equipped).toMatchObject({ head: 'cowboy', body: 'gilet', eyes: 'lunettes' }); // porté dès le déblocage
+    st = toggleEquip(st, 'casque_or'); // autre chapeau → remplace le cowboy, le reste ne bouge pas
+    expect(st.equipped).toMatchObject({ head: 'casque_or', body: 'gilet', eyes: 'lunettes' });
+  });
+
   it('missions à compteur : 3 × 10/10 → couronne, une seule fois', () => {
     let st = emptyState();
     const got = [];
@@ -70,7 +89,8 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
 
   it('état corrompu → progression vierge, sans plantage', () => {
     expect(normalizeState('n\'importe quoi')).toEqual(emptyState());
-    const st = normalizeState({ stats: { reviews: 'x' }, equipped: { eyes: 'couronne', head: 'tuque' }, unseen: ['zzz'] });
+    expect(normalizeState({ equipped: { front: 'lampe' } }).equipped).toEqual({ extra: 'lampe' }); // ancienne catégorie
+    const st = normalizeState({ stats: { reviews: 'x' }, equipped: { eyes: 'zzz', head: 'tuque' }, unseen: ['zzz'] });
     expect(st.stats.reviews).toBe(0);
     expect(st.equipped).toEqual({ head: 'tuque' });
     expect(st.unseen).toEqual([]);

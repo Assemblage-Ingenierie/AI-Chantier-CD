@@ -8,21 +8,31 @@
 export const STORE_KEY = 'chantierai_costar_v1';
 export const CHANGE_EVENT = 'costar-progress';
 
-// Emplacements : un seul cosmétique porté par emplacement.
-export const SLOTS = ['head', 'front', 'eyes', 'face', 'neck', 'body', 'hand'];
+// Inventaire rangé par CATÉGORIE (demande Thomas : « un truc yeux, chapeau, tenue… ») : un seul
+// objet porté par catégorie, cumulable entre catégories (chapeau de cowboy + gilet jaune + lunettes).
+export const CATEGORIES = [
+  { slot: 'head',  label: 'Chapeau' },
+  { slot: 'eyes',  label: 'Yeux' },
+  { slot: 'neck',  label: 'Cou' },
+  { slot: 'body',  label: 'Tenue' },
+  { slot: 'hand',  label: 'Main' },
+  { slot: 'extra', label: 'Accessoire' },
+];
+export const SLOTS = CATEGORIES.map(c => c.slot);
 
 export const COSMETICS = {
   lunettes:  { name: 'Lunettes de soleil', slot: 'eyes',  icon: '🕶️' },
   noeud:     { name: 'Nœud papillon',      slot: 'neck',  icon: '🎀' },
   casque_or: { name: 'Casque en or',       slot: 'head',  icon: '🏆' },
   tuque:     { name: 'Tuque québécoise',   slot: 'head',  icon: '🎿' },
-  gilet:     { name: 'Gilet fluo',         slot: 'body',  icon: '🦺' },
+  gilet:     { name: 'Gilet jaune',        slot: 'body',  icon: '🦺' },
+  cowboy:    { name: 'Chapeau de cowboy',  slot: 'head',  icon: '🤠' },
   echarpe:   { name: 'Écharpe rouge',      slot: 'neck',  icon: '🧣' },
   cafe:      { name: 'Tasse de café',      slot: 'hand',  icon: '☕' },
-  lampe:     { name: 'Lampe frontale',     slot: 'front', icon: '🔦' },
+  lampe:     { name: 'Lampe frontale',     slot: 'extra', icon: '🔦' },
   monocle:   { name: 'Monocle',            slot: 'eyes',  icon: '🧐' },
   couronne:  { name: 'Couronne',           slot: 'head',  icon: '👑' },
-  pansement: { name: 'Pansement',          slot: 'face',  icon: '🩹' },
+  pansement: { name: 'Pansement',          slot: 'extra', icon: '🩹' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -34,6 +44,7 @@ export const MISSIONS = [
   { id: 'gros',      title: 'Gros chantier',          desc: 'Faire relire un rapport de 20 observations ou plus',   reward: 'cafe',      progress: s => [Math.min(s.maxObs, 20), 20] },
   { id: 'nuit',      title: 'Oiseau de nuit',         desc: 'Faire relire un rapport après 20 h',                    reward: 'lampe',     progress: s => [s.night ? 1 : 0, 1] },
   { id: 'tournee',   title: 'Tournée des chantiers',  desc: 'Faire relire 5 affaires différentes',                   reward: 'echarpe',   progress: s => [Math.min(Object.keys(s.affaires).length, 5), 5] },
+  { id: 'cowboy',    title: 'Shérif du chantier',     desc: 'Faire relire 3 rapports dans la même journée',          reward: 'cowboy',    progress: s => [Math.min(s.bestDay, 3), 3] },
   { id: 'habitue',   title: 'Habitué du barrage',     desc: 'Faire relire 10 rapports',                              reward: 'tuque',     progress: s => [Math.min(s.reviews, 10), 10] },
   { id: 'serie',     title: 'Série en or',            desc: 'Obtenir 8/10 ou plus, 3 fois',                          reward: 'monocle',   progress: s => [Math.min(s.count8, 3), 3] },
   { id: 'dix',       title: 'Perfection',             desc: 'Obtenir 10/10',                                         reward: 'casque_or', progress: s => [Math.min(s.count10, 1), 1] },
@@ -41,7 +52,7 @@ export const MISSIONS = [
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {} };
+  return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0 };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [] };
@@ -58,9 +69,11 @@ export function normalizeState(raw) {
     maxObs: num(s.maxObs, 0), night: !!s.night, lowNote: !!s.lowNote, remontada: !!s.remontada,
     projects: s.projects && typeof s.projects === 'object' ? { ...s.projects } : {}, // rapport (affaire + visite) → dernière note
     affaires: s.affaires && typeof s.affaires === 'object' ? { ...s.affaires } : {},  // affaires relues
+    day: typeof s.day === 'string' ? s.day : '', dayCount: num(s.dayCount, 0), bestDay: num(s.bestDay, 0), // relectures du jour
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
-    for (const [slot, id] of Object.entries(raw.equipped)) if (COSMETICS[id]?.slot === slot) st.equipped[slot] = id;
+    // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
+    for (const id of Object.values(raw.equipped)) if (COSMETICS[id]) st.equipped[COSMETICS[id].slot] = id;
   }
   st.unseen = Array.isArray(raw.unseen) ? raw.unseen.filter(id => COSMETICS[id]) : [];
   return st;
@@ -82,6 +95,10 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (note >= 10) s.count10 += 1;
   if (note <= 4) s.lowNote = true;
   s.maxObs = Math.max(s.maxObs, observations);
+  const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  s.dayCount = s.day === dayKey ? s.dayCount + 1 : 1;
+  s.day = dayKey;
+  s.bestDay = Math.max(s.bestDay, s.dayCount);
   const h = now.getHours();
   if (h >= 20 || h < 5) s.night = true;
   if (projectId) s.affaires[projectId] = 1;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES } from '../../lib/costar.js';
-import { MISSIONS, COSMETICS, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState } from '../../lib/costarRewards.js';
+import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState } from '../../lib/costarRewards.js';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
 function useCostarState() {
@@ -19,7 +19,7 @@ function useCostarState() {
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
-// outfit = { head, front, eyes, face, neck, body, hand } : cosmétiques portés (vestiaire).
+// outfit = { head, eyes, neck, body, hand, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
   return (
@@ -34,10 +34,10 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       <ellipse cx="58" cy="106" rx="21" ry="17" fill="#C9935C"/>
       {o.body === 'gilet' && (
         <g>
-          <path d="M27 90 Q25 111 42 124 L47 109 L45 82 Z" fill="#A3E635" stroke="#65A30D" strokeWidth="0.8"/>
-          <path d="M89 90 Q91 111 74 124 L69 109 L71 82 Z" fill="#A3E635" stroke="#65A30D" strokeWidth="0.8"/>
-          <path d="M28 104 L46 101 M88 104 L70 101" stroke="#E5E7EB" strokeWidth="3.2" strokeLinecap="round"/>
-          <path d="M31 113 L46 112 M85 113 L70 112" stroke="#E5E7EB" strokeWidth="2.6" strokeLinecap="round"/>
+          <path d="M27 90 Q25 111 42 124 L47 109 L45 82 Z" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.8"/>
+          <path d="M89 90 Q91 111 74 124 L69 109 L71 82 Z" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.8"/>
+          <path d="M28 104 L46 101 M88 104 L70 101" stroke="#D1D5DB" strokeWidth="3.2" strokeLinecap="round"/>
+          <path d="M31 113 L46 112 M85 113 L70 112" stroke="#D1D5DB" strokeWidth="2.6" strokeLinecap="round"/>
         </g>
       )}
       {/* Pattes */}
@@ -100,7 +100,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             <circle cx="69" cy="63" r="8" fill="white" fillOpacity="0.18" stroke="#CA8A04" strokeWidth="2.2"/>
           </g>
         )}
-        {o.face === 'pansement' && (
+        {o.extra === 'pansement' && (
           <g transform="rotate(-24 40 71)">
             <rect x="32" y="68" width="16" height="6" rx="3" fill="#F5D0A9" stroke="#D6A77A" strokeWidth="0.8"/>
             <rect x="37.5" y="68.4" width="5" height="5.2" fill="#EBC097"/>
@@ -108,7 +108,16 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           </g>
         )}
         {/* Coiffe : casque de chantier (défaut), casque en or, tuque ou couronne (vestiaire) */}
-        {o.head === 'tuque' ? (
+        {o.head === 'cowboy' ? (
+          <g>
+            <path d="M14 47 Q20 55 58 54 Q96 55 102 47 Q96 51 58 50 Q20 51 14 47 Z" fill="#6B3F1D"/>
+            <path d="M14 47 Q12 41 18 40 Q24 46 58 46 Q92 46 98 40 Q104 41 102 47 Q96 51 58 50 Q20 51 14 47 Z" fill="#8B5A2B"/>
+            <path d="M36 46 Q33 22 45 18 Q51 24 58 20 Q65 24 71 18 Q83 22 80 46 Z" fill="#A0652F"/>
+            <path d="M51 22 Q58 27 65 22" stroke="#7A4A20" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
+            <path d="M35.5 38 Q58 42 80.5 38 L80.2 44 Q58 48 35.8 44 Z" fill="#3F2A14"/>
+            <polygon transform="translate(58 41.6) scale(0.55)" fill="#FACC15" points="0,-5 1.5,-1.6 5,-1.5 2.3,0.8 3.1,4.5 0,2.4 -3.1,4.5 -2.3,0.8 -5,-1.5 -1.5,-1.6"/>
+          </g>
+        ) : o.head === 'tuque' ? (
           <g>
             <path d="M30 50 Q30 17 58 15 Q86 17 86 50 Z" fill="#C8102E"/>
             <path d="M40 22 L44 46 M50 17 L51 46 M66 17 L65 46 M76 22 L72 46" stroke="#A50D25" strokeWidth="1.4" opacity="0.6"/>
@@ -137,7 +146,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             {o.head === 'casque_or' && <path d="M40 30 l1.2 -3 l1.2 3 l3 1.2 l-3 1.2 l-1.2 3 l-1.2 -3 l-3 -1.2 Z" fill="white" opacity="0.9"/>}
           </g>
         )}
-        {o.front === 'lampe' && (
+        {o.extra === 'lampe' && (
           <g>
             <circle cx="58" cy="37" r="11" fill="#FEF08A" opacity="0.35"/>
             <rect x="51" y="32" width="14" height="10" rx="3" fill="#374151"/>
@@ -417,7 +426,7 @@ export default function Costar({ projet, fixed = false }) {
             <div style={{ paddingRight: 24 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6 }}>Vestiaire de Costar</div>
               <div style={{ fontSize: 12, color: DA.gray, marginTop: 2, lineHeight: 1.4 }}>
-                Accomplis des missions pour habiller Costar. Clique sur un objet débloqué pour le porter ou l'enlever.
+                Accomplis des missions pour débloquer des objets. Un objet par catégorie, cumulable : chapeau + lunettes + tenue…
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
                 <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
@@ -426,22 +435,53 @@ export default function Costar({ projet, fixed = false }) {
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: DA.gray, whiteSpace: 'nowrap' }}>{doneCount}/{MISSIONS.length} missions</span>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+            {/* INVENTAIRE : une ligne par catégorie, un objet porté par catégorie (cumulable entre
+                catégories). Clic sur l'objet porté = l'enlever. Cadenas = mission à accomplir. */}
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 12, marginBottom: 6 }}>Inventaire</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {CATEGORIES.map(cat => {
+                const items = Object.entries(COSMETICS).filter(([, c]) => c.slot === cat.slot);
+                if (!items.length) return null;
+                const cur = cst.equipped[cat.slot];
+                return (
+                  <div key={cat.slot} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 74, flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: DA.gray }}>{cat.label}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minWidth: 0 }}>
+                      {items.map(([id, c]) => {
+                        const got = unlocked.has(id);
+                        const worn = cur === id;
+                        const mission = MISSIONS.find(m => m.reward === id);
+                        return (
+                          <button key={id} type="button" disabled={!got}
+                            onClick={() => saveCostarState(toggleEquip(cst, id))}
+                            title={got ? `${c.name} : ${worn ? 'cliquer pour enlever' : 'cliquer pour porter'}` : `${c.name} : verrouillé. Mission « ${mission?.title} » : ${mission?.desc}`}
+                            aria-pressed={worn}
+                            style={{ width: 40, height: 40, borderRadius: 10, padding: 0, fontSize: 20, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              border: `2px solid ${worn ? '#F97316' : got ? DA.border : '#EEEEEE'}`, background: worn ? '#FFF7ED' : got ? 'white' : '#FAFAFA',
+                              cursor: got ? 'pointer' : 'default', boxShadow: worn ? '0 0 0 3px rgba(249,115,22,0.15)' : 'none' }}>
+                            <span style={{ filter: got ? 'none' : 'grayscale(1)', opacity: got ? 1 : 0.55 }}>{got ? c.icon : '🔒'}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* MISSIONS : ce qu'il reste à faire, et ce que ça débloque. */}
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 14, marginBottom: 6 }}>Missions</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {MISSIONS.map(m => {
                 const c = COSMETICS[m.reward];
                 const got = unlocked.has(m.reward);
-                const worn = cst.equipped[c.slot] === m.reward;
                 const [cur, max] = m.progress(cst.stats);
                 return (
-                  <button key={m.id} type="button" disabled={!got}
-                    onClick={() => saveCostarState(toggleEquip(cst, m.reward))}
-                    title={got ? (worn ? 'Enlever' : 'Porter') : 'Mission à accomplir'}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 10, fontFamily: 'inherit',
-                      border: `1.5px solid ${worn ? '#F97316' : DA.border}`, background: worn ? '#FFF7ED' : got ? 'white' : '#FAFAFA', cursor: got ? 'pointer' : 'default' }}>
-                    <span style={{ fontSize: 20, width: 26, textAlign: 'center', flexShrink: 0, filter: got ? 'none' : 'grayscale(1)', opacity: got ? 1 : 0.45 }}>{got ? c.icon : '🔒'}</span>
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 9px', borderRadius: 10, border: `1px solid ${got ? '#BBF7D0' : DA.border}`, background: got ? '#F0FDF4' : 'white' }}>
+                    <span style={{ fontSize: 17, width: 22, textAlign: 'center', flexShrink: 0 }}>{got ? '✅' : c.icon}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 800, color: got ? DA.black : DA.gray }}>{m.title}</span>
-                      <span style={{ display: 'block', fontSize: 11.5, color: DA.grayL, lineHeight: 1.35 }}>{m.desc} → <strong style={{ color: got ? '#C2410C' : DA.grayL }}>{c.name}</strong></span>
+                      <span style={{ display: 'block', fontSize: 12, fontWeight: 800, color: DA.black }}>{m.title}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: DA.grayL, lineHeight: 1.35 }}>{m.desc} → <strong style={{ color: got ? '#15803D' : '#C2410C' }}>{c.name}</strong></span>
                       {!got && max > 1 && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
                           <span style={{ flex: 1, height: 4, borderRadius: 2, background: '#EEE', overflow: 'hidden' }}>
@@ -451,8 +491,7 @@ export default function Costar({ projet, fixed = false }) {
                         </span>
                       )}
                     </span>
-                    {got && <span style={{ fontSize: 10.5, fontWeight: 800, color: worn ? '#C2410C' : DA.grayL, flexShrink: 0 }}>{worn ? 'Porté' : 'Porter'}</span>}
-                  </button>
+                  </div>
                 );
               })}
             </div>
