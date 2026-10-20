@@ -20,33 +20,43 @@ function useCostarState() {
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
-// Botte de cowboy (pied gauche de Costar, bout vers la gauche) — la droite = la même en miroir.
-// Tige cintrée en cuir fauve avec surpiqûres en ailes, pied brun foncé à bout pointu relevé,
-// talon biseauté et petit éperon argenté.
-function Santiag() {
+// Bottes vues DE FACE (comme le reste de Costar), dessinées autour de x = 0 : la gauche est
+// posée en x = 44, la droite en x = 72 (en miroir). kind = 'santiags' | 'securite'.
+function Boot({ kind }) {
+  if (kind === 'santiags') {
+    return (
+      <g strokeLinejoin="round" strokeLinecap="round">
+        {/* Tige à découpe en V, cuir fauve, surpiqûres en ailes */}
+        <path d="M-7.4 111.2 Q-3.7 114 0 112.2 Q3.7 114 7.4 111.2 L6.8 121.2 L-6.8 121.2 Z" fill="#A86B35" stroke="#4A2A10" strokeWidth="0.8"/>
+        <path d="M-6.6 112.6 Q-3.5 115 0 113.4 Q3.5 115 6.6 112.6" stroke="#F2D3A2" strokeWidth="0.6" fill="none"/>
+        <path d="M0 115 Q-4.2 117 -3.4 120 Q-1.4 118.6 0 120.6 Q1.4 118.6 3.4 120 Q4.2 117 0 115 Z" fill="none" stroke="#F2D3A2" strokeWidth="0.65"/>
+        {/* Pied à bout pointu */}
+        <path d="M-7 120.6 Q-9.6 124 -5.6 127.4 L0 129.8 L5.6 127.4 Q9.6 124 7 120.6 Z" fill="#6B3F1D" stroke="#3A1E09" strokeWidth="0.8"/>
+        <path d="M-5.8 123.4 Q0 121.8 5.8 123.4" stroke="#C98E52" strokeWidth="0.6" fill="none"/>
+        <ellipse cx="-2.8" cy="125" rx="1.8" ry="0.8" fill="white" opacity="0.3"/>
+        {/* Éperon côté extérieur */}
+        <path d="M-7.6 122.4 L-9.4 122.4" stroke="#9CA3AF" strokeWidth="0.8"/>
+        <polygon transform="translate(-10.4 122.4) scale(0.26)" fill="#E5E7EB" stroke="#6B7280" strokeWidth="1.4"
+          points="0,-5 1.5,-1.6 5,-1.5 2.3,0.8 3.1,4.5 0,2.4 -3.1,4.5 -2.3,0.8 -5,-1.5 -1.5,-1.6"/>
+      </g>
+    );
+  }
+  // Chaussures de sécurité : nubuck jaune, col rembourré, lacets, coque, semelle crantée.
   return (
     <g strokeLinejoin="round" strokeLinecap="round">
-      {/* Tige */}
-      <path d="M37.2 103.5 Q40.6 106.6 44 104.4 Q47.4 106.6 50.8 103.5 L50.4 113 Q50 118 50.6 121.5 L38.4 121.5 Q38.9 117 38 112 Z" fill="#B87333" stroke="#5C3313" strokeWidth="0.9"/>
-      <path d="M38.2 104.6 Q40.6 106.9 44 105.4 Q47.4 106.9 49.8 104.6" stroke="#E9C08A" strokeWidth="0.7" fill="none"/>
-      <path d="M44 107.5 Q40.5 110.5 41 114.5 Q43 112.5 44 115.5 Q45 112.5 47 114.5 Q47.5 110.5 44 107.5 Z" fill="none" stroke="#F6D7A7" strokeWidth="0.75"/>
-      <path d="M44 116.4 L44 119.6" stroke="#F6D7A7" strokeWidth="0.75"/>
-      {/* Pied */}
-      <path d="M38.6 120.6 L50.7 120.6 Q51.6 123.4 51 126.6 L28.2 126.6 Q25.6 126.4 25.4 124.6 Q25.6 123 28.4 122.6 Q34.6 122.2 38.6 120.6 Z" fill="#6B3A17" stroke="#3A1E09" strokeWidth="0.9"/>
-      <path d="M30 123.6 Q35.4 123.4 39.6 121.8" stroke="#D9A066" strokeWidth="0.7" fill="none"/>
-      <ellipse cx="31" cy="123.8" rx="2.6" ry="0.9" fill="white" opacity="0.28"/>
-      {/* Semelle + talon biseauté */}
-      <path d="M25.8 126.6 L45.6 126.6 L45.6 127.7 L27.2 127.7 Q25.9 127.4 25.8 126.6 Z" fill="#2A160A"/>
-      <path d="M45.4 126.4 L51.2 126.4 L50.2 129.6 L46.8 129.6 Z" fill="#2A160A"/>
-      {/* Éperon */}
-      <path d="M51.2 125.4 L54.2 125.4" stroke="#9CA3AF" strokeWidth="0.9"/>
-      <polygon transform="translate(55.3 125.4) scale(0.32)" fill="#D1D5DB" stroke="#6B7280" strokeWidth="1.2"
-        points="0,-5 1.5,-1.6 5,-1.5 2.3,0.8 3.1,4.5 0,2.4 -3.1,4.5 -2.3,0.8 -5,-1.5 -1.5,-1.6"/>
+      <path d="M-7 112.6 Q-7 111 -5.4 111 L5.4 111 Q7 111 7 112.6 L7 121.4 L-7 121.4 Z" fill="#D69E2E" stroke="#8A5A12" strokeWidth="0.8"/>
+      <rect x="-7" y="111" width="14" height="2.6" rx="1.3" fill="#6B3F1D"/>
+      <path d="M-2.8 114.6 L2.8 116.6 M2.8 114.6 L-2.8 116.6 M-2.8 117.6 L2.8 119.6 M2.8 117.6 L-2.8 119.6" stroke="#3A2A12" strokeWidth="0.85"/>
+      <path d="M-7.2 120.6 Q-10.4 122.2 -9.8 126 Q-8.6 128.4 0 128.4 Q8.6 128.4 9.8 126 Q10.4 122.2 7.2 120.6 Z" fill="#D69E2E" stroke="#8A5A12" strokeWidth="0.8"/>
+      <path d="M-8.8 125.4 Q0 121.4 8.8 125.4" stroke="#B7791F" strokeWidth="1" fill="none"/>
+      <ellipse cx="-3.4" cy="124.4" rx="2" ry="0.8" fill="white" opacity="0.3"/>
+      <path d="M-10 126.2 Q-10 129.8 -6.4 129.8 L6.4 129.8 Q10 129.8 10 126.2 Z" fill="#1F2937"/>
+      <path d="M-6 129.8 L-6 128.8 M-2 129.8 L-2 128.8 M2 129.8 L2 128.8 M6 129.8 L6 128.8" stroke="#4B5563" strokeWidth="0.7"/>
     </g>
   );
 }
 
-// outfit = { head, eyes, face, mouth, neck, body, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
+// outfit = { head, eyes, face, mouth, neck, body, waist, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
   return (
@@ -83,22 +93,43 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
         </g>
       )}
-      {/* Pull en cachemire RÉTRÉCI au lavage : s'arrête au-dessus du nombril */}
-      {o.body === 'pull' && (
-        <path d="M27 97 Q26 85 40 82 L76 82 Q90 85 89 97 Q58 104 27 97 Z" fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8"/>
+      {/* Slip (rouge, élastique blanc) */}
+      {o.body === 'slip' && (
+        <g strokeLinejoin="round">
+          <path d="M29.5 110 Q58 116.5 86.5 110 L84.6 118.6 Q71.5 120.6 64.5 126.4 L51.5 126.4 Q44.5 120.6 31.4 118.6 Z" fill="#DC2626" stroke="#991B1B" strokeWidth="0.8"/>
+          <path d="M29.5 110 Q58 116.5 86.5 110 L86 113.2 Q58 119.8 30 113.2 Z" fill="white" stroke="#E5E7EB" strokeWidth="0.6"/>
+          <path d="M58 117.4 L58 125.6" stroke="#991B1B" strokeWidth="0.8"/>
+        </g>
       )}
-      {o.body === 'pull' && (
-        <path d="M30 96.5 L30.5 99.5 M35 97.6 L35.4 100.6 M40 98.5 L40.3 101.5 M45 99.1 L45.2 102.1 M50 99.5 L50.1 102.5 M55 99.7 L55 102.7 M60 99.7 L60 102.7 M65 99.5 L64.9 102.5 M70 99.1 L69.8 102.1 M75 98.5 L74.7 101.5 M80 97.6 L79.6 100.6 M85 96.5 L84.5 99.5 M27.5 97.5 Q58 105.5 88.5 97.5"
-          stroke="#B8956A" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+      {/* Ceinture noire de karaté (nœud + deux pans, barrettes dorées) */}
+      {o.waist === 'karate' && (
+        <g strokeLinejoin="round">
+          <path d="M26.6 103.6 Q58 112 89.4 103.6 L89.8 108.4 Q58 117 26.2 108.4 Z" fill="#111827"/>
+          <path d="M55.6 112.6 L50.4 124.4 L54 125.6 L58.4 113.4 Z M60.4 112.6 L65.6 124.4 L62 125.6 L57.6 113.4 Z" fill="#1F2937"/>
+          <path d="M51.3 122 L54.7 123.2 M64.7 122 L61.3 123.2" stroke="#EAB308" strokeWidth="1"/>
+          <rect x="54.4" y="108.2" width="7.2" height="5.6" rx="1.6" fill="#0B0F1A" transform="rotate(-8 58 111)"/>
+        </g>
       )}
-      {o.body === 'pull' && <path d="M56.5 111 Q58 113.5 59.5 111" stroke="#8A5A2E" strokeWidth="1.2" fill="none" strokeLinecap="round"/>}
-      {/* Pattes (les santiags les remplacent) */}
-      {o.feet !== 'santiags' && <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>}
-      {o.feet !== 'santiags' && <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>}
-      {o.feet === 'santiags' && (
+      {/* Pull en cachemire bleu ciel RÉTRÉCI au lavage : torsades, bord-côtes, trop court
+          (nombril à l'air), plis de tension sous les bras : on voit qu'il serre. */}
+      {o.body === 'pull' && (
+        <g strokeLinecap="round" strokeLinejoin="round">
+          <path d="M27 97 Q26 85 40 82 L76 82 Q90 85 89 97 Q58 104 27 97 Z" fill="#A5D8FF" stroke="#5FA8E0" strokeWidth="0.8"/>
+          <path d="M43.6 85 q2.6 2 0 4 q-2.6 2 0 4 q2.6 2 0 4 M47.4 85 q-2.6 2 0 4 q2.6 2 0 4 q-2.6 2 0 4" stroke="#5FA8E0" strokeWidth="1" fill="none"/>
+          <path d="M68.6 85 q2.6 2 0 4 q-2.6 2 0 4 q2.6 2 0 4 M72.4 85 q-2.6 2 0 4 q2.6 2 0 4 q-2.6 2 0 4" stroke="#5FA8E0" strokeWidth="1" fill="none"/>
+          <path d="M30.5 89.5 q3.5 1.4 6.5 -0.6 M31 92.5 q3 1 5.6 -0.4 M85.5 89.5 q-3.5 1.4 -6.5 -0.6 M85 92.5 q-3 1 -5.6 -0.4" stroke="#5FA8E0" strokeWidth="0.75" fill="none"/>
+          <path d="M27.4 97.2 Q58 105.4 88.6 97.2 L88.2 100.4 Q58 108.6 27.8 100.4 Z" fill="#7DBEF0"/>
+          <path d="M31 98.4 L31.2 101.4 M36 99.6 L36.1 102.6 M41 100.5 L41.1 103.5 M46 101.1 L46 104.1 M51 101.5 L51 104.5 M56 101.7 L56 104.7 M61 101.7 L61 104.7 M66 101.5 L66 104.5 M71 101.1 L71 104.1 M76 100.5 L75.9 103.5 M81 99.6 L80.9 102.6 M86 98.4 L85.8 101.4" stroke="#4A93CC" strokeWidth="0.7"/>
+          <path d="M56.5 111 Q58 113.5 59.5 111" stroke="#8A5A2E" strokeWidth="1.2" fill="none"/>
+        </g>
+      )}
+      {/* Pattes (les chaussures du vestiaire les remplacent) */}
+      {!o.feet && <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>}
+      {!o.feet && <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>}
+      {o.feet && (
         <g>
-          <Santiag/>
-          <g transform="translate(116 0) scale(-1 1)"><Santiag/></g>
+          <g transform="translate(44 0)"><Boot kind={o.feet}/></g>
+          <g transform="translate(72 0) scale(-1 1)"><Boot kind={o.feet}/></g>
         </g>
       )}
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
@@ -116,9 +147,24 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         </g>
       )}
       {o.body === 'pull' && (
-        <g fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8">
-          <ellipse cx="37" cy="91" rx="5.5" ry="4" transform="rotate(20 37 91)"/>
-          <ellipse cx="79" cy="91" rx="5.5" ry="4" transform="rotate(-20 79 91)"/>
+        <g stroke="#5FA8E0" strokeWidth="0.8">
+          <ellipse cx="37" cy="91" rx="5.5" ry="4" transform="rotate(20 37 91)" fill="#A5D8FF"/>
+          <ellipse cx="79" cy="91" rx="5.5" ry="4" transform="rotate(-20 79 91)" fill="#A5D8FF"/>
+          <path d="M33.2 93.6 L39.4 95.2 M82.8 93.6 L76.6 95.2" stroke="#4A93CC" strokeWidth="1.6"/>
+        </g>
+      )}
+      {/* Gants de boxe (remplacent les pattes avant) */}
+      {o.hand === 'gants' && (
+        <g strokeLinejoin="round">
+          {[[37.5, 1], [78.5, -1]].map(([x, d]) => (
+            <g key={x} transform={`translate(${x} 101) scale(${d} 1)`}>
+              <rect x="-4.6" y="-12" width="9.2" height="5" rx="1.6" fill="white" stroke="#D1D5DB" strokeWidth="0.6"/>
+              <ellipse cx="0" cy="0" rx="7.6" ry="8.4" fill="#DC2626" stroke="#991B1B" strokeWidth="0.9"/>
+              <ellipse cx="5.2" cy="-1.4" rx="2.8" ry="4" fill="#DC2626" stroke="#991B1B" strokeWidth="0.8" transform="rotate(-18 5.2 -1.4)"/>
+              <path d="M-4.4 -3 Q0 -6.6 4 -4.6" stroke="#FCA5A5" strokeWidth="1.6" fill="none" strokeLinecap="round" opacity="0.8"/>
+              <path d="M-5.8 -6.6 L5.4 -6.6" stroke="#991B1B" strokeWidth="0.8"/>
+            </g>
+          ))}
         </g>
       )}
       {o.hand === 'cafe' && (
@@ -186,14 +232,26 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           </g>
         )}
         {/* Lunettes d'aviateur / monocle / visage / bouche (vestiaire) — hors du groupe des yeux : ne clignent pas */}
+        {/* Lunettes d'aviateur : grands verres en goutte, dégradé miroir (nuit → violet → coucher de
+            soleil), monture dorée fine, double pont, reflets. */}
         {o.eyes === 'lunettes' && (
           <g>
-            <path d="M38.5 59.5 L29.5 57.5 M77.5 59.5 L86.5 57.5" stroke="#B45309" strokeWidth="1.3" strokeLinecap="round"/>
-            <path d="M38.5 58.6 Q38.5 56.6 41 56.6 L53 56.6 Q56 56.6 55.5 59.6 Q54.3 70.5 46.2 70.5 Q38.5 69.8 38.5 58.6 Z" fill="#1F2937" stroke="#CA8A04" strokeWidth="1.4"/>
-            <path d="M77.5 58.6 Q77.5 56.6 75 56.6 L63 56.6 Q60 56.6 60.5 59.6 Q61.7 70.5 69.8 70.5 Q77.5 69.8 77.5 58.6 Z" fill="#1F2937" stroke="#CA8A04" strokeWidth="1.4"/>
-            <path d="M55.3 58 Q58 56.4 60.7 58 M55 60.8 Q58 59.7 61 60.8" stroke="#CA8A04" strokeWidth="1.1" fill="none"/>
-            <path d="M41.5 59.5 Q46 58.6 50 59.5 M63.5 59.5 Q68 58.6 72 59.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
-            <path d="M43 66 L46 63 M65 66 L68 63" stroke="white" strokeWidth="0.9" strokeLinecap="round" opacity="0.3"/>
+            <defs>
+              <linearGradient id="costar-aviator" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#0F172A"/>
+                <stop offset="0.42" stopColor="#4C1D95"/>
+                <stop offset="0.72" stopColor="#DB2777"/>
+                <stop offset="1" stopColor="#FB923C"/>
+              </linearGradient>
+            </defs>
+            <path d="M36.6 58 L29 56.4 M79.4 58 L87 56.4" stroke="#C9A227" strokeWidth="1.2" strokeLinecap="round"/>
+            <path d="M36.8 58.4 Q36.6 55.4 40 55.4 L53.4 55.4 Q56.8 55.4 56.3 59.2 Q55.2 71.6 46.2 72.6 Q36.6 72.6 36.8 58.4 Z" fill="url(#costar-aviator)" stroke="#E6C04A" strokeWidth="1.3"/>
+            <path d="M79.2 58.4 Q79.4 55.4 76 55.4 L62.6 55.4 Q59.2 55.4 59.7 59.2 Q60.8 71.6 69.8 72.6 Q79.4 72.6 79.2 58.4 Z" fill="url(#costar-aviator)" stroke="#E6C04A" strokeWidth="1.3"/>
+            <path d="M40.5 55.4 L75.5 55.4" stroke="#E6C04A" strokeWidth="1.1"/>
+            <path d="M56.2 59.6 Q58 58.4 59.8 59.6" stroke="#E6C04A" strokeWidth="1.1" fill="none"/>
+            <path d="M40 61.5 L45.5 57.4 M41.6 65.8 L49.6 59.6 M63 61.5 L68.5 57.4 M64.6 65.8 L72.6 59.6" stroke="white" strokeWidth="1.3" strokeLinecap="round" opacity="0.5"/>
+            <polygon transform="translate(53 58.6) scale(0.32)" fill="white" opacity="0.9"
+              points="0,-6 1.2,-1.2 6,0 1.2,1.2 0,6 -1.2,1.2 -6,0 -1.2,-1.2"/>
           </g>
         )}
         {o.eyes === 'monocle' && (

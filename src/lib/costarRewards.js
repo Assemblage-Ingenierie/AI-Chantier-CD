@@ -17,6 +17,7 @@ export const CATEGORIES = [
   { slot: 'mouth', label: 'Bouche' },
   { slot: 'neck',  label: 'Cou' },
   { slot: 'body',  label: 'Tenue' },
+  { slot: 'waist', label: 'Ceinture' },
   { slot: 'hand',  label: 'Main' },
   { slot: 'feet',  label: 'Pieds' },
   { slot: 'extra', label: 'Accessoire' },
@@ -43,6 +44,10 @@ export const COSMETICS = {
   citrouille:{ name: 'Tête de citrouille', slot: 'head',  icon: '🎃' },
   pull:      { name: 'Pull en cachemire (rétréci)', slot: 'body', icon: '🧶' },
   costard:   { name: 'Costard trois pièces', slot: 'body', icon: '🤵' },
+  slip:      { name: 'Slip',               slot: 'body',  icon: '🩲' },
+  karate:    { name: 'Ceinture noire',     slot: 'waist', icon: '🥋' },
+  gants:     { name: 'Gants de boxe',      slot: 'hand',  icon: '🥊' },
+  securite:  { name: 'Chaussures de sécurité', slot: 'feet', icon: '🥾' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -60,6 +65,10 @@ export const MISSIONS = [
   { id: 'pull',      title: 'Le pull du dimanche',    desc: 'Faire relire un rapport le week-end. En récompense : ton plus beau pull en cachemire… rétréci au lavage par la femme de ménage. Il serre un peu.', reward: 'pull', progress: s => [s.weekend ? 1 : 0, 1] },
   { id: 'citrouille',title: 'Halloween',              desc: 'Faire relire un rapport en octobre',                    reward: 'citrouille',progress: s => [s.october ? 1 : 0, 1] },
   { id: 'noel',      title: 'Joyeux Noël',            desc: 'Faire relire un rapport en décembre',                   reward: 'noel',      progress: s => [s.december ? 1 : 0, 1] },
+  { id: 'securite',  title: 'Sécurité d\'abord',       desc: 'Faire relire un rapport de 10 observations ou plus : chaussures de sécurité obligatoires sur le chantier', reward: 'securite', progress: s => [Math.min(s.maxObs, 10), 10] },
+  { id: 'slip',      title: 'Le minimum syndical',    desc: 'Faire relire un rapport de 3 observations ou moins', reward: 'slip', progress: s => [s.shortReport ? 1 : 0, 1] },
+  { id: 'gants',     title: 'Uppercut',               desc: 'Gagner 3 points d\'un coup sur un même rapport en le corrigeant', reward: 'gants', progress: s => [s.bigComeback ? 1 : 0, 1] },
+  { id: 'karate',    title: 'Ceinture noire',         desc: 'Obtenir 10/10 sur un rapport de 10 observations ou plus', reward: 'karate', progress: s => [s.perfectBig ? 1 : 0, 1] },
   { id: 'habitue',   title: 'Habitué du barrage',     desc: 'Faire relire 10 rapports',                              reward: 'tuque',     progress: s => [Math.min(s.reviews, 10), 10] },
   { id: 'serie',     title: 'Série en or',            desc: 'Obtenir 8/10 ou plus, 3 fois',                          reward: 'monocle',   progress: s => [Math.min(s.count8, 3), 3] },
   { id: 'costard',   title: 'Costar en costard',      desc: 'Obtenir 9/10 ou plus, 5 fois. Un ingénieur senior, ça se respecte : costard trois pièces de rigueur.', reward: 'costard', progress: s => [Math.min(s.count9, 5), 5] },
@@ -69,7 +78,7 @@ export const MISSIONS = [
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false };
+  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -88,6 +97,7 @@ export function normalizeState(raw) {
     affaires: s.affaires && typeof s.affaires === 'object' ? { ...s.affaires } : {},  // affaires relues
     day: typeof s.day === 'string' ? s.day : '', dayCount: num(s.dayCount, 0), bestDay: num(s.bestDay, 0), // relectures du jour
     days: num(s.days, 0), noon: !!s.noon, weekend: !!s.weekend, october: !!s.october, december: !!s.december,
+    shortReport: !!s.shortReport, bigComeback: !!s.bigComeback, perfectBig: !!s.perfectBig,
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -118,6 +128,8 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (note >= 10) s.count10 += 1;
   if (note <= 4) s.lowNote = true;
   s.maxObs = Math.max(s.maxObs, observations);
+  if (observations <= 3) s.shortReport = true;
+  if (note >= 10 && observations >= 10) s.perfectBig = true;
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
   if (s.day !== dayKey) s.days += 1; // jours différents avec au moins une relecture
   s.dayCount = s.day === dayKey ? s.dayCount + 1 : 1;
@@ -133,6 +145,7 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (reportId) {
     const last = s.projects[reportId];
     if (Number.isFinite(last) && note - last >= 2) s.remontada = true;
+    if (Number.isFinite(last) && note - last >= 3) s.bigComeback = true;
     s.projects[reportId] = note;
   }
   const before = new Set(unlockedIds(prev.stats));
