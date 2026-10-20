@@ -19,7 +19,7 @@ import { renderPdfPages } from '../../lib/pdfUtils.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { childrenOf, effectiveParentId, zoneLabel } from '../../lib/zoneGroups.js';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
-import { obsDatesInfo } from '../../lib/obsDates.js';
+import { obsDatesInfo, zoneDatesInfo } from '../../lib/obsDates.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
 // d'annexe à chaque changement d'onglet serait lent. Clé `${chantierId}|${annexId}`.
@@ -430,7 +430,7 @@ function ParaCutZone({ paraId, onCut }) {
   );
 }
 
-function ZoneHeader({ loc, level = 'zone', parentNom = '' }) {
+function ZoneHeader({ loc, level = 'zone', parentNom = '', visitDate = null }) {
   // Même disposition que l'écran Visite (choix Thomas) : toutes les zones au MÊME niveau, une
   // zone rangée dans un groupe affiche simplement le nom du groupe devant (« R+4 › M. ALBERT
   // THOMAS »). Zone normale et groupe : titre inchangé.
@@ -440,6 +440,8 @@ function ZoneHeader({ loc, level = 'zone', parentNom = '' }) {
         {level === 'sub' && parentNom && <span style={{ color:DA.red }}>{parentNom} › </span>}
         {loc.nom}
       </span>
+      {/* Dates de suivi de la zone (bouton calendrier du titre de zone) — calées à droite. */}
+      {(() => { const zi = zoneDatesInfo(loc, visitDate); return zi ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={zi} small/></span> : null; })()}
     </div>
   );
 }
@@ -2953,7 +2955,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {allBlocks.map(block => (
               <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
                 {block.type === 'zone'
-                  ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
+                  ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom} visitDate={projet.dateVisite}/>
                   : block.type === 'plan'
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                   : block.type === 'itemplan'
@@ -3016,7 +3018,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
                       <div>
                         {block.type === 'zone'
-                          ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom}/>
+                          ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom} visitDate={projet.dateVisite}/>
                           : block.type === 'plan'
                           ? <PlanBlock loc={block.loc} annotScale={annotScale} onAnnotScaleChange={onAnnotScaleChange} planLibrary={projet.planLibrary} cutMode={cutMode} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                           : block.type === 'itemplan'

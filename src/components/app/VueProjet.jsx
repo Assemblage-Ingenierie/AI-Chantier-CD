@@ -22,7 +22,9 @@ import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
-import { applyObsDates } from '../../lib/obsDates.js';
+import { applyObsDates, zoneDatesInfo } from '../../lib/obsDates.js';
+import ObsDatesControl from '../ui/ObsDatesControl.jsx';
+import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 
@@ -959,6 +961,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 {urgentCount} ⚠
                               </span>
                             )}
+                            {/* Dates de suivi de la ZONE (choix Thomas : même bouton que les observations,
+                                à côté du plan / de la poubelle ; rien tant qu'on n'y touche pas). PC : la
+                                pastille s'affiche aussi ; téléphone : le bouton teinté suffit. */}
+                            {isDesktop && (() => { const zi = zoneDatesInfo(loc, visitProjet.dateVisite); return zi ? <ObsDatesChip info={zi}/> : null; })()}
+                            <ObsDatesControl zone item={loc} visitDate={visitProjet.dateVisite || null}
+                              onChange={next => patchLoc(loc.id, { dateOuverture: next.dateOuverture, dateCloture: next.dateCloture })}/>
                             <button onClick={() => setModal({ t:'plan', locId:loc.id })}
                               style={{ width:38, height:38, padding:0, justifyContent:'center', border:`1px solid ${hasAnyPlan ? DA.red : DA.border}`, background:hasAnyPlan ? DA.redL : 'white', borderRadius:8, cursor:'pointer', display:'flex', alignItems:'center', color:hasAnyPlan ? DA.red : DA.grayL }}>
                               <Ic n="map" s={16}/>

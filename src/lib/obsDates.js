@@ -49,6 +49,12 @@ export function obsDatesInfo(item, visitDateIso) {
   return { ouverture: ouv, closed, fin, duree: fin ? durationFr(ouv, fin) : '' };
 }
 
+// ZONE datée (titre de zone) : pas de « suivi » → levée = date de levée saisie à la main.
+export function zoneDatesInfo(loc, visitDateIso) {
+  if (!loc) return null;
+  return obsDatesInfo({ dateOuverture: loc.dateOuverture, dateCloture: loc.dateCloture, suivi: isIsoDate(loc.dateCloture) ? 'fait' : 'a_faire' }, visitDateIso);
+}
+
 // Applique les règles automatiques à l'enregistrement d'une observation (_prev = version d'avant,
 // null pour une création). N'écrase JAMAIS une date déjà saisie ; ne date jamais une observation
 // que l'utilisateur n'a pas datée.
