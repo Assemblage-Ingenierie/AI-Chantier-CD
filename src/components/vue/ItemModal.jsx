@@ -12,7 +12,7 @@ import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
-import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 import { mergePrefix } from '../../lib/zoneMerge.js';
@@ -869,9 +869,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       const a = annotatorRef.current?.getAnnotation?.();
       if (!a) return;
       setPhotoAnnotPref(ph?._id, { annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale });
+      if (a.reportCrop) setPhotoPref(ph?._id, a.reportCrop); // cadre du rapport déplacé
       setForm(f => ({
         ...f,
-        photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: a.paths, annotated: a.annotated, annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale ?? null } : p),
+        photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: a.paths, annotated: a.annotated, annotW: a.annotW, annotH: a.annotH, annotSizeScale: a.annotSizeScale ?? null, ...(a.reportCrop || {}) } : p),
       }));
     };
     const goToPhoto = (newIdx) => {
@@ -887,9 +888,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         reportFrame={ph ? { orient: ph.orient, cropX: ph.cropX, cropY: ph.cropY, cropZoom: ph.cropZoom, fit: !!ph.cropFit } : null}
         onSave={(paths, exported, dims) => {
           setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
+          if (dims?.reportCrop) setPhotoPref(ph?._id, dims.reportCrop); // cadre du rapport déplacé
           setForm(f => ({
             ...f,
-            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),
+            photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null, ...(dims?.reportCrop || {}) } : p),
           }));
           setAnnotatingPhotoIdx(null);
         }}

@@ -16,7 +16,7 @@ import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator, { drawAnnotationPaths, planAnnotScales } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
 import { subscribePendingUploads } from '../../lib/photoUploadQueue.js';
-import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
@@ -578,8 +578,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     const switchToPhoto = (newRealIdx) => {
       const annotation = annotatorRef.current?.getAnnotation();
       if (annotation) setPhotoAnnotPref(ph?._id, { annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale });
+      if (annotation?.reportCrop) setPhotoPref(ph?._id, annotation.reportCrop); // cadre du rapport déplacé dans l'annotateur
       const updatedItem = annotation
-        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale ?? null } : p) }
+        ? { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: annotation.paths, annotated: annotation.annotated, annotW: annotation.annotW, annotH: annotation.annotH, annotSizeScale: annotation.annotSizeScale ?? null, ...(annotation.reportCrop || {}) } : p) }
         : item;
       if (annotation) patchItem(locId, updatedItem);
       setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx: newRealIdx });
@@ -616,10 +617,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           photoPosition={validIdxs.length > 1 ? `${navPos + 1} / ${validIdxs.length}` : null}
           onSave={(paths, exported, dims) => {
             setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
+            if (dims?.reportCrop) setPhotoPref(ph?._id, dims.reportCrop); // cadre du rapport déplacé
             const updatedItem = {
               ...item,
               _photosHydrated: true,
-              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null } : p),
+              photos: item.photos.map((p, i) => i === photoIdx ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null, ...(dims?.reportCrop || {}) } : p),
             };
             patchItem(locId, updatedItem);
             setConfirmDelPhotoAnnot(false);

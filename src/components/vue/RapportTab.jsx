@@ -6,7 +6,7 @@ import ParticipantsEditor from './ParticipantsEditor.jsx';
 import { exportPdf } from '../../lib/generateRapport.js';
 import Annotator from './Annotator.jsx';
 import AnnexesModal from './AnnexesModal.jsx';
-import { setPhotoAnnotPref } from '../../lib/photoPrefs.js';
+import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 import Costar from './Costar.jsx';
 import { zoneLabel } from '../../lib/zoneGroups.js';
@@ -717,13 +717,14 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
             if (item) {
               // Échelle durable (survit au reload) — même filet que l'éditeur.
               setPhotoAnnotPref(editingPhoto.photo?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
+              if (dims?.reportCrop) setPhotoPref(editingPhoto.photo?._id, dims.reportCrop); // cadre du rapport déplacé
               // Matcher par _id (stable) plutôt que par référence objet : si item.photos a été
               // régénéré entre-temps (hydratation/poll), la référence ne matchait plus → l'annotation
               // était silencieusement perdue. Repli sur la référence si pas d'_id (aucune régression).
               const target = editingPhoto.photo;
               const updatedPhotos = (item.photos || []).map(p =>
                 (target?._id != null ? p._id === target._id : p === target)
-                  ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null }
+                  ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null, ...(dims?.reportCrop || {}) }
                   : p);
               onUpdateItem(editingPhoto.locId, editingPhoto.itemId, { photos: updatedPhotos, _photosHydrated: true });
             }
