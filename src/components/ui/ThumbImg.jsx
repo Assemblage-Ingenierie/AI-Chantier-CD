@@ -7,8 +7,9 @@ import { thumbKey, peekThumb, getThumbUrl, reportThumbOk, reportThumbError, thum
 //   onLoad / onError : à brancher sur l'<img>. onError renvoie true s'il a basculé sur
 //            l'original (l'<img> va recharger → ne pas traiter comme une vraie erreur).
 // Photos locales (data:/blob:) ou hors bucket → src inchangé, aucun effet.
-export function useThumb(src, width) {
-  const key = thumbKey(src, width);
+// allowPath : accepte un simple chemin du bucket (couvertures de l'accueil, cf. photoThumbs.js).
+export function useThumb(src, width, { allowPath = false } = {}) {
+  const key = thumbKey(src, width, allowPath);
   const [state, setState] = useState(() => ({ key, url: key ? peekThumb(key) : null, fallback: false }));
 
   useEffect(() => {
@@ -18,7 +19,7 @@ export function useThumb(src, width) {
     if (thumbsDisabled()) { setState({ key, url: null, fallback: true }); return; }
     setState({ key, url: null, fallback: false });
     let cancelled = false;
-    getThumbUrl(src, width).then((u) => {
+    getThumbUrl(src, width, allowPath).then((u) => {
       if (!cancelled) setState({ key, url: u, fallback: !u });
     });
     return () => { cancelled = true; };

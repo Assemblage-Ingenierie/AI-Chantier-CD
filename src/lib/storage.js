@@ -558,12 +558,21 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
     const BATCH = 10;
     const batches = [];
     for (let i = 0; i < chantierIds.length; i += BATCH) batches.push(chantierIds.slice(i, i + BATCH));
-    // Lots EN PARALLÈLE (avant : l'un après l'autre).
+    // Lots EN PARALLÈLE (avant : l'un après l'autre). Un lot en erreur (délai dépassé à cause
+    // d'une fiche très lourde, coupure passagère…) est repris affaire par affaire : une fiche à
+    // problème ne prive plus les 9 autres de leur couverture (retour Thomas 20/10).
+    const selectRows = (ids) => sb.from('aichantier_chantiers').select('id,nom,photo').in('id', ids);
     const rows = (await Promise.all(batches.map(async (batch) => {
       // nom nécessaire pour reconstruire le chemin déterministe des couvertures à récupérer.
-      const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,nom,photo').in('id', batch);
-      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); return []; }
-      return data || [];
+      const { data, error: dbErr } = await selectRows(batch);
+      if (!dbErr) return data || [];
+      console.warn('hydrateChantierPhotos DB error (lot repris une par une):', dbErr);
+      const one = [];
+      for (const id of batch) {
+        const { data: d1, error: e1 } = await selectRows([id]);
+        if (!e1 && d1) one.push(...d1);
+      }
+      return one;
     }))).flat();
     const data = rows;
 

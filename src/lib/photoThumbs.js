@@ -38,8 +38,19 @@ export function photoPathFromUrl(src) {
   try { return decodeURIComponent(m[1]); } catch { return null; }
 }
 
-export function thumbKey(src, width) {
-  const path = photoPathFromUrl(src);
+// allowPath (couvertures de l'accueil uniquement) : accepte aussi un SIMPLE chemin du bucket
+// (« affaire_ab12/cover/c123.webp »). La carte signe alors elle-même sa vignette, sans attendre
+// la signature groupée des couvertures (retour Thomas 20/10 : « Rue de Cléry / Pouvelle ne
+// chargent même plus » — si cette signature groupée échoue, la carte restait sur l'icône).
+function photoPathOf(src, allowPath = false) {
+  const p = photoPathFromUrl(src);
+  if (p || !allowPath) return p;
+  if (typeof src !== 'string' || !src || /^(data:|blob:|https?:|\/)/i.test(src)) return null;
+  return src.split('?')[0];
+}
+
+export function thumbKey(src, width, allowPath = false) {
+  const path = photoPathOf(src, allowPath);
   return path && width ? `${path}@w${width}` : null;
 }
 
@@ -144,14 +155,14 @@ function noteFail() {
 }
 
 // URL signée de la vignette (width px, ratio conservé) — null si indisponible (→ original).
-export async function getThumbUrl(src, width) {
-  const key = thumbKey(src, width);
+export async function getThumbUrl(src, width, allowPath = false) {
+  const key = thumbKey(src, width, allowPath);
   if (!key || _off || _bad.has(key)) return null;
   await loadThumbCache();
   const hit = peekThumb(key);
   if (hit) return hit;
   if (_pending.has(key)) return _pending.get(key);
-  const path = photoPathFromUrl(src);
+  const path = photoPathOf(src, allowPath);
   const p = runQueued(async () => {
     if (_off) return null;
     try {
