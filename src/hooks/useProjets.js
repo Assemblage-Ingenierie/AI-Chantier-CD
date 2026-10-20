@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
+import { markCoverPhotosSettled } from '../lib/coverCache.js';
 import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes } from '../lib/storage.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
@@ -433,8 +434,12 @@ export function useProjets(onSyncStatus) {
         // Tout photo non-base64 a besoin d'une signed URL (chemin relatif ou URL expirée)
         const needsSignedUrl = p => !p.photo || !p.photo.startsWith('data:');
         const missingPhotoIds = allMerged.filter(needsSignedUrl).map(p => p.id);
+        // Couvertures retrouvées APRÈS coup (auto-récupération, en tâche de fond) : même application.
+        const applyRecoveredCovers = (found) => setProjets(ps => ps.map(p => found[p.id] && !p.photo ? { ...p, photo: found[p.id] } : p));
+        if (!missingPhotoIds.length) markCoverPhotosSettled();
         if (missingPhotoIds.length) {
-          hydrateChantierPhotos(missingPhotoIds).then(photoMap => {
+          hydrateChantierPhotos(missingPhotoIds, applyRecoveredCovers).then(photoMap => {
+            markCoverPhotosSettled();
             if (!Object.keys(photoMap).length) return;
             setProjets(ps => ps.map(p => photoMap[p.id] ? { ...p, photo: photoMap[p.id] } : p));
             // Couvertures trop lourdes (PNG iPhone) : version allégée en arrière-plan, une fois.

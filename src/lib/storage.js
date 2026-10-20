@@ -539,19 +539,32 @@ export async function loadProjectPhotos(itemIds) {
 // Charge la photo de couverture pour une liste de projets — séparée du SELECT principal
 // pour éviter le HTTP 500 causé par de gros base64.
 // Requêtes par batch de 10 pour éviter des réponses trop volumineuses (base64 covers).
-export async function hydrateChantierPhotos(chantierIds) {
+// `onRecovered(map)` (optionnel) : couvertures retrouvées APRÈS coup par l'auto-récupération.
+// Retour Thomas 20/10 (« deux vignettes toujours très lentes ») : cette récupération (plusieurs
+// allers-retours Storage par affaire SANS couverture, à chaque ouverture) passait AVANT la
+// signature des couvertures normales → toutes les vignettes pas encore gardées sur l'appareil
+// attendaient d'abord la fin de ces recherches. Désormais les couvertures existantes sont rendues
+// tout de suite ; la récupération tourne ensuite, et une affaire vérifiée sans couverture n'est
+// re-vérifiée qu'au bout de 3 jours (mémo par appareil).
+const NO_COVER_KEY = 'chantierai_nocover_v1';
+const NO_COVER_TTL = 3 * 24 * 3600 * 1000;
+function loadNoCover() { try { return JSON.parse((_hasLS && localStorage.getItem(NO_COVER_KEY)) || '{}') || {}; } catch { return {}; } }
+function saveNoCover(m) { try { if (_hasLS) localStorage.setItem(NO_COVER_KEY, JSON.stringify(m)); } catch { /* mode privé / quota */ } }
+
+export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
   if (!chantierIds.length) return {};
   try {
     const sb = await getSupabase();
     const BATCH = 10;
-    const rows = [];
-    for (let i = 0; i < chantierIds.length; i += BATCH) {
-      const batch = chantierIds.slice(i, i + BATCH);
+    const batches = [];
+    for (let i = 0; i < chantierIds.length; i += BATCH) batches.push(chantierIds.slice(i, i + BATCH));
+    // Lots EN PARALLÈLE (avant : l'un après l'autre).
+    const rows = (await Promise.all(batches.map(async (batch) => {
       // nom nécessaire pour reconstruire le chemin déterministe des couvertures à récupérer.
       const { data, error: dbErr } = await sb.from('aichantier_chantiers').select('id,nom,photo').in('id', batch);
-      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); continue; }
-      if (data) rows.push(...data);
-    }
+      if (dbErr) { console.warn('hydrateChantierPhotos DB error:', dbErr); return []; }
+      return data || [];
+    }))).flat();
     const data = rows;
 
     const paths = [];
@@ -570,9 +583,14 @@ export async function hydrateChantierPhotos(chantierIds) {
     //    null par une sauvegarde au cache froid, fichier intact). On teste les chemins
     //    déterministes ; createSignedUrl échoue si le fichier n'existe pas → aucun faux
     //    positif. Si trouvé : on réaffiche ET on réécrit le chemin en DB (réparation durable).
-    try {
+    const recover = async () => {
+      const found = {};
+      const noCover = loadNoCover();
+      const now = Date.now();
       for (const row of (data ?? [])) {
-        if (row.photo) continue;
+        if (row.photo) { if (noCover[row.id]) delete noCover[row.id]; continue; }
+        if (noCover[row.id] && now - noCover[row.id] < NO_COVER_TTL) continue;
+        let ok = false;
         const slug = `${slugify(row.nom)}_${String(row.id).slice(0, 8)}`;
         const candidates = [`${slug}/cover/${row.id}.webp`, `${slug}/cover/${row.id}.jpg`, `cover_${row.id}/cover.webp`, `cover_${row.id}/cover.jpg`];
         // Couvertures par contenu (…/cover/{id}/c<empreinte>.webp) : la plus récente du dossier.
@@ -584,13 +602,23 @@ export async function hydrateChantierPhotos(chantierIds) {
         for (const cand of candidates) {
           const { data: sg, error: sgErr } = await sb.storage.from('photos').createSignedUrl(cand, SIGNED_URL_TTL);
           if (!sgErr && sg?.signedUrl) {
-            result[row.id] = sg.signedUrl;
+            found[row.id] = sg.signedUrl;
+            ok = true;
             sb.from('aichantier_chantiers').update({ photo: cand }).eq('id', row.id).then(() => {}, () => {});
             break;
           }
         }
+        if (ok) delete noCover[row.id]; else noCover[row.id] = now;
       }
-    } catch (e) { console.warn('récupération couverture:', e); }
+      saveNoCover(noCover);
+      return found;
+    };
+    // Sans rappel (ancien usage) : on attend la récupération comme avant. Avec rappel : en tâche de fond.
+    if (onRecovered) {
+      recover().then((found) => { if (Object.keys(found).length) onRecovered(found); }, (e) => console.warn('récupération couverture:', e));
+    } else {
+      try { Object.assign(result, await recover()); } catch (e) { console.warn('récupération couverture:', e); }
+    }
 
     if (!paths.length) return result;
 

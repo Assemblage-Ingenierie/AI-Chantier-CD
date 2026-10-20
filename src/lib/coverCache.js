@@ -16,6 +16,13 @@ const MAX_ENTRIES = 300;
 const WIDTH = 480;
 
 const _mem = new Map();          // chemin → data URL
+// Projet → chemin de SA dernière couverture gardée (retour Thomas 20/10, « deux vignettes toujours
+// lentes ») : la carte affiche sa copie locale DÈS LE DÉMARRAGE, même quand le chemin de la
+// couverture n'est pas encore connu (affaire absente du cache local, couverture pas encore
+// relue du serveur) ou qu'il vient de changer (couverture allégée/modifiée ailleurs : l'ancienne
+// reste affichée jusqu'à l'arrivée de la nouvelle, au lieu de l'icône grise).
+const _byPid = new Map();
+let _photosSettled = false;      // couvertures relues du serveur (cf. markCoverPhotosSettled)
 const _listeners = new Set();
 let _loaded = false;
 let _dbPromise = null;
@@ -51,7 +58,11 @@ const _loadPromise = (async () => {
         req.onsuccess = () => {
           const rows = (req.result || []).filter(r => r && r.k && typeof r.d === 'string');
           rows.sort((a, b) => (b.t || 0) - (a.t || 0));
-          rows.forEach((r, i) => { if (i < MAX_ENTRIES) _mem.set(r.k, r.d); else store.delete(r.k); });
+          rows.forEach((r, i) => {
+            if (i >= MAX_ENTRIES) { store.delete(r.k); return; }
+            _mem.set(r.k, r.d);
+            if (r.pid && !_byPid.has(r.pid)) _byPid.set(r.pid, r.k); // tri récent d'abord → la plus récente gagne
+          });
         };
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
@@ -60,8 +71,15 @@ const _loadPromise = (async () => {
     });
   }
   _loaded = true;
-  _listeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
+  notify();
 })();
+
+function notify() { _listeners.forEach(fn => { try { fn(); } catch { /* ignore */ } }); }
+function persist(key, pid) {
+  const d = _mem.get(key);
+  if (!d) return;
+  openDb().then((db) => { if (db) { try { db.transaction(STORE, 'readwrite').objectStore(STORE).put({ k: key, d, t: Date.now(), ...(pid ? { pid } : {}) }); } catch { /* ignoré */ } } });
+}
 
 // Clé = chemin Storage, que la couverture soit une URL signée/publique OU un simple chemin (cas
 // des affaires créées sur un autre appareil : le cache local ne garde que le chemin, l'URL signée
@@ -85,6 +103,25 @@ export function whenCoverCacheReady() { return _loadPromise; }
 export function peekCover(key) { return key ? (_mem.get(key) || null) : null; }
 export function onCoverCache(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
+// Dernière couverture connue d'un projet (copie locale), ou null.
+export function peekProjectCover(pid) {
+  const k = pid ? _byPid.get(pid) : null;
+  return k ? (_mem.get(k) || null) : null;
+}
+// Une couverture déjà gardée s'affiche pour ce projet → on mémorise le lien (une fois).
+export function linkCoverToProject(key, pid) {
+  if (!key || !pid || !_mem.has(key) || _byPid.get(pid) === key) return;
+  _byPid.set(pid, key);
+  persist(key, pid);
+}
+// Couvertures relues du serveur : une affaire SANS couverture ne doit plus montrer d'ancienne copie.
+export function markCoverPhotosSettled() {
+  if (_photosSettled) return;
+  _photosSettled = true;
+  notify();
+}
+export function coverPhotosSettled() { return _photosSettled; }
+
 // MÉMOIRE (incident 20/10 : page blanche juste après la 1re mise en ligne) : chaque copie demande
 // de décoder l'image. Faites TOUTES EN MÊME TEMPS (une par carte, archives comprises) et sur des
 // couvertures lourdes (PNG iPhone, photos 12 Mpx), ça pouvait représenter des centaines de Mo d'un
@@ -106,7 +143,8 @@ function pump() {
 }
 
 // Image chargée avec succès à l'écran → on en garde une petite copie locale (une fois par fichier).
-export function rememberCover(key, url) {
+export function rememberCover(key, url, pid = null) {
+  if (_mem.has(key)) { linkCoverToProject(key, pid); return; }
   if (!key || !url || _mem.has(key) || _inflight.has(key) || typeof url !== 'string' || url.startsWith('data:')) return;
   _inflight.add(key);
   _queue.push(async () => {
@@ -147,8 +185,9 @@ export function rememberCover(key, url) {
       cv.width = 0; cv.height = 0;
       if (!d || d.length < 100) return;
       _mem.set(key, d);
-      const db = await openDb();
-      if (db) { try { db.transaction(STORE, 'readwrite').objectStore(STORE).put({ k: key, d, t: Date.now() }); } catch { /* ignoré */ } }
+      if (pid) _byPid.set(pid, key);
+      persist(key, pid);
+      notify(); // les cartes qui attendaient cette copie (même projet) la prennent tout de suite
     } catch { /* ignoré : affichage réseau comme avant */ }
     finally { _inflight.delete(key); }
   });
@@ -159,11 +198,13 @@ export function rememberCover(key, url) {
 export function forgetCover(key) {
   if (!key) return;
   _mem.delete(key);
+  for (const [pid, k] of _byPid) if (k === key) _byPid.delete(pid);
   openDb().then((db) => { if (db) { try { db.transaction(STORE, 'readwrite').objectStore(STORE).delete(key); } catch { /* ignoré */ } } });
 }
 
 // Déconnexion : rien ne doit rester d'un compte à l'autre.
 export function clearCoverCache() {
   _mem.clear();
+  _byPid.clear();
   openDb().then((db) => { if (db) { try { db.transaction(STORE, 'readwrite').objectStore(STORE).clear(); } catch { /* ignoré */ } } });
 }
