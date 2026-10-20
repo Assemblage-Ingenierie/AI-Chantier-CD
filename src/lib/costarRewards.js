@@ -13,15 +13,18 @@ export const CHANGE_EVENT = 'costar-progress';
 export const CATEGORIES = [
   { slot: 'head',  label: 'Chapeau' },
   { slot: 'eyes',  label: 'Yeux' },
+  { slot: 'face',  label: 'Visage' },
+  { slot: 'mouth', label: 'Bouche' },
   { slot: 'neck',  label: 'Cou' },
   { slot: 'body',  label: 'Tenue' },
   { slot: 'hand',  label: 'Main' },
+  { slot: 'feet',  label: 'Pieds' },
   { slot: 'extra', label: 'Accessoire' },
 ];
 export const SLOTS = CATEGORIES.map(c => c.slot);
 
 export const COSMETICS = {
-  lunettes:  { name: 'Lunettes de soleil', slot: 'eyes',  icon: '🕶️' },
+  lunettes:  { name: 'Lunettes d\'aviateur', slot: 'eyes', icon: '🕶️' },
   noeud:     { name: 'Nœud papillon',      slot: 'neck',  icon: '🎀' },
   casque_or: { name: 'Casque en or',       slot: 'head',  icon: '🏆' },
   tuque:     { name: 'Tuque québécoise',   slot: 'head',  icon: '🎿' },
@@ -32,7 +35,13 @@ export const COSMETICS = {
   lampe:     { name: 'Lampe frontale',     slot: 'extra', icon: '🔦' },
   monocle:   { name: 'Monocle',            slot: 'eyes',  icon: '🧐' },
   couronne:  { name: 'Couronne',           slot: 'head',  icon: '👑' },
-  pansement: { name: 'Pansement',          slot: 'extra', icon: '🩹' },
+  pansement: { name: 'Pansement',          slot: 'face',  icon: '🩹' },
+  cicatrices:{ name: 'Cicatrices de guerre', slot: 'face', icon: '⚔️' },
+  clope:     { name: 'Clope au bec',       slot: 'mouth', icon: '🚬' },
+  santiags:  { name: 'Santiags',           slot: 'feet',  icon: '👢' },
+  noel:      { name: 'Bonnet de Noël',     slot: 'head',  icon: '🎅' },
+  citrouille:{ name: 'Tête de citrouille', slot: 'head',  icon: '🎃' },
+  pull:      { name: 'Pull en cachemire (rétréci)', slot: 'body', icon: '🧶' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -45,14 +54,20 @@ export const MISSIONS = [
   { id: 'nuit',      title: 'Oiseau de nuit',         desc: 'Faire relire un rapport après 20 h',                    reward: 'lampe',     progress: s => [s.night ? 1 : 0, 1] },
   { id: 'tournee',   title: 'Tournée des chantiers',  desc: 'Faire relire 5 affaires différentes',                   reward: 'echarpe',   progress: s => [Math.min(Object.keys(s.affaires).length, 5), 5] },
   { id: 'cowboy',    title: 'Shérif du chantier',     desc: 'Faire relire 3 rapports dans la même journée',          reward: 'cowboy',    progress: s => [Math.min(s.bestDay, 3), 3] },
+  { id: 'clope',     title: 'Pause clope',            desc: 'Faire relire un rapport pendant la pause de midi (12 h à 14 h)', reward: 'clope', progress: s => [s.noon ? 1 : 0, 1] },
+  { id: 'santiags',  title: 'Cavalier solitaire',     desc: 'Faire relire des rapports sur 5 jours différents',      reward: 'santiags',  progress: s => [Math.min(s.days, 5), 5] },
+  { id: 'pull',      title: 'Le pull du dimanche',    desc: 'Faire relire un rapport le week-end. En récompense : ton plus beau pull en cachemire… rétréci au lavage par la femme de ménage. Il serre un peu.', reward: 'pull', progress: s => [s.weekend ? 1 : 0, 1] },
+  { id: 'citrouille',title: 'Halloween',              desc: 'Faire relire un rapport en octobre',                    reward: 'citrouille',progress: s => [s.october ? 1 : 0, 1] },
+  { id: 'noel',      title: 'Joyeux Noël',            desc: 'Faire relire un rapport en décembre',                   reward: 'noel',      progress: s => [s.december ? 1 : 0, 1] },
   { id: 'habitue',   title: 'Habitué du barrage',     desc: 'Faire relire 10 rapports',                              reward: 'tuque',     progress: s => [Math.min(s.reviews, 10), 10] },
   { id: 'serie',     title: 'Série en or',            desc: 'Obtenir 8/10 ou plus, 3 fois',                          reward: 'monocle',   progress: s => [Math.min(s.count8, 3), 3] },
   { id: 'dix',       title: 'Perfection',             desc: 'Obtenir 10/10',                                         reward: 'casque_or', progress: s => [Math.min(s.count10, 1), 1] },
+  { id: 'veteran',   title: 'Vétéran du chantier',    desc: 'Faire relire 25 rapports',                              reward: 'cicatrices',progress: s => [Math.min(s.reviews, 25), 25] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0 };
+  return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [] };
@@ -70,6 +85,7 @@ export function normalizeState(raw) {
     projects: s.projects && typeof s.projects === 'object' ? { ...s.projects } : {}, // rapport (affaire + visite) → dernière note
     affaires: s.affaires && typeof s.affaires === 'object' ? { ...s.affaires } : {},  // affaires relues
     day: typeof s.day === 'string' ? s.day : '', dayCount: num(s.dayCount, 0), bestDay: num(s.bestDay, 0), // relectures du jour
+    days: num(s.days, 0), noon: !!s.noon, weekend: !!s.weekend, october: !!s.october, december: !!s.december,
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -96,11 +112,16 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (note <= 4) s.lowNote = true;
   s.maxObs = Math.max(s.maxObs, observations);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+  if (s.day !== dayKey) s.days += 1; // jours différents avec au moins une relecture
   s.dayCount = s.day === dayKey ? s.dayCount + 1 : 1;
   s.day = dayKey;
   s.bestDay = Math.max(s.bestDay, s.dayCount);
   const h = now.getHours();
   if (h >= 20 || h < 5) s.night = true;
+  if (h >= 12 && h < 14) s.noon = true;
+  if (now.getDay() === 0 || now.getDay() === 6) s.weekend = true;
+  if (now.getMonth() === 9) s.october = true;
+  if (now.getMonth() === 11) s.december = true;
   if (projectId) s.affaires[projectId] = 1;
   if (reportId) {
     const last = s.projects[reportId];
