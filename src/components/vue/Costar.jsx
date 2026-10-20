@@ -111,27 +111,29 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
         </g>
       )}
-      {/* Slip LÉOPARD, coupe « icône » bien lisible : large élastique noir aux hanches, côtés
-          très échancrés, fond arrondi, bordures noires aux cuisses ; tout au-dessus des pattes. */}
+      {/* Slip LÉOPARD (grand, couvre tout le bas du corps) : élastique noir à liserés dorés, côtés
+          échancrés, fond arrondi entre les pattes, rosettes de léopard, ombre aux échancrures. */}
       {o.body === 'slip' && (
         <g strokeLinejoin="round" strokeLinecap="round">
           <defs>
-            <clipPath id="costar-slip-clip"><path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z"/></clipPath>
+            <clipPath id="costar-slip-clip"><path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z"/></clipPath>
           </defs>
-          <path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z" fill="#EDB95A"/>
+          <path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z" fill="#F0BE5C"/>
           <g clipPath="url(#costar-slip-clip)">
-            {[[38, 107.6], [46, 109.8], [54, 108], [62, 110.2], [70, 108.2], [78, 107.4], [50, 113.6], [58, 115.6], [66, 113.4], [43, 106.4], [74, 111.6], [58, 111.2]].map(([x, y], k) => (
+            {[[33, 106], [42, 109.6], [51, 106.8], [60, 110.4], [69, 107], [78, 109.8], [85, 105.6], [47, 116], [57, 117.8], [66, 115.6], [52, 123.2], [62, 123], [37.6, 112.4], [74, 116.4]].map(([x, y], k) => (
               <g key={k} transform={`translate(${x} ${y}) rotate(${(k * 53) % 180})`}>
-                <ellipse cx="0" cy="0" rx="1.9" ry="1.4" fill="#C47A26"/>
-                <path d="M-2.2 -0.5 Q-1.9 -2 -0.4 -2 M0.8 -1.9 Q2.4 -1.3 2.2 0.4 M1.8 1.3 Q0.5 2.4 -0.9 1.8" stroke="#24130A" strokeWidth="0.9" fill="none"/>
+                <ellipse cx="0" cy="0" rx="2.5" ry="1.9" fill="#C27424"/>
+                <path d="M-2.9 -0.6 Q-2.6 -2.6 -0.6 -2.7 M1 -2.6 Q3.2 -2 3 0.2 M2.6 1.6 Q1 3 -1 2.5 M-2.6 1.6 L-3 0.8" stroke="#23120A" strokeWidth="1.25" fill="none"/>
               </g>
             ))}
-            <ellipse cx="50" cy="108.2" rx="9" ry="1.6" fill="white" opacity="0.18"/>
+            {[[39, 104.4], [55, 113.6], [71, 112], [82, 110.6], [46, 121.4], [64, 119.8]].map(([x, y], k) => <circle key={k} cx={x} cy={y} r="0.85" fill="#23120A"/>)}
+            <path d="M87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4" stroke="#7A4A12" strokeWidth="3.2" fill="none" opacity="0.35"/>
+            <ellipse cx="52" cy="110" rx="12" ry="2.4" fill="white" opacity="0.16"/>
           </g>
-          <path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z" fill="none" stroke="#6B3E12" strokeWidth="0.8"/>
-          <path d="M81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4" stroke="#111827" strokeWidth="1.5" fill="none"/>
-          <path d="M33 102.4 Q58 106.4 83 102.4 L82.6 106 Q58 110 33.4 106 Z" fill="#111827"/>
-          <path d="M40 104.6 Q58 107.6 76 104.6" stroke="#4B5563" strokeWidth="0.6" fill="none" strokeDasharray="1.4 1.2"/>
+          <path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z" fill="none" stroke="#5C3510" strokeWidth="0.8"/>
+          <path d="M87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4" stroke="#111827" strokeWidth="1.7" fill="none"/>
+          <path d="M27.2 97.8 Q58 103.4 88.8 97.8 L88.4 102.4 Q58 108 27.6 102.4 Z" fill="#111827"/>
+          <path d="M28.6 99.2 Q58 104.8 87.4 99.2 M28.8 101.2 Q58 106.8 87.2 101.2" stroke="#D4A017" strokeWidth="0.55" fill="none"/>
         </g>
       )}
       {/* Ceinture noire de karaté (nœud + deux pans, barrettes dorées) */}
