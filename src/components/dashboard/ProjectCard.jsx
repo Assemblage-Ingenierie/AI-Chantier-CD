@@ -35,7 +35,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   const coverRef = useRef(null);
   // Couverture servie en VIGNETTE allégée (~6-10× plus légère que l'original), repli auto sur
   // l'original si la vignette est indisponible. Null le temps de la signature → placeholder.
-  const cover = useThumb(p.photo, 640);
+  // allowPath : même si l'URL signée de la couverture n'est pas (encore) arrivée du serveur, la
+  // carte signe elle-même sa vignette à partir du chemin → plus de carte bloquée sur l'icône.
+  const cover = useThumb(p.photo, 640, { allowPath: true });
   // Copie locale déjà connue → affichée TOUT DE SUITE (pas de fondu, pas de réseau).
   const localKey = coverCacheKey(p.photo);
   const [localBad, setLocalBad] = useState(null);
@@ -49,7 +51,9 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   const interimCover = projCover && (p.photo ? !coverLoaded : !coverPhotosSettled()) ? projCover : null;
   // Simple chemin (URL signée pas encore reçue du serveur) : rien à charger tant qu'elle n'arrive pas
   // (avant : requête vouée à l'échec vers l'app elle-même).
-  const imgSrc = localCover || (isStoragePath(p.photo) ? null : cover.src);
+  // Un simple chemin n'est jamais affiché tel quel (requête vouée à l'échec vers l'app) : seulement
+  // sa vignette signée, ou l'URL signée une fois reçue.
+  const imgSrc = localCover || (cover.src && !isStoragePath(cover.src) ? cover.src : null);
   // À chaque changement de photo : si l'image est DÉJÀ en cache (déjà complète), on l'affiche
   // tout de suite — sinon onLoad, déclenché par un cache trop rapide, pourrait manquer et laisser
   // le placeholder collé par-dessus une photo pourtant chargée.

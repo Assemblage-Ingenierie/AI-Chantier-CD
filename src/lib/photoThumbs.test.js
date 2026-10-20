@@ -42,6 +42,19 @@ describe('vignettes allégées des photos', () => {
     expect(T.peekThumb(T.thumbKey(SIGNED, 640))).toBe(u);
   });
 
+  it('couvertures (allowPath) : un simple chemin est signé directement, même clé que l\'URL signée', async () => {
+    const path = 'proj_ab12/cover/c123.webp';
+    expect(T.thumbKey(path, 640)).toBeNull(); // hors couvertures : inchangé
+    expect(T.thumbKey(path, 640, true)).toBe(`${path}@w640`);
+    expect(T.thumbKey('data:image/png;base64,AA', 640, true)).toBeNull();
+    expect(T.thumbKey('/assets/x.png', 640, true)).toBeNull();
+    const u = await T.getThumbUrl(path, 640, true);
+    expect(u).toContain('/render/image/sign/photos/proj_ab12/cover/c123.webp');
+    expect(calls[0].path).toBe(path);
+    const signed = 'https://x.supabase.co/storage/v1/object/sign/photos/proj_ab12/cover/c123.webp?token=z';
+    expect(T.thumbKey(signed, 640)).toBe(T.thumbKey(path, 640, true)); // pas de re-signature à l'arrivée de l'URL
+  });
+
   it('demandes simultanées pour la même photo → une seule signature', async () => {
     const [a, b] = await Promise.all([T.getThumbUrl(SIGNED, 320), T.getThumbUrl(SIGNED, 320)]);
     expect(a).toBe(b);
