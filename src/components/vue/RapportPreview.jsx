@@ -441,7 +441,7 @@ function ZoneHeader({ loc, level = 'zone', parentNom = '', visitDate = null }) {
         {loc.nom}
       </span>
       {/* Dates de suivi de la zone (bouton calendrier du titre de zone) — calées à droite. */}
-      {(() => { const zi = zoneDatesInfo(loc, visitDate); return zi ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={zi} small/></span> : null; })()}
+      {(() => { const zi = zoneDatesInfo(loc, visitDate); return zi ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={zi} fontSize={9}/></span> : null; })()}
     </div>
   );
 }
@@ -786,6 +786,7 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
+  const datesInfo = obsDatesInfo(item, visitDate); // dates de suivi (bouton calendrier), sinon null
   const commentToShow = textContent ?? item.commentaire;
   const showHeader   = mode !== 'photos' && mode !== 'cont';
 
@@ -890,8 +891,10 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
       {/* En-tête normal (titre + badges) */}
       {showHeader && (
         <div style={{ background:'#F7F7F7', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3, borderBottom:`1px solid ${DA.border}` }}>
-          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.titre}</span>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            {/* Titre long + dates : le titre passe à la ligne au lieu d'être coupé (…). */}
+            <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, minWidth:0, ...(datesInfo ? {} : { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }) }}>{item.titre}</span>
+            {datesInfo && <ObsDatesChip info={datesInfo} fontSize={10}/>}
             {onEdit && (
               <button data-print="hide" onClick={onEdit}
                 style={{ background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
@@ -909,8 +912,6 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
                 ↩ {suivi.label}
               </span>
             )}
-            {/* Dates de suivi (observation datée via « Dater ») — calées à DROITE. */}
-            {(() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info} small/></span> : null; })()}
           </div>
         </div>
       )}

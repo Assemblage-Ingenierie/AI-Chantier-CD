@@ -6,7 +6,7 @@ import { obsDatesInfo, zoneDatesInfo, todayIso } from '../../lib/obsDates.js';
 // Bouton CALENDRIER des dates de suivi — à côté des boutons plan / poubelle, même taille (choix
 // Thomas 20/10 : rien tant qu'on n'y touche pas). Sert aux OBSERVATIONS et aux ZONES (zone = true).
 //   non datée : bouton gris ; un clic la date (date de la visite) et ouvre le mini-panneau ;
-//   datée     : bouton teinté (orange en cours, vert levée) ; un clic ouvre le mini-panneau.
+//   datée     : bouton teinté (rouge en cours, vert levée) ; un clic ouvre le mini-panneau.
 // Mini-panneau : Ouverte le / Levée le / Retirer / OK. Observation : la levée se pose seule quand
 // elle passe « Fait ». Zone : levée saisie à la main (vide = toujours en cours).
 // onChange(next) reçoit l'objet complet mis à jour (dates ajoutées / modifiées / retirées).
@@ -59,7 +59,7 @@ export default function ObsDatesControl({ item, visitDate, onChange, zone = fals
 
   const tone = !info ? { c: DA.grayL, bg: 'white', b: DA.border }
     : info.closed ? { c: SUIVI.fait.text, bg: SUIVI.fait.bg, b: SUIVI.fait.border }
-    : { c: '#C2410C', bg: '#FFF7ED', b: '#FED7AA' };
+    : { c: DA.red, bg: DA.redL, b: '#FCA5A5' };
   const field = { fontSize: 13, fontWeight: 600, color: DA.black, border: `1px solid ${DA.border}`, borderRadius: 7, padding: '5px 8px', fontFamily: 'inherit', background: 'white', minWidth: 0, width: '100%', boxSizing: 'border-box' };
   const lbl = { fontSize: 10, fontWeight: 800, color: DA.gray, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 3, display: 'block' };
 
