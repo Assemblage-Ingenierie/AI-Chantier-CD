@@ -113,6 +113,15 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(st.equipped.neck).toBe('noeud');
   });
 
+  it('costard trois pièces : 5 notes de 9/10 ou plus', () => {
+    let st = emptyState();
+    for (let i = 0; i < 4; i++) st = applyReview(st, { note: 9, observations: 2 }, day).state;
+    expect(unlockedIds(st.stats)).not.toContain('costard');
+    const r = applyReview(st, { note: 10, observations: 2 }, day);
+    expect(r.completed.map(m => m.reward)).toContain('costard');
+    expect(r.state.equipped.body).toBe('costard');
+  });
+
   it('état corrompu → progression vierge, sans plantage', () => {
     expect(normalizeState('n\'importe quoi')).toEqual(emptyState());
     expect(normalizeState({ equipped: { front: 'lampe', extra: 'pansement' } }).equipped).toEqual({ extra: 'lampe', face: 'pansement' }); // anciennes catégories

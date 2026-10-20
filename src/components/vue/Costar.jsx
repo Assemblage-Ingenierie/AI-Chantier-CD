@@ -67,6 +67,22 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <path d="M31 113 L46 112 M85 113 L70 112" stroke="#D1D5DB" strokeWidth="2.6" strokeLinecap="round"/>
         </g>
       )}
+      {/* Costard trois pièces : veste anthracite, gilet gris à boutons, chemise blanche, cravate, pochette */}
+      {o.body === 'costard' && (
+        <g>
+          <ellipse cx="58" cy="100" rx="33" ry="27" fill="#2B3445"/>
+          <path d="M43 83 L73 83 L77 115 Q58 124 39 115 Z" fill="#596273"/>
+          <path d="M39.5 112 Q58 121 76.5 112" stroke="#465061" strokeWidth="1" fill="none"/>
+          <polygon points="49,83 67,83 58,101" fill="white"/>
+          <path d="M43 83 L49 83 L58 101 L52 108 L46 96 Z" fill="#1E2533"/>
+          <path d="M73 83 L67 83 L58 101 L64 108 L70 96 Z" fill="#1E2533"/>
+          <path d="M56.3 86.5 L59.7 86.5 L60.8 99 L58 103.5 L55.2 99 Z" fill="#B91C1C"/>
+          <path d="M56 84.5 L60 84.5 L59.5 87.5 L56.5 87.5 Z" fill="#7F1D1D"/>
+          <circle cx="58" cy="107.5" r="1.1" fill="#2B3445"/>
+          <circle cx="58" cy="112" r="1.1" fill="#2B3445"/>
+          <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
+        </g>
+      )}
       {/* Pull en cachemire RÉTRÉCI au lavage : s'arrête au-dessus du nombril */}
       {o.body === 'pull' && (
         <path d="M27 97 Q26 85 40 82 L76 82 Q90 85 89 97 Q58 104 27 97 Z" fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8"/>
@@ -87,6 +103,18 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       )}
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
       <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {o.body === 'costard' && (
+        <g>
+          <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>
+          <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>
+          <path d="M33.6 102.5 Q36.5 105 40 104.6 M82.4 102.5 Q79.5 105 76 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
+          <ellipse cx="36.4" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
+          <ellipse cx="79.6" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
+          {/* Pochette (après les manches pour rester visible) */}
+          <polygon points="66.5,91.2 72.6,89.4 71.6,93" fill="white"/>
+          <path d="M66.6 93.4 L72.4 92.2" stroke="#9CA3AF" strokeWidth="0.8"/>
+        </g>
+      )}
       {o.body === 'pull' && (
         <g fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8">
           <ellipse cx="37" cy="91" rx="5.5" ry="4" transform="rotate(20 37 91)"/>
