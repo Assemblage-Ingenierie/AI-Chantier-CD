@@ -22,16 +22,13 @@ export function setAIProvider(p) {
 
 export async function callAIProxy(params) {
   const feature = params.feature || 'default';
-  // Anti-rafale ajustable par appel (ex. correcteur d'orthographe : action courte, à la demande).
-  const throttleMs = Number.isFinite(params._throttleMs) ? params._throttleMs : THROTTLE_MS;
-  delete params._throttleMs;
   const now = Date.now();
   const elapsed = now - (_lastCall[feature] || 0);
-  if (elapsed < throttleMs) {
+  if (elapsed < THROTTLE_MS) {
     if (params._waitOk) {
-      await new Promise(r => setTimeout(r, throttleMs - elapsed));
+      await new Promise(r => setTimeout(r, THROTTLE_MS - elapsed));
     } else {
-      const wait = Math.ceil((throttleMs - elapsed) / 1000);
+      const wait = Math.ceil((THROTTLE_MS - elapsed) / 1000);
       throw new Error(`Attends ${wait}s avant une nouvelle requête IA`);
     }
   }
