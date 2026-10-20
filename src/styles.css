@@ -204,6 +204,7 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .costar-busy .costar-teeth { transform-box: fill-box; transform-origin: top center; animation: costar-chew 0.35s ease-in-out infinite; }
 .costar-label { animation: costar-float 2.6s ease-in-out infinite; }
 .costar-bubble { transform-origin: 90% 100%; animation: costar-pop 0.22s ease-out; }
+.costar-unlock { animation: costar-tada 0.7s ease-out 0.15s both; }
 .costar-dots span { animation: costar-dot 1.2s infinite; opacity: 0.2; }
 .costar-dots span:nth-child(2) { animation-delay: 0.2s; }
 .costar-dots span:nth-child(3) { animation-delay: 0.4s; }
@@ -213,8 +214,9 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 @keyframes costar-nod { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(4deg) translateY(1px); } }
 @keyframes costar-chew { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.7); } }
 @keyframes costar-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes costar-tada { 0% { transform: scale(0.9); opacity: 0; } 50% { transform: scale(1.04); opacity: 1; } 70% { transform: scale(0.98) rotate(-0.6deg); } 100% { transform: scale(1); } }
 @keyframes costar-pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 @keyframes costar-dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-dots span { animation: none; }
+  .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-unlock, .costar-dots span { animation: none; }
 }
