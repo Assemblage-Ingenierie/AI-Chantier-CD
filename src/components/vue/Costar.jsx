@@ -111,29 +111,27 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
         </g>
       )}
-      {/* Slip LÉOPARD (grand, couvre tout le bas du corps) : élastique noir à liserés dorés, côtés
-          échancrés, fond arrondi entre les pattes, rosettes de léopard, ombre aux échancrures. */}
+      {/* Slip LÉOPARD taille basse (retour Thomas : « il fait le tour des papattes, assez bas sur la
+          taille ») : il habille tout le bas du corps sous un élastique noir bas sur les hanches ;
+          les pattes sortent des trous de jambes (bordures noires dessinées par-dessus, plus bas). */}
       {o.body === 'slip' && (
         <g strokeLinejoin="round" strokeLinecap="round">
           <defs>
-            <clipPath id="costar-slip-clip"><path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z"/></clipPath>
+            <clipPath id="costar-slip-clip"><ellipse cx="58" cy="100" rx="33" ry="27"/></clipPath>
           </defs>
-          <path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z" fill="#F0BE5C"/>
           <g clipPath="url(#costar-slip-clip)">
-            {[[33, 106], [42, 109.6], [51, 106.8], [60, 110.4], [69, 107], [78, 109.8], [85, 105.6], [47, 116], [57, 117.8], [66, 115.6], [52, 123.2], [62, 123], [37.6, 112.4], [74, 116.4]].map(([x, y], k) => (
+            <path d="M20 107.6 Q58 113.6 96 107.6 L96 135 L20 135 Z" fill="#F0BE5C"/>
+            {[[29, 110.6], [39, 112.8], [49, 114.2], [67, 114.2], [77, 112.8], [87, 110.6], [31, 116.6], [40, 117], [49, 118.2], [58, 119.4], [67, 118.2], [76, 117], [85, 114.6], [36, 122.4], [45, 124.6], [58, 125.2], [71, 124.6], [80, 122.4], [53, 121.2], [63, 121.4]].map(([x, y], k) => (
               <g key={k} transform={`translate(${x} ${y}) rotate(${(k * 53) % 180})`}>
-                <ellipse cx="0" cy="0" rx="2.5" ry="1.9" fill="#C27424"/>
-                <path d="M-2.9 -0.6 Q-2.6 -2.6 -0.6 -2.7 M1 -2.6 Q3.2 -2 3 0.2 M2.6 1.6 Q1 3 -1 2.5 M-2.6 1.6 L-3 0.8" stroke="#23120A" strokeWidth="1.25" fill="none"/>
+                <ellipse cx="0" cy="0" rx="2.3" ry="1.75" fill="#C27424"/>
+                <path d="M-2.7 -0.6 Q-2.4 -2.4 -0.6 -2.5 M0.9 -2.4 Q3 -1.8 2.8 0.2 M2.4 1.5 Q0.9 2.8 -0.9 2.3" stroke="#23120A" strokeWidth="1.15" fill="none"/>
               </g>
             ))}
-            {[[39, 104.4], [55, 113.6], [71, 112], [82, 110.6], [46, 121.4], [64, 119.8]].map(([x, y], k) => <circle key={k} cx={x} cy={y} r="0.85" fill="#23120A"/>)}
-            <path d="M87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4" stroke="#7A4A12" strokeWidth="3.2" fill="none" opacity="0.35"/>
-            <ellipse cx="52" cy="110" rx="12" ry="2.4" fill="white" opacity="0.16"/>
+            {[[35.6, 118.6], [62.6, 116], [74.4, 120.6], [49.6, 127.2]].map(([x, y], k) => <circle key={k} cx={x} cy={y} r="0.8" fill="#23120A"/>)}
+            <path d="M20 107.6 Q58 113.6 96 107.6 L96 110.8 Q58 116.8 20 110.8 Z" fill="#7A4A12" opacity="0.18"/>
+            <path d="M20 105.6 Q58 111.6 96 105.6 L96 108 Q58 114 20 108 Z" fill="#111827"/>
           </g>
-          <path d="M27.6 101.2 Q58 106.8 88.4 101.2 L87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4 Z" fill="none" stroke="#5C3510" strokeWidth="0.8"/>
-          <path d="M87.4 108.4 Q73.6 111.4 65.8 125.6 Q58 127.8 50.2 125.6 Q42.4 111.4 28.6 108.4" stroke="#111827" strokeWidth="1.7" fill="none"/>
-          <path d="M27.2 97.8 Q58 103.4 88.8 97.8 L88.4 102.4 Q58 108 27.6 102.4 Z" fill="#111827"/>
-          <path d="M28.6 99.2 Q58 104.8 87.4 99.2 M28.8 101.2 Q58 106.8 87.2 101.2" stroke="#D4A017" strokeWidth="0.55" fill="none"/>
+          <ellipse cx="58" cy="100" rx="33" ry="27" fill="none" stroke="#5C3510" strokeWidth="0.6" clipPath="url(#costar-slip-clip)"/>
         </g>
       )}
       {/* Ceinture noire de karaté (nœud + deux pans, barrettes dorées) */}
@@ -166,6 +164,10 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <g transform="translate(44 0)"><Boot kind={o.feet}/></g>
           <g transform="translate(72 0) scale(-1 1)"><Boot kind={o.feet}/></g>
         </g>
+      )}
+      {/* Trous de jambes du slip : bordure noire autour du haut de chaque patte */}
+      {o.body === 'slip' && !o.feet && (
+        <path d="M34.6 121.4 Q44 116.4 53.4 121.4 M62.6 121.4 Q72 116.4 81.4 121.4" stroke="#111827" strokeWidth="1.8" fill="none" strokeLinecap="round"/>
       )}
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
       <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
