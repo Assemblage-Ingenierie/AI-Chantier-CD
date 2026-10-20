@@ -175,7 +175,12 @@ export function saveCostarState(state) {
   try { window.dispatchEvent(new CustomEvent(CHANGE_EVENT)); } catch { /* hors navigateur */ }
   return _mem;
 }
-// GAME MODE (admin, pour tester tous les objets) : simple drapeau local, séparé de la progression.
+// GAME MODE (pour tester tous les objets) : simple drapeau local, séparé de la progression.
+// Réservé au compte de Thomas (demande : « que pour moi, personne d'autre ne peut le voir ») :
+// la case n'apparaît que sur sa ligne dans Administration, et le drapeau est coupé si un autre
+// compte se connecte sur le même appareil (cf. ChantierAI).
+export const GAME_MODE_OWNER = 'thomas@assemblage.net';
+export const canUseGameMode = (email) => String(email || '').trim().toLowerCase() === GAME_MODE_OWNER;
 export const GAME_MODE_KEY = 'chantierai_costar_game_v1';
 export function isGameMode() {
   try { return localStorage.getItem(GAME_MODE_KEY) === '1'; } catch { return false; }

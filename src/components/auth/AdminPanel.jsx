@@ -4,6 +4,7 @@ import { recoverPhotosFromStorage, cleanupDuplicatePhotos } from '../../lib/stor
 import { loadContacts } from '../../lib/contacts.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { isGameMode, setGameMode, canUseGameMode } from '../../lib/costarRewards.js';
 
 // Nom affichable : first/last si présents, sinon ancien full_name (compat), sinon email.
 function fullName(p) {
@@ -21,6 +22,7 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
   const [recoverResult, setRecoverResult] = useState(null);
   const [cleaning, setCleaning] = useState(false);
   const [cleanResult, setCleanResult] = useState(null);
+  const [gameMode, setGameModeState] = useState(isGameMode);
 
   const fetchProfiles = async () => {
     setLoading(true); setErr('');
@@ -143,6 +145,16 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
     </button>
   );
 
+  // Petite case « game mode » Costar : uniquement sur la ligne de Thomas (cf. lib/costarRewards.js).
+  const GameModeBox = ({ p }) => (p.id === currentUserId && canUseGameMode(p.email)) ? (
+    <label title="Game mode Costar : tous les objets du vestiaire pour les essayer (ta progression n'est pas touchée)"
+      style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, color:DA.grayL, marginRight:8, cursor:'pointer', verticalAlign:'middle' }}>
+      <input type="checkbox" checked={gameMode} onChange={e => { setGameMode(e.target.checked); setGameModeState(e.target.checked); }}
+        style={{ margin:0, cursor:'pointer', accentColor:'#F97316' }}/>
+      🎮
+    </label>
+  ) : null;
+
   return (
     <div className="modal-overlay-dark">
       <div className="modal-sheet-flex" style={{ maxWidth:1100 }}>
@@ -216,6 +228,7 @@ export default function AdminPanel({ onClose, onPendingCountChange, currentUserI
                       <td style={{ padding:'8px 10px' }}>{editCell(p, 'job_title', { placeholder:'Poste', style:{ color:DA.red } })}</td>
                       <td style={{ padding:'11px 14px', color:DA.gray }}>{p.email}</td>
                       <td style={{ padding:'11px 14px', textAlign:'right', whiteSpace:'nowrap' }}>
+                        <GameModeBox p={p}/>
                         {p.id === currentUserId && <span style={{ fontSize:11, color:DA.grayL, marginRight:8 }}>(vous)</span>}
                         <RoleSelect p={p}/>
                       </td>
