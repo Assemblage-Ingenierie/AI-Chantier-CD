@@ -4,6 +4,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { getVpNum, relabelViewpoints } from '../../lib/vpNumbering.js';
+import { reportCrop, reportVisibleRect } from '../../lib/photoFrame.js';
 
 const ANNOT_COLORS = ['#E30513','#E67E22','#F1C40F','#2980B9','#27AE60','#8E44AD','#222222','#FFFFFF'];
 
@@ -629,7 +630,7 @@ function movePath(p, dx, dy) {
   return q;
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null }, ref) {
   // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   const cvRef          = useRef();
@@ -3443,6 +3444,32 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 // Double-clic dans le VIDE (outil Sélection) = revenir à la vue entière.
                 if (tool === 'select' && vtRef.current.z > 1.001 && !selAnnotRef.current && selTextIdxRef.current == null && !multiSelRef.current.length) zoomTo(1);
               }}/>
+            {/* PHOTO : zone grisée = ce qui sera COUPÉ dans le cadre du rapport (demande Thomas :
+                « j'annote au pif et mon annotation sort du cadre sans que je le voie »). Même calcul
+                que le rapport (lib/photoFrame.js), recalculé en direct avec les annotations en cours.
+                Affichage seulement : jamais dans l'image exportée, ne capte aucun clic. */}
+            {(() => {
+              const cv = cvRef.current;
+              if (!reportFrame || !dispSize || !cv?.width || !cv?.height) return null;
+              const [cx, cy, cz] = reportCrop({ cropX: reportFrame.cropX, cropY: reportFrame.cropY, cropZoom: reportFrame.cropZoom }, paths, cv.width, cv.height);
+              const r = reportVisibleRect(cv.width, cv.height, { orient: reportFrame.orient, cx, cy, cz, fit: reportFrame.fit });
+              if (!r) return null;
+              const hole = `M${r.x} ${r.y}h${r.w}v${r.h}h${-r.w}Z`;
+              return (
+                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:2 }}>
+                  <div style={{ position:'relative', width:dispSize.w, height:dispSize.h, maxWidth:'100%', maxHeight:'100%', transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`, transformOrigin:'50% 50%' }}>
+                    <svg viewBox="0 0 1 1" preserveAspectRatio="none" width="100%" height="100%" style={{ position:'absolute', inset:0, display:'block' }}>
+                      <path d={`M0 0H1V1H0Z${hole}`} fill="rgba(20,20,20,0.5)" fillRule="evenodd"/>
+                      <path d={hole} fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="6 4" vectorEffect="non-scaling-stroke"/>
+                    </svg>
+                    <span style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${(r.y * 100).toFixed(2)}%`, transform:`scale(${1 / vt.z})`, transformOrigin:'0 0',
+                      background:'rgba(0,0,0,0.65)', color:'white', fontSize:11, fontWeight:700, padding:'2px 7px', borderRadius:5, whiteSpace:'nowrap', margin:'4px 0 0 4px' }}>
+                      Cadre du rapport — le grisé ne sera pas visible
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
             {vt.z > 1.05 && (
               <button
                 onTouchStart={e => { e.stopPropagation(); setVt({ z:1, px:0, py:0 }); }}

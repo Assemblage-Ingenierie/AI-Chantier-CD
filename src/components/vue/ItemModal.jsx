@@ -884,6 +884,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         ref={annotatorRef}
         bgImage={ph?.data}
         savedPaths={ph?.annotations || []}
+        reportFrame={ph ? { orient: ph.orient, cropX: ph.cropX, cropY: ph.cropY, cropZoom: ph.cropZoom, fit: !!ph.cropFit } : null}
         onSave={(paths, exported, dims) => {
           setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
           setForm(f => ({

@@ -20,6 +20,7 @@ import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { childrenOf, effectiveParentId, zoneLabel } from '../../lib/zoneGroups.js';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { obsDatesInfo, zoneDatesInfo } from '../../lib/obsDates.js';
+import { reportCrop } from '../../lib/photoFrame.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
 // d'annexe à chaque changement d'onglet serait lent. Clé `${chantierId}|${annexId}`.
@@ -558,38 +559,9 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
 
 // Returns [cx, cy, cz] for rendering. When photo has annotations but no explicit crop set,
 // auto-adjusts the crop to include the annotation anchor points (avoids invisible annotations).
+// Logique partagée avec l'annotateur (zone grisée « hors cadre ») : lib/photoFrame.js.
 function effectiveCrop(photo) {
-  const cz = photo.cropZoom ?? 1;
-  // If user has explicitly set a crop position, always respect it
-  if (photo.cropX !== undefined || photo.cropY !== undefined) {
-    return [photo.cropX ?? 50, photo.cropY ?? 50, cz];
-  }
-  // No explicit crop: try to auto-adjust to include annotations
-  if (!photo.annotations?.length || !photo.annotW || !photo.annotH) return [50, 50, cz];
-  const W = photo.annotW, H = photo.annotH;
-  let x = 50, y = 50;
-  if (W / H >= 4 / 3) {
-    const drawW = Math.round(H * 4 / 3);
-    const excess = W - drawW;
-    if (excess > 0) {
-      const xs = photo.annotations.filter(a => a.x != null).map(a => a.x);
-      if (xs.length) {
-        const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
-        x = Math.max(0, Math.min(100, ((mid - drawW / 2) / excess) * 100));
-      }
-    }
-  } else {
-    const drawH = Math.round(W / (4 / 3));
-    const excess = H - drawH;
-    if (excess > 0) {
-      const ys = photo.annotations.filter(a => a.y != null).map(a => a.y);
-      if (ys.length) {
-        const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
-        y = Math.max(0, Math.min(100, ((mid - drawH / 2) / excess) * 100));
-      }
-    }
-  }
-  return [x, y, cz];
+  return reportCrop(photo);
 }
 
 function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, onSave, onCancel }) {
@@ -639,6 +611,8 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   const photoRatio = W_p / H_p;
   // Orientation du cadre dans le rapport : paysage 4:3 (défaut) ou portrait 3:4 (façade entière).
   const [orient, setOrient] = React.useState(photo.orient === 'portrait' ? 'portrait' : 'landscape');
+  // « Image entière » : toute la photo dans le cadre du rapport (bandes blanches), sans recadrage.
+  const [fit, setFit] = React.useState(!!photo.cropFit);
   const FRAME_RATIO = orient === 'portrait' ? 3 / 4 : 4 / 3;
   const containerH = containerW / photoRatio;
 
@@ -646,9 +620,9 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   const isPortrait = photoRatio <= FRAME_RATIO;
   const baseFrameW = isPortrait ? containerW : containerH * FRAME_RATIO;
   const baseFrameH = isPortrait ? containerW / FRAME_RATIO : containerH;
-  // Frame at current zoom
-  const frameW = baseFrameW / pz;
-  const frameH = baseFrameH / pz;
+  // Frame at current zoom (image entière : le cadre = toute la photo)
+  const frameW = fit ? containerW : baseFrameW / pz;
+  const frameH = fit ? containerH : baseFrameH / pz;
   const exW = Math.max(0, containerW - frameW);
   const exH = Math.max(0, containerH - frameH);
   const frameLeft = exW * px / 100;
@@ -677,7 +651,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   const handlePointerDown = (e) => {
     e.preventDefault();
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || fit) return;
     try { el.setPointerCapture(e.pointerId); } catch { /* iOS Safari peut lever ici — sans effet sur le drag */ }
     const rect = el.getBoundingClientRect();
     const cW = rect.width, cH = rect.height;
@@ -720,10 +694,17 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
             </button>
           ))}
         </div>
+        {/* Image entière (demande Thomas : « mettre toute l'image sans changer le format ») */}
+        <button onClick={() => setFit(f => !f)}
+          title="Afficher toute la photo dans le cadre du rapport (bandes blanches si besoin)"
+          style={{ padding:'8px 0', borderRadius:9, cursor:'pointer', fontSize:12, fontWeight:700,
+            border:`1.5px solid ${fit ? DA.red : '#444'}`, background: fit ? DA.red : 'transparent', color: fit ? 'white' : '#ccc' }}>
+          {fit ? '✓ Image entière' : '⤢ Image entière (sans recadrer)'}
+        </button>
         {/* Full original photo with draggable crop frame */}
         <div ref={containerRef}
           style={{ position:'relative', width:'100%', height:containerH, flexShrink:0,
-            borderRadius:8, cursor:'grab', touchAction:'none', background:'#000', overflow:'hidden' }}
+            borderRadius:8, cursor: fit ? 'default' : 'grab', touchAction:'none', background:'#000', overflow:'hidden' }}
           onPointerDown={handlePointerDown}>
           <img src={photo.annotated || photo.data} alt=""
             style={{ position:'absolute', inset:0, width:'100%', height:'100%',
@@ -758,21 +739,21 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
             border:'2px solid white', borderRadius:2, boxSizing:'border-box', pointerEvents:'none' }}/>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
-          <button onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
-            style={{ width:38, height:38, borderRadius:8, background:'#333', color:'white',
+          <button disabled={fit} onClick={() => setPz(z => Math.max(1, Math.round((z - 0.1) * 10) / 10))}
+            style={{ opacity: fit ? 0.35 : 1, width:38, height:38, borderRadius:8, background:'#333', color:'white',
               border:'none', fontSize:22, lineHeight:1, cursor:'pointer', fontWeight:300 }}>−</button>
           <span style={{ color:'#ccc', fontSize:12, fontWeight:600, minWidth:52, textAlign:'center' }}>
             zoom ×{pz.toFixed(1)}
           </span>
-          <button onClick={() => setPz(z => Math.min(4, Math.round((z + 0.1) * 10) / 10))}
-            style={{ width:38, height:38, borderRadius:8, background:'#333', color:'white',
+          <button disabled={fit} onClick={() => setPz(z => Math.min(4, Math.round((z + 0.1) * 10) / 10))}
+            style={{ opacity: fit ? 0.35 : 1, width:38, height:38, borderRadius:8, background:'#333', color:'white',
               border:'none', fontSize:22, lineHeight:1, cursor:'pointer', fontWeight:300 }}>+</button>
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={onCancel}
             style={{ flex:1, padding:10, borderRadius:8, background:'#2c2c2e', color:'#aaa',
               border:'none', cursor:'pointer', fontSize:12, fontWeight:600 }}>Annuler</button>
-          <button onClick={() => onSave(Math.round(px), Math.round(py), pz, orient)}
+          <button onClick={() => onSave(Math.round(px), Math.round(py), pz, orient, fit)}
             style={{ flex:2, padding:10, borderRadius:8, background:DA.red, color:'white',
               border:'none', cursor:'pointer', fontSize:13, fontWeight:700 }}>Valider</button>
         </div>
@@ -820,8 +801,11 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
     // appareil sans upload du composite) → les annotations ne sont jamais perdues.
     const useAnnotOverlay = hasAnnotations && !!ph.data && !ph.annotated;
     const imgSrc = ph.annotated || ph.data;
+    // « Image entière » (outil Cadrer) : toute la photo dans le même cadre, bandes blanches si
+    // besoin. (Repli recadré si l'annotation n'existe qu'en calque re-dessiné, calé sur « cover ».)
+    const fitWhole = !!ph.cropFit && !useAnnotOverlay;
     return (
-      <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2 }}>
+      <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2, ...(fitWhole ? { background:'#fff' } : {}) }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
             l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
@@ -832,9 +816,11 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
           overlay={useAnnotOverlay
             ? <PhotoAnnotCanvas photo={ph} cropX={cx} cropY={cy} cropZoom={cz} containerAR={arNum} photoScale={photoAnnotScales}/>
             : null}
-          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
-            objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
-            transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
+          style={fitWhole
+            ? { position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'contain', objectPosition:'50% 50%', display:'block', pointerEvents:'none' }
+            : { position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover',
+              objectPosition:`${cx}% ${cy}%`, display:'block', pointerEvents:'none',
+              transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
         {/* Bouton « Annoter » (haut-droite) : ouvre l'outil d'annotation sur la photo —
             permet de retoucher / déplacer les annotations directement depuis le rapport. */}
         {onAnnotatePhoto && !!ph.data && (
@@ -879,7 +865,7 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
           <PhotoCropEditor
             photo={ph}
             initialX={cx} initialY={cy} initialZ={cz}
-            onSave={(nx, ny, nz, norient) => { onPhotoCropChange(ph, nx, ny, nz, norient); setCropEditingPi(null); }}
+            onSave={(nx, ny, nz, norient, nfit) => { onPhotoCropChange(ph, nx, ny, nz, norient, nfit); setCropEditingPi(null); }}
             onCancel={() => setCropEditingPi(null)}
           />
         )}
@@ -3056,13 +3042,13 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               annotScale={annotScale}
                               photoAnnotScales={photoAnnotScales}
                               onAnnotatePhoto={onAnnotatePhoto}
-                              onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient) => {
+                              onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient, fit = false) => {
                                 if (!photo) return;
                                 // Persistance durable par id de ligne photo (survit au reload
                                 // indépendamment de la chaîne cache/fusion/hydratation).
-                                if (photo._id) setPhotoPref(photo._id, { cropX: cx, cropY: cy, cropZoom: cz, orient });
+                                if (photo._id) setPhotoPref(photo._id, { cropX: cx, cropY: cy, cropZoom: cz, orient, cropFit: !!fit });
                                 onUpdateItem(block.locId, block.item.id, {
-                                  photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz, orient } : ph),
+                                  photos: (block.item.photos || []).map(ph => ph === photo ? { ...ph, cropX: cx, cropY: cy, cropZoom: cz, orient, cropFit: !!fit } : ph),
                                 });
                               } : null}
                             />

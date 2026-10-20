@@ -943,6 +943,7 @@ export function useProjets(onSyncStatus) {
                           cropX:          pref.cropX    ?? existing?.cropX,
                           cropY:          pref.cropY    ?? existing?.cropY,
                           cropZoom:       pref.cropZoom ?? existing?.cropZoom,
+                          cropFit:        pref.cropFit  ?? existing?.cropFit,
                           orient:         pref.orient   ?? existing?.orient,
                           _id:            ph.id,
                           _legacy:        ph._legacy ?? false,
