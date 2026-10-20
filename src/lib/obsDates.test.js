@@ -1,17 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { applyObsDates, obsDatesInfo, durationFr, fmtDateFr, itemMetaToRow, itemMetaFromRow } from './obsDates.js';
 
-describe('applyObsDates — règles automatiques', () => {
-  it('création : ouverture = date de la visite', () => {
-    expect(applyObsDates(null, { id: 'a', suivi: 'rien' }, '2026-04-09').dateOuverture).toBe('2026-04-09');
+describe('applyObsDates — règles automatiques (optionnel par observation)', () => {
+  it('création : AUCUNE date tant qu\'on n\'a pas cliqué « Dater »', () => {
+    expect(applyObsDates(null, { id: 'a', suivi: 'rien' }, '2026-04-09').dateOuverture).toBeUndefined();
   });
-  it('création : une date déjà saisie n\'est jamais écrasée', () => {
+  it('observation non datée passée « Fait » : toujours rien (pas de levée orpheline)', () => {
+    const r = applyObsDates({ id: 'a' }, { id: 'a', suivi: 'fait' }, '2026-09-08');
+    expect(r.dateOuverture).toBeUndefined();
+    expect('dateCloture' in r).toBe(false);
+    expect('dateCloture' in applyObsDates(null, { id: 'a', suivi: 'fait', dateCloture: '2026-09-08' }, '2026-09-08')).toBe(false);
+  });
+  it('date saisie : jamais écrasée', () => {
     expect(applyObsDates(null, { id: 'a', dateOuverture: '2026-01-02' }, '2026-04-09').dateOuverture).toBe('2026-01-02');
   });
-  it('observation existante sans date (ancienne) : pas de date inventée', () => {
-    expect(applyObsDates({ id: 'a' }, { id: 'a', titre: 'x' }, '2026-04-09').dateOuverture).toBeUndefined();
-  });
-  it('passage à « Fait » : levée = date de la visite ; retour arrière : levée retirée', () => {
+  it('observation datée passée « Fait » : levée = date de la visite ; retour arrière : levée retirée', () => {
     const done = applyObsDates({ id: 'a', suivi: 'a_faire', dateOuverture: '2026-04-09' }, { id: 'a', suivi: 'fait', dateOuverture: '2026-04-09' }, '2026-09-08');
     expect(done.dateCloture).toBe('2026-09-08');
     const back = applyObsDates(done, { ...done, suivi: 'en_cours' }, '2026-10-01');
@@ -19,7 +22,7 @@ describe('applyObsDates — règles automatiques', () => {
     expect(back.dateOuverture).toBe('2026-04-09');
   });
   it('levée saisie à la main : conservée', () => {
-    const r = applyObsDates({ id: 'a', suivi: 'fait' }, { id: 'a', suivi: 'fait', dateCloture: '2026-08-01' }, '2026-09-08');
+    const r = applyObsDates({ id: 'a', suivi: 'fait' }, { id: 'a', suivi: 'fait', dateOuverture: '2026-04-09', dateCloture: '2026-08-01' }, '2026-09-08');
     expect(r.dateCloture).toBe('2026-08-01');
   });
 });

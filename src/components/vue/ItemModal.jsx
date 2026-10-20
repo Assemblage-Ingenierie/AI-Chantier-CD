@@ -239,7 +239,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, showDates = false }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -1146,12 +1146,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               })}
             </div>
           </div>
-          {/* Groupe Dates de suivi — seulement si l'option « Dates de suivi » du rapport est
-              cochée pour cette visite (sinon rien ne change). Ouverture : date de la visite par
-              défaut ; « Levée le » apparaît quand l'observation est Fait. */}
-          {showDates && (() => {
+          {/* Groupe Dates de suivi — seulement pour une observation DATÉE (bouton « Dater » de son
+              bandeau, onglet Visite). « Levée le » apparaît quand elle est Fait ; vider « Ouverte
+              le » retire les dates. */}
+          {!!form.dateOuverture && (() => {
             const ref = visiteDate || todayIso();
-            const ouv = form.dateOuverture || (!item?.id ? ref : '');
+            const ouv = form.dateOuverture;
             const done = form.suivi === 'fait';
             const clo = form.dateCloture || (done ? ref : '');
             const run = ouv ? durationFr(ouv, done ? clo : ref) : '';
