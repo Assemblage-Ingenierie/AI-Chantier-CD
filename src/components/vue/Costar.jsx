@@ -2,12 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES } from '../../lib/costar.js';
+import { MISSIONS, COSMETICS, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState } from '../../lib/costarRewards.js';
+
+// Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
+function useCostarState() {
+  const [st, setSt] = useState(loadCostarState);
+  useEffect(() => {
+    const on = () => setSt(loadCostarState());
+    window.addEventListener(CHANGE_EVENT, on);
+    return () => window.removeEventListener(CHANGE_EVENT, on);
+  }, []);
+  return st;
+}
 
 // Costar : castor québécois en casque de chantier (dessin original, SVG) — mascotte qui relit
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
-export function CostarSvg({ size = 100, className = '' }) {
+// outfit = { head, front, eyes, face, neck, body, hand } : cosmétiques portés (vestiaire).
+export function CostarSvg({ size = 100, className = '', outfit = {} }) {
+  const o = outfit || {};
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
       {/* Queue (derrière) */}
@@ -18,11 +32,29 @@ export function CostarSvg({ size = 100, className = '' }) {
       {/* Corps */}
       <ellipse cx="58" cy="100" rx="33" ry="27" fill="#8A5A2E"/>
       <ellipse cx="58" cy="106" rx="21" ry="17" fill="#C9935C"/>
+      {o.body === 'gilet' && (
+        <g>
+          <path d="M27 90 Q25 111 42 124 L47 109 L45 82 Z" fill="#A3E635" stroke="#65A30D" strokeWidth="0.8"/>
+          <path d="M89 90 Q91 111 74 124 L69 109 L71 82 Z" fill="#A3E635" stroke="#65A30D" strokeWidth="0.8"/>
+          <path d="M28 104 L46 101 M88 104 L70 101" stroke="#E5E7EB" strokeWidth="3.2" strokeLinecap="round"/>
+          <path d="M31 113 L46 112 M85 113 L70 112" stroke="#E5E7EB" strokeWidth="2.6" strokeLinecap="round"/>
+        </g>
+      )}
       {/* Pattes */}
       <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>
       <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
       <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {o.hand === 'cafe' && (
+        <g>
+          <path d="M84 80 q-2 -3 0 -6 M88 80 q-2 -3 0 -6" stroke="#9CA3AF" strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.8"/>
+          <path d="M92 87 q5 0 5 4.5 q0 4.5 -5 4.5" stroke="#DC2626" strokeWidth="2" fill="none"/>
+          <rect x="79" y="83" width="14" height="15" rx="2.5" fill="#DC2626"/>
+          <ellipse cx="86" cy="83.6" rx="6.3" ry="1.6" fill="#5B3A1E"/>
+          <rect x="81" y="89" width="10" height="3" rx="1" fill="white" opacity="0.85"/>
+          <ellipse cx="80" cy="93" rx="4.5" ry="5.5" fill="#6E4521"/>
+        </g>
+      )}
       {/* Tête */}
       <g className="costar-head">
         <circle cx="34" cy="50" r="7" fill="#6E4521"/>
@@ -52,15 +84,82 @@ export function CostarSvg({ size = 100, className = '' }) {
         </g>
         {/* Moustaches */}
         <path d="M44 79 L32 77 M44 82 L33 84 M72 79 L84 77 M72 82 L83 84" stroke="#F3E3CF" strokeWidth="0.9" strokeLinecap="round" opacity="0.8"/>
-        {/* Casque de chantier */}
-        <path d="M30 49 Q31 21 58 19 Q85 21 86 49 Z" fill="#F97316"/>
-        <path d="M54 20 Q58 18.6 62 20 L62 47 L54 47 Z" fill="#FB923C"/>
-        <path d="M36 42 Q37 27 49 23" stroke="#FFD2A8" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.7"/>
-        <rect x="22" y="45" width="72" height="8" rx="4" fill="#EA580C"/>
-        {/* Écusson feuille d'érable */}
-        <circle cx="72" cy="36" r="6.4" fill="white"/>
-        <polygon transform="translate(72 36.4) scale(0.95)" fill="#D52B1E"
-          points="0,-5 1.2,-2.6 2.6,-3.2 2.1,-0.6 4.6,-1.4 3.8,0.4 5,1 2.4,2.2 2.8,3.2 0.4,2.6 0.4,5 -0.4,5 -0.4,2.6 -2.8,3.2 -2.4,2.2 -5,1 -3.8,0.4 -4.6,-1.4 -2.1,-0.6 -2.6,-3.2 -1.2,-2.6"/>
+        {/* Lunettes / monocle / pansement (vestiaire) — hors du groupe des yeux : ne clignent pas */}
+        {o.eyes === 'lunettes' && (
+          <g>
+            <path d="M39 61 L30 58 M77 61 L86 58" stroke="#111" strokeWidth="1.6" strokeLinecap="round"/>
+            <rect x="38.5" y="57.5" width="17" height="11" rx="4.5" fill="#111"/>
+            <rect x="60.5" y="57.5" width="17" height="11" rx="4.5" fill="#111"/>
+            <path d="M55.5 61.5 Q58 59.5 60.5 61.5" stroke="#111" strokeWidth="2" fill="none"/>
+            <path d="M41.5 60.5 L46 60.5 M63.5 60.5 L68 60.5" stroke="white" strokeWidth="1.3" strokeLinecap="round" opacity="0.55"/>
+          </g>
+        )}
+        {o.eyes === 'monocle' && (
+          <g>
+            <path d="M76.5 66 Q84 78 76 92" stroke="#CA8A04" strokeWidth="1" fill="none" strokeDasharray="1.6 1.4"/>
+            <circle cx="69" cy="63" r="8" fill="white" fillOpacity="0.18" stroke="#CA8A04" strokeWidth="2.2"/>
+          </g>
+        )}
+        {o.face === 'pansement' && (
+          <g transform="rotate(-24 40 71)">
+            <rect x="32" y="68" width="16" height="6" rx="3" fill="#F5D0A9" stroke="#D6A77A" strokeWidth="0.8"/>
+            <rect x="37.5" y="68.4" width="5" height="5.2" fill="#EBC097"/>
+            <circle cx="34.8" cy="71" r="0.5" fill="#C08A5B"/><circle cx="45.2" cy="71" r="0.5" fill="#C08A5B"/>
+          </g>
+        )}
+        {/* Coiffe : casque de chantier (défaut), casque en or, tuque ou couronne (vestiaire) */}
+        {o.head === 'tuque' ? (
+          <g>
+            <path d="M30 50 Q30 17 58 15 Q86 17 86 50 Z" fill="#C8102E"/>
+            <path d="M40 22 L44 46 M50 17 L51 46 M66 17 L65 46 M76 22 L72 46" stroke="#A50D25" strokeWidth="1.4" opacity="0.6"/>
+            <rect x="27" y="41" width="62" height="12" rx="6" fill="white"/>
+            <path d="M33 47 L83 47" stroke="#C8102E" strokeWidth="2.2" strokeDasharray="4 3"/>
+            <circle cx="58" cy="12" r="8.5" fill="white" stroke="#E5E7EB" strokeWidth="0.8"/>
+            <circle cx="55" cy="9.5" r="2.4" fill="#F9FAFB"/>
+          </g>
+        ) : o.head === 'couronne' ? (
+          <g>
+            <polygon points="36,44 34,20 45,30 51,15 58,27 65,15 71,30 82,20 80,44" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.2" strokeLinejoin="round"/>
+            <rect x="34" y="38" width="48" height="8" rx="2.5" fill="#EAB308" stroke="#CA8A04" strokeWidth="1"/>
+            <circle cx="46" cy="42" r="2.2" fill="#DC2626"/><circle cx="58" cy="42" r="2.6" fill="#2563EB"/><circle cx="70" cy="42" r="2.2" fill="#16A34A"/>
+            <circle cx="34" cy="20" r="2" fill="#FDE047"/><circle cx="51" cy="15" r="2" fill="#FDE047"/><circle cx="65" cy="15" r="2" fill="#FDE047"/><circle cx="82" cy="20" r="2" fill="#FDE047"/>
+          </g>
+        ) : (
+          <g>
+            <path d="M30 49 Q31 21 58 19 Q85 21 86 49 Z" fill={o.head === 'casque_or' ? '#EAB308' : '#F97316'}/>
+            <path d="M54 20 Q58 18.6 62 20 L62 47 L54 47 Z" fill={o.head === 'casque_or' ? '#FACC15' : '#FB923C'}/>
+            <path d="M36 42 Q37 27 49 23" stroke={o.head === 'casque_or' ? '#FEF9C3' : '#FFD2A8'} strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.7"/>
+            <rect x="22" y="45" width="72" height="8" rx="4" fill={o.head === 'casque_or' ? '#CA8A04' : '#EA580C'}/>
+            {/* Écusson feuille d'érable */}
+            <circle cx="72" cy="36" r="6.4" fill="white"/>
+            <polygon transform="translate(72 36.4) scale(0.95)" fill="#D52B1E"
+              points="0,-5 1.2,-2.6 2.6,-3.2 2.1,-0.6 4.6,-1.4 3.8,0.4 5,1 2.4,2.2 2.8,3.2 0.4,2.6 0.4,5 -0.4,5 -0.4,2.6 -2.8,3.2 -2.4,2.2 -5,1 -3.8,0.4 -4.6,-1.4 -2.1,-0.6 -2.6,-3.2 -1.2,-2.6"/>
+            {o.head === 'casque_or' && <path d="M40 30 l1.2 -3 l1.2 3 l3 1.2 l-3 1.2 l-1.2 3 l-1.2 -3 l-3 -1.2 Z" fill="white" opacity="0.9"/>}
+          </g>
+        )}
+        {o.front === 'lampe' && (
+          <g>
+            <circle cx="58" cy="37" r="11" fill="#FEF08A" opacity="0.35"/>
+            <rect x="51" y="32" width="14" height="10" rx="3" fill="#374151"/>
+            <circle cx="58" cy="37" r="3.6" fill="#FDE047" stroke="#FEF9C3" strokeWidth="1"/>
+          </g>
+        )}
+        {/* Cou : nœud papillon ou écharpe (vestiaire) */}
+        {o.neck === 'noeud' && (
+          <g>
+            <polygon points="58,92 46,85.5 46,98.5" fill="#B91C1C" stroke="#7F1D1D" strokeWidth="0.8" strokeLinejoin="round"/>
+            <polygon points="58,92 70,85.5 70,98.5" fill="#B91C1C" stroke="#7F1D1D" strokeWidth="0.8" strokeLinejoin="round"/>
+            <circle cx="58" cy="92" r="3.2" fill="#7F1D1D"/>
+          </g>
+        )}
+        {o.neck === 'echarpe' && (
+          <g>
+            <path d="M68 90 L72 112 L80 110 L75 89 Z" fill="#DC2626"/>
+            <path d="M72.5 104 L79 102.5 M73.5 108 L79.8 106.5" stroke="white" strokeWidth="1.3"/>
+            <path d="M33 86 Q58 98 83 86 L83 92 Q58 104 33 92 Z" fill="#DC2626"/>
+            <path d="M40 92 Q58 100 76 92" stroke="white" strokeWidth="1.3" fill="none"/>
+          </g>
+        )}
       </g>
     </svg>
   );
@@ -100,6 +199,10 @@ export default function Costar({ projet, fixed = false }) {
   const [engine, setEngine] = useState(null); // { provider, from, why } : moteur qui a VRAIMENT répondu
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
+  // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
+  const cst = useCostarState();
+  const [wardrobe, setWardrobe] = useState(false);
+  const [unlocks, setUnlocks] = useState([]);
   const abortRef = useRef(null);
   const projetRef = useRef(projet);
   projetRef.current = projet;
@@ -123,7 +226,9 @@ export default function Costar({ projet, fixed = false }) {
     requestAnimationFrame(() => setWiggle(true));
     setTimeout(() => setWiggle(false), 900);
     setOpen(true);
+    setWardrobe(false);
     if (status === 'loading') return;
+    setUnlocks([]);
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -158,6 +263,13 @@ export default function Costar({ projet, fixed = false }) {
       setQuip(scoreQuip(parsed.note));
       setEngine(d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null);
       setStatus('done');
+      // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
+      try {
+        const pj = projetRef.current || {};
+        const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null });
+        saveCostarState(r.state);
+        setUnlocks(r.completed);
+      } catch { /* vestiaire indisponible : sans effet sur la relecture */ }
     } catch (e) {
       if (ctrl.signal.aborted) return;
       setError(e.message || 'Erreur de connexion');
@@ -172,6 +284,15 @@ export default function Costar({ projet, fixed = false }) {
     setOpen(false);
     if (status === 'loading') setStatus('idle');
   };
+
+  const toggleWardrobe = () => {
+    if (wardrobe) { setWardrobe(false); return; }
+    if (open) close();
+    setWardrobe(true);
+    if (cst.unseen.length) saveCostarState({ ...cst, unseen: [] }); // pastille « nouveau » vue
+  };
+  const unlocked = new Set(unlockedIds(cst.stats));
+  const doneCount = MISSIONS.filter(m => unlocked.has(m.reward)).length;
 
   const sc = review ? scoreLabel(review.note) : null;
   const loading = status === 'loading';
@@ -216,6 +337,17 @@ export default function Costar({ projet, fixed = false }) {
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: sc.color, background: sc.bg, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap' }}>{sc.label}</span>
               </div>
               {quip && <div style={{ marginTop: 4, fontSize: 11.5, color: DA.gray }}>{quip}</div>}
+              {unlocks.length > 0 && (
+                <button onClick={toggleWardrobe} className="costar-unlock"
+                  style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '8px 10px', background: 'linear-gradient(90deg,#FEF3C7,#FDE68A)', border: '1px solid #FCD34D', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {unlocks.map(m => (
+                    <div key={m.id} style={{ fontSize: 12.5, color: '#78350F', lineHeight: 1.45 }}>
+                      🎉 <strong>Mission « {m.title} » réussie !</strong> Nouveau : {COSMETICS[m.reward].icon} {COSMETICS[m.reward].name} (déjà sur moi)
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: '#92400E', marginTop: 2, textDecoration: 'underline' }}>Voir le vestiaire</div>
+                </button>
+              )}
               {review.verdict && (
                 <p style={{ margin: '8px 0 0', fontSize: 13.5, fontWeight: 600, fontStyle: 'italic', color: DA.black, lineHeight: 1.4 }}>« {review.verdict} »</p>
               )}
@@ -275,15 +407,79 @@ export default function Costar({ projet, fixed = false }) {
         </div>
       )}
 
-      {!open && (
-        <div className="costar-label" style={{ pointerEvents: 'none', marginBottom: 4, marginRight: 4, background: DA.black, color: 'white', fontSize: 12, fontWeight: 800, borderRadius: 20, padding: '5px 12px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', whiteSpace: 'nowrap' }}>
-          Ask Costar
+      {wardrobe && (
+        <div className="costar-bubble" role="dialog" aria-label="Vestiaire de Costar"
+          style={{ pointerEvents: 'auto', position: 'relative', width: 370, marginBottom: 14 }}>
+          <span aria-hidden="true" style={{ position: 'absolute', right: 38, bottom: -8, width: 18, height: 18, background: 'white', borderRight: `1px solid ${DA.border}`, borderBottom: `1px solid ${DA.border}`, transform: 'rotate(45deg)', boxShadow: '4px 4px 10px rgba(0,0,0,0.08)' }}/>
+          <div style={{ position: 'relative', maxHeight: '62vh', overflowY: 'auto', background: 'white', borderRadius: 16, border: `1px solid ${DA.border}`, boxShadow: '0 12px 40px rgba(0,0,0,0.22)', padding: '14px 16px' }}>
+            <button onClick={() => setWardrobe(false)} aria-label="Fermer" title="Fermer"
+              style={{ position: 'absolute', top: 8, right: 8, width: 26, height: 26, borderRadius: '50%', border: 'none', background: '#F3F4F6', color: DA.gray, cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</button>
+            <div style={{ paddingRight: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6 }}>Vestiaire de Costar</div>
+              <div style={{ fontSize: 12, color: DA.gray, marginTop: 2, lineHeight: 1.4 }}>
+                Accomplis des missions pour habiller Costar. Clique sur un objet débloqué pour le porter ou l'enlever.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
+                  <div style={{ width: `${(doneCount / MISSIONS.length) * 100}%`, height: '100%', background: '#F97316', borderRadius: 3, transition: 'width 0.3s' }}/>
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: DA.gray, whiteSpace: 'nowrap' }}>{doneCount}/{MISSIONS.length} missions</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+              {MISSIONS.map(m => {
+                const c = COSMETICS[m.reward];
+                const got = unlocked.has(m.reward);
+                const worn = cst.equipped[c.slot] === m.reward;
+                const [cur, max] = m.progress(cst.stats);
+                return (
+                  <button key={m.id} type="button" disabled={!got}
+                    onClick={() => saveCostarState(toggleEquip(cst, m.reward))}
+                    title={got ? (worn ? 'Enlever' : 'Porter') : 'Mission à accomplir'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 10, fontFamily: 'inherit',
+                      border: `1.5px solid ${worn ? '#F97316' : DA.border}`, background: worn ? '#FFF7ED' : got ? 'white' : '#FAFAFA', cursor: got ? 'pointer' : 'default' }}>
+                    <span style={{ fontSize: 20, width: 26, textAlign: 'center', flexShrink: 0, filter: got ? 'none' : 'grayscale(1)', opacity: got ? 1 : 0.45 }}>{got ? c.icon : '🔒'}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 800, color: got ? DA.black : DA.gray }}>{m.title}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: DA.grayL, lineHeight: 1.35 }}>{m.desc} → <strong style={{ color: got ? '#C2410C' : DA.grayL }}>{c.name}</strong></span>
+                      {!got && max > 1 && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                          <span style={{ flex: 1, height: 4, borderRadius: 2, background: '#EEE', overflow: 'hidden' }}>
+                            <span style={{ display: 'block', width: `${(cur / max) * 100}%`, height: '100%', background: '#FDBA74' }}/>
+                          </span>
+                          <span style={{ fontSize: 10.5, color: DA.grayL, fontWeight: 700 }}>{cur}/{max}</span>
+                        </span>
+                      )}
+                    </span>
+                    {got && <span style={{ fontSize: 10.5, fontWeight: 800, color: worn ? '#C2410C' : DA.grayL, flexShrink: 0 }}>{worn ? 'Porté' : 'Porter'}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, marginRight: 4 }}>
+        {!open && !wardrobe && (
+          <div className="costar-label" style={{ pointerEvents: 'none', background: DA.black, color: 'white', fontSize: 12, fontWeight: 800, borderRadius: 20, padding: '5px 12px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', whiteSpace: 'nowrap' }}>
+            Ask Costar
+          </div>
+        )}
+        <button type="button" onClick={toggleWardrobe} aria-label="Vestiaire de Costar" title="Vestiaire de Costar (missions et cosmétiques)"
+          style={{ pointerEvents: 'auto', position: 'relative', width: 27, height: 27, borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
+            background: wardrobe ? '#F97316' : DA.black, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.2)' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          {cst.unseen.length > 0 && !wardrobe && <span aria-hidden="true" style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: '50%', background: '#DC2626', border: '2px solid white' }}/>}
+        </button>
+      </div>
       <button onClick={open && !loading ? close : ask} title={open ? 'Fermer' : hello}
         aria-label="Ask Costar : avis sur le rapport"
         style={{ pointerEvents: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0, filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.25))' }}>
-        <CostarSvg className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>
+        <CostarSvg outfit={cst.equipped} className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>
       </button>
     </div>
   );
