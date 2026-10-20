@@ -18,6 +18,8 @@ import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { childrenOf, effectiveParentId, zoneLabel } from '../../lib/zoneGroups.js';
+import ObsDatesChip from '../ui/ObsDatesChip.jsx';
+import { obsDatesInfo } from '../../lib/obsDates.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
 // d'annexe à chaque changement d'onglet serait lent. Clé `${chantierId}|${annexId}`.
@@ -778,7 +780,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 } }) {
+function ItemBlock({ item, ppl, onEdit, obsDates = false, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 } }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -905,6 +907,8 @@ function ItemBlock({ item, ppl, onEdit, locId = null, vpPhotoOffset = 0, vxxPhot
                 ↩ {suivi.label}
               </span>
             )}
+            {/* Dates de suivi (option « Dates de suivi » de la visite) — calées à DROITE. */}
+            {obsDates && (() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info} small/></span> : null; })()}
           </div>
         </div>
       )}
@@ -2239,7 +2243,7 @@ function pdfSrcKey(src) {
   return src.split('?')[0];
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, obsDates = false, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -2954,7 +2958,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                   : block.type === 'itemplan'
                   ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath} onFullPage={onFullPage ? () => onFullPage(block.id.replace(/^(.*)_iplan(\d+)$/, 'i:$1:$2')) : null}/>
-                  : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
+                  : <ItemBlock item={block.item} ppl={ppl} obsDates={obsDates} visitDate={projet.dateVisite} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
                 }
               </div>
             ))}
@@ -3018,6 +3022,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                           : block.type === 'itemplan'
                           ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath} onFullPage={onFullPage ? () => onFullPage(block.id.replace(/^(.*)_iplan(\d+)$/, 'i:$1:$2')) : null}/>
                           : <ItemBlock item={block.item} ppl={ppl} mode={block.mode ?? 'full'}
+                              obsDates={obsDates} visitDate={projet.dateVisite}
                               textContent={block.textContent}
                               onEdit={onUpdateItem ? () => setEditingItem({ item: block.item, locId: block.locId }) : null}
                               locId={block.locId}

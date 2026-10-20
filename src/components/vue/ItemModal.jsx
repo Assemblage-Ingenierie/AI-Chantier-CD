@@ -17,6 +17,7 @@ import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
+import { todayIso, durationFr } from '../../lib/obsDates.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -238,7 +239,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, showDates = false }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -1145,6 +1146,34 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               })}
             </div>
           </div>
+          {/* Groupe Dates de suivi — seulement si l'option « Dates de suivi » du rapport est
+              cochée pour cette visite (sinon rien ne change). Ouverture : date de la visite par
+              défaut ; « Levée le » apparaît quand l'observation est Fait. */}
+          {showDates && (() => {
+            const ref = visiteDate || todayIso();
+            const ouv = form.dateOuverture || (!item?.id ? ref : '');
+            const done = form.suivi === 'fait';
+            const clo = form.dateCloture || (done ? ref : '');
+            const run = ouv ? durationFr(ouv, done ? clo : ref) : '';
+            const dateInput = { fontSize:12, fontWeight:600, color:DA.black, border:'none', background:'transparent', fontFamily:'inherit', padding:'2px 0', outline:'none', cursor:'pointer', minWidth:0 };
+            return (
+              <div style={{ display:'flex',alignItems:'center',gap:6,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 9px',flexWrap:'wrap',width:'fit-content',maxWidth:'100%',marginTop:-6,marginBottom:14 }}>
+                <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:2 }}>Dates</span>
+                <span style={{ fontSize:11,color:'#777',whiteSpace:'nowrap' }}>Ouverte le</span>
+                <input type="date" value={ouv} max={done ? (clo || undefined) : undefined}
+                  onChange={e => setForm(f => ({ ...f, dateOuverture: e.target.value || undefined }))} style={dateInput}/>
+                {done ? (
+                  <>
+                    <span style={{ fontSize:11,color:SUIVI.fait.text,fontWeight:700,whiteSpace:'nowrap' }}>→ Levée le</span>
+                    <input type="date" value={clo} min={ouv || undefined}
+                      onChange={e => setForm(f => ({ ...f, dateCloture: e.target.value || undefined }))} style={{ ...dateInput, color:SUIVI.fait.text }}/>
+                  </>
+                ) : (run && run !== 'le jour même') ? (
+                  <span style={{ fontSize:11,color:'#C2410C',fontWeight:700,whiteSpace:'nowrap' }}>· ouverte depuis {run}</span>
+                ) : null}
+              </div>
+            );
+          })()}
 
           {/* Commentaire — pleine largeur */}
           <div style={{ marginBottom:14 }}>

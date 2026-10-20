@@ -85,15 +85,34 @@ export function whenCoverCacheReady() { return _loadPromise; }
 export function peekCover(key) { return key ? (_mem.get(key) || null) : null; }
 export function onCoverCache(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
+// MÉMOIRE (incident 20/10 : page blanche juste après la 1re mise en ligne) : chaque copie demande
+// de décoder l'image. Faites TOUTES EN MÊME TEMPS (une par carte, archives comprises) et sur des
+// couvertures lourdes (PNG iPhone, photos 12 Mpx), ça pouvait représenter des centaines de Mo d'un
+// coup → iOS tue la page. Désormais : UNE copie à la fois, après le démarrage, fichiers > 2 Mo
+// ignorés (la carte s'affiche alors comme avant, par le réseau).
+const MAX_BLOB_BYTES = 2 * 1024 * 1024;
+const _queue = [];
+let _running = false;
+function pump() {
+  if (_running) return;
+  const job = _queue.shift();
+  if (!job) return;
+  _running = true;
+  setTimeout(() => { job().finally(() => { _running = false; pump(); }); }, 250);
+}
+
 // Image chargée avec succès à l'écran → on en garde une petite copie locale (une fois par fichier).
 export function rememberCover(key, url) {
   if (!key || !url || _mem.has(key) || _inflight.has(key) || typeof url !== 'string' || url.startsWith('data:')) return;
   _inflight.add(key);
-  (async () => {
+  _queue.push(async () => {
     try {
       const resp = await fetch(url);
       if (!resp.ok) return;
+      const len = Number(resp.headers.get('content-length')) || 0;
+      if (len > MAX_BLOB_BYTES) return;
       const blob = await resp.blob();
+      if (blob.size > MAX_BLOB_BYTES) return;
       let src = null, w = 0, h = 0, close = () => {};
       if (typeof createImageBitmap === 'function') {
         try { const bm = await createImageBitmap(blob); src = bm; w = bm.width; h = bm.height; close = () => { try { bm.close(); } catch { /* ignore */ } }; } catch { /* repli <img> */ }
@@ -121,7 +140,8 @@ export function rememberCover(key, url) {
       if (db) { try { db.transaction(STORE, 'readwrite').objectStore(STORE).put({ k: key, d, t: Date.now() }); } catch { /* ignoré */ } }
     } catch { /* ignoré : affichage réseau comme avant */ }
     finally { _inflight.delete(key); }
-  })();
+  });
+  pump();
 }
 
 // Copie locale illisible → on l'oublie (la carte repasse sur le réseau, comme avant).

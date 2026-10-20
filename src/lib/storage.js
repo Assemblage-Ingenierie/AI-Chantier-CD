@@ -5,6 +5,7 @@ import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
 import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
 import { getDeletedIds, addTombstone, liftTombstone, TOMBSTONE_KEYS } from './tombstones.js';
+import { itemMetaToRow, itemMetaFromRow } from './obsDates.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -19,6 +20,9 @@ const _mem = {};
 // Null = loadData() pas encore terminé → on ne supprime rien (évite de détruire
 // des projets ajoutés depuis un autre appareil non encore chargés localement).
 let _lastRemoteIds = null;
+// Colonne `meta` des observations (dates de suivi — migration 20261020) absente en base → on ne la
+// redemande plus pendant la session (évite un aller-retour en échec à chaque sauvegarde).
+let _noItemMetaCol = false;
 
 // Maps remplies au chargement (loadRemote) et mises à jour après chaque save réussi.
 // Permettent de distinguer "supprimé par cet utilisateur" (connu au chargement, plus en local)
@@ -275,6 +279,7 @@ function buildLocFromRow(loc, itemsByLoc) {
         commentaire:     item.commentaire ?? '',
         commentaireAlign: item.commentaire_align ?? 'left',
         statut:          item.statut === 'brouillon' ? 'brouillon' : 'rapport',
+        ...itemMetaFromRow(item.meta), // dates de suivi (dateOuverture / dateCloture) si présentes
         planAnnotations,
         plans,
         photos:          [],
@@ -301,7 +306,15 @@ async function loadRemote() {
     // encore appliquée (sinon tout le chargement échouerait). Sans `statut`, les observations
     // sont lues comme 'rapport' (comportement d'avant).
     (async () => {
-      const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|schema cache/i.test(e?.message || '');
+      const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|meta|schema cache/i.test(e?.message || '');
+      // `meta` (dates de suivi) : la plus récente → essayée en premier, repli sans si absente.
+      if (!_noItemMetaCol) {
+        const withMeta = await sb.from('aichantier_localisation_items')
+          .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,meta,plan_annotations,sort_order')
+          .order('sort_order');
+        if (!(withMeta.error && isColErr(withMeta.error))) return withMeta;
+        _noItemMetaCol = true;
+      }
       const withStatut = await sb.from('aichantier_localisation_items')
         .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations,sort_order')
         .order('sort_order');
@@ -1308,6 +1321,7 @@ async function saveRemote(ps, dirtyIds = null) {
       conclusionAlign: v.conclusionAlign ?? 'left',
       planPagesPaysage: v.planPagesPaysage ?? false, // ancienne option « tous les plans en paysage en fin de rapport »
       planPages: v.planPages ?? null, // plans sur page à part, PAR PLAN : { clé: 'landscape' | 'portrait' }
+      obsDates: v.obsDates ?? false, // affichage des dates de suivi des observations (option du rapport)
       annexes: v.annexes ?? [], // métadonnées uniquement (octets PDF dans Storage) — cf. uploadAnnexPdf
     }));
 
@@ -1648,6 +1662,7 @@ async function saveRemote(ps, dirtyIds = null) {
           urgence: item.urgence ?? 'basse', commentaire: item.commentaire ?? '',
           commentaire_align: item.commentaireAlign ?? 'left',
           statut: item.statut === 'brouillon' ? 'brouillon' : 'rapport',
+          ...(_noItemMetaCol ? {} : { meta: itemMetaToRow(item) }), // dates de suivi
           plan_annotations: (() => {
             const ann = item.planAnnotations ? { ...slimAnnot(item.planAnnotations) } : {};
             // Plans bibliothèque de l'item encodés dans _plans (même colonne, pas de colonne dédiée)
@@ -1694,10 +1709,16 @@ async function saveRemote(ps, dirtyIds = null) {
     // statut / commentaire_align : si une colonne n'existe pas encore (migration non appliquée),
     // on rejoue l'upsert SANS `statut`, puis sans `commentaire_align` → la sauvegarde n'échoue
     // jamais (zéro perte de données).
-    const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|schema cache/i.test(e?.message || '');
+    const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|meta|schema cache/i.test(e?.message || '');
     if (upsertItemsRes?.error && isAlignColErr(upsertItemsRes.error) && allItems.length > 0) {
-      let stripped = allItems.map(({ statut, ...row }) => row); // eslint-disable-line no-unused-vars
+      // 1er repli : sans `meta` (dates de suivi, migration 20261020 pas encore appliquée).
+      let stripped = allItems.map(({ meta, ...row }) => row); // eslint-disable-line no-unused-vars
       let retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      if (!retry.error) _noItemMetaCol = true;
+      if (retry.error && isAlignColErr(retry.error)) {
+        stripped = stripped.map(({ statut, ...row }) => row); // eslint-disable-line no-unused-vars
+        retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
+      }
       if (retry.error && isAlignColErr(retry.error)) {
         stripped = stripped.map(({ commentaire_align, ...row }) => row); // eslint-disable-line no-unused-vars
         retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });

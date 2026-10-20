@@ -22,6 +22,7 @@ import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
+import { applyObsDates } from '../../lib/obsDates.js';
 import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 
@@ -162,7 +163,7 @@ function PlanAnnotThumb({ bg, annotations, style, vpNumByPath = null, vpBase = 0
 const VISIT_FIELDS = new Set([
   'localisations','dateVisite','participants','tableauRecap',
   'photosParLigne','plansEnFin','plansNoBreak','rapportPageBreaks','includeTableauRecap',
-  'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes','planPagesPaysage','planPages',
+  'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes','planPagesPaysage','planPages','obsDates',
 ]);
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
@@ -537,12 +538,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     });
   };
 
+  // Dates de suivi (lib/obsDates.js) : ouverture posée à la création, levée posée quand
+  // l'observation passe « Fait » (retirée si elle en sort). Jamais d'écrasement d'une date saisie.
+  const withObsDates = (locId, item) => {
+    const prev = item?.id ? (visitProjet.localisations.find(l => l.id === locId)?.items || []).find(i => i.id === item.id) : null;
+    return applyObsDates(prev || null, item, visitProjet.dateVisite);
+  };
+
   const saveItem = (locId, form) => {
     // Le drapeau _quickSuivi ne doit pas rester sur l'item stocké : sinon le prochain clic sur la
     // ligne repasserait par ce chemin au lieu d'ouvrir l'éditeur.
     // eslint-disable-next-line no-unused-vars
-    if (form._quickSuivi) { const { _quickSuivi, ...rest } = form; patchItem(locId, rest); return; }
-    patchItem(locId, { ...form, id: form.id || crypto.randomUUID() });
+    if (form._quickSuivi) { const { _quickSuivi, ...rest } = form; patchItem(locId, withObsDates(locId, rest)); return; }
+    patchItem(locId, withObsDates(locId, { ...form, id: form.id || crypto.randomUUID() }));
   };
 
   const [undoToast, setUndoToast] = useState(null);
@@ -968,6 +976,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             <SortList
                               items={items}
                               locId={loc.id}
+                              obsDates={!!visitProjet.obsDates}
+                              visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
@@ -1238,7 +1248,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               if (_moveTo) {
                 // Déplacement vers une autre zone (ou nouvelle zone) : l'observation garde son id →
                 // la sauvegarde la ré-enregistre sous sa nouvelle zone (garde anti-perte saveRemote).
-                const next = moveItemToZone(visitProjet.localisations, modal.locId, saved, _moveTo);
+                const next = moveItemToZone(visitProjet.localisations, modal.locId, withObsDates(modal.locId, saved), _moveTo);
                 if (next !== visitProjet.localisations) {
                   onUpdateVisit({ localisations: next });
                   const dest = typeof _moveTo === 'string' ? _moveTo : next.find(l => !visitProjet.localisations.some(o => o.id === l.id))?.id;
@@ -1256,6 +1266,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
             visiteDate={visitProjet.dateVisite || null}
             ingenieur={visitProjet.ingenieur || ''}
+            showDates={!!visitProjet.obsDates}
           />
         );
       })()}

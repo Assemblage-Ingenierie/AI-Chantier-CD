@@ -573,6 +573,24 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
             )}
           </div>
 
+          {/* Dates de suivi des observations (demande Thibaud) — optionnel, par visite */}
+          <div>
+            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+              <input
+                type="checkbox"
+                checked={projet.obsDates ?? false}
+                onChange={e => onUpdate({ obsDates: e.target.checked })}
+                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
+              />
+              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Dates de suivi des observations</span>
+            </label>
+            {(projet.obsDates ?? false) && (
+              <p style={{ fontSize:10, color:DA.grayL, margin:'3px 0 0 22px', fontStyle:'italic' }}>
+                Date d'ouverture et de levée à droite de chaque observation — modifiables dans sa fiche.
+              </p>
+            )}
+          </div>
+
           {/* Conclusion */}
           <div>
             <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
@@ -646,6 +664,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
         conclusionAlign={projet.conclusionAlign ?? 'left'}
         planPagesPaysage={projet.planPagesPaysage ?? false}
         planPages={projet.planPages ?? null}
+        obsDates={!!projet.obsDates}
         onSetPlanPages={(m) => onUpdate({ planPages: m })}
         annexes={annexes}
         onUpdateItem={onUpdateItem}
