@@ -19,6 +19,32 @@ function useCostarState() {
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
+// Botte de cowboy (pied gauche de Costar, bout vers la gauche) — la droite = la même en miroir.
+// Tige cintrée en cuir fauve avec surpiqûres en ailes, pied brun foncé à bout pointu relevé,
+// talon biseauté et petit éperon argenté.
+function Santiag() {
+  return (
+    <g strokeLinejoin="round" strokeLinecap="round">
+      {/* Tige */}
+      <path d="M37.2 103.5 Q40.6 106.6 44 104.4 Q47.4 106.6 50.8 103.5 L50.4 113 Q50 118 50.6 121.5 L38.4 121.5 Q38.9 117 38 112 Z" fill="#B87333" stroke="#5C3313" strokeWidth="0.9"/>
+      <path d="M38.2 104.6 Q40.6 106.9 44 105.4 Q47.4 106.9 49.8 104.6" stroke="#E9C08A" strokeWidth="0.7" fill="none"/>
+      <path d="M44 107.5 Q40.5 110.5 41 114.5 Q43 112.5 44 115.5 Q45 112.5 47 114.5 Q47.5 110.5 44 107.5 Z" fill="none" stroke="#F6D7A7" strokeWidth="0.75"/>
+      <path d="M44 116.4 L44 119.6" stroke="#F6D7A7" strokeWidth="0.75"/>
+      {/* Pied */}
+      <path d="M38.6 120.6 L50.7 120.6 Q51.6 123.4 51 126.6 L28.2 126.6 Q25.6 126.4 25.4 124.6 Q25.6 123 28.4 122.6 Q34.6 122.2 38.6 120.6 Z" fill="#6B3A17" stroke="#3A1E09" strokeWidth="0.9"/>
+      <path d="M30 123.6 Q35.4 123.4 39.6 121.8" stroke="#D9A066" strokeWidth="0.7" fill="none"/>
+      <ellipse cx="31" cy="123.8" rx="2.6" ry="0.9" fill="white" opacity="0.28"/>
+      {/* Semelle + talon biseauté */}
+      <path d="M25.8 126.6 L45.6 126.6 L45.6 127.7 L27.2 127.7 Q25.9 127.4 25.8 126.6 Z" fill="#2A160A"/>
+      <path d="M45.4 126.4 L51.2 126.4 L50.2 129.6 L46.8 129.6 Z" fill="#2A160A"/>
+      {/* Éperon */}
+      <path d="M51.2 125.4 L54.2 125.4" stroke="#9CA3AF" strokeWidth="0.9"/>
+      <polygon transform="translate(55.3 125.4) scale(0.32)" fill="#D1D5DB" stroke="#6B7280" strokeWidth="1.2"
+        points="0,-5 1.5,-1.6 5,-1.5 2.3,0.8 3.1,4.5 0,2.4 -3.1,4.5 -2.3,0.8 -5,-1.5 -1.5,-1.6"/>
+    </g>
+  );
+}
+
 // outfit = { head, eyes, face, mouth, neck, body, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
@@ -49,15 +75,13 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           stroke="#B8956A" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
       )}
       {o.body === 'pull' && <path d="M56.5 111 Q58 113.5 59.5 111" stroke="#8A5A2E" strokeWidth="1.2" fill="none" strokeLinecap="round"/>}
-      {/* Pattes */}
-      <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>
-      <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>
+      {/* Pattes (les santiags les remplacent) */}
+      {o.feet !== 'santiags' && <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>}
+      {o.feet !== 'santiags' && <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>}
       {o.feet === 'santiags' && (
         <g>
-          <path d="M38 109 L50 109 L50.5 121 L52 121 L52 127.5 L31 127.5 Q27 127 30 123.5 Q34 121 38.5 120.5 Z" fill="#7C4A21" stroke="#4A2A10" strokeWidth="0.9" strokeLinejoin="round"/>
-          <path d="M78 109 L66 109 L65.5 121 L64 121 L64 127.5 L85 127.5 Q89 127 86 123.5 Q82 121 77.5 120.5 Z" fill="#7C4A21" stroke="#4A2A10" strokeWidth="0.9" strokeLinejoin="round"/>
-          <path d="M40 112 Q44 115 48 112 M40 116 Q44 119 48 116 M68 112 Q72 115 76 112 M68 116 Q72 119 76 116" stroke="#E0B07A" strokeWidth="0.8" fill="none"/>
-          <path d="M50.5 127.5 L52 127.5 L52 124 L50.5 124 Z M64 127.5 L65.5 127.5 L65.5 124 L64 124 Z" fill="#3B2412"/>
+          <Santiag/>
+          <g transform="translate(116 0) scale(-1 1)"><Santiag/></g>
         </g>
       )}
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
@@ -254,6 +278,12 @@ function Section({ title, color, items }) {
   );
 }
 
+// Repères pour centrer « Ask Costar » sur le castor : largeur du dessin (100 px) et axe du corps
+// (x = 58 sur 120 dans le viewBox), demi-largeur de l'étiquette « Ask Costar ».
+const COSTAR_W = 100;
+const COSTAR_CX = Math.round(COSTAR_W * 58 / 120);
+const LABEL_HALF = 49;
+
 // fixed = position fixe dans la fenêtre (onglet Visite, qui défile) ; sinon ancré au conteneur
 // (onglet Rapport). Costar est réservé au PC : masqué sous 900 px de large.
 export default function Costar({ projet, fixed = false }) {
@@ -373,7 +403,7 @@ export default function Costar({ projet, fixed = false }) {
   if (!isPc) return null;
 
   return (
-    <div style={{ position: fixed ? 'fixed' : 'absolute', right: 26, bottom: fixed ? 18 : 14, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
+    <div style={{ position: fixed ? 'fixed' : 'absolute', right: 34, bottom: fixed ? 18 : 14, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
       {open && (
         <div className="costar-bubble" role="dialog" aria-label="Avis de Costar"
           style={{ pointerEvents: 'auto', position: 'relative', width: 370, marginBottom: 14 }}>
@@ -564,14 +594,18 @@ export default function Costar({ projet, fixed = false }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, marginRight: 4 }}>
+      {/* « Ask Costar » CENTRÉ au-dessus du castor (demande Thomas), engrenage à sa droite. */}
+      <div style={{ position: 'relative', width: COSTAR_W, height: 27, marginBottom: 4, alignSelf: 'flex-end' }}>
         {!open && !wardrobe && (
-          <div className="costar-label" style={{ pointerEvents: 'none', background: DA.black, color: 'white', fontSize: 12, fontWeight: 800, borderRadius: 20, padding: '5px 12px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', whiteSpace: 'nowrap' }}>
-            Ask Costar
+          // Centrage sur un conteneur à part : l'animation de flottement (.costar-label) utilise déjà transform.
+          <div style={{ position: 'absolute', left: COSTAR_CX, top: 1, transform: 'translateX(-50%)', pointerEvents: 'none' }}>
+            <div className="costar-label" style={{ background: DA.black, color: 'white', fontSize: 12, fontWeight: 800, borderRadius: 20, padding: '5px 12px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', whiteSpace: 'nowrap' }}>
+              Ask Costar
+            </div>
           </div>
         )}
         <button type="button" onClick={toggleWardrobe} aria-label="Vestiaire de Costar" title="Vestiaire de Costar (missions et cosmétiques)"
-          style={{ pointerEvents: 'auto', position: 'relative', width: 27, height: 27, borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
+          style={{ pointerEvents: 'auto', position: 'absolute', left: COSTAR_CX + LABEL_HALF + 6, top: 0, width: 27, height: 27, borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
             background: wardrobe ? '#F97316' : DA.black, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.2)' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3"/>
