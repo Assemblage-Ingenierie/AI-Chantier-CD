@@ -7,7 +7,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
-import { buildDiffSegments, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
+import { buildDiffSegments, diffChunks, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
 import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
@@ -17,6 +17,7 @@ import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
+import { todayIso, durationFr } from '../../lib/obsDates.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -238,7 +239,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, showDates = false }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -535,7 +536,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       const SPELL_SYSTEM = 'Tu es un correcteur orthographique et grammatical français, relecteur de rapports d\'ingénieur structure. Relis TOUT le texte, du premier au dernier mot, et corrige TOUTES les fautes : orthographe, grammaire, accords (genre, nombre, participes), conjugaison, ponctuation évidente, doubles espaces. Corrige aussi les fautes de frappe évidentes : lettres manquantes, en trop ou inversées (ex. « ddu » → « du », « tirantss » → « tirants », « de u mur » → « d\'un mur ») et ajoute un petit mot manquant quand la phrase est clairement incorrecte sans lui (ex. « la présence plusieurs fissures » → « la présence de plusieurs fissures »). En revanche : ne reformule pas, ne résume pas, ne coupe rien, ne change ni le sens, ni l\'ordre des idées, ni le vocabulaire technique, ni les retours à la ligne, ni les puces, ni le style des apostrophes et guillemets. N\'introduis JAMAIS de tiret cadratin ni demi-cadratin (les caractères « — » et « – »). Réponds UNIQUEMENT avec le texte intégral corrigé, sans guillemets ni explication.';
       const correctChunk = async (chunk, k) => {
         if (!chunk.trim()) return chunk;
-        const once = async (retry) => {
+        const once = async () => {
           const d = await callAIProxy({
             // 1 « feature » par morceau : l'anti-rafale client (15 s par feature) ne bloque pas les morceaux.
             feature: k === 0 ? 'spell-correction' : `spell-correction-${k}`,
@@ -546,7 +547,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             max_tokens: 4096,
             system: SPELL_SYSTEM,
             messages: [{ role: 'user', content: chunk }],
-            ...(retry ? { _waitOk: true } : {}), // nouvel essai : attend l'anti-rafale au lieu d'échouer
+            // Action à la demande : anti-rafale court, et on ATTEND au lieu d'échouer « Attends 12s »
+            // (retour Thomas 20/10 : « des fois l'IA de correction plante »).
+            _throttleMs: 2000, _waitOk: true,
           });
           // Réponse COUPÉE par la limite de longueur → on refuse : sinon la fin manquante apparaîtrait
           // comme « à supprimer » dans le diff et pourrait effacer la fin du commentaire.
@@ -559,12 +562,21 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           // porter QUE sur les vraies corrections, et les segments doivent recomposer le texte exact.
           return chunk.match(/^\s*/)[0] + raw + chunk.match(/\s*$/)[0];
         };
-        try { return await once(false); }
-        catch (e) { if (/Attends/.test(e.message || '')) throw e; return await once(true); } // 1 nouvel essai par morceau
+        // Erreurs passagères (surcharge Gemini, réseau mobile, réponse vide/coupée) : jusqu'à 3 essais
+        // par morceau, avec une courte pause, tant qu'il reste du temps (pas d'attente sans fin).
+        const t0 = Date.now();
+        for (let attempt = 1; ; attempt++) {
+          try { return await once(); }
+          catch (e) {
+            if (attempt >= 3 || Date.now() - t0 > 45000 || /\((401|403)\)|Clé API/.test(e.message || '')) throw e;
+            await new Promise(r => setTimeout(r, attempt * 1500));
+          }
+        }
       };
       const chunks = chunkForCorrection(plain);
-      const corrected = (await mapLimit(chunks, 3, correctChunk)).join('');
-      const segments = buildDiffSegments(plain, corrected);
+      const correctedChunks = await mapLimit(chunks, 3, correctChunk);
+      // Diff MORCEAU PAR MORCEAU : un diff unique sur un long texte saturait la mémoire (plantage).
+      const segments = diffChunks(chunks, correctedChunks);
       // Filet : un diff qui se TERMINE par la suppression d'un long passage = réponse tronquée.
       const lastFix = [...segments].reverse().find(s => s.type === 'fix' || (s.type === 'eq' && s.text.trim()));
       if (lastFix?.type === 'fix' && !lastFix.add.trim() && lastFix.del.trim().length > 30)
@@ -574,7 +586,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       } else {
         setSpellDiff({ original: plain, segments });
       }
-    } catch (e) { setSpellError(e.message || 'Erreur IA'); }
+    } catch (e) {
+      setSpellError(e.message || 'Erreur IA');
+      logEvent('spell.fail', { msg: String(e.message || e).slice(0, 200), len: (form.commentaire || '').length });
+    }
     setCorrecting(false);
   };
 
@@ -1131,6 +1146,34 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               })}
             </div>
           </div>
+          {/* Groupe Dates de suivi — seulement si l'option « Dates de suivi » du rapport est
+              cochée pour cette visite (sinon rien ne change). Ouverture : date de la visite par
+              défaut ; « Levée le » apparaît quand l'observation est Fait. */}
+          {showDates && (() => {
+            const ref = visiteDate || todayIso();
+            const ouv = form.dateOuverture || (!item?.id ? ref : '');
+            const done = form.suivi === 'fait';
+            const clo = form.dateCloture || (done ? ref : '');
+            const run = ouv ? durationFr(ouv, done ? clo : ref) : '';
+            const dateInput = { fontSize:12, fontWeight:600, color:DA.black, border:'none', background:'transparent', fontFamily:'inherit', padding:'2px 0', outline:'none', cursor:'pointer', minWidth:0 };
+            return (
+              <div style={{ display:'flex',alignItems:'center',gap:6,background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:10,padding:'5px 9px',flexWrap:'wrap',width:'fit-content',maxWidth:'100%',marginTop:-6,marginBottom:14 }}>
+                <span style={{ fontSize:10,fontWeight:800,color:DA.gray,textTransform:'uppercase',letterSpacing:0.8,paddingRight:6,paddingLeft:2,whiteSpace:'nowrap',borderRight:`1px solid ${DA.border}`,marginRight:2 }}>Dates</span>
+                <span style={{ fontSize:11,color:'#777',whiteSpace:'nowrap' }}>Ouverte le</span>
+                <input type="date" value={ouv} max={done ? (clo || undefined) : undefined}
+                  onChange={e => setForm(f => ({ ...f, dateOuverture: e.target.value || undefined }))} style={dateInput}/>
+                {done ? (
+                  <>
+                    <span style={{ fontSize:11,color:SUIVI.fait.text,fontWeight:700,whiteSpace:'nowrap' }}>→ Levée le</span>
+                    <input type="date" value={clo} min={ouv || undefined}
+                      onChange={e => setForm(f => ({ ...f, dateCloture: e.target.value || undefined }))} style={{ ...dateInput, color:SUIVI.fait.text }}/>
+                  </>
+                ) : (run && run !== 'le jour même') ? (
+                  <span style={{ fontSize:11,color:'#C2410C',fontWeight:700,whiteSpace:'nowrap' }}>· ouverte depuis {run}</span>
+                ) : null}
+              </div>
+            );
+          })()}
 
           {/* Commentaire — pleine largeur */}
           <div style={{ marginBottom:14 }}>

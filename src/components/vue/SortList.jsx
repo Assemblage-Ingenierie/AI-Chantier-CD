@@ -5,6 +5,8 @@ import { renderMarkup } from '../../lib/markup.jsx';
 import { drawAnnotationPaths } from './Annotator.jsx';
 import { resolveCommentHtml } from '../../lib/storage.js';
 import ThumbImg, { useThumb } from '../ui/ThumbImg.jsx';
+import ObsDatesChip from '../ui/ObsDatesChip.jsx';
+import { obsDatesInfo } from '../../lib/obsDates.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -150,7 +152,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
+export default function SortList({ items, locId = null, compactEmpty = false, obsDates = false, visitDate = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -452,6 +454,8 @@ export default function SortList({ items, locId = null, compactEmpty = false, on
                         }}/>
                         <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
                       </span>
+                      {/* Dates de suivi (option « Dates de suivi » du rapport) — calées à droite. */}
+                      {obsDates && (() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info}/></span> : null; })()}
                     </div>
                   </div>
 

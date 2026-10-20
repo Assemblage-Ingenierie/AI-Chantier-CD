@@ -21,6 +21,7 @@ export function buildVisitProjet(projet, visite) {
     annexes:             visite?.annexes              ?? [],
     planPagesPaysage:    visite?.planPagesPaysage     ?? false,
     planPages:           visite?.planPages            ?? null,
+    obsDates:            visite?.obsDates             ?? false,
     visiteNom:           visite?.label                 ?? '',
     ingenieur:           visite?.ingenieur             ?? '',
   };

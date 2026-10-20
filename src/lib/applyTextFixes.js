@@ -26,22 +26,55 @@ const typo = (s) => s
 // Diff mot à mot (LCS) entre le texte original et le texte corrigé par l'IA → segments neutres
 // ('eq') ou corrections activables ('fix'). Les segments 'eq' gardent le texte ORIGINAL (le
 // diff recompose exactement l'original, et sa typographie n'est jamais modifiée).
+//
+// PERF (retour Thomas 20/10 : « des fois l'IA de correction plante ») : la table LCS complète
+// (mots × mots) sur un LONG texte pesait des centaines de Mo → onglet tué sur téléphone. Désormais :
+// fin identique retirée d'abord, table compacte (Uint16Array), et l'appelant diffe morceau
+// par morceau (diffChunks). Au-delà d'un plafond, repli sûr : une seule correction globale.
+const LCS_MAX_CELLS = 4e6;
 export function buildDiffSegments(orig, corr) {
   const wa = orig.split(/(\s+)/);
   const wb = corr.split(/(\s+)/);
   const na = wa.map(typo), nb = wb.map(typo);
-  const n = wa.length, m = wb.length;
-  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-  for (let i = 1; i <= n; i++)
-    for (let j = 1; j <= m; j++)
-      dp[i][j] = na[i-1] === nb[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+  // Suffixe commun hors table (même résultat que la table complète : la remontée part de la fin
+  // et y apparie déjà les mots identiques).
+  let suf = 0;
+  while (suf < na.length && suf < nb.length && na[na.length - 1 - suf] === nb[nb.length - 1 - suf]) suf++;
+  // Préfixe commun : SEULEMENT si la table serait trop grosse (il peut changer le côté où
+  // s'accroche l'espace d'une correction — résultat appliqué identique — donc pas pour les
+  // textes courts, qui gardent exactement le comportement d'avant).
+  let pre = 0;
+  if ((na.length - suf + 1) * (nb.length - suf + 1) > LCS_MAX_CELLS)
+    while (pre < na.length - suf && pre < nb.length - suf && na[pre] === nb[pre]) pre++;
   const tokens = [];
-  let i = n, j = m;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && na[i-1] === nb[j-1]) { tokens.unshift({ t:'eq', v:wa[i-1] }); i--; j--; }
-    else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { tokens.unshift({ t:'add', v:wb[j-1] }); j--; }
-    else { tokens.unshift({ t:'del', v:wa[i-1] }); i--; }
+  for (let k = 0; k < pre; k++) tokens.push({ t:'eq', v:wa[k] });
+  const n = na.length - pre - suf, m = nb.length - pre - suf;
+  if (n > 0 || m > 0) {
+    if ((n + 1) * (m + 1) > LCS_MAX_CELLS || n >= 65535 || m >= 65535) {
+      // Encore trop gros : même nombre de lignes → comparaison LIGNE PAR LIGNE ; sinon une seule
+      // correction globale (toujours exacte et réversible).
+      const lines = (t) => t.match(/[^\n]*\n|[^\n]+$/g) || []; // (pas de lookbehind : Safari < 16.4)
+      const la = lines(orig), lb = lines(corr);
+      if (la.length === lb.length && la.length > 1) return diffChunks(la, lb);
+      for (let k = 0; k < n; k++) tokens.push({ t:'del', v:wa[pre + k] });
+      for (let k = 0; k < m; k++) tokens.push({ t:'add', v:wb[pre + k] });
+    } else {
+      const W = m + 1;
+      const dp = new Uint16Array((n + 1) * W);
+      for (let i = 1; i <= n; i++)
+        for (let j = 1; j <= m; j++)
+          dp[i * W + j] = na[pre + i - 1] === nb[pre + j - 1] ? dp[(i - 1) * W + j - 1] + 1 : Math.max(dp[(i - 1) * W + j], dp[i * W + j - 1]);
+      const mid = [];
+      let i = n, j = m;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && na[pre + i - 1] === nb[pre + j - 1]) { mid.push({ t:'eq', v:wa[pre + i - 1] }); i--; j--; }
+        else if (j > 0 && (i === 0 || dp[i * W + j - 1] >= dp[(i - 1) * W + j])) { mid.push({ t:'add', v:wb[pre + j - 1] }); j--; }
+        else { mid.push({ t:'del', v:wa[pre + i - 1] }); i--; }
+      }
+      for (let k = mid.length - 1; k >= 0; k--) tokens.push(mid[k]);
+    }
   }
+  for (let k = wa.length - suf; k < wa.length; k++) tokens.push({ t:'eq', v:wa[k] });
   // Grouper en segments : texte neutre ou correction toggleable
   const segs = [];
   let ci = 0, k = 0;
@@ -58,6 +91,23 @@ export function buildDiffSegments(orig, corr) {
     }
   }
   return segs;
+}
+
+// Diff MORCEAU PAR MORCEAU (textes longs corrigés en plusieurs appels) : chaque paire
+// (morceau d'origine, morceau corrigé) est comparée séparément, puis les segments sont recollés
+// (identifiants renumérotés, textes neutres voisins fusionnés). Recompose exactement l'original.
+export function diffChunks(origChunks, corrChunks) {
+  const out = [];
+  let id = 0;
+  origChunks.forEach((o, k) => {
+    for (const s of buildDiffSegments(o, corrChunks[k] ?? o)) {
+      if (s.type === 'eq') {
+        const last = out[out.length - 1];
+        if (last?.type === 'eq') last.text += s.text; else out.push({ ...s });
+      } else out.push({ ...s, id: id++ });
+    }
+  });
+  return out;
 }
 
 /**
