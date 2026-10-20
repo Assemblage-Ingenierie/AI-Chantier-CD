@@ -70,7 +70,7 @@ export function emptyStats() {
   return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false };
 }
 export function emptyState() {
-  return { stats: emptyStats(), equipped: {}, unseen: [] };
+  return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
 }
 
 // Lecture tolérante : champ manquant / corrompu → valeur par défaut.
@@ -92,6 +92,10 @@ export function normalizeState(raw) {
     for (const id of Object.values(raw.equipped)) if (COSMETICS[id]) st.equipped[COSMETICS[id].slot] = id;
   }
   st.unseen = Array.isArray(raw.unseen) ? raw.unseen.filter(id => COSMETICS[id]) : [];
+  // Tenue d'ESSAI du game mode (à part : la vraie tenue et la progression n'y sont jamais mêlées).
+  if (raw.sandbox && typeof raw.sandbox === 'object') {
+    for (const id of Object.values(raw.sandbox)) if (COSMETICS[id]) st.sandbox[COSMETICS[id].slot] = id;
+  }
   return st;
 }
 
@@ -133,14 +137,21 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   const equipped = { ...prev.equipped };
   completed.forEach(m => { equipped[COSMETICS[m.reward].slot] = m.reward; });
   const unseen = [...new Set([...prev.unseen, ...completed.map(m => m.reward)])];
-  return { state: { stats: s, equipped, unseen }, completed };
+  return { state: { stats: s, equipped, unseen, sandbox: prev.sandbox }, completed };
 }
 
 // Porter / enlever un cosmétique débloqué (un seul par emplacement).
-export function toggleEquip(state, id) {
+// sandbox = game mode : TOUS les objets, dans la tenue d'essai (la vraie tenue n'est pas touchée).
+export function toggleEquip(state, id, { sandbox = false } = {}) {
   const st = normalizeState(state);
   const c = COSMETICS[id];
-  if (!c || !unlockedIds(st.stats).includes(id)) return st;
+  if (!c) return st;
+  if (sandbox) {
+    const box = { ...st.sandbox };
+    if (box[c.slot] === id) delete box[c.slot]; else box[c.slot] = id;
+    return { ...st, sandbox: box };
+  }
+  if (!unlockedIds(st.stats).includes(id)) return st;
   const equipped = { ...st.equipped };
   if (equipped[c.slot] === id) delete equipped[c.slot]; else equipped[c.slot] = id;
   return { ...st, equipped };
@@ -161,5 +172,15 @@ export function saveCostarState(state) {
   try { window.dispatchEvent(new CustomEvent(CHANGE_EVENT)); } catch { /* hors navigateur */ }
   return _mem;
 }
+// GAME MODE (admin, pour tester tous les objets) : simple drapeau local, séparé de la progression.
+export const GAME_MODE_KEY = 'chantierai_costar_game_v1';
+export function isGameMode() {
+  try { return localStorage.getItem(GAME_MODE_KEY) === '1'; } catch { return false; }
+}
+export function setGameMode(on) {
+  try { if (on) localStorage.setItem(GAME_MODE_KEY, '1'); else localStorage.removeItem(GAME_MODE_KEY); } catch { /* mode privé */ }
+  try { window.dispatchEvent(new CustomEvent(CHANGE_EVENT)); } catch { /* hors navigateur */ }
+}
+
 // Tests uniquement.
 export function _resetCostarMem() { _mem = null; }

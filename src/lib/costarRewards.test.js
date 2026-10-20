@@ -100,6 +100,19 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(st.equipped.eyes).toBe('lunettes');
   });
 
+  it('game mode : tenue d\'essai avec TOUS les objets, sans toucher la vraie tenue ni la progression', () => {
+    let st = applyReview(emptyState(), { note: 6, observations: 3 }, day).state; // lunettes (vraies)
+    const before = JSON.stringify({ stats: st.stats, equipped: st.equipped });
+    st = toggleEquip(st, 'couronne', { sandbox: true });
+    st = toggleEquip(st, 'santiags', { sandbox: true });
+    st = toggleEquip(st, 'tuque', { sandbox: true }); // remplace la couronne (même catégorie)
+    expect(st.sandbox).toEqual({ head: 'tuque', feet: 'santiags' });
+    expect(JSON.stringify({ stats: st.stats, equipped: st.equipped })).toBe(before);
+    st = applyReview(st, { note: 7, observations: 3 }, day).state; // une vraie relecture garde la tenue d'essai
+    expect(st.sandbox).toEqual({ head: 'tuque', feet: 'santiags' });
+    expect(st.equipped.neck).toBe('noeud');
+  });
+
   it('état corrompu → progression vierge, sans plantage', () => {
     expect(normalizeState('n\'importe quoi')).toEqual(emptyState());
     expect(normalizeState({ equipped: { front: 'lampe', extra: 'pansement' } }).equipped).toEqual({ extra: 'lampe', face: 'pansement' }); // anciennes catégories
