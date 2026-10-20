@@ -13,7 +13,7 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
   });
 
   it('première relecture → lunettes de soleil, portées tout de suite', () => {
-    const { state, completed } = applyReview(emptyState(), { note: 6, observations: 3, projectId: 'p1' }, day);
+    const { state, completed } = applyReview(emptyState(), { note: 6, observations: 5, projectId: 'p1' }, day);
     expect(completed.map(m => m.id)).toEqual(['premiere']);
     expect(state.equipped.eyes).toBe('lunettes');
     expect(state.unseen).toEqual(['lunettes']);
@@ -128,6 +128,17 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(canUseGameMode('margot@assemblage.net')).toBe(false);
     expect(canUseGameMode('')).toBe(false);
     expect(canUseGameMode(null)).toBe(false);
+  });
+
+  it('slip (rapport ≤ 3 obs), sécurité (≥ 10 obs), uppercut (+3), ceinture noire (10/10 sur ≥ 10 obs)', () => {
+    let r = applyReview(emptyState(), { note: 6, observations: 2, projectId: 'a' }, day);
+    expect(r.completed.map(m => m.reward)).toContain('slip');
+    r = applyReview(r.state, { note: 9, observations: 12, projectId: 'a' }, day); // +3 sur le même rapport
+    expect(r.completed.map(m => m.reward)).toEqual(expect.arrayContaining(['securite', 'gants']));
+    expect(unlockedIds(r.state.stats)).not.toContain('karate');
+    r = applyReview(r.state, { note: 10, observations: 12, projectId: 'b' }, day);
+    expect(r.completed.map(m => m.reward)).toContain('karate');
+    expect(r.state.equipped).toMatchObject({ waist: 'karate', hand: 'gants', feet: 'securite' }); // tenue : le gilet (remontada) a remplacé le slip
   });
 
   it('état corrompu → progression vierge, sans plantage', () => {
