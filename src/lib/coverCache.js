@@ -63,23 +63,7 @@ const _loadPromise = (async () => {
   _listeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
 })();
 
-// Clé = chemin Storage, que la couverture soit une URL signée/publique OU un simple chemin (cas
-// des affaires créées sur un autre appareil : le cache local ne garde que le chemin, l'URL signée
-// n'arrive qu'après le serveur → c'étaient « les deux dernières affaires » qui chargeaient après).
-const OBJ_RE = /\/storage\/v1\/object\/(?:sign|public)\/photos\/([^?]+)/;
-export function coverCacheKey(photo) {
-  if (typeof photo !== 'string' || !photo) return null;
-  const signed = photoPathFromUrl(photo);
-  if (signed) return signed;
-  const m = photo.match(OBJ_RE);
-  if (m) { try { return decodeURIComponent(m[1]); } catch { return null; } }
-  if (isStoragePath(photo)) return photo.replace(/^\/+/, '').split('?')[0];
-  return null;
-}
-// Simple chemin du bucket (ni URL, ni data:/blob:) : pas affichable tel quel par le navigateur.
-export function isStoragePath(photo) {
-  return typeof photo === 'string' && !!photo && !/^(data:|blob:|https?:|\/\/)/i.test(photo);
-}
+export function coverCacheKey(photo) { return photoPathFromUrl(photo); }
 export function coverCacheReady() { return _loaded; }
 export function whenCoverCacheReady() { return _loadPromise; }
 export function peekCover(key) { return key ? (_mem.get(key) || null) : null; }

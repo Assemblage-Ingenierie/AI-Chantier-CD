@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import SyncBadge, { projectSyncState } from '../ui/SyncBadge.jsx';
 import { useThumb } from '../ui/ThumbImg.jsx';
-import { coverCacheKey, isStoragePath, peekCover, coverCacheReady, onCoverCache, rememberCover, forgetCover } from '../../lib/coverCache.js';
+import { coverCacheKey, peekCover, coverCacheReady, onCoverCache, rememberCover, forgetCover } from '../../lib/coverCache.js';
 
 // Copie LOCALE de la couverture (lib/coverCache.js) → affichage instantané, sans réseau.
 function useCachedCover(key) {
@@ -40,9 +40,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   const [localBad, setLocalBad] = useState(null);
   const localCached = useCachedCover(localKey);
   const localCover = localBad === localKey ? null : localCached;
-  // Simple chemin (URL signée pas encore reçue du serveur) : rien à charger tant qu'elle n'arrive pas
-  // (avant : requête vouée à l'échec vers l'app elle-même).
-  const imgSrc = localCover || (isStoragePath(p.photo) ? null : cover.src);
+  const imgSrc = localCover || cover.src;
   // À chaque changement de photo : si l'image est DÉJÀ en cache (déjà complète), on l'affiche
   // tout de suite — sinon onLoad, déclenché par un cache trop rapide, pourrait manquer et laisser
   // le placeholder collé par-dessus une photo pourtant chargée.
