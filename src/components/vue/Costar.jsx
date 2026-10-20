@@ -2,17 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES } from '../../lib/costar.js';
-import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState } from '../../lib/costarRewards.js';
+import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode } from '../../lib/costarRewards.js';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
+// Relu à chaque changement (progression, tenue, game mode).
 function useCostarState() {
-  const [st, setSt] = useState(loadCostarState);
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const on = () => setSt(loadCostarState());
+    const on = () => setTick(n => n + 1);
     window.addEventListener(CHANGE_EVENT, on);
     return () => window.removeEventListener(CHANGE_EVENT, on);
   }, []);
-  return st;
+  return loadCostarState();
 }
 
 // Costar : castor québécois en casque de chantier (dessin original, SVG) — mascotte qui relit
@@ -395,8 +396,13 @@ export default function Costar({ projet, fixed = false }) {
     setWardrobe(true);
     if (cst.unseen.length) saveCostarState({ ...cst, unseen: [] }); // pastille « nouveau » vue
   };
-  const unlocked = new Set(unlockedIds(cst.stats));
-  const doneCount = MISSIONS.filter(m => unlocked.has(m.reward)).length;
+  // Game mode (admin, menu ⋯) : tout est disponible dans une tenue d'ESSAI à part ; la vraie
+  // tenue et la progression des missions ne sont pas touchées (retour à la normale en le décochant).
+  const game = isGameMode();
+  const realUnlocked = new Set(unlockedIds(cst.stats));
+  const unlocked = game ? new Set(Object.keys(COSMETICS)) : realUnlocked;
+  const outfit = game ? cst.sandbox : cst.equipped;
+  const doneCount = MISSIONS.filter(m => realUnlocked.has(m.reward)).length;
 
   const sc = review ? scoreLabel(review.note) : null;
   const loading = status === 'loading';
@@ -532,12 +538,17 @@ export default function Costar({ projet, fixed = false }) {
             </div>
             {/* INVENTAIRE : une ligne par catégorie, un objet porté par catégorie (cumulable entre
                 catégories). Clic sur l'objet porté = l'enlever. Cadenas = mission à accomplir. */}
+            {game && (
+              <div style={{ marginTop: 10, padding: '7px 10px', borderRadius: 10, background: '#EEF2FF', border: '1px solid #C7D2FE', fontSize: 11.5, color: '#3730A3', lineHeight: 1.4 }}>
+                🎮 <strong>Game mode</strong> : tous les objets sont disponibles pour les essayer. Ta vraie tenue et tes missions ne bougent pas ; décoche le game mode (menu ⋯) pour revenir à la normale.
+              </div>
+            )}
             <div style={{ fontSize: 10.5, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 12, marginBottom: 6 }}>Inventaire</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {CATEGORIES.map(cat => {
                 const items = Object.entries(COSMETICS).filter(([, c]) => c.slot === cat.slot);
                 if (!items.length) return null;
-                const cur = cst.equipped[cat.slot];
+                const cur = outfit[cat.slot];
                 return (
                   <div key={cat.slot} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 74, flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: DA.gray }}>{cat.label}</span>
@@ -548,7 +559,7 @@ export default function Costar({ projet, fixed = false }) {
                         const mission = MISSIONS.find(m => m.reward === id);
                         return (
                           <button key={id} type="button" disabled={!got}
-                            onClick={() => saveCostarState(toggleEquip(cst, id))}
+                            onClick={() => saveCostarState(toggleEquip(cst, id, { sandbox: game }))}
                             title={got ? `${c.name} : ${worn ? 'cliquer pour enlever' : 'cliquer pour porter'}` : `${c.name} : verrouillé. Mission « ${mission?.title} » : ${mission?.desc}`}
                             aria-pressed={worn}
                             style={{ width: 40, height: 40, borderRadius: 10, padding: 0, fontSize: 20, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -569,7 +580,7 @@ export default function Costar({ projet, fixed = false }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {MISSIONS.map(m => {
                 const c = COSMETICS[m.reward];
-                const got = unlocked.has(m.reward);
+                const got = realUnlocked.has(m.reward);
                 const [cur, max] = m.progress(cst.stats);
                 return (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 9px', borderRadius: 10, border: `1px solid ${got ? '#BBF7D0' : DA.border}`, background: got ? '#F0FDF4' : 'white' }}>
@@ -617,7 +628,7 @@ export default function Costar({ projet, fixed = false }) {
       <button onClick={open && !loading ? close : ask} title={open ? 'Fermer' : hello}
         aria-label="Ask Costar : avis sur le rapport"
         style={{ pointerEvents: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0, filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.25))' }}>
-        <CostarSvg outfit={cst.equipped} className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>
+        <CostarSvg outfit={outfit} className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>
       </button>
     </div>
   );
