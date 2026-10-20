@@ -334,6 +334,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
         nom: loc.nom,
         // Les groupes de zones (R+4 › appartements) sont repris dans la nouvelle visite.
         ...(loc.parentId ? { parentId: loc.parentId } : {}),
+        // Dates de suivi de la zone : conservées d'une visite à l'autre.
+        ...(loc.dateOuverture ? { dateOuverture: loc.dateOuverture } : {}),
+        ...(loc.dateCloture ? { dateCloture: loc.dateCloture } : {}),
         planBg: libPlan?.bg || loc.planBg || null,
         planData: libPlan?.data || loc.planData || null,
         planAnnotations: null,

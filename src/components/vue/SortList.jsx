@@ -6,6 +6,8 @@ import { drawAnnotationPaths } from './Annotator.jsx';
 import { resolveCommentHtml } from '../../lib/storage.js';
 import ThumbImg, { useThumb } from '../ui/ThumbImg.jsx';
 import ObsDatesControl from '../ui/ObsDatesControl.jsx';
+import ObsDatesChip from '../ui/ObsDatesChip.jsx';
+import { obsDatesInfo } from '../../lib/obsDates.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -453,16 +455,16 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                         }}/>
                         <span style={{ fontSize:9, color:DA.grayL, fontStyle:'italic' }}>↺</span>
                       </span>
-                      {/* Dates de suivi — à droite du bandeau. Rien tant qu'on ne clique pas « Dater ». */}
-                      <span style={{ marginLeft:'auto' }}>
-                        <ObsDatesControl item={item} visitDate={visitDate} onChange={next => onEdit({ ...next, _quickSuivi: true })}/>
-                      </span>
+                      {/* Dates de suivi (observation datée via le bouton calendrier) — calées à droite. */}
+                      {(() => { const info = obsDatesInfo(item, visitDate); return info ? <span style={{ marginLeft:'auto' }}><ObsDatesChip info={info}/></span> : null; })()}
                     </div>
                   </div>
 
                   {/* Actions : plan de l'observation + suppression (le bouton plan ouvre l'éditeur
                       où l'on assigne/annote le(s) plan(s) PROPRES à cette observation). */}
                   <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }} onClick={e => e.stopPropagation()}>
+                    {/* Dates de suivi : rien tant qu'on ne clique pas (choix Thomas). */}
+                    <ObsDatesControl item={item} visitDate={visitDate} size={ICON_BTN} onChange={next => onEdit({ ...next, _quickSuivi: true })}/>
                     <button onClick={e => { e.stopPropagation(); (onOpenItemPlan || onEdit)(item); }}
                       title={(item.plans || []).length ? `Plan de l'observation (${item.plans.length})` : "Ajouter un plan à cette observation"}
                       aria-label="Plan de l'observation"

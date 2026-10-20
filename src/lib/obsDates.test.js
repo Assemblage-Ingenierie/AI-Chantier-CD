@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyObsDates, obsDatesInfo, durationFr, fmtDateFr, itemMetaToRow, itemMetaFromRow } from './obsDates.js';
+import { applyObsDates, obsDatesInfo, zoneDatesInfo, durationFr, fmtDateFr, itemMetaToRow, itemMetaFromRow } from './obsDates.js';
 
 describe('applyObsDates — règles automatiques (optionnel par observation)', () => {
   it('création : AUCUNE date tant qu\'on n\'a pas cliqué « Dater »', () => {
@@ -52,5 +52,13 @@ describe('stockage (colonne meta)', () => {
     expect(itemMetaFromRow({ dateOuverture: '2026-04-09', dateCloture: '2026-09-08' })).toEqual({ dateOuverture: '2026-04-09', dateCloture: '2026-09-08' });
     expect(itemMetaFromRow('{"dateOuverture":"2026-04-09"}')).toEqual({ dateOuverture: '2026-04-09' });
     expect(itemMetaFromRow(null)).toEqual({});
+  });
+});
+
+describe('zones datées', () => {
+  it('sans levée : en cours ; avec levée : figée', () => {
+    expect(zoneDatesInfo({ dateOuverture: '2026-04-09' }, '2026-10-20')).toMatchObject({ closed: false, duree: '6 mois' });
+    expect(zoneDatesInfo({ dateOuverture: '2026-04-09', dateCloture: '2026-05-09' }, '2026-10-20')).toMatchObject({ closed: true, fin: '2026-05-09', duree: '4 sem.' });
+    expect(zoneDatesInfo({ nom: 'RDC' }, '2026-10-20')).toBeNull();
   });
 });
