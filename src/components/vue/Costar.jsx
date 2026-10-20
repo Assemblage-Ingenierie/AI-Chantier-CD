@@ -111,29 +111,27 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <circle cx="58" cy="116.4" r="1.1" fill="#2B3445"/>
         </g>
       )}
-      {/* Slip LÉOPARD : vraie coupe de slip (élastique noir aux hanches, échancrures des cuisses,
-          couture en Y), motif de taches découpé à la forme du slip. */}
+      {/* Slip LÉOPARD, coupe « icône » bien lisible : large élastique noir aux hanches, côtés
+          très échancrés, fond arrondi, bordures noires aux cuisses ; tout au-dessus des pattes. */}
       {o.body === 'slip' && (
-        <g strokeLinejoin="round" transform="translate(0 -3)">
+        <g strokeLinejoin="round" strokeLinecap="round">
           <defs>
-            <clipPath id="costar-slip-clip">
-              <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z"/>
-            </clipPath>
+            <clipPath id="costar-slip-clip"><path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z"/></clipPath>
           </defs>
-          <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z" fill="#E9B24E"/>
+          <path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z" fill="#EDB95A"/>
           <g clipPath="url(#costar-slip-clip)">
-            {[[36, 110], [44, 113.5], [52, 110.8], [60, 114], [68, 110.6], [76, 112.6], [82, 109.6], [48, 118.6], [57, 120], [65, 117.6], [40, 108.4], [73, 116.6]].map(([x, y], k) => (
-              <g key={k} transform={`translate(${x} ${y}) rotate(${(k * 47) % 180})`}>
-                <ellipse cx="0" cy="0" rx="2.1" ry="1.6" fill="#C9822E"/>
-                <path d="M-2.4 -0.6 Q-2 -2.2 -0.4 -2.2 M0.8 -2 Q2.6 -1.4 2.4 0.4 M2 1.4 Q0.6 2.6 -1 2 M-2.2 1.2 L-2.6 0.6" stroke="#2A1608" strokeWidth="0.95" fill="none" strokeLinecap="round"/>
+            {[[38, 107.6], [46, 109.8], [54, 108], [62, 110.2], [70, 108.2], [78, 107.4], [50, 113.6], [58, 115.6], [66, 113.4], [43, 106.4], [74, 111.6], [58, 111.2]].map(([x, y], k) => (
+              <g key={k} transform={`translate(${x} ${y}) rotate(${(k * 53) % 180})`}>
+                <ellipse cx="0" cy="0" rx="1.9" ry="1.4" fill="#C47A26"/>
+                <path d="M-2.2 -0.5 Q-1.9 -2 -0.4 -2 M0.8 -1.9 Q2.4 -1.3 2.2 0.4 M1.8 1.3 Q0.5 2.4 -0.9 1.8" stroke="#24130A" strokeWidth="0.9" fill="none"/>
               </g>
             ))}
-            <circle cx="33" cy="114.5" r="0.7" fill="#2A1608"/><circle cx="62.6" cy="108.6" r="0.7" fill="#2A1608"/><circle cx="55" cy="116.4" r="0.6" fill="#2A1608"/><circle cx="79.6" cy="114.6" r="0.7" fill="#2A1608"/>
+            <ellipse cx="50" cy="108.2" rx="9" ry="1.6" fill="white" opacity="0.18"/>
           </g>
-          <path d="M30 105.6 Q58 111.6 86 105.6 L85.4 110.6 Q73.6 112.8 64.4 122.4 L51.6 122.4 Q42.4 112.8 30.6 110.6 Z" fill="none" stroke="#7A4A16" strokeWidth="0.8"/>
-          {/* Élastique noir + couture en Y */}
-          <path d="M30 105.6 Q58 111.6 86 105.6 L85.8 108.6 Q58 114.6 30.2 108.6 Z" fill="#111827"/>
-          <path d="M51 112.6 Q58 117 65 112.6 M58 116.8 L58 122" stroke="#7A4A16" strokeWidth="0.9" fill="none"/>
+          <path d="M33.4 105.6 Q58 109.6 82.6 105.6 L81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4 Z" fill="none" stroke="#6B3E12" strokeWidth="0.8"/>
+          <path d="M81.2 109.4 Q70.6 111.2 64.6 118.8 Q58 120.4 51.4 118.8 Q45.4 111.2 34.8 109.4" stroke="#111827" strokeWidth="1.5" fill="none"/>
+          <path d="M33 102.4 Q58 106.4 83 102.4 L82.6 106 Q58 110 33.4 106 Z" fill="#111827"/>
+          <path d="M40 104.6 Q58 107.6 76 104.6" stroke="#4B5563" strokeWidth="0.6" fill="none" strokeDasharray="1.4 1.2"/>
         </g>
       )}
       {/* Ceinture noire de karaté (nœud + deux pans, barrettes dorées) */}
@@ -188,16 +186,18 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <path d="M33.2 93.6 L39.4 95.2 M82.8 93.6 L76.6 95.2" stroke="#4A93CC" strokeWidth="1.6"/>
         </g>
       )}
-      {/* Gants de boxe (remplacent les pattes avant) */}
+      {/* Gants de boxe EN GARDE, vus de face : poing levé, manchette blanche lacée en bas (vers le
+          bras), pouce côté intérieur, ligne des jointures, reflet. Le droit = le gauche en miroir. */}
       {o.hand === 'gants' && (
-        <g strokeLinejoin="round">
-          {[[37.5, 1], [78.5, -1]].map(([x, d]) => (
-            <g key={x} transform={`translate(${x} 101) scale(${d} 1)`}>
-              <rect x="-4.6" y="-12" width="9.2" height="5" rx="1.6" fill="white" stroke="#D1D5DB" strokeWidth="0.6"/>
-              <ellipse cx="0" cy="0" rx="7.6" ry="8.4" fill="#DC2626" stroke="#991B1B" strokeWidth="0.9"/>
-              <ellipse cx="5.2" cy="-1.4" rx="2.8" ry="4" fill="#DC2626" stroke="#991B1B" strokeWidth="0.8" transform="rotate(-18 5.2 -1.4)"/>
-              <path d="M-4.4 -3 Q0 -6.6 4 -4.6" stroke="#FCA5A5" strokeWidth="1.6" fill="none" strokeLinecap="round" opacity="0.8"/>
-              <path d="M-5.8 -6.6 L5.4 -6.6" stroke="#991B1B" strokeWidth="0.8"/>
+        <g strokeLinejoin="round" strokeLinecap="round">
+          {[[39, 94, 1], [77, 94, -1]].map(([x, y, d]) => (
+            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`}>
+              <path d="M-4.6 5.6 L4.6 5.6 L4.2 11.2 L-4.2 11.2 Z" fill="white" stroke="#D1D5DB" strokeWidth="0.7"/>
+              <path d="M-3.6 7 L3.6 8.4 M3.6 7 L-3.6 8.4 M-3.4 9.4 L3.4 10.4" stroke="#9CA3AF" strokeWidth="0.6"/>
+              <path d="M-7.4 1.4 Q-8.6 -8.6 0 -10 Q8.2 -9.4 7.6 -0.6 Q7.2 6.4 0 6.8 Q-6.6 6.6 -7.4 1.4 Z" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.9"/>
+              <path d="M7.4 -1.6 Q10.4 -1.2 9.8 2.8 Q9.2 5.8 6 5.2" fill="#C81E1E" stroke="#7F1D1D" strokeWidth="0.8"/>
+              <path d="M-6 -2.6 Q0 -0.4 6.4 -2.8" stroke="#991B1B" strokeWidth="0.8" fill="none"/>
+              <ellipse cx="-3" cy="-6" rx="2.6" ry="1.5" fill="white" opacity="0.45" transform="rotate(-20 -3 -6)"/>
             </g>
           ))}
         </g>
