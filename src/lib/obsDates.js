@@ -2,13 +2,13 @@
 // une date remplie automatiquement, modifiable, conservée d'une visite à l'autre » + « une date qui
 // continue à tourner tant qu'on ne la clôture pas » (Thomas).
 //
-//   item.dateOuverture : 'AAAA-MM-JJ' — posée automatiquement à la création (date de la visite),
+//   item.dateOuverture : 'AAAA-MM-JJ' — posée quand on clique « Dater » sur l'observation (choix
+//                        Thomas 20/10 : OPTIONNEL par observation, rien tant qu'on n'y touche pas),
 //                        modifiable, recopiée telle quelle quand on duplique une visite ;
-//   item.dateCloture   : 'AAAA-MM-JJ' — posée automatiquement quand l'observation passe « Fait »,
-//                        retirée si elle repasse à un autre état, modifiable.
-// Tant qu'elle n'est pas levée, la 2e date « tourne » : c'est la date de la visite affichée
-// (« point au … »). L'AFFICHAGE est optionnel, par visite (case « Dates de suivi » du rapport) :
-// sans elle, rien ne change à l'écran ni dans le PDF.
+//   item.dateCloture   : 'AAAA-MM-JJ' — pour une observation DATÉE, posée automatiquement quand elle
+//                        passe « Fait », retirée si elle repasse à un autre état, modifiable.
+// Tant qu'elle n'est pas levée, la durée « tourne » avec la date de la visite affichée.
+// Observation non datée : aucun affichage, ni à l'écran ni dans le PDF (comportement d'avant).
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 export const isIsoDate = (s) => typeof s === 'string' && ISO_RE.test(s);
@@ -49,13 +49,19 @@ export function obsDatesInfo(item, visitDateIso) {
   return { ouverture: ouv, closed, fin, duree: fin ? durationFr(ouv, fin) : '' };
 }
 
-// Applique les règles automatiques à l'enregistrement d'une observation (prev = version d'avant,
-// null pour une création). N'écrase JAMAIS une date déjà saisie.
-export function applyObsDates(prev, next, refDateIso) {
+// Applique les règles automatiques à l'enregistrement d'une observation (_prev = version d'avant,
+// null pour une création). N'écrase JAMAIS une date déjà saisie ; ne date jamais une observation
+// que l'utilisateur n'a pas datée.
+export function applyObsDates(_prev, next, refDateIso) {
   if (!next) return next;
   const ref = isIsoDate(refDateIso) ? refDateIso : todayIso();
   let out = next;
-  if (!prev && !isIsoDate(out.dateOuverture)) out = { ...out, dateOuverture: ref };
+  if (!isIsoDate(out.dateOuverture)) {
+    if (out.dateCloture == null) return out;
+    // eslint-disable-next-line no-unused-vars
+    const { dateCloture, ...rest } = out; // levée sans ouverture : incohérent → retirée
+    return rest;
+  }
   if (out.suivi === 'fait') {
     if (!isIsoDate(out.dateCloture)) out = { ...out, dateCloture: ref };
   } else if (out.dateCloture != null) {

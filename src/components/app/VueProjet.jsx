@@ -538,8 +538,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     });
   };
 
-  // Dates de suivi (lib/obsDates.js) : ouverture posée à la création, levée posée quand
-  // l'observation passe « Fait » (retirée si elle en sort). Jamais d'écrasement d'une date saisie.
+  // Dates de suivi (lib/obsDates.js) : pour une observation DATÉE, levée posée quand elle passe
+  // « Fait » (retirée si elle en sort). Jamais d'écrasement d'une date saisie.
   const withObsDates = (locId, item) => {
     const prev = item?.id ? (visitProjet.localisations.find(l => l.id === locId)?.items || []).find(i => i.id === item.id) : null;
     return applyObsDates(prev || null, item, visitProjet.dateVisite);
@@ -976,7 +976,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             <SortList
                               items={items}
                               locId={loc.id}
-                              obsDates={!!visitProjet.obsDates}
                               visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
@@ -1266,7 +1265,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             visiteLabel={visitProjet.visiteNom || (visitProjet.dateVisite ? new Date(visitProjet.dateVisite).toLocaleDateString('fr-FR') : '')}
             visiteDate={visitProjet.dateVisite || null}
             ingenieur={visitProjet.ingenieur || ''}
-            showDates={!!visitProjet.obsDates}
           />
         );
       })()}
