@@ -122,7 +122,15 @@ export async function optimizeHeavyCovers(projets) {
       if (rdErr) continue;
       if (storedPathOf(row?.photo) !== t.path) { markDone(done, t.path); continue; } // changée entre-temps → on ne touche à rien
       const { data: upd, error: dbErr } = await sb.from('aichantier_chantiers').update({ photo: newPath }).eq('id', t.id).select('id');
-      if (dbErr || !upd?.length) continue; // réessaiera à la prochaine ouverture
+      if (dbErr) continue; // erreur passagère → réessaiera à la prochaine ouverture
+      if (!upd?.length) {
+        // Aucune ligne modifiée = pas le droit (affaire d'un collègue) ou fiche disparue : inutile de
+        // recommencer à CHAQUE ouverture (retéléchargement du gros original en tâche de fond, qui
+        // ralentissait l'accueil — retour Thomas 20/10). L'affichage passe par la copie locale.
+        markDone(done, t.path);
+        logEvent('cover.optimizeDenied', { id: t.id, kb: Math.round(size / 1024) });
+        continue;
+      }
       const { data: s2 } = await sb.storage.from('photos').createSignedUrl(newPath, SIGNED_TTL);
       markDone(done, t.path);
       markDone(done, newPath);
