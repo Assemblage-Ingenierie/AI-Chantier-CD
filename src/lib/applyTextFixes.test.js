@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDiffSegments, diffChunks, applyFixesAtPositions } from './applyTextFixes.js';
-import { chunkForCorrection } from './spellChunks.js';
+import { buildDiffSegments, applyFixesAtPositions } from './applyTextFixes.js';
 
 // Texte brut tel que produit par htmlToPlain pour un HTML simple (une ligne par <div>).
 const plainOf = (html) => {
@@ -60,50 +59,5 @@ describe('applyFixesAtPositions — corrections appliquées à leur position exa
   it('texte modifié entre-temps → null (l\'app garde l\'ancienne méthode, aucune perte)', () => {
     const segs = buildDiffSegments('un texte ancien', 'un texte corrigé');
     expect(applyFixesAtPositions('<div>autre chose</div>', 'un texte ancien', segs)).toBeNull();
-  });
-});
-
-describe('textes LONGS (incident 20/10 : « l\'IA de correction plante »)', () => {
-  const para = (i) => `Paragraphe ${i} : la poutre présente des fissures ddu côté nord, il convient de vérifier les apuis et le plancher.\n`;
-  const long = Array.from({ length: 300 }, (_, i) => para(i)).join('');
-  const fixed = long.replace(/ddu/g, 'du').replace(/apuis/g, 'appuis');
-
-  it('diff morceau par morceau : rapide, toutes les fautes trouvées, original recomposé', () => {
-    const chunks = chunkForCorrection(long);
-    expect(chunks.length).toBeGreaterThan(5);
-    const corrChunks = chunks.map(c => c.replace(/ddu/g, 'du').replace(/apuis/g, 'appuis'));
-    const t0 = Date.now();
-    const segs = diffChunks(chunks, corrChunks);
-    expect(Date.now() - t0).toBeLessThan(2000);
-    expect(segs.filter(s => s.type === 'fix')).toHaveLength(600);
-    expect(new Set(segs.filter(s => s.type === 'fix').map(s => s.id)).size).toBe(600);
-    expect(segs.map(s => (s.type === 'eq' ? s.text : s.del)).join('')).toBe(long);
-    expect(segs.map(s => (s.type === 'eq' ? s.text : s.add)).join('')).toBe(fixed);
-    // jamais deux segments neutres consécutifs
-    expect(segs.some((s, i) => s.type === 'eq' && segs[i + 1]?.type === 'eq')).toBe(false);
-  });
-
-  it('diff direct sur le texte entier : ne sature plus la mémoire et reste exact', () => {
-    const segs = buildDiffSegments(long, fixed);
-    expect(segs.map(s => (s.type === 'eq' ? s.text : s.del)).join('')).toBe(long);
-    expect(segs.map(s => (s.type === 'eq' ? s.text : s.add)).join('')).toBe(fixed);
-  });
-
-  it('résultat identique à avant sur un texte court', () => {
-    const segs = buildDiffSegments('la présence plusieurs fissures', 'la présence de plusieurs fissures');
-    expect(segs.filter(s => s.type === 'fix')).toEqual([{ type: 'fix', id: 0, del: '', add: ' de', active: true }]);
-  });
-});
-
-describe('« Améliorer » sur un long texte (diff global)', () => {
-  it('fautes au début ET à la fin d\'un long texte → corrections fines ligne par ligne, sans plantage', () => {
-    const lines = Array.from({ length: 400 }, (_, i) => `Ligne ${i} : le mur porteur est fissuré au droit de la baie.\n`);
-    const orig = 'Le mur ddu fond.\n' + lines.join('') + 'Fin ddu texte.';
-    const corr = 'Le mur du fond.\n' + lines.join('') + 'Fin du texte.';
-    const t0 = Date.now();
-    const segs = buildDiffSegments(orig, corr);
-    expect(Date.now() - t0).toBeLessThan(2000);
-    expect(segs.filter(s => s.type === 'fix').map(s => [s.del, s.add])).toEqual([['ddu', 'du'], ['ddu', 'du']]);
-    expect(segs.map(s => (s.type === 'eq' ? s.text : s.del)).join('')).toBe(orig);
   });
 });

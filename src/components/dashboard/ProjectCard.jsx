@@ -3,14 +3,6 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import SyncBadge, { projectSyncState } from '../ui/SyncBadge.jsx';
 import { useThumb } from '../ui/ThumbImg.jsx';
-import { coverCacheKey, isStoragePath, peekCover, coverCacheReady, onCoverCache, rememberCover, forgetCover } from '../../lib/coverCache.js';
-
-// Copie LOCALE de la couverture (lib/coverCache.js) → affichage instantané, sans réseau.
-function useCachedCover(key) {
-  const [, force] = useState(0);
-  useEffect(() => (coverCacheReady() ? undefined : onCoverCache(() => force(n => n + 1))), []);
-  return peekCover(key);
-}
 
 function getLocs(p) {
   if (p.visites?.length) return p.visites.flatMap(v => v.localisations || []);
@@ -35,14 +27,6 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   // Couverture servie en VIGNETTE allégée (~6-10× plus légère que l'original), repli auto sur
   // l'original si la vignette est indisponible. Null le temps de la signature → placeholder.
   const cover = useThumb(p.photo, 640);
-  // Copie locale déjà connue → affichée TOUT DE SUITE (pas de fondu, pas de réseau).
-  const localKey = coverCacheKey(p.photo);
-  const [localBad, setLocalBad] = useState(null);
-  const localCached = useCachedCover(localKey);
-  const localCover = localBad === localKey ? null : localCached;
-  // Simple chemin (URL signée pas encore reçue du serveur) : rien à charger tant qu'elle n'arrive pas
-  // (avant : requête vouée à l'échec vers l'app elle-même).
-  const imgSrc = localCover || (isStoragePath(p.photo) ? null : cover.src);
   // À chaque changement de photo : si l'image est DÉJÀ en cache (déjà complète), on l'affiche
   // tout de suite — sinon onLoad, déclenché par un cache trop rapide, pourrait manquer et laisser
   // le placeholder collé par-dessus une photo pourtant chargée.
@@ -50,7 +34,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
     setCoverErr(false);
     const el = coverRef.current;
     setCoverLoaded(!!(el && el.complete && el.naturalWidth > 0));
-  }, [p.photo, imgSrc]);
+  }, [p.photo, cover.src]);
   const obs = obsCount(p);
   const urg = urgCount(p);
 
@@ -83,13 +67,12 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
             visibles (les autres se chargent au défilement) → plus d'embouteillage réseau qui
             laissait des cartes blanches. Le placeholder reste affiché tant que la photo n'est pas
             chargée (masque l'icône « image cassée » + le nom alt), puis fondu à l'arrivée. */}
-        {p.photo && imgSrc && !coverErr && (
-          <img ref={coverRef} src={imgSrc} alt={p.nom} loading={localCover ? 'eager' : 'lazy'} decoding="async"
-            onLoad={() => { if (localCover) { setCoverLoaded(true); return; } cover.onLoad(); setCoverLoaded(true); rememberCover(localKey, cover.src); }}
-            onError={() => { if (localCover) { forgetCover(localKey); setLocalBad(localKey); setCoverLoaded(false); return; } if (!cover.onError()) setCoverErr(true); }}
-            style={{ opacity: (coverLoaded || localCover) ? 1 : 0, transition: localCover ? 'none' : 'opacity 0.25s ease' }}/>
+        {p.photo && cover.src && !coverErr && (
+          <img ref={coverRef} src={cover.src} alt={p.nom} loading="lazy" decoding="async"
+            onLoad={() => { cover.onLoad(); setCoverLoaded(true); }} onError={() => { if (!cover.onError()) setCoverErr(true); }}
+            style={{ opacity: coverLoaded ? 1 : 0, transition:'opacity 0.25s ease' }}/>
         )}
-        {(!p.photo || coverErr || !(coverLoaded || localCover)) && (
+        {(!p.photo || coverErr || !coverLoaded) && (
           <div className="proj-card-img-placeholder"><Ic n="bld" s={32}/></div>
         )}
         {/* Le bouton appareil photo a été retiré (la photo de couverture se change via
