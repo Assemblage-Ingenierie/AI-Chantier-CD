@@ -1,10 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
-import { callAIProxy } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES } from '../../lib/costar.js';
+import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode } from '../../lib/costarRewards.js';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
+// MÉMOIRE DES AVIS (retour Thomas : « il met du temps et bouffe mon quota gratuit ») : un rapport
+// relu SANS modification renvoie tout de suite l'avis déjà donné (0 token, 0 attente). Local à
+// l'appareil, 20 derniers avis ; toute erreur → relecture normale.
+const REVIEW_CACHE_KEY = 'chantierai_costar_reviews_v1';
+const REVIEW_CACHE_MAX = 20;
+function readReviewCache() {
+  try { const m = JSON.parse(localStorage.getItem(REVIEW_CACHE_KEY) || '{}'); return m && typeof m === 'object' ? m : {}; } catch { return {}; }
+}
+function getCachedReview(key) { const e = readReviewCache()[key]; return e && e.review ? e : null; }
+function putCachedReview(key, review, engine) {
+  try {
+    const m = readReviewCache();
+    m[key] = { review, engine, t: Date.now() };
+    const keep = Object.entries(m).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, REVIEW_CACHE_MAX);
+    localStorage.setItem(REVIEW_CACHE_KEY, JSON.stringify(Object.fromEntries(keep)));
+  } catch { /* mode privé / quota : pas de mémoire, sans conséquence */ }
+}
+
 // Relu à chaque changement (progression, tenue, game mode).
 function useCostarState() {
   const [, setTick] = useState(0);
@@ -388,6 +406,7 @@ export default function Costar({ projet, fixed = false }) {
   const [review, setReview] = useState(null);
   const [quip, setQuip] = useState('');
   const [engine, setEngine] = useState(null); // { provider, from, why } : moteur qui a VRAIMENT répondu
+  const [fromCache, setFromCache] = useState(false); // avis repris de la mémoire (rapport inchangé)
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
@@ -426,9 +445,22 @@ export default function Costar({ projet, fixed = false }) {
     setError(null);
     setReview(null);
     setEngine(null);
+    setFromCache(false);
 
     const digest = buildReportDigest(projetRef.current);
     if (digest.observations === 0) { setReview(EMPTY_REVIEW); setQuip(scoreQuip(0)); setStatus('done'); return; }
+    // Rapport inchangé depuis la dernière relecture (même moteur) → même avis, instantané.
+    // Pas de mission sur un avis repris de la mémoire (ce n'est pas une nouvelle relecture).
+    const cacheKey = costarCacheKey(digest.text, getAIProvider());
+    const hit = getCachedReview(cacheKey);
+    if (hit) {
+      setReview(hit.review);
+      setQuip(scoreQuip(hit.review.note));
+      setEngine(hit.engine || null);
+      setFromCache(true);
+      setStatus('done');
+      return;
+    }
 
     setStatus('loading');
     try {
@@ -438,12 +470,15 @@ export default function Costar({ projet, fixed = false }) {
         modelFor: { mistral: 'mistral-medium-latest' }, // relecture fine : Medium plutôt que Small
         // Pas de « réflexion » Gemini : elle doublait le temps de réponse et faisait dépasser le
         // délai quand Gemini est chargé (« Gemini ne répond pas ») ; la consigne détaillée suffit.
-        max_tokens: 4096,
+        // Réponse courte demandée par la consigne : 1800 tokens suffisent largement (avant 4096) ;
+        // la sortie est ce qui coûte le plus de temps.
+        max_tokens: 1800,
         temperature: 0.1, // même rapport → même note (pas de loterie d'un essai à l'autre)
         json: true,
         system: COSTAR_SYSTEM,
         messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.\n\n${digest.text}` }],
         _waitOk: true,
+        _throttleMs: 4000, // avant 15 s d'attente forcée entre deux relectures (le cache évite les doublons)
         _signal: ctrl.signal,
       });
       if (ctrl.signal.aborted) return;
@@ -452,7 +487,9 @@ export default function Costar({ projet, fixed = false }) {
       if (!parsed) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
       setReview(parsed);
       setQuip(scoreQuip(parsed.note));
-      setEngine(d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null);
+      const eng = d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null;
+      setEngine(eng);
+      putCachedReview(cacheKey, parsed, eng);
       setStatus('done');
       // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
       try {
@@ -586,7 +623,12 @@ export default function Costar({ projet, fixed = false }) {
                   🦫 {review.blague}
                 </p>
               )}
-              {engine && (
+              {fromCache && (
+                <div style={{ marginTop: 10, fontSize: 10.5, color: DA.grayL, lineHeight: 1.4 }}>
+                  Rapport inchangé depuis ma dernière lecture : je te redonne le même avis (sans repasser par l'IA).
+                </div>
+              )}
+              {engine && !fromCache && (
                 <div style={{ marginTop: 10, fontSize: 10.5, color: DA.grayL, lineHeight: 1.4 }}>
                   {engine.from
                     ? <>{ENGINE_NAMES[engine.from] || engine.from} indisponible{engine.why ? ` (${engine.why})` : ''} : relu avec {ENGINE_NAMES[engine.provider] || engine.provider}.</>

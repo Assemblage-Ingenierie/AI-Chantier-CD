@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildReportDigest, parseCostarReply, scoreLabel, plainText, reportItems } from './costar.js';
+import { buildReportDigest, parseCostarReply, scoreLabel, plainText, reportItems, costarCacheKey, COSTAR_SYSTEM } from './costar.js';
 
 const projet = {
   nom: '503_SDC_86RDCLERY', adresse: '86 rue de Cléry', maitreOuvrage: 'SDC 86', dateVisite: '2026-10-06',
@@ -106,5 +106,18 @@ describe('Costar — réponse IA', () => {
     expect(scoreLabel(7).label).toBe('Correct');
     expect(scoreLabel(8).label).toBe('Très bien');
     expect(scoreLabel(10).label).toBe('Parfait');
+  });
+});
+
+describe('Costar — économie de tokens', () => {
+  it('clé de cache : même texte + même moteur → même clé ; sinon différente', () => {
+    const a = costarCacheKey('rapport A', 'mistral');
+    expect(costarCacheKey('rapport A', 'mistral')).toBe(a);
+    expect(costarCacheKey('rapport A ', 'mistral')).not.toBe(a);
+    expect(costarCacheKey('rapport A', 'gemini-flash')).not.toBe(a);
+  });
+  it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
+    expect(COSTAR_SYSTEM.length).toBeLessThan(5000);
+    for (const k of ['-2', '-3 au plus', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
   });
 });
