@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS } from './costarRewards.js';
 
-const day = new Date(2026, 9, 20, 14, 0);
-const night = new Date(2026, 9, 20, 22, 30);
+const day = new Date(2026, 10, 20, 15, 0); // vendredi de novembre, hors midi (pas de mission saisonnière)
+const night = new Date(2026, 10, 20, 22, 30);
 
 describe('Vestiaire de Costar — missions et cosmétiques', () => {
   it('catalogue cohérent : chaque mission débloque un cosmétique existant, un seul par mission', () => {
@@ -66,6 +66,19 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(st.equipped).toMatchObject({ head: 'casque_or', body: 'gilet', eyes: 'lunettes' });
   });
 
+  it('nouvelle fournée : clope (midi), pull (week-end), citrouille (octobre), Noël (décembre), santiags (5 jours)', () => {
+    const got = (dates) => { let st = emptyState(); dates.forEach(d => { st = applyReview(st, { note: 6, observations: 2 }, d).state; }); return unlockedIds(st.stats); };
+    expect(got([new Date(2026, 9, 20, 12, 30)])).toEqual(expect.arrayContaining(['clope', 'citrouille']));
+    expect(got([new Date(2026, 10, 3, 15)])).not.toEqual(expect.arrayContaining(['clope']));
+    expect(got([new Date(2026, 10, 8, 10)])).toContain('pull');          // dimanche
+    expect(got([new Date(2026, 10, 9, 10)])).not.toContain('pull');      // lundi
+    expect(got([new Date(2026, 11, 15, 10)])).toContain('noel');
+    expect(got([1, 2, 3, 4].map(d => new Date(2026, 10, d + 1, 10)))).not.toContain('santiags');
+    expect(got([1, 2, 3, 4, 5].map(d => new Date(2026, 10, d + 1, 10)))).toContain('santiags');
+    const pull = MISSIONS.find(m => m.reward === 'pull');
+    expect(pull.desc).toMatch(/rétréci au lavage par la femme de ménage/);
+  });
+
   it('missions à compteur : 3 × 10/10 → couronne, une seule fois', () => {
     let st = emptyState();
     const got = [];
@@ -89,7 +102,7 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
 
   it('état corrompu → progression vierge, sans plantage', () => {
     expect(normalizeState('n\'importe quoi')).toEqual(emptyState());
-    expect(normalizeState({ equipped: { front: 'lampe' } }).equipped).toEqual({ extra: 'lampe' }); // ancienne catégorie
+    expect(normalizeState({ equipped: { front: 'lampe', extra: 'pansement' } }).equipped).toEqual({ extra: 'lampe', face: 'pansement' }); // anciennes catégories
     const st = normalizeState({ stats: { reviews: 'x' }, equipped: { eyes: 'zzz', head: 'tuque' }, unseen: ['zzz'] });
     expect(st.stats.reviews).toBe(0);
     expect(st.equipped).toEqual({ head: 'tuque' });

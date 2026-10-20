@@ -19,7 +19,7 @@ function useCostarState() {
 // le rapport complet et donne un avis honnête + une note. PC uniquement (cf. RapportTab).
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
-// outfit = { head, eyes, neck, body, hand, extra } : cosmétiques portés, un par catégorie (vestiaire).
+// outfit = { head, eyes, face, mouth, neck, body, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
   return (
@@ -40,11 +40,34 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <path d="M31 113 L46 112 M85 113 L70 112" stroke="#D1D5DB" strokeWidth="2.6" strokeLinecap="round"/>
         </g>
       )}
+      {/* Pull en cachemire RÉTRÉCI au lavage : s'arrête au-dessus du nombril */}
+      {o.body === 'pull' && (
+        <path d="M27 97 Q26 85 40 82 L76 82 Q90 85 89 97 Q58 104 27 97 Z" fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8"/>
+      )}
+      {o.body === 'pull' && (
+        <path d="M30 96.5 L30.5 99.5 M35 97.6 L35.4 100.6 M40 98.5 L40.3 101.5 M45 99.1 L45.2 102.1 M50 99.5 L50.1 102.5 M55 99.7 L55 102.7 M60 99.7 L60 102.7 M65 99.5 L64.9 102.5 M70 99.1 L69.8 102.1 M75 98.5 L74.7 101.5 M80 97.6 L79.6 100.6 M85 96.5 L84.5 99.5 M27.5 97.5 Q58 105.5 88.5 97.5"
+          stroke="#B8956A" strokeWidth="0.9" fill="none" strokeLinecap="round"/>
+      )}
+      {o.body === 'pull' && <path d="M56.5 111 Q58 113.5 59.5 111" stroke="#8A5A2E" strokeWidth="1.2" fill="none" strokeLinecap="round"/>}
       {/* Pattes */}
       <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>
       <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>
+      {o.feet === 'santiags' && (
+        <g>
+          <path d="M38 109 L50 109 L50.5 121 L52 121 L52 127.5 L31 127.5 Q27 127 30 123.5 Q34 121 38.5 120.5 Z" fill="#7C4A21" stroke="#4A2A10" strokeWidth="0.9" strokeLinejoin="round"/>
+          <path d="M78 109 L66 109 L65.5 121 L64 121 L64 127.5 L85 127.5 Q89 127 86 123.5 Q82 121 77.5 120.5 Z" fill="#7C4A21" stroke="#4A2A10" strokeWidth="0.9" strokeLinejoin="round"/>
+          <path d="M40 112 Q44 115 48 112 M40 116 Q44 119 48 116 M68 112 Q72 115 76 112 M68 116 Q72 119 76 116" stroke="#E0B07A" strokeWidth="0.8" fill="none"/>
+          <path d="M50.5 127.5 L52 127.5 L52 124 L50.5 124 Z M64 127.5 L65.5 127.5 L65.5 124 L64 124 Z" fill="#3B2412"/>
+        </g>
+      )}
       <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
       <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {o.body === 'pull' && (
+        <g fill="#D9B98F" stroke="#B8956A" strokeWidth="0.8">
+          <ellipse cx="37" cy="91" rx="5.5" ry="4" transform="rotate(20 37 91)"/>
+          <ellipse cx="79" cy="91" rx="5.5" ry="4" transform="rotate(-20 79 91)"/>
+        </g>
+      )}
       {o.hand === 'cafe' && (
         <g>
           <path d="M84 80 q-2 -3 0 -6 M88 80 q-2 -3 0 -6" stroke="#9CA3AF" strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.8"/>
@@ -84,14 +107,40 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         </g>
         {/* Moustaches */}
         <path d="M44 79 L32 77 M44 82 L33 84 M72 79 L84 77 M72 82 L83 84" stroke="#F3E3CF" strokeWidth="0.9" strokeLinecap="round" opacity="0.8"/>
-        {/* Lunettes / monocle / pansement (vestiaire) — hors du groupe des yeux : ne clignent pas */}
+        {/* Tête de citrouille : recouvre la tête, AVANT les accessoires du visage (lunettes sur la citrouille = ok) */}
+        {o.head === 'citrouille' && (
+          <g>
+            <path d="M58 32 Q57 25 61 21" stroke="#4D7C0F" strokeWidth="4" fill="none" strokeLinecap="round"/>
+            <path d="M61 25 Q70 20 72 27 Q66 26 61 28 Z" fill="#65A30D"/>
+            <ellipse cx="58" cy="61" rx="35" ry="30" fill="#EA580C"/>
+            <ellipse cx="58" cy="61" rx="24" ry="30" fill="#F97316"/>
+            <ellipse cx="58" cy="61" rx="11" ry="30" fill="#FB923C"/>
+            <path d="M34 39 Q28 61 34 83 M82 39 Q88 61 82 83" stroke="#C2410C" strokeWidth="1" fill="none" opacity="0.6"/>
+            <polygon points="40,62 47,52 54,62" fill="#3B1D06"/>
+            <polygon points="62,62 69,52 76,62" fill="#3B1D06"/>
+            <polygon points="55,70 58,65 61,70" fill="#3B1D06"/>
+            <path d="M38 75 L44 79 L48 75 L53 80 L58 76 L63 80 L68 75 L72 79 L78 75 Q74 87 58 87 Q42 87 38 75 Z" fill="#3B1D06"/>
+            <polygon points="42,61 47,55 52,61" fill="#FDE047" opacity="0.55"/>
+            <polygon points="64,61 69,55 74,61" fill="#FDE047" opacity="0.55"/>
+          </g>
+        )}
+        {/* Cicatrices AVANT les lunettes : elles dépassent au-dessus et en dessous des verres */}
+        {o.face === 'cicatrices' && (
+          <g strokeLinecap="round">
+            <path d="M40 51 L53 74" stroke="#F0B9A6" strokeWidth="2.4"/>
+            <path d="M42.6 57.2 L46.4 55 M45.4 62 L49.2 59.8 M48.2 66.8 L52 64.6" stroke="#5A2E12" strokeWidth="0.9"/>
+            <path d="M73 70 L80 77 M80 70 L73 77" stroke="#F0B9A6" strokeWidth="1.8"/>
+          </g>
+        )}
+        {/* Lunettes d'aviateur / monocle / visage / bouche (vestiaire) — hors du groupe des yeux : ne clignent pas */}
         {o.eyes === 'lunettes' && (
           <g>
-            <path d="M39 61 L30 58 M77 61 L86 58" stroke="#111" strokeWidth="1.6" strokeLinecap="round"/>
-            <rect x="38.5" y="57.5" width="17" height="11" rx="4.5" fill="#111"/>
-            <rect x="60.5" y="57.5" width="17" height="11" rx="4.5" fill="#111"/>
-            <path d="M55.5 61.5 Q58 59.5 60.5 61.5" stroke="#111" strokeWidth="2" fill="none"/>
-            <path d="M41.5 60.5 L46 60.5 M63.5 60.5 L68 60.5" stroke="white" strokeWidth="1.3" strokeLinecap="round" opacity="0.55"/>
+            <path d="M38.5 59.5 L29.5 57.5 M77.5 59.5 L86.5 57.5" stroke="#B45309" strokeWidth="1.3" strokeLinecap="round"/>
+            <path d="M38.5 58.6 Q38.5 56.6 41 56.6 L53 56.6 Q56 56.6 55.5 59.6 Q54.3 70.5 46.2 70.5 Q38.5 69.8 38.5 58.6 Z" fill="#1F2937" stroke="#CA8A04" strokeWidth="1.4"/>
+            <path d="M77.5 58.6 Q77.5 56.6 75 56.6 L63 56.6 Q60 56.6 60.5 59.6 Q61.7 70.5 69.8 70.5 Q77.5 69.8 77.5 58.6 Z" fill="#1F2937" stroke="#CA8A04" strokeWidth="1.4"/>
+            <path d="M55.3 58 Q58 56.4 60.7 58 M55 60.8 Q58 59.7 61 60.8" stroke="#CA8A04" strokeWidth="1.1" fill="none"/>
+            <path d="M41.5 59.5 Q46 58.6 50 59.5 M63.5 59.5 Q68 58.6 72 59.5" stroke="white" strokeWidth="1.2" strokeLinecap="round" opacity="0.5"/>
+            <path d="M43 66 L46 63 M65 66 L68 63" stroke="white" strokeWidth="0.9" strokeLinecap="round" opacity="0.3"/>
           </g>
         )}
         {o.eyes === 'monocle' && (
@@ -100,15 +149,31 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             <circle cx="69" cy="63" r="8" fill="white" fillOpacity="0.18" stroke="#CA8A04" strokeWidth="2.2"/>
           </g>
         )}
-        {o.extra === 'pansement' && (
+        {o.face === 'pansement' && (
           <g transform="rotate(-24 40 71)">
             <rect x="32" y="68" width="16" height="6" rx="3" fill="#F5D0A9" stroke="#D6A77A" strokeWidth="0.8"/>
             <rect x="37.5" y="68.4" width="5" height="5.2" fill="#EBC097"/>
             <circle cx="34.8" cy="71" r="0.5" fill="#C08A5B"/><circle cx="45.2" cy="71" r="0.5" fill="#C08A5B"/>
           </g>
         )}
-        {/* Coiffe : casque de chantier (défaut), casque en or, tuque ou couronne (vestiaire) */}
-        {o.head === 'cowboy' ? (
+        {o.mouth === 'clope' && (
+          <g>
+            <path d="M80 80 q3 -4 0 -7.5 q-3 -4 1 -8" stroke="#D1D5DB" strokeWidth="1.2" fill="none" strokeLinecap="round" opacity="0.75"/>
+            <path d="M63 81 L78.5 84.5" stroke="white" strokeWidth="2.8"/>
+            <path d="M63 81 L66.5 81.8" stroke="#F59E0B" strokeWidth="2.8"/>
+            <circle cx="79" cy="84.6" r="1.5" fill="#EF4444"/>
+            <circle cx="79.4" cy="84.4" r="0.6" fill="#FDE047"/>
+          </g>
+        )}
+        {/* Coiffe : casque de chantier (défaut), cowboy, Noël, tuque, couronne, citrouille (vestiaire) */}
+        {o.head === 'citrouille' ? null : o.head === 'noel' ? (
+          <g>
+            <path d="M30 50 Q30 22 58 17 Q80 14 93 33 Q86 30 81 33 Q85 41 86 50 Z" fill="#DC2626"/>
+            <path d="M40 26 Q50 20 62 19" stroke="#F87171" strokeWidth="2.4" fill="none" strokeLinecap="round" opacity="0.7"/>
+            <rect x="26" y="42" width="64" height="11" rx="5.5" fill="white" stroke="#E5E7EB" strokeWidth="0.8"/>
+            <circle cx="94" cy="35" r="6.5" fill="white" stroke="#E5E7EB" strokeWidth="0.8"/>
+          </g>
+        ) : o.head === 'cowboy' ? (
           <g>
             <path d="M14 47 Q20 55 58 54 Q96 55 102 47 Q96 51 58 50 Q20 51 14 47 Z" fill="#6B3F1D"/>
             <path d="M14 47 Q12 41 18 40 Q24 46 58 46 Q92 46 98 40 Q104 41 102 47 Q96 51 58 50 Q20 51 14 47 Z" fill="#8B5A2B"/>
