@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS } from './costarRewards.js';
+import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS } from './costarRewards.js';
 
 const day = new Date(2026, 10, 20, 15, 0); // vendredi de novembre, hors midi (pas de mission saisonnière)
 const night = new Date(2026, 10, 20, 22, 30);
@@ -111,6 +111,23 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     st = applyReview(st, { note: 7, observations: 3 }, day).state; // une vraie relecture garde la tenue d'essai
     expect(st.sandbox).toEqual({ head: 'tuque', feet: 'santiags' });
     expect(st.equipped.neck).toBe('noeud');
+  });
+
+  it('costard trois pièces : 5 notes de 9/10 ou plus', () => {
+    let st = emptyState();
+    for (let i = 0; i < 4; i++) st = applyReview(st, { note: 9, observations: 2 }, day).state;
+    expect(unlockedIds(st.stats)).not.toContain('costard');
+    const r = applyReview(st, { note: 10, observations: 2 }, day);
+    expect(r.completed.map(m => m.reward)).toContain('costard');
+    expect(r.state.equipped.body).toBe('costard');
+  });
+
+  it('game mode réservé au compte de Thomas', () => {
+    expect(canUseGameMode('thomas@assemblage.net')).toBe(true);
+    expect(canUseGameMode(' Thomas@Assemblage.net ')).toBe(true);
+    expect(canUseGameMode('margot@assemblage.net')).toBe(false);
+    expect(canUseGameMode('')).toBe(false);
+    expect(canUseGameMode(null)).toBe(false);
   });
 
   it('état corrompu → progression vierge, sans plantage', () => {

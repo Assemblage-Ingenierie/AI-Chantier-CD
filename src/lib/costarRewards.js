@@ -42,6 +42,7 @@ export const COSMETICS = {
   noel:      { name: 'Bonnet de Noël',     slot: 'head',  icon: '🎅' },
   citrouille:{ name: 'Tête de citrouille', slot: 'head',  icon: '🎃' },
   pull:      { name: 'Pull en cachemire (rétréci)', slot: 'body', icon: '🧶' },
+  costard:   { name: 'Costard trois pièces', slot: 'body', icon: '🤵' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -61,13 +62,14 @@ export const MISSIONS = [
   { id: 'noel',      title: 'Joyeux Noël',            desc: 'Faire relire un rapport en décembre',                   reward: 'noel',      progress: s => [s.december ? 1 : 0, 1] },
   { id: 'habitue',   title: 'Habitué du barrage',     desc: 'Faire relire 10 rapports',                              reward: 'tuque',     progress: s => [Math.min(s.reviews, 10), 10] },
   { id: 'serie',     title: 'Série en or',            desc: 'Obtenir 8/10 ou plus, 3 fois',                          reward: 'monocle',   progress: s => [Math.min(s.count8, 3), 3] },
+  { id: 'costard',   title: 'Costar en costard',      desc: 'Obtenir 9/10 ou plus, 5 fois. Un ingénieur senior, ça se respecte : costard trois pièces de rigueur.', reward: 'costard', progress: s => [Math.min(s.count9, 5), 5] },
   { id: 'dix',       title: 'Perfection',             desc: 'Obtenir 10/10',                                         reward: 'casque_or', progress: s => [Math.min(s.count10, 1), 1] },
   { id: 'veteran',   title: 'Vétéran du chantier',    desc: 'Faire relire 25 rapports',                              reward: 'cicatrices',progress: s => [Math.min(s.reviews, 25), 25] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false };
+  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -80,7 +82,7 @@ export function normalizeState(raw) {
   const s = raw.stats && typeof raw.stats === 'object' ? raw.stats : {};
   const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
   st.stats = {
-    reviews: num(s.reviews, 0), bestNote: num(s.bestNote, -1), count8: num(s.count8, 0), count10: num(s.count10, 0),
+    reviews: num(s.reviews, 0), bestNote: num(s.bestNote, -1), count8: num(s.count8, 0), count9: num(s.count9, 0), count10: num(s.count10, 0),
     maxObs: num(s.maxObs, 0), night: !!s.night, lowNote: !!s.lowNote, remontada: !!s.remontada,
     projects: s.projects && typeof s.projects === 'object' ? { ...s.projects } : {}, // rapport (affaire + visite) → dernière note
     affaires: s.affaires && typeof s.affaires === 'object' ? { ...s.affaires } : {},  // affaires relues
@@ -112,6 +114,7 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   s.reviews += 1;
   s.bestNote = Math.max(s.bestNote, note);
   if (note >= 8) s.count8 += 1;
+  if (note >= 9) s.count9 += 1;
   if (note >= 10) s.count10 += 1;
   if (note <= 4) s.lowNote = true;
   s.maxObs = Math.max(s.maxObs, observations);
@@ -172,7 +175,12 @@ export function saveCostarState(state) {
   try { window.dispatchEvent(new CustomEvent(CHANGE_EVENT)); } catch { /* hors navigateur */ }
   return _mem;
 }
-// GAME MODE (admin, pour tester tous les objets) : simple drapeau local, séparé de la progression.
+// GAME MODE (pour tester tous les objets) : simple drapeau local, séparé de la progression.
+// Réservé au compte de Thomas (demande : « que pour moi, personne d'autre ne peut le voir ») :
+// la case n'apparaît que sur sa ligne dans Administration, et le drapeau est coupé si un autre
+// compte se connecte sur le même appareil (cf. ChantierAI).
+export const GAME_MODE_OWNER = 'thomas@assemblage.net';
+export const canUseGameMode = (email) => String(email || '').trim().toLowerCase() === GAME_MODE_OWNER;
 export const GAME_MODE_KEY = 'chantierai_costar_game_v1';
 export function isGameMode() {
   try { return localStorage.getItem(GAME_MODE_KEY) === '1'; } catch { return false; }

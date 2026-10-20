@@ -17,7 +17,7 @@ import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 import VisitesScreen from './VisitesScreen.jsx';
-import { isGameMode, setGameMode as setCostarGame } from '../../lib/costarRewards.js';
+import { isGameMode, setGameMode as setCostarGame, canUseGameMode } from '../../lib/costarRewards.js';
 
 export default function ChantierAI({ profile, session, onLogout, onProfileSaved }) {
   // Logo wordmark complet — utiliser le PNG HD local pour éviter qu'un fichier
@@ -28,7 +28,6 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [showAdmin, setShowAdmin] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [costarGame, setCostarGameState] = useState(isGameMode);
   const [showContacts, setShowContacts] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -58,6 +57,9 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   // File d'upload photos : reprend les envois en attente (photos prises sur site dont
   // l'upload a été interrompu) dès l'ouverture de l'app, puis au retour en ligne/premier plan.
   useEffect(() => { initPhotoUploadQueue(); }, []);
+  // Game mode Costar réservé au compte de Thomas : coupé si un autre compte utilise cet appareil.
+  const userEmail = profile?.email || session?.user?.email || '';
+  useEffect(() => { if (userEmail && !canUseGameMode(userEmail) && isGameMode()) setCostarGame(false); }, [userEmail]);
 
   // Filet hors-ligne (retour Thomas) : dès que la file d'upload se VIDE (tous les fichiers photos
   // partis vers Storage, connexion revenue), on force une sauvegarde distante des projets modifiés
@@ -526,18 +528,6 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
                     style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
                     <span style={{ display:'flex',alignItems:'center',gap:10 }}><Ic n="usr" s={16}/> Administration</span>
                     {pendingCount > 0 && <span style={{ background:DA.red,color:'white',borderRadius:10,fontSize:11,fontWeight:800,padding:'1px 7px' }}>{pendingCount}</span>}
-                  </button>
-                )}
-                {/* Game mode Costar (admin uniquement, PC) : tous les objets du vestiaire pour les
-                    essayer. Progression et vraie tenue intactes (cf. lib/costarRewards.js). */}
-                {profile?.role === 'admin' && !isMobile && (
-                  <button onClick={() => { setCostarGame(!costarGame); setCostarGameState(!costarGame); }}
-                    role="switch" aria-checked={costarGame}
-                    style={{ width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'13px 16px',fontSize:13,color:DA.gray,background:'none',border:'none',cursor:'pointer',textAlign:'left',borderTop:`1px solid ${DA.border}` }}>
-                    <span style={{ display:'flex',alignItems:'center',gap:10 }}><span style={{ fontSize:15,lineHeight:1,width:16,textAlign:'center' }}>🎮</span> Game mode</span>
-                    <span aria-hidden="true" style={{ width:30,height:17,borderRadius:9,background:costarGame ? '#F97316' : '#D1D5DB',position:'relative',transition:'background 0.15s',flexShrink:0 }}>
-                      <span style={{ position:'absolute',top:2,left:costarGame ? 15 : 2,width:13,height:13,borderRadius:'50%',background:'white',transition:'left 0.15s',boxShadow:'0 1px 2px rgba(0,0,0,0.2)' }}/>
-                    </span>
                   </button>
                 )}
                 {onLogout && (
