@@ -407,6 +407,7 @@ export default function Costar({ projet, fixed = false }) {
   const [quip, setQuip] = useState('');
   const [engine, setEngine] = useState(null); // { provider, from, why } : moteur qui a VRAIMENT répondu
   const [fromCache, setFromCache] = useState(false); // avis repris de la mémoire (rapport inchangé)
+  const [reviewedKey, setReviewedKey] = useState(null); // empreinte du rapport tel qu'il a été relu
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
@@ -458,6 +459,7 @@ export default function Costar({ projet, fixed = false }) {
       setQuip(scoreQuip(hit.review.note));
       setEngine(hit.engine || null);
       setFromCache(true);
+      setReviewedKey(cacheKey);
       setStatus('done');
       return;
     }
@@ -490,6 +492,7 @@ export default function Costar({ projet, fixed = false }) {
       const eng = d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null;
       setEngine(eng);
       putCachedReview(cacheKey, parsed, eng);
+      setReviewedKey(cacheKey);
       setStatus('done');
       // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
       try {
@@ -528,6 +531,10 @@ export default function Costar({ projet, fixed = false }) {
   const doneCount = MISSIONS.filter(m => realUnlocked.has(m.reward)).length;
 
   const sc = review ? scoreLabel(review.note) : null;
+  // Rapport modifié depuis l'avis affiché → Costar propose de relire (demande Thomas : « dès qu'on
+  // modifie le rapport, ça doit proposer de remouliner »). Calculé seulement quand l'avis est ouvert.
+  const reportChanged = open && status === 'done' && !!reviewedKey
+    && costarCacheKey(buildReportDigest(projet).text, getAIProvider()) !== reviewedKey;
   const loading = status === 'loading';
   if (!isPc) return null;
 
@@ -623,7 +630,7 @@ export default function Costar({ projet, fixed = false }) {
                   🦫 {review.blague}
                 </p>
               )}
-              {fromCache && (
+              {fromCache && !reportChanged && (
                 <div style={{ marginTop: 10, fontSize: 10.5, color: DA.grayL, lineHeight: 1.4 }}>
                   Rapport inchangé depuis ma dernière lecture : je te redonne le même avis (sans repasser par l'IA).
                 </div>
@@ -635,10 +642,17 @@ export default function Costar({ projet, fixed = false }) {
                     : <>Relu avec {ENGINE_NAMES[engine.provider] || engine.provider}.</>}
                 </div>
               )}
-              <button onClick={ask}
-                style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: DA.gray, background: 'white', border: `1px solid ${DA.border}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
-                Relire mon rapport
-              </button>
+              {reportChanged ? (
+                <button onClick={ask} className="costar-unlock"
+                  style={{ display: 'block', marginTop: 12, fontSize: 12.5, fontWeight: 800, color: 'white', background: '#F97316', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.35)' }}>
+                  Rapport modifié : relire les changements
+                </button>
+              ) : (
+                <button onClick={ask}
+                  style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: DA.gray, background: 'white', border: `1px solid ${DA.border}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
+                  Relire mon rapport
+                </button>
+              )}
             </>
           )}
           </div>
