@@ -51,7 +51,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     finally { setPinningId(null); }
   };
   const [editingId, setEditingId] = useState(null); // visite en mode édition
-  const [dupSource, setDupSource] = useState(null);  // visite à dupliquer (choix photos en attente)
+  const [dupSourceId, setDupSourceId] = useState(null); // visite à dupliquer (choix photos en attente)
+  const [dupLoading, setDupLoading] = useState(false);  // photos de la visite en cours de chargement
+  // Toujours la version À JOUR de la visite (photos hydratées entre-temps), pas un instantané.
+  const dupSource = dupSourceId ? (visites.find(v => v.id === dupSourceId) || null) : null;
+  const setDupSource = (v) => setDupSourceId(v ? v.id : null);
   const [visitSummaries, setVisitSummaries] = useState(() => loadVSummaryCache());
   const summaryGenRef = useRef(false);
   const [visitRecaps, setVisitRecaps] = useState(() => loadVRecapCache());
@@ -252,10 +256,18 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
 
   // Clic « Dupliquer » → on demande d'abord AVEC ou SANS les photos (demande Thomas : une
   // nouvelle visite réutilise souvent la trame mais avec de nouvelles photos).
-  const duplicateVisite = (e, sourceId) => {
+  // Les photos d'une visite pas encore ouverte sur cet appareil ne sont pas chargées
+  // (lazy loading) → sans ça, la visite paraissait « sans photo » et la question n'était
+  // pas posée (retour Thomas). On les charge d'abord, la boîte attend.
+  const duplicateVisite = async (e, sourceId) => {
     e.stopPropagation();
     const source = visites.find(v => v.id === sourceId);
-    if (source) setDupSource(source);
+    if (!source) return;
+    setDupSource(source);
+    if (visiteSyncState(source, false) !== 'notloaded' || !onHydrateVisite) return;
+    setDupLoading(true);
+    try { await onHydrateVisite(sourceId); } catch { /* hors ligne : on duplique ce qu'on a */ }
+    finally { setDupLoading(false); }
   };
 
   // keepPhotos=false → items conservés (intitulé, commentaire, urgence…) mais SANS photos.
@@ -704,6 +716,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       {dupSource && (() => {
         const nbPhotos = (dupSource.localisations || []).flatMap(l => l.items || [])
           .reduce((s, it) => s + (it.photos || []).length, 0);
+        // Hors ligne : photos pas chargeables → on le dit plutôt que d'annoncer « pas de photo ».
+        const partial = !dupLoading && visiteSyncState(dupSource, false) === 'notloaded';
         return (
           <div onClick={() => setDupSource(null)}
             style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
@@ -715,16 +729,21 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
               </div>
               <p style={{ fontSize:12.5, color:DA.gray, margin:'0 0 16px', lineHeight:1.45 }}>
                 « {dupSource.label || 'Visite'} » sera copiée (zones, observations, plans).
-                {nbPhotos > 0
-                  ? ` Gardez-vous les ${nbPhotos} photo${nbPhotos > 1 ? 's' : ''} de la visite ?`
-                  : ' Cette visite ne contient pas de photo.'}
+                {dupLoading
+                  ? ' Chargement des photos…'
+                  : nbPhotos > 0
+                    ? ` Gardez-vous les ${nbPhotos} photo${nbPhotos > 1 ? 's' : ''} de la visite ?`
+                    : partial
+                      ? ' Les photos de cette visite n\'ont pas pu être chargées (hors connexion ?) : la copie sera faite sans photos.'
+                      : ' Cette visite ne contient pas de photo.'}
+                {!dupLoading && nbPhotos > 0 && partial && ' (Certaines photos non chargées — hors connexion ? — ne seront pas copiées.)'}
               </p>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                <button onClick={() => performDuplicate(dupSource, true)}
-                  style={{ width:'100%', minHeight:52, padding:'12px', background:DA.red, color:'white', border:'none', borderRadius:11, fontSize:14, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                <button onClick={() => performDuplicate(dupSource, true)} disabled={dupLoading}
+                  style={{ width:'100%', minHeight:52, padding:'12px', background:DA.red, color:'white', border:'none', borderRadius:11, fontSize:14, fontWeight:800, cursor:dupLoading ? 'default' : 'pointer', opacity:dupLoading ? 0.5 : 1, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                   <Ic n="chk" s={15}/> {nbPhotos > 0 ? 'Dupliquer avec les photos' : 'Dupliquer'}
                 </button>
-                {nbPhotos > 0 && (
+                {nbPhotos > 0 && !dupLoading && (
                   <button onClick={() => performDuplicate(dupSource, false)}
                     style={{ width:'100%', minHeight:52, padding:'12px', background:'white', color:DA.black, border:`1.5px solid ${DA.border}`, borderRadius:11, fontSize:14, fontWeight:700, cursor:'pointer' }}>
                     Dupliquer sans les photos
