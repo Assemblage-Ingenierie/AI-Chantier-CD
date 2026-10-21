@@ -180,6 +180,38 @@ export async function getThumbUrl(src, width, allowPath = false) {
   return p;
 }
 
+// Simple chemin du bucket (pas une URL) : le navigateur ne sait pas l'afficher tel quel.
+export function isPlainPath(src) {
+  return typeof src === 'string' && !!src && !/^(data:|blob:|https?:|\/)/i.test(src);
+}
+
+// URL signée de l'ORIGINAL (sans transformation) d'un simple chemin — repli des couvertures quand
+// la vignette échoue alors que l'URL signée groupée n'est pas (encore) arrivée : avant, la carte
+// restait sur l'icône pour toujours (retour Thomas 21/10, Rue de Cléry / Pouvelle). Indépendant
+// de la coupure des transformations (_off) : c'est une signature classique.
+export async function getSignedOriginal(src) {
+  if (!isPlainPath(src)) return null;
+  const path = src.split('?')[0];
+  const key = `${path}@orig`;
+  await loadThumbCache();
+  const e = _mem.get(key);
+  if (e && e.exp - SAFETY_MS > Date.now()) return e.url;
+  if (_pending.has(key)) return _pending.get(key);
+  const p = runQueued(async () => {
+    try {
+      const sb = await getSupabase();
+      const { data, error } = await sb.storage.from('photos').createSignedUrl(path, TTL_SEC);
+      if (error || !data?.signedUrl) { console.warn('[cover] signature de l\'original impossible', path, error?.message || ''); return null; }
+      const entry = { url: data.signedUrl, exp: Date.now() + TTL_SEC * 1000 };
+      _mem.set(key, entry);
+      persist(key, entry);
+      return entry.url;
+    } catch { return null; }
+  }).finally(() => _pending.delete(key));
+  _pending.set(key, p);
+  return p;
+}
+
 // Retours d'affichage du composant <img> : succès (la vignette s'est chargée) / échec.
 export function reportThumbOk() { _fails = 0; }
 export function reportThumbError(key) {

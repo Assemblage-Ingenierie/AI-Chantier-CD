@@ -82,6 +82,20 @@ describe('vignettes allégées des photos', () => {
     expect(await T.getThumbUrl(SIGNED, 640)).toBeNull();
   });
 
+  it('couverture : vignette en échec + simple chemin → l\'ORIGINAL est signé (plus de carte bloquée sur l\'icône)', async () => {
+    const path = 'clery_ab12/cover/p1/c9.png';
+    T.reportThumbError(T.thumbKey(path, 640, true)); // transformation refusée (PNG trop lourd)
+    for (let i = 0; i < 4; i++) T.reportThumbError(`x${i}`); // et même transformations coupées
+    expect(T.thumbsDisabled()).toBe(true);
+    const u = await T.getSignedOriginal(path);
+    expect(u).toBeTruthy();
+    expect(calls.at(-1)).toMatchObject({ path, opts: undefined }); // signature classique, sans transform
+    expect(await T.getSignedOriginal(path)).toBe(u); // mémorisée
+    expect(calls).toHaveLength(1);
+    expect(await T.getSignedOriginal('https://x/y.png')).toBeNull(); // déjà une URL : rien à faire
+    expect(await T.getSignedOriginal('data:image/png;base64,AA')).toBeNull();
+  });
+
   it('un succès remet le compteur d\'échecs à zéro', async () => {
     sb.fail = true;
     for (let i = 0; i < 3; i++) await T.getThumbUrl(SIGNED.replace('ph%201', `q${i}`), 640);
