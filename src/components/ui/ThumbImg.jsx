@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { thumbKey, peekThumb, getThumbUrl, reportThumbOk, reportThumbError, thumbsDisabled } from '../../lib/photoThumbs.js';
+import { thumbKey, peekThumb, getThumbUrl, reportThumbOk, reportThumbError, thumbsDisabled, isPlainPath, getSignedOriginal } from '../../lib/photoThumbs.js';
 
 // Vignette allégée d'une photo Supabase (cf. lib/photoThumbs.js). Retourne :
 //   src    : URL à afficher — vignette si dispo, ORIGINAL sinon ; null le temps de la signature
@@ -27,11 +27,23 @@ export function useThumb(src, width, { allowPath = false } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  const cur = !key ? null : state.key === key ? state : { url: peekThumb(key), fallback: thumbsDisabled() };
+  // Repli sur l'original alors qu'on n'a qu'un SIMPLE chemin (couvertures, allowPath) : on signe
+  // l'original nous-mêmes, sinon la carte restait sur l'icône (retour Thomas 21/10).
+  const needOrig = !!(allowPath && cur?.fallback && isPlainPath(src));
+  const [orig, setOrig] = useState(null); // { src, url }
+  useEffect(() => {
+    if (!needOrig) return;
+    let cancelled = false;
+    getSignedOriginal(src).then((u) => { if (!cancelled) setOrig({ src, url: u }); });
+    return () => { cancelled = true; };
+  }, [needOrig, src]);
+
   if (!key) return { src, onLoad: () => {}, onError: () => false };
-  const cur = state.key === key ? state : { url: peekThumb(key), fallback: thumbsDisabled() };
   const usingThumb = !!cur.url && !cur.fallback;
+  const fallbackSrc = needOrig ? (orig?.src === src ? orig.url : null) : src;
   return {
-    src: usingThumb ? cur.url : (cur.fallback ? src : null),
+    src: usingThumb ? cur.url : (cur.fallback ? fallbackSrc : null),
     onLoad: () => { if (usingThumb) reportThumbOk(); },
     onError: () => {
       if (!usingThumb) return false;
