@@ -114,17 +114,18 @@ SOIS EXIGEANT, DUR MAIS JUSTE : une bonne note se MÉRITE par le contenu. N'hés
 
 PLAFOND DE VALEUR ("plafond", 0 à 10) : la note maximale que mérite la QUALITÉ du contenu (utile, précis, actionnable), même sans aucune faute. 10 = complet et actionnable ; 8 = bon mais il manque des précisions utiles ; 6 = correct ; 4 = constats sommaires, préconisations génériques ; 2 = très peu de contenu exploitable ; 0 = quasi vide. Justifie-le en une phrase dans "raison_plafond" (ce qui manque pour viser plus haut).
 
-POINTS PERDUS : pars de 10 et retire des points UNIQUEMENT pour (la note finale = le plus bas entre 10 moins le total de "points_perdus" et le plafond) :
-- risque pour les personnes ou la stabilité décrit sans dire quoi faire tout de suite : -2 ;
-- désordre décrit sans dire quoi faire : -1 par cas, -3 au plus en tout ;
-- formulation floue qui empêche de comprendre ou d'agir : -1 ;
-- fautes d'orthographe ou de grammaire : -1 si plusieurs, -2 si elles gênent vraiment la lecture ;
-- erreur technique manifeste ou contradiction nette : -1 à -2.
-INTERDIT de retirer des "points_perdus" pour : manque de précision (dimensions, mesures, cause, témoins, délais, investigations), chiffrage, titre manquant, observation courte, longueur, conclusion absente, mise en page, champs de formulaire, photos ; le manque de contenu se reflète dans le PLAFOND, pas dans les points perdus. Regroupe un même défaut répété en UNE ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide ; la note est alors celle du plafond.
+POINTS PERDUS : pars de 10 et retire des points UNIQUEMENT pour (la note finale = le plus bas entre 10 moins le total de "points_perdus" et le plafond), avec son "type" :
+- "danger" : risque pour les personnes ou la stabilité décrit sans dire quoi faire tout de suite : -2 ;
+- "action" : désordre décrit sans AUCUNE suite (ni réparer, ni vérifier, ni surveiller, ni consulter, ni « rien à prévoir ») : -1 par cas ;
+- "flou" : phrase qu'un lecteur ne peut PAS comprendre (incompréhensible, ambiguë au point d'être mal lue) : -1 ;
+- "fautes" : orthographe ou grammaire : -1 si plusieurs, -2 si elles gênent vraiment la lecture ;
+- "erreur" : erreur technique manifeste ou contradiction nette : -1 à -2.
+Une vérification, un contrôle ou une surveillance ciblée (« le linteau devra être vérifié lors des travaux », « un contrôle de la VMC pourra être effectué ») EST une préconisation : jamais de retrait. « Pourrait être plus précis », « que faire si… » = suggestion, PAS un retrait.
+INTERDIT de retirer des "points_perdus" pour : manque de précision (dimensions, mesures, cause, témoins, délais, investigations, suite à donner), chiffrage, titre manquant, observation courte, longueur, conclusion absente, mise en page, champs de formulaire, photos ; le manque de contenu se reflète dans le PLAFOND, pas dans les points perdus. Regroupe un même défaut répété en UNE ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide ; la note est alors celle du plafond. Ta note doit coller à ton verdict : « bon diagnostic » ne peut pas valoir 3.
 PREUVE : chaque retrait cite dans "citation" l'extrait du rapport COPIÉ MOT POUR MOT (4 à 15 mots, même orthographe et ponctuation), sinon il est annulé. Pas de citation exacte possible → pas de retrait. Même rapport → toujours la même note.
 
 RÉPONSE COURTE : UNIQUEMENT un objet JSON valide, sans texte autour, chaque point en UNE phrase :
-{"plafond":7,"raison_plafond":"ce qui manque pour viser plus haut","points_perdus":[{"points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["1 à 3 points forts concrets"],"ameliorer":["0 à 3 suggestions « tu pourrais… » avec l'observation visée"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
+{"plafond":7,"raison_plafond":"ce qui manque pour viser plus haut","points_perdus":[{"type":"action","points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["1 à 3 points forts concrets"],"ameliorer":["0 à 3 suggestions « tu pourrais… » avec l'observation visée"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
 Si rien à réécrire : "reecriture": null.`;
 
 // PLAFOND DE VOLUME (retour Thomas 21/10 : « 9/10 sur un rapport de 9 lignes, trop généreux ;
@@ -144,10 +145,14 @@ export function volumeCap(words) {
 // consigne « même rapport → même note »). Évite de repayer une relecture d'un rapport inchangé.
 export function costarCacheKey(text, engine = '') {
   let h = 5381;
-  const s = `v4\u0001${engine}\u0001${text || ''}`; // v4 : qualité > longueur (les anciens avis ne resservent pas)
+  const s = `v5\u0001${engine}\u0001${text || ''}`; // v5 : retraits plafonnés par type (les anciens avis ne resservent pas)
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return `${s.length.toString(36)}-${h.toString(36)}`;
 }
+
+// Retrait maximal cumulé par type de défaut (cf. POINTS PERDUS dans COSTAR_SYSTEM). Le danger
+// reste le plus lourd ; un type inconnu est compté comme « flou ».
+export const TYPE_CAPS = { danger: 4, action: 3, flou: 2, fautes: 2, erreur: 2 };
 
 const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? [v] : []))
   .map(s => String(s ?? '').trim()).filter(Boolean).slice(0, 6);
@@ -180,9 +185,16 @@ export function parseCostarReply(raw, source = null, opts = {}) {
   if (!obj || typeof obj !== 'object') return null;
   // Points retirés, chacun justifié : la note = 10 − total (cohérente avec ce qui est affiché).
   const srcN = source != null ? norm(source) : null;
+  // Plafond PAR TYPE de défaut, appliqué ici (retour Thomas 21/10 : 3/10 sur un « bon diagnostic »,
+  // l'IA retirait 1 point par observation au titre du « flou » → plus le rapport est long, plus il
+  // perd). Les retraits au-delà du plafond de leur type sont rognés, puis retirés de la liste
+  // → le total affiché reste égal à ce qui est retiré.
+  const budget = { ...TYPE_CAPS };
   const pertes = Array.isArray(obj.points_perdus)
-    ? obj.points_perdus.map(x => ({ points: Math.max(1, Math.min(3, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison), citation: clean(x?.citation) }))
-        .filter(x => x.raison && (srcN == null || citationInReport(x.citation, srcN))).slice(0, 8)
+    ? obj.points_perdus.map(x => ({ type: TYPE_CAPS[x?.type] != null ? x.type : 'flou', points: Math.max(1, Math.min(3, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison), citation: clean(x?.citation) }))
+        .filter(x => x.raison && (srcN == null || citationInReport(x.citation, srcN)))
+        .map(x => { const pts = Math.min(x.points, budget[x.type]); budget[x.type] -= pts; return { ...x, points: pts }; })
+        .filter(x => x.points > 0).slice(0, 8)
     : null;
   const brute = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
   if (!Number.isFinite(brute)) return null;

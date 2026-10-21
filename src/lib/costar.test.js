@@ -73,19 +73,19 @@ describe('Costar — réponse IA', () => {
   });
 
   it('points perdus : la note = 10 − total, chaque retrait justifié', () => {
-    const r = parseCostarReply(JSON.stringify({ note: 9, points_perdus: [{ points: 2, raison: 'Obs 3 : cause non argumentée' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou' }, { points: 2, raison: '' }] }));
+    const r = parseCostarReply(JSON.stringify({ note: 9, points_perdus: [{ type: 'erreur', points: 2, raison: 'Obs 3 : cause non argumentée' }, { type: 'flou', points: 1, raison: 'Obs 5 : « à surveiller » flou' }, { points: 2, raison: '' }] }));
     expect(r.note).toBe(7); // 10 − 2 − 1 (la ligne sans raison est ignorée), pas le 9 annoncé
-    expect(r.pertes).toEqual([{ points: 2, raison: 'Obs 3 : cause non argumentée', citation: '' }, { points: 1, raison: 'Obs 5 : « à surveiller » flou', citation: '' }]);
+    expect(r.pertes).toEqual([{ type: 'erreur', points: 2, raison: 'Obs 3 : cause non argumentée', citation: '' }, { type: 'flou', points: 1, raison: 'Obs 5 : « à surveiller » flou', citation: '' }]);
     expect(parseCostarReply('{"points_perdus":[]}').note).toBe(10);
   });
 
   it('garde-fou : un point retiré sans citation EXACTE du rapport est annulé', () => {
     const src = "[Obs 1] Fissure limon\n  Fisure traversante au 2e, à surveiller.\n[Obs 2] Plancher\n  Flèche visible, l’étaiement est à prévoir.";
     const reply = JSON.stringify({ points_perdus: [
-      { points: 1, raison: 'Faute', citation: 'Fisure traversante' },                 // présent → compte
+      { type: 'fautes', points: 1, raison: 'Faute', citation: 'Fisure traversante' },                 // présent → compte
       { points: 2, raison: 'Sur-interprétation', citation: 'risque d’effondrement' }, // inventé → annulé
       { points: 1, raison: 'Flou', citation: '« à surveiller. »' },                  // guillemets/ponctuation tolérés
-      { points: 1, raison: 'Apostrophe', citation: "l'étaiement est … prévoir" },     // ’ vs ' et morceaux « … »
+      { type: 'erreur', points: 1, raison: 'Apostrophe', citation: "l'étaiement est … prévoir" },     // ’ vs ' et morceaux « … »
       { points: 1, raison: 'Sans citation' },                                         // pas de preuve → annulé
     ] });
     const r = parseCostarReply(reply, src);
@@ -93,6 +93,20 @@ describe('Costar — réponse IA', () => {
     expect(r.note).toBe(7);
     // Fautes corrigées : la citation n'existe plus → plus de pénalité (retour Thomas : 9 → 5).
     expect(parseCostarReply(reply, src.replace('Fisure', 'Fissure')).note).toBe(8);
+  });
+
+  it('retraits plafonnés PAR TYPE (retour Thomas 21/10 : 3/10 sur un « bon diagnostic », -1 « flou » par observation)', () => {
+    const flous = Array.from({ length: 7 }, (_, i) => ({ type: 'flou', points: 1, raison: `Obs ${i + 1} : trop vague` }));
+    const r = parseCostarReply(JSON.stringify({ points_perdus: flous }));
+    expect(r.note).toBe(8);               // « flou » : 2 points au plus, quel que soit le nombre d'observations
+    expect(r.pertes).toHaveLength(2);     // le total affiché = le total retiré
+    const sansType = parseCostarReply(JSON.stringify({ points_perdus: [{ points: 3, raison: 'a' }, { points: 1, raison: 'b' }] }));
+    expect(sansType.note).toBe(8);        // type absent/inconnu → compté comme « flou »
+    const danger = parseCostarReply(JSON.stringify({ points_perdus: [
+      { type: 'danger', points: 2, raison: 'Obs 1 : plancher sans étaiement' }, { type: 'danger', points: 2, raison: 'Obs 2 : garde-corps' },
+      { type: 'action', points: 1, raison: 'x' }, { type: 'action', points: 1, raison: 'y' }, { type: 'action', points: 1, raison: 'z' }, { type: 'action', points: 1, raison: 'w' },
+    ] }));
+    expect(danger.note).toBe(3);          // un vrai danger pèse toujours lourd : 10 − 4 − 3
   });
 
   it('réponse illisible → null', () => {
@@ -117,8 +131,8 @@ describe('Costar — économie de tokens', () => {
     expect(costarCacheKey('rapport A', 'gemini-flash')).not.toBe(a);
   });
   it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
-    expect(COSTAR_SYSTEM.length).toBeLessThan(6000); // v1 : 7 547 caractères
-    for (const k of ['-2', '-3 au plus', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
+    expect(COSTAR_SYSTEM.length).toBeLessThan(6500); // v1 : 7 547 caractères
+    for (const k of ['-2', '"type"', 'EST une préconisation', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
   });
 });
 
@@ -138,7 +152,7 @@ describe('Costar — barème exigeant (retour Amaury : 9/10 pour 9 lignes)', () 
     const r = parseCostarReply('{"points_perdus":[],"plafond":7,"raison_plafond":"Pas de cause probable ni de délai"}', null, { words: 500 });
     expect(r.note).toBe(7);
     expect(r.plafond).toEqual({ value: 7, raison: 'Pas de cause probable ni de délai' });
-    const r2 = parseCostarReply('{"points_perdus":[{"points":3,"raison":"Obs 1 : x"}],"plafond":8}', null, { words: 500 });
+    const r2 = parseCostarReply('{"points_perdus":[{"type":"action","points":3,"raison":"Obs 1 : x"}],"plafond":8}', null, { words: 500 });
     expect(r2.note).toBe(7); // les points perdus font déjà plus bas que le plafond
     expect(r2.plafond).toBeNull();
   });
