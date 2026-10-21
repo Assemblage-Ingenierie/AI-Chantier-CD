@@ -1903,6 +1903,11 @@ function AutoTextarea({ value, style, ...props }) {
   );
 }
 
+// Tableau récap : lignes générées par l'IA PAR LOTS (cf. TableauRecapPage) ; pause globale après
+// un échec (quota épuisé…) pour ne pas relancer des dizaines de requêtes à chaque aperçu.
+const RECAP_BATCH = 15;
+let recapAutoPauseUntil = 0;
+
 function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
   // Use passed recapRows when available (interactive preview), otherwise compute
@@ -1949,27 +1954,67 @@ function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauR
     finally { setLoadingAI(null); }
   };
 
-  // Génération AUTOMATIQUE : pour chaque ligne avec commentaire mais sans désordre/solution.
-  // _waitOk=true → callAIProxy attend le throttle au lieu de lever une erreur.
+  // Même chose pour PLUSIEURS lignes en UNE requête (génération automatique) : réponse JSON
+  // indexée {"1": {"desordre","solution"}, …}. Une ligne absente de la réponse est simplement
+  // laissée vide (le bouton « Regénérer avec IA » de la ligne reste disponible).
+  const genRowsBatch = async (batch) => {
+    const updateFn = onUpdateRecapRef.current;
+    if (!updateFn || !batch.length) return;
+    const clean = (c) => String(c || '').replace(/<[^>]+>/g, ' ').replace(/\*{1,3}/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
+    const list = batch.map((row, k) => `[${k + 1}] (zone "${row.locNom}") ${clean(row.commentaire)}`).join('\n');
+    const prompt = `Observations de visite de chantier, numérotées :\n${list}\n\nPour CHAQUE observation, résume les désordres constatés et les solutions préconisées. Réponds UNIQUEMENT en JSON valide, sans texte autour : {"1":{"desordre":"• désordre 1\\n• désordre 2 (un bullet par problème constaté, 2-3 max)","solution":"• solution 1\\n• solution 2 (un bullet par réparation préconisée, 2-3 max, ou chaîne vide si aucune solution évoquée)"},"2":{…}}. En français, factuel, sans ponctuation finale, sans markdown. N'utilise jamais de tiret cadratin ni demi-cadratin (« — » ou « – »).`;
+    setAiErr(null);
+    const d = await callAIProxy({ feature: 'recap_row', _waitOk: true, json: true, model: 'claude-haiku-4-5-20251001', max_tokens: Math.min(4000, 180 * batch.length + 200), messages: [{ role: 'user', content: prompt }] });
+    const raw = (d.content?.[0]?.text || '').replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    let obj = null;
+    if (jsonMatch) try { obj = JSON.parse(jsonMatch[0]); } catch { /* réponse illisible : lignes laissées vides */ }
+    if (!obj) throw new Error('Réponse IA illisible');
+    const entries = [];
+    batch.forEach((row, k) => {
+      const o = obj[String(k + 1)];
+      if (!o || typeof o !== 'object') return;
+      const desordre = String(o.desordre ?? '').trim();
+      const finalDesordre = desordre || `• ${clean(row.commentaire).slice(0, 60)}`;
+      const patch = {};
+      if (finalDesordre) patch.titre = finalDesordre;
+      if (o.solution != null) patch.solution = String(o.solution).trim();
+      if (Object.keys(patch).length) entries.push([row.itemId, patch]);
+    });
+    if (entries.length) updateFn(entries); // une seule mise à jour pour tout le lot
+  };
+
+  // Génération AUTOMATIQUE des lignes avec commentaire mais sans désordre/solution — PAR LOTS.
+  // Retour Thomas 21/10 (« plus de crédit sur Gemini ni Mistral ») : avant, UNE requête IA par
+  // observation à chaque ouverture de l'aperçu (39 obs = 39 requêtes, relancées à chaque fois si
+  // le quota était épuisé) → c'est ce qui vidait les quotas gratuits. Désormais : une requête
+  // pour 15 lignes ; en cas d'échec (quota…), pause de 30 min sans réessayer (session).
   // Dépend de rowIdsKey (liste des IDs) et non de rows entier → ne redémarre pas à chaque update
   // de données (ce qui causerait une closure stale sur onUpdateRecap).
   const rowIdsKey = rows.map(r => r.itemId).join(',');
   useEffect(() => {
     if (!onUpdateRecap) return;
+    if (Date.now() < recapAutoPauseUntil) return;
     let cancelled = false;
-    const snapshot = rows; // capture la liste actuelle des rows pour cet effet
     const snapOvMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
+    const todo = rows.filter((row) => {
+      if (!row.commentaire || genDoneRef.current.has(row.itemId)) return false;
+      const ov = snapOvMap.get(row.itemId) || {};
+      const needsDesordre = !('titre' in ov && String(ov.titre).trim());
+      const needsSolution  = !(ov.solution && String(ov.solution).trim());
+      genDoneRef.current.add(row.itemId);
+      return needsDesordre || needsSolution;
+    });
+    if (!todo.length) return undefined;
     (async () => {
-      for (const row of snapshot) {
-        if (cancelled) break;
-        if (!row.commentaire || genDoneRef.current.has(row.itemId)) continue;
-        const ov = snapOvMap.get(row.itemId) || {};
-        const needsDesordre = !('titre' in ov && String(ov.titre).trim());
-        const needsSolution  = !(ov.solution && String(ov.solution).trim());
-        if (!needsDesordre && !needsSolution) { genDoneRef.current.add(row.itemId); continue; }
-        genDoneRef.current.add(row.itemId);
-        try { await genRow(row, { waitOk: true }); }
-        catch { genDoneRef.current.delete(row.itemId); }
+      for (let i = 0; i < todo.length && !cancelled; i += RECAP_BATCH) {
+        const batch = todo.slice(i, i + RECAP_BATCH);
+        try { await genRowsBatch(batch); }
+        catch {
+          batch.forEach(r => genDoneRef.current.delete(r.itemId));
+          recapAutoPauseUntil = Date.now() + 30 * 60 * 1000; // quota / panne : on arrête de marteler
+          break;
+        }
       }
     })();
     return () => { cancelled = true; };
