@@ -236,15 +236,26 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
   // Accepte (itemId, field, value) OU (itemId, { field1: v1, field2: v2 }) pour mettre à jour
   // plusieurs champs en un seul appel — évite le bug de closure obsolète quand genRow écrit
   // titre ET solution coup sur coup (le 2e appel écrasait le 1er sur le même tableauRecap figé).
+  // itemId peut aussi être un LOT [[itemId, patch], …] (génération IA par lots du tableau récap) :
+  // tout est appliqué en UNE mise à jour — sinon chaque appel repartirait du même état et
+  // écraserait le précédent.
+  // Lu dans une ref (toujours la DERNIÈRE version) : un appel venant d'une closure plus ancienne
+  // (génération IA par lots, 2e lot) ne repart plus d'un tableau périmé.
+  const recapRef = useRef(projet.tableauRecap);
+  recapRef.current = projet.tableauRecap;
   const updateRecapField = useCallback((itemId, field, value) => {
-    const patch = (typeof field === 'object' && field !== null) ? field : { [field]: value };
-    const curr = projet.tableauRecap || [];
-    const has = curr.some(r => r.itemId === itemId);
-    onUpdate({ tableauRecap: has
-      ? curr.map(r => r.itemId === itemId ? { ...r, ...patch } : r)
-      : [...curr, { itemId, ...patch }]
-    });
-  }, [projet.tableauRecap, onUpdate]);
+    const entries = Array.isArray(itemId)
+      ? itemId
+      : [[itemId, (typeof field === 'object' && field !== null) ? field : { [field]: value }]];
+    const next = [...(recapRef.current || [])];
+    for (const [id, patch] of entries) {
+      const i = next.findIndex(r => r.itemId === id);
+      if (i >= 0) next[i] = { ...next[i], ...patch };
+      else next.push({ itemId: id, ...patch });
+    }
+    recapRef.current = next; // appels successifs avant le prochain rendu : ils s'enchaînent
+    onUpdate({ tableauRecap: next });
+  }, [onUpdate]);
 
   const deleteRecapRow = useCallback((itemId, isCustom) => {
     const curr = projet.tableauRecap || [];
