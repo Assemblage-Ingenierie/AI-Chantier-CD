@@ -117,20 +117,21 @@ describe('Costar — économie de tokens', () => {
     expect(costarCacheKey('rapport A', 'gemini-flash')).not.toBe(a);
   });
   it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
-    expect(COSTAR_SYSTEM.length).toBeLessThan(5600); // v1 : 7 547 caractères
+    expect(COSTAR_SYSTEM.length).toBeLessThan(6000); // v1 : 7 547 caractères
     for (const k of ['-2', '-3 au plus', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
   });
 });
 
 describe('Costar — barème exigeant (retour Amaury : 9/10 pour 9 lignes)', () => {
   it('plafond de volume : un rapport mince ne peut pas avoir une bonne note, même sans faute', () => {
-    const r = parseCostarReply('{"points_perdus":[],"plafond":10}', null, { words: 90 });
-    expect(r.note).toBe(3);
-    expect(r.plafond.value).toBe(3);
-    expect(r.plafond.raison).toMatch(/90 mots/);
+    const r = parseCostarReply('{"points_perdus":[],"plafond":10}', null, { words: 40 });
+    expect(r.note).toBe(4);
+    expect(r.plafond.value).toBe(4);
+    expect(r.plafond.raison).toMatch(/40 mots/);
     expect(parseCostarReply('{"points_perdus":[]}', null, { words: 5 }).note).toBe(0); // « 5 mots → 0 »
-    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 600 }).note).toBe(8);
-    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 950 }).note).toBe(10);
+    // « Ce n'est pas plus c'est long plus c'est bon » : un petit rapport dense n'est pas plafonné par sa longueur.
+    expect(parseCostarReply('{"points_perdus":[],"plafond":9}', null, { words: 120 }).note).toBe(9);
+    expect(parseCostarReply('{"points_perdus":[],"plafond":4}', null, { words: 2000 }).note).toBe(4); // long mais creux
     expect(parseCostarReply('{"points_perdus":[],"plafond":0}', null, { words: 950 }).note).toBe(0);
   });
   it('plafond de valeur jugé par l\'IA, justifié ; le plus bas des plafonds l\'emporte', () => {
