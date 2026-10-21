@@ -51,6 +51,8 @@ export function buildReportDigest(projet, { maxChars = 45000 } = {}) {
 
   const locs = p.localisations || [];
   let n = 0;
+  let words = 0; // mots RÉELLEMENT écrits (titres, commentaires, conclusion) → plafond de volume
+  const countWords = (t) => (String(t || '').match(/[\p{L}\p{N}]+/gu) || []).length;
   const longComments = [];
   locs.forEach((l) => {
     const items = itemsOf(l).filter(i => i && !isBrouillon(i));
@@ -63,6 +65,7 @@ export function buildReportDigest(projet, { maxChars = 45000 } = {}) {
       const txt = plainText(it.commentaire);
       if (!titre && !txt) return;
       n++;
+      words += countWords(titre) + countWords(txt);
       lines.push(titre ? `[Obs ${n}] ${titre}` : `[Obs ${n}]`);
       if (txt) {
         const idx = lines.length;
@@ -73,7 +76,7 @@ export function buildReportDigest(projet, { maxChars = 45000 } = {}) {
   });
 
   const concl = p.includeConclusion ? plainText(p.conclusion) : '';
-  if (concl) { lines.push(''); lines.push(`CONCLUSION : ${concl}`); }
+  if (concl) { lines.push(''); lines.push(`CONCLUSION : ${concl}`); words += countWords(concl); }
 
   let out = lines.join('\n');
   // Plafond global : on raccourcit d'abord les commentaires les plus longs.
@@ -85,7 +88,7 @@ export function buildReportDigest(projet, { maxChars = 45000 } = {}) {
     }
     out = lines.join('\n');
   }
-  return { text: out.slice(0, maxChars), observations: n, zones: locs.length };
+  return { text: out.slice(0, maxChars), observations: n, zones: locs.length, words };
 }
 
 // Consigne COMPACTE (retour Thomas 20/10 : « Costar met du temps et bouffe mon quota gratuit ») :
@@ -107,24 +110,38 @@ Sois précis : cite « Obs N » ou le titre, et la phrase critiquée entre guill
 
 TON : franc, direct, vraiment drôle mais professionnel (jamais vulgaire ni méprisant). Castor québécois chaleureux et taquin : 4 à 6 expressions québécoises au total, compréhensibles par le contexte (mon chum, tiguidou, lâche pas, attache ta tuque avec de la broche, c'est de la belle ouvrage, pantoute, icitte, une vraie job de bras, être dans le jus, c'est écœurant). Images de castor et de chantier canadien (barrage, billot, gruger, tuque, sirop d'érable, poutine, Zamboni). L'humour vient de comparaisons tirées DU RAPPORT ; le fond reste 100 % pro et ne minimise jamais un vrai problème. N'utilise jamais le tiret long (—).
 
-NOTE : pars de 10 et retire des points UNIQUEMENT pour (l'app calcule 10 moins le total de "points_perdus") :
+SOIS EXIGEANT : une bonne note se MÉRITE par le contenu. Repères : rapport correct mais sommaire = 5 à 6 ; bon rapport = 7 ; très bon = 8 ; 9-10 = exceptionnel (chaque désordre décrit, localisé, cause probable, préconisation claire et hiérarchisée, conclusion utile). Un rapport sans faute mais mince ne vaut PAS une bonne note. Tes conseils restent précis et bienveillants.
+
+PLAFOND DE VALEUR ("plafond", 1 à 10) : la note maximale que mérite la RICHESSE du rapport, même sans aucune faute. 10 = complet et actionnable ; 8 = bon mais il manque des précisions utiles ; 6 = constats sommaires, préconisations génériques ; 4 = très peu de contenu exploitable ; 2 = quasi vide. Justifie-le en une phrase dans "raison_plafond" (ce qui manque pour viser plus haut).
+
+POINTS PERDUS : pars de 10 et retire des points UNIQUEMENT pour (la note finale = le plus bas entre 10 moins le total de "points_perdus" et le plafond) :
 - risque pour les personnes ou la stabilité décrit sans dire quoi faire tout de suite : -2 ;
 - désordre décrit sans dire quoi faire : -1 par cas, -3 au plus en tout ;
 - formulation floue qui empêche de comprendre ou d'agir : -1 ;
 - fautes d'orthographe ou de grammaire : -1 si plusieurs, -2 si elles gênent vraiment la lecture ;
 - erreur technique manifeste ou contradiction nette : -1 à -2.
-INTERDIT de retirer des points pour : manque de précision (dimensions, mesures, cause, témoins, délais, investigations), chiffrage, titre manquant, observation courte, longueur, conclusion absente, mise en page, champs de formulaire, photos. Regroupe un même défaut répété en UNE ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide, 10/10.
+INTERDIT de retirer des "points_perdus" pour : manque de précision (dimensions, mesures, cause, témoins, délais, investigations), chiffrage, titre manquant, observation courte, longueur, conclusion absente, mise en page, champs de formulaire, photos ; le manque de contenu se reflète dans le PLAFOND, pas dans les points perdus. Regroupe un même défaut répété en UNE ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide ; la note est alors celle du plafond.
 PREUVE : chaque retrait cite dans "citation" l'extrait du rapport COPIÉ MOT POUR MOT (4 à 15 mots, même orthographe et ponctuation), sinon il est annulé. Pas de citation exacte possible → pas de retrait. Même rapport → toujours la même note.
 
 RÉPONSE COURTE : UNIQUEMENT un objet JSON valide, sans texte autour, chaque point en UNE phrase :
-{"points_perdus":[{"points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["1 à 3 points forts concrets"],"ameliorer":["0 à 3 suggestions « tu pourrais… » avec l'observation visée"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
+{"plafond":7,"raison_plafond":"ce qui manque pour viser plus haut","points_perdus":[{"points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["1 à 3 points forts concrets"],"ameliorer":["0 à 3 suggestions « tu pourrais… » avec l'observation visée"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
 Si rien à réécrire : "reecriture": null.`;
+
+// PLAFOND DE VOLUME (retour Thomas 21/10 : « 9/10 sur un rapport de 9 lignes, trop généreux ;
+// si y'a rien, y'a rien ») : un rapport mince ne peut pas avoir une bonne note, même sans faute.
+// Calculé par l'app (pas par l'IA) sur le nombre de mots réellement écrits → stable et explicable.
+export const VOLUME_CAPS = [[40, 4], [80, 5], [150, 6], [250, 7], [400, 8], [600, 9]];
+export function volumeCap(words) {
+  if (!Number.isFinite(words)) return 10;
+  for (const [max, cap] of VOLUME_CAPS) if (words < max) return cap;
+  return 10;
+}
 
 // Clé de cache d'un avis : même texte de rapport + même moteur → même avis (temperature basse,
 // consigne « même rapport → même note »). Évite de repayer une relecture d'un rapport inchangé.
 export function costarCacheKey(text, engine = '') {
   let h = 5381;
-  const s = `${engine}\u0001${text || ''}`;
+  const s = `v2\u0001${engine}\u0001${text || ''}`; // v2 : barème exigeant (les anciens avis ne resservent pas)
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return `${s.length.toString(36)}-${h.toString(36)}`;
 }
@@ -148,7 +165,8 @@ export function citationInReport(citation, sourceNorm) {
 // `source` (texte envoyé à l'IA) : si fourni, un point retiré dont la citation n'existe pas
 // dans le rapport est ANNULÉ (garde-fou contre la sur-interprétation, retour Thomas : « j'ai
 // corrigé mes fautes, j'étais à 9 et il m'a mis 5 »).
-export function parseCostarReply(raw, source = null) {
+// opts.words : nombre de mots écrits (buildReportDigest) → plafond de volume appliqué par l'app.
+export function parseCostarReply(raw, source = null, opts = {}) {
   if (!raw || typeof raw !== 'string') return null;
   let s = raw.replace(/```(?:json)?/gi, '').trim();
   let obj = null;
@@ -163,13 +181,25 @@ export function parseCostarReply(raw, source = null) {
     ? obj.points_perdus.map(x => ({ points: Math.max(1, Math.min(3, Math.round(Number(x?.points) || 0))), raison: clean(x?.raison), citation: clean(x?.citation) }))
         .filter(x => x.raison && (srcN == null || citationInReport(x.citation, srcN))).slice(0, 8)
     : null;
-  const note = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
-  if (!Number.isFinite(note)) return null;
+  const brute = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
+  if (!Number.isFinite(brute)) return null;
+  // Plafonds : valeur jugée par l'IA (justifiée) et volume écrit (calculé ici). Le plus bas l'emporte.
+  const pIA = Number.isFinite(Number(obj.plafond)) ? Math.max(1, Math.min(10, Math.round(Number(obj.plafond)))) : 10;
+  const pVol = volumeCap(opts.words);
+  let note = brute;
+  let plafond = null;
+  if (Math.min(pIA, pVol) < brute) {
+    note = Math.min(pIA, pVol);
+    plafond = pVol <= pIA
+      ? { value: pVol, raison: `Rapport trop mince (${opts.words} mots écrits) : note plafonnée à ${pVol}/10. Étoffe tes observations (localisation, ampleur, cause probable, quoi faire) pour viser plus haut.` }
+      : { value: pIA, raison: clean(obj.raison_plafond) || `Contenu encore sommaire : note plafonnée à ${pIA}/10.` };
+  }
   const r = obj.reecriture && typeof obj.reecriture === 'object' ? obj.reecriture : null;
   const rw = r ? { obs: clean(r.obs), avant: clean(r.avant), apres: clean(r.apres) } : null;
   return {
     note: Math.max(0, Math.min(10, note)),
     pertes: pertes || [],
+    plafond,
     verdict: String(obj.verdict || '').replace(/\s*—\s*/g, ', ').trim(),
     bien: asList(obj.bien),
     ameliorer: asList(obj.ameliorer),
