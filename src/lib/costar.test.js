@@ -125,10 +125,13 @@ describe('Costar — économie de tokens', () => {
 describe('Costar — barème exigeant (retour Amaury : 9/10 pour 9 lignes)', () => {
   it('plafond de volume : un rapport mince ne peut pas avoir une bonne note, même sans faute', () => {
     const r = parseCostarReply('{"points_perdus":[],"plafond":10}', null, { words: 90 });
-    expect(r.note).toBe(6);
-    expect(r.plafond.value).toBe(6);
+    expect(r.note).toBe(3);
+    expect(r.plafond.value).toBe(3);
     expect(r.plafond.raison).toMatch(/90 mots/);
-    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 900 }).note).toBe(10);
+    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 5 }).note).toBe(0); // « 5 mots → 0 »
+    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 600 }).note).toBe(8);
+    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 950 }).note).toBe(10);
+    expect(parseCostarReply('{"points_perdus":[],"plafond":0}', null, { words: 950 }).note).toBe(0);
   });
   it('plafond de valeur jugé par l\'IA, justifié ; le plus bas des plafonds l\'emporte', () => {
     const r = parseCostarReply('{"points_perdus":[],"plafond":7,"raison_plafond":"Pas de cause probable ni de délai"}', null, { words: 500 });

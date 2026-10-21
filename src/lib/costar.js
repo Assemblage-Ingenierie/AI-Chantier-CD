@@ -110,9 +110,9 @@ Sois précis : cite « Obs N » ou le titre, et la phrase critiquée entre guill
 
 TON : franc, direct, vraiment drôle mais professionnel (jamais vulgaire ni méprisant). Castor québécois chaleureux et taquin : 4 à 6 expressions québécoises au total, compréhensibles par le contexte (mon chum, tiguidou, lâche pas, attache ta tuque avec de la broche, c'est de la belle ouvrage, pantoute, icitte, une vraie job de bras, être dans le jus, c'est écœurant). Images de castor et de chantier canadien (barrage, billot, gruger, tuque, sirop d'érable, poutine, Zamboni). L'humour vient de comparaisons tirées DU RAPPORT ; le fond reste 100 % pro et ne minimise jamais un vrai problème. N'utilise jamais le tiret long (—).
 
-SOIS EXIGEANT : une bonne note se MÉRITE par le contenu. Repères : rapport correct mais sommaire = 5 à 6 ; bon rapport = 7 ; très bon = 8 ; 9-10 = exceptionnel (chaque désordre décrit, localisé, cause probable, préconisation claire et hiérarchisée, conclusion utile). Un rapport sans faute mais mince ne vaut PAS une bonne note. Tes conseils restent précis et bienveillants.
+SOIS EXIGEANT, DUR MAIS JUSTE : une bonne note se MÉRITE par le contenu. N'hésite pas à mettre une mauvaise note à un rapport pauvre. Repères : quasi vide = 0 à 1 ; très mince = 2 à 3 ; sommaire = 4 à 5 ; correct = 6 ; bon = 7 ; très bon = 8 ; 9-10 = exceptionnel (chaque désordre décrit, localisé, ampleur, cause probable, préconisation claire et hiérarchisée, conclusion utile). Un rapport sans faute mais mince ne vaut PAS une bonne note. Tes conseils restent précis, utiles et bienveillants.
 
-PLAFOND DE VALEUR ("plafond", 1 à 10) : la note maximale que mérite la RICHESSE du rapport, même sans aucune faute. 10 = complet et actionnable ; 8 = bon mais il manque des précisions utiles ; 6 = constats sommaires, préconisations génériques ; 4 = très peu de contenu exploitable ; 2 = quasi vide. Justifie-le en une phrase dans "raison_plafond" (ce qui manque pour viser plus haut).
+PLAFOND DE VALEUR ("plafond", 0 à 10) : la note maximale que mérite la RICHESSE du rapport, même sans aucune faute. 10 = complet et actionnable ; 8 = bon mais il manque des précisions utiles ; 6 = correct ; 4 = constats sommaires, préconisations génériques ; 2 = très peu de contenu exploitable ; 0 = quasi vide. Justifie-le en une phrase dans "raison_plafond" (ce qui manque pour viser plus haut).
 
 POINTS PERDUS : pars de 10 et retire des points UNIQUEMENT pour (la note finale = le plus bas entre 10 moins le total de "points_perdus" et le plafond) :
 - risque pour les personnes ou la stabilité décrit sans dire quoi faire tout de suite : -2 ;
@@ -130,7 +130,8 @@ Si rien à réécrire : "reecriture": null.`;
 // PLAFOND DE VOLUME (retour Thomas 21/10 : « 9/10 sur un rapport de 9 lignes, trop généreux ;
 // si y'a rien, y'a rien ») : un rapport mince ne peut pas avoir une bonne note, même sans faute.
 // Calculé par l'app (pas par l'IA) sur le nombre de mots réellement écrits → stable et explicable.
-export const VOLUME_CAPS = [[40, 4], [80, 5], [150, 6], [250, 7], [400, 8], [600, 9]];
+// Barème DUR (Thomas : « un rapport de 5 mots doit avoir 0 ; n'hésite pas à mettre de mauvaises notes »).
+export const VOLUME_CAPS = [[15, 0], [30, 1], [60, 2], [100, 3], [160, 4], [250, 5], [350, 6], [500, 7], [700, 8], [900, 9]];
 export function volumeCap(words) {
   if (!Number.isFinite(words)) return 10;
   for (const [max, cap] of VOLUME_CAPS) if (words < max) return cap;
@@ -141,7 +142,7 @@ export function volumeCap(words) {
 // consigne « même rapport → même note »). Évite de repayer une relecture d'un rapport inchangé.
 export function costarCacheKey(text, engine = '') {
   let h = 5381;
-  const s = `v2\u0001${engine}\u0001${text || ''}`; // v2 : barème exigeant (les anciens avis ne resservent pas)
+  const s = `v3\u0001${engine}\u0001${text || ''}`; // v3 : barème dur (les anciens avis ne resservent pas)
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return `${s.length.toString(36)}-${h.toString(36)}`;
 }
@@ -184,7 +185,7 @@ export function parseCostarReply(raw, source = null, opts = {}) {
   const brute = pertes ? 10 - pertes.reduce((t, x) => t + x.points, 0) : Math.round(Number(obj.note));
   if (!Number.isFinite(brute)) return null;
   // Plafonds : valeur jugée par l'IA (justifiée) et volume écrit (calculé ici). Le plus bas l'emporte.
-  const pIA = Number.isFinite(Number(obj.plafond)) ? Math.max(1, Math.min(10, Math.round(Number(obj.plafond)))) : 10;
+  const pIA = obj.plafond != null && Number.isFinite(Number(obj.plafond)) ? Math.max(0, Math.min(10, Math.round(Number(obj.plafond)))) : 10;
   const pVol = volumeCap(opts.words);
   let note = brute;
   let plafond = null;
