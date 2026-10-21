@@ -53,7 +53,7 @@ describe('Costar — lecture du rapport', () => {
 describe('Costar — réponse IA', () => {
   it('JSON pur', () => {
     const r = parseCostarReply('{"note":7,"verdict":"Tiguidou","bien":["a"],"ameliorer":["b","c"],"coince":[]}');
-    expect(r).toEqual({ note: 7, pertes: [], verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
+    expect(r).toEqual({ note: 7, pertes: [], plafond: null, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
   });
 
   it('JSON entouré de texte / balises, note bornée', () => {
@@ -117,7 +117,33 @@ describe('Costar — économie de tokens', () => {
     expect(costarCacheKey('rapport A', 'gemini-flash')).not.toBe(a);
   });
   it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
-    expect(COSTAR_SYSTEM.length).toBeLessThan(5000);
+    expect(COSTAR_SYSTEM.length).toBeLessThan(5600); // v1 : 7 547 caractères
     for (const k of ['-2', '-3 au plus', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
+  });
+});
+
+describe('Costar — barème exigeant (retour Amaury : 9/10 pour 9 lignes)', () => {
+  it('plafond de volume : un rapport mince ne peut pas avoir une bonne note, même sans faute', () => {
+    const r = parseCostarReply('{"points_perdus":[],"plafond":10}', null, { words: 90 });
+    expect(r.note).toBe(6);
+    expect(r.plafond.value).toBe(6);
+    expect(r.plafond.raison).toMatch(/90 mots/);
+    expect(parseCostarReply('{"points_perdus":[]}', null, { words: 900 }).note).toBe(10);
+  });
+  it('plafond de valeur jugé par l\'IA, justifié ; le plus bas des plafonds l\'emporte', () => {
+    const r = parseCostarReply('{"points_perdus":[],"plafond":7,"raison_plafond":"Pas de cause probable ni de délai"}', null, { words: 500 });
+    expect(r.note).toBe(7);
+    expect(r.plafond).toEqual({ value: 7, raison: 'Pas de cause probable ni de délai' });
+    const r2 = parseCostarReply('{"points_perdus":[{"points":3,"raison":"Obs 1 : x"}],"plafond":8}', null, { words: 500 });
+    expect(r2.note).toBe(7); // les points perdus font déjà plus bas que le plafond
+    expect(r2.plafond).toBeNull();
+  });
+  it('le digest compte les mots réellement écrits', () => {
+    const d = buildReportDigest({ localisations: [{ nom: 'Cave', items: [{ titre: 'Fissure mur', commentaire: 'Fissure verticale à reprendre' }] }] });
+    expect(d.words).toBe(6);
+  });
+  it('consigne : exigeante, avec plafond justifié', () => {
+    expect(COSTAR_SYSTEM).toContain('"plafond"');
+    expect(COSTAR_SYSTEM).toContain('EXIGEANT');
   });
 });

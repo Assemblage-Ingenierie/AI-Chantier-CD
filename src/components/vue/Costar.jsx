@@ -506,7 +506,9 @@ export default function Costar({ projet, fixed = false }) {
       });
       if (ctrl.signal.aborted) return;
       const raw = (d.content || []).map(c => c?.text || '').join('');
-      const parsed = parseCostarReply(raw, digest.text); // points sans citation exacte = annulés
+      // Points sans citation exacte = annulés ; note plafonnée par la richesse du rapport (IA) et par
+      // son volume écrit (app) → plus de bonne note « gratuite » pour un rapport mince.
+      const parsed = parseCostarReply(raw, digest.text, { words: digest.words });
       if (!parsed) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
       setReview(parsed);
       setQuip(scoreQuip(parsed.note));
@@ -612,14 +614,20 @@ export default function Costar({ projet, fixed = false }) {
               {review.verdict && (
                 <p style={{ margin: '8px 0 0', fontSize: 13.5, fontWeight: 600, fontStyle: 'italic', color: DA.black, lineHeight: 1.4 }}>« {review.verdict} »</p>
               )}
-              {review.pertes?.length > 0 && (
+              {(review.pertes?.length > 0 || review.plafond) && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 800, color: '#B91C1C', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#B91C1C', flexShrink: 0 }}/>
                     Où je t'ai enlevé des points
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {review.pertes.map((x, i) => (
+                    {review.plafond && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
+                        <span title="Note plafonnée" style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#92400E', background: '#FEF3C7', borderRadius: 6, padding: '0 4px' }}>≤{review.plafond.value}</span>
+                        <span>{review.plafond.raison}</span>
+                      </div>
+                    )}
+                    {(review.pertes || []).map((x, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
                         <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#B91C1C', background: '#FEE2E2', borderRadius: 6, padding: '0 4px' }}>−{x.points}</span>
                         <span>{x.raison}{x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL }}>« {x.citation} »</span>}</span>
