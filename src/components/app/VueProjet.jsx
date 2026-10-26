@@ -169,7 +169,8 @@ const VISIT_FIELDS = new Set([
 ]);
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
-  onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null }) {
+  onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null,
+  onRestoreItemText = null, onRestoreStoragePhotos = null }) {
   const [trashOpen, setTrashOpen] = useState(false); // corbeille du projet (PC)
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
@@ -1217,7 +1218,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {trashOpen && (
         <TrashPanel projet={projet} onClose={() => setTrashOpen(false)}
           onRestoreZone={onRestoreZone} onRestoreObservation={onRestoreObservation}
-          onRestoreLostAnnots={onRestoreLostAnnots} onRestoreZoneAnnotations={onRestoreZoneAnnotations}/>
+          onRestoreLostAnnots={onRestoreLostAnnots} onRestoreZoneAnnotations={onRestoreZoneAnnotations}
+          onRestoreItemText={onRestoreItemText} onRestoreStoragePhotos={onRestoreStoragePhotos}/>
       )}
 
       {undoToast && (

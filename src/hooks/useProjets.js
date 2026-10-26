@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState } from '../lib/storage.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
 import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.js';
 import { applyAnnotRecovery, applyLostAnnots } from '../lib/annotRecovery.js';
-import { restoreItemInLocs, restoreZoneInLocs } from '../lib/trash.js';
+import { restoreItemInLocs, restoreZoneInLocs, restoreItemTextInLocs } from '../lib/trash.js';
+import { addDeletedItem } from '../lib/recoveryBin.js';
 import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
 import { publishPendingCount } from '../lib/pendingSync.js';
+import { adoptRemoteItemText, adoptRemoteVisitMeta } from '../lib/syncBase.js';
+import { primeVisitTextBackup, scheduleVisitTextBackup } from '../lib/driveTextBackup.js';
 
 const MAX_HISTORY = 20;
 
@@ -89,12 +92,17 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
             if (!rv) return lv;
             const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
             return {
-              ...lv,
+              // ANTI-TEXTE PÉRIMÉ (incident 26/10, cf. syncBase.js) : ce que cet appareil n'a PAS
+              // modifié depuis sa dernière synchro reprend la version du serveur (conclusion, texte
+              // des observations…). Ses propres modifications en attente restent prioritaires.
+              ...adoptRemoteVisitMeta(lv, rv),
               localisations: (lv.localisations || []).map(ll => {
                 const rl = remoteLocById.get(ll.id);
                 if (!rl) return ll;
+                const remoteItemById = new Map((rl.items || []).map(it => [it?.id, it]));
                 return {
                   ...ll,
+                  items: (ll.items || []).map(it => adoptRemoteItemText(it, remoteItemById.get(it?.id))),
                   // GARDE-FOU (incident 2026-10-15) : une zone locale SANS AUCUNE observation alors
                   // que la même zone en a en base = état local incomplet (cache d'un projet
                   // archivé…), jamais une suppression volontaire (celles-ci sont tombstonées et
@@ -527,6 +535,8 @@ export function useProjets(onSyncStatus) {
       dirtyIds.current.clear();
       syncDirtyMirror();
       const ok = await saveData(projets, onSyncStatus, ids);
+      // Copie du texte des visites modifiées sur le Drive (à côté des photos), même si la synchro a échoué.
+      scheduleVisitTextBackup(() => projetsRef.current, ids);
       if (!ok) {
         dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
         syncDirtyMirror();
@@ -694,6 +704,44 @@ export function useProjets(onSyncStatus) {
   const restoreObservation = (entry) => {
     if (!entry?.item || !entry.projectId) return { ok: false, reason: 'invalid' };
     return applyVisitRecovery(entry.projectId, entry.visiteId, locs => restoreItemInLocs(locs, entry));
+  };
+
+  // Historique serveur : rétablit le TEXTE d'une version précédente d'une observation. Le texte
+  // remplacé reste dans l'historique serveur ET est copié dans la corbeille de l'appareil.
+  const restoreItemText = (entry) => {
+    if (!entry?.item || !entry.projectId) return { ok: false, reason: 'invalid' };
+    const res = applyVisitRecovery(entry.projectId, entry.visiteId, locs => restoreItemTextInLocs(locs, entry));
+    if (res?.replaced && res.previous) {
+      const proj = projetsRef.current.find(p => p.id === entry.projectId);
+      addDeletedItem({ ...res.previous, id: crypto.randomUUID(), photos: [] }, {
+        projectId: entry.projectId, projectNom: proj?.nom ?? '', visiteId: entry.visiteId, locId: res.zone?.id, locNom: res.zone?.nom ?? '',
+      }).catch(() => {});
+    }
+    return res;
+  };
+
+  // Photos retrouvées dans Storage (lien effacé, fichier intact) : re-reliées en base, puis ajoutées
+  // à l'écran si les photos de l'observation sont déjà chargées (sinon elles arrivent au chargement).
+  const restoreStoragePhotos = async (projectId, itemId, files) => {
+    const rows = await relinkStoragePhotos(itemId, files);
+    if (!rows.length) return { ok: false, added: 0 };
+    setProjets(ps => ps.map(p => p.id !== projectId ? p : {
+      ...p,
+      visites: (p.visites || []).map(v => ({
+        ...v,
+        localisations: (v.localisations || []).map(l => ({
+          ...l,
+          items: (l.items || []).map(it => {
+            if (it.id !== itemId || !it._photosHydrated) return it;
+            const have = new Set((it.photos || []).map(ph => ph.storage_url).filter(Boolean));
+            const add = rows.filter(r => !have.has(r.storage_url))
+              .map(r => ({ _id: r.id, id: r.id, name: r.name, storage_url: r.storage_url, data: r.url }));
+            return add.length ? { ...it, photos: [...(it.photos || []), ...add] } : it;
+          }),
+        })),
+      })),
+    }));
+    return { ok: true, added: rows.length };
   };
 
   // Corbeille : zone supprimée ou fusionnée (« annuler la fusion »), avec plans et observations.
@@ -1341,6 +1389,12 @@ export function useProjets(onSyncStatus) {
       .catch(() => { dirtyIds.current = new Set([...ids, ...dirtyIds.current]); setPersistedDirtyIds(dirtyIds.current); syncDirtyMirror(); savingRef.current = false; });
   }, [onSyncStatus]);
 
+  // Copie Drive du texte : l'état chargé sert de référence (seules les modifs faites ENSUITE ici
+  // sont copiées — un appareil au cache ancien ne réécrit pas le fichier au démarrage).
+  useEffect(() => {
+    if (remoteLoaded) primeVisitTextBackup(projets);
+  }, [remoteLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Démarrage : si des dirtyIds persistés subsistent (session offline précédente), on pousse dès
   // que le chargement distant est terminé (petit délai pour laisser la fusion s'installer).
   useEffect(() => {
@@ -1368,5 +1422,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos };
 }

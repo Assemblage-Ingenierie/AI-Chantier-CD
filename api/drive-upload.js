@@ -1,10 +1,12 @@
 // Upload a photo to Google Drive under Affaires/{projetNom}/Visite_{visiteLabel}/
 // Uses a service account stored in GOOGLE_SERVICE_ACCOUNT env var (JSON string)
-// MIME types accepted: image/jpeg, image/png, image/webp
+// MIME types accepted: image/jpeg, image/png, image/webp, text/plain (copie du texte de la visite)
+// `replace: true` → un fichier du même nom déjà présent dans le dossier de la visite est MIS À JOUR
+// (nouvelle révision Drive, les précédentes restent consultables) au lieu d'en créer un second.
 
 import crypto from 'crypto';
 
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'text/plain']);
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
@@ -94,6 +96,29 @@ async function uploadFile(token, { fileName, mimeType, base64Data, parentId }) {
   });
   const data = await res.json();
   if (!data.id) throw new Error(`Upload error: ${JSON.stringify(data)}`);
+  return data.id;
+}
+
+async function findFileInFolder(token, name, parentId, driveId) {
+  const params = new URLSearchParams({
+    q: `name = ${JSON.stringify(name)} and '${parentId.replace(/'/g, "\\'")}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`,
+    fields: 'files(id)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+    ...(driveId ? { corpora: 'drive', driveId } : {}),
+  });
+  const r = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  const d = await r.json();
+  return d.files?.[0]?.id || null;
+}
+
+// Nouvelle révision du contenu d'un fichier existant (Drive garde l'historique des révisions).
+async function updateFileContent(token, fileId, { mimeType, base64Data }) {
+  const res = await fetch(`${DRIVE_UPLOAD_API}/files/${fileId}?uploadType=media&supportsAllDrives=true`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': mimeType },
+    body: Buffer.from(base64Data, 'base64'),
+  });
+  const data = await res.json();
+  if (!data.id) throw new Error(`Update error: ${JSON.stringify(data)}`);
   return data.id;
 }
 
@@ -246,7 +271,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { base64, mimeType, fileName, projetNom, projetNum, visiteLabel, visiteDate, ingenieur } = req.body || {};
+    const { base64, mimeType, fileName, projetNom, projetNum, visiteLabel, visiteDate, ingenieur, replace } = req.body || {};
 
     if (!base64 || !mimeType || !fileName) {
       return res.status(400).json({ error: 'base64, mimeType and fileName are required' });
@@ -276,7 +301,10 @@ export default async function handler(req, res) {
       : `${datePrefix}${ingenieurSuffix}`;
     const visiteFolderId = await findOrCreateFolder(token, visiteFolderName, visiteParentId, driveId);
 
-    const fileId = await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
+    const existingId = replace ? await findFileInFolder(token, fileName, visiteFolderId, driveId) : null;
+    const fileId = existingId
+      ? await updateFileContent(token, existingId, { mimeType, base64Data: raw })
+      : await uploadFile(token, { fileName, mimeType, base64Data: raw, parentId: visiteFolderId });
 
     return res.status(200).json({ ok: true, fileId });
   } catch (e) {

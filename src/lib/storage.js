@@ -6,6 +6,8 @@ import { logEvent, logWarn } from './logger.js';
 import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
 import { getDeletedIds, addTombstone, liftTombstone, TOMBSTONE_KEYS } from './tombstones.js';
 import { itemMetaToRow, itemMetaFromRow } from './obsDates.js';
+import { getBase, setBase, seedBase, pruneBase, flushBase, clearBase, itemRowSig, visitSig, syncDecision, mergeGroups, nextBase, ITEM_GROUPS, visitMeta } from './syncBase.js';
+import { addDeletedItem } from './recoveryBin.js';
 
 // 30 jours (au lieu de 7) : à chaque expiration, l'URL signée change → le cache HTTP du
 // navigateur est invalidé et TOUTES les photos sont re-téléchargées depuis Supabase.
@@ -415,6 +417,10 @@ async function loadRemote() {
     const _allKnownItemIds = new Set();
     allLocs.forEach(l => { (itemsByLoc[l.id] ?? []).forEach(it => _allKnownItemIds.add(it.id)); });
     _knownItemIdsByProject.set(c.id, _allKnownItemIds);
+    // Base de synchro (anti-écrasement, cf. syncBase.js) : premier chargement seulement — une base
+    // déjà connue n'est JAMAIS remplacée ici (elle distingue « modifié ici » de « cache périmé »).
+    allLocs.forEach(l => { (itemsByLoc[l.id] ?? []).forEach(it => seedBase(`i:${it.id}`, itemRowSig(it))); });
+    storedVisites.forEach(rv => { if (rv?.id) seedBase(`v:${rv.id}`, visitSig(visitMeta(rv))); });
 
     return {
       id:            c.id,
@@ -1376,21 +1382,7 @@ async function saveRemote(ps, dirtyIds = null) {
     .filter(p => p.id && !_deletedIds.has(p.id));
 
   for (const p of toSave) {
-    const visitesMetadata = (p.visites || []).map(v => ({
-      id: v.id, label: v.label ?? 'Visite 1', dateVisite: v.dateVisite ?? null,
-      ingenieur: v.ingenieur ?? '',
-      participants: v.participants ?? [], tableauRecap: v.tableauRecap ?? [],
-      photosParLigne: v.photosParLigne ?? 2, plansEnFin: v.plansEnFin ?? false,
-      rapportPageBreaks: v.rapportPageBreaks ?? [],
-      includeTableauRecap: v.includeTableauRecap ?? true,
-      includeConclusion: v.includeConclusion ?? false,
-      conclusion: v.conclusion ?? '',
-      conclusionAlign: v.conclusionAlign ?? 'left',
-      planPagesPaysage: v.planPagesPaysage ?? false, // ancienne option « tous les plans en paysage en fin de rapport »
-      planPages: v.planPages ?? null, // plans sur page à part, PAR PLAN : { clé: 'landscape' | 'portrait' }
-      obsDates: v.obsDates ?? false, // affichage des dates de suivi des observations (option du rapport)
-      annexes: v.annexes ?? [], // métadonnées uniquement (octets PDF dans Storage) — cf. uploadAnnexPdf
-    }));
+    const visitesMetadata = (p.visites || []).map(visitMeta);
 
     const firstVisit = p.visites?.[0];
     // ⚠️ ANTI-RÉSURRECTION : une zone / observation SUPPRIMÉE (pierre tombale locale ou partagée
@@ -1455,15 +1447,40 @@ async function saveRemote(ps, dirtyIds = null) {
     //   - visite absente du local ET dans _knownVisitIdsByProject → supprimée par cet utilisateur → on ne la ré-injecte pas
     // (évite le bug précédent : "merger ici ramenait les visites supprimées")
     let mergedVisitesMetadata = visitesMetadata;
+    const keptServerVisitIds = new Set(); // visites inchangées ici mais modifiées ailleurs (cf. syncBase)
+    const visitBaseAfterSave = new Map(); // visites fusionnées champ par champ → base à retenir
     try {
       const { data: dbMeta } = await sb.from('aichantier_chantiers').select('visites,updated_at').eq('id', p.id).single();
       if (dbMeta?.visites?.length) {
+        // ANTI-ÉCRASEMENT (incident 26/10) : une visite que cet appareil n'a PAS modifiée depuis
+        // sa dernière synchro garde la version du serveur (conclusion, participants… écrits ailleurs).
+        const srvVisitById = new Map(dbMeta.visites.filter(v => v?.id).map(v => [v.id, v]));
+        mergedVisitesMetadata = visitesMetadata.map(vm => {
+          const sv = srvVisitById.get(vm.id);
+          const base = getBase(`v:${vm.id}`);
+          const lSig = visitSig(vm);
+          const sSig = sv ? visitSig(visitMeta(sv)) : null;
+          const d = syncDecision(lSig, sSig, base);
+          if (d === 'keepServer') { keptServerVisitIds.add(vm.id); return sv; }
+          if (d !== 'conflict') return vm;
+          // Modifiée ici ET ailleurs : champ par champ, ce qui a changé ici + le reste du serveur.
+          const m = mergeGroups(lSig, sSig, base);
+          if (!m) return vm;
+          const svm = visitMeta(sv);
+          const keys = Object.keys(vm).sort();
+          const merged = { ...vm };
+          keys.forEach((k, i) => { if (m.pick[i] === 'S') merged[k] = svm[k]; });
+          if (m.clash) logWarn('saveRemote.visitConflict', { projet: p.id, visite: vm.id });
+          visitBaseAfterSave.set(vm.id, nextBase(lSig, base, m.pick));
+          return merged;
+        });
+        if (keptServerVisitIds.size) logWarn('saveRemote.visitKeptServer', { projet: p.id, n: keptServerVisitIds.size });
         const localVisitIdSet = new Set(visitesMetadata.map(v => v.id));
         const knownVisitIds   = _knownVisitIdsByProject.get(p.id);
         const dbOnlyVisits    = dbMeta.visites.filter(v =>
           !localVisitIdSet.has(v.id) && knownVisitIds != null && !knownVisitIds.has(v.id)
         );
-        if (dbOnlyVisits.length > 0) mergedVisitesMetadata = [...visitesMetadata, ...dbOnlyVisits];
+        if (dbOnlyVisits.length > 0) mergedVisitesMetadata = [...mergedVisitesMetadata, ...dbOnlyVisits];
       }
       // ── Détection de conflit de version (audit point 1) ──────────────────────────
       // Si le remote a AVANCÉ depuis notre dernier chargement/écriture, un AUTRE appareil a
@@ -1533,6 +1550,9 @@ async function saveRemote(ps, dirtyIds = null) {
     // Notre écriture fait désormais foi : la référence de version devient `now` pour ne pas
     // détecter un faux conflit à la prochaine sauvegarde de CE même appareil.
     _loadedUpdatedAtByProject.set(p.id, now);
+    // Base de synchro des visites ENVOYÉES par cet appareil (pas celles gardées du serveur : leur
+    // version locale reste périmée tant que la fusion ne l'a pas remplacée).
+    for (const vm of visitesMetadata) if (!keptServerVisitIds.has(vm.id)) setBase(`v:${vm.id}`, visitBaseAfterSave.get(vm.id) ?? visitSig(vm));
 
     const dbLocIds  = new Set((dbLocsRes.data || []).map(l => l.id));
     const currLocIds = new Set(allLocsFlat.map(l => l.id).filter(Boolean));
@@ -1619,7 +1639,14 @@ async function saveRemote(ps, dirtyIds = null) {
           })()
         : Promise.resolve(),
       locIdsToFetch.length > 0
-        ? sb.from('aichantier_localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch)
+        ? (async () => {
+            // Contenu actuel en base (anti-écrasement, cf. syncBase). Repli sur id/zone seuls si une
+            // colonne récente manque → `_withContent` faux → toutes les observations envoyées (avant).
+            const cols = `id,localisation_id,sort_order,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations${_noItemMetaCol ? '' : ',meta'}`;
+            const full = await sb.from('aichantier_localisation_items').select(cols).in('localisation_id', locIdsToFetch);
+            if (!full.error) return { ...full, _withContent: true };
+            return sb.from('aichantier_localisation_items').select('id,localisation_id').in('localisation_id', locIdsToFetch);
+          })()
         : Promise.resolve({ data: [] }),
     ]);
 
@@ -1768,6 +1795,60 @@ async function saveRemote(ps, dirtyIds = null) {
       }
     }
 
+    // ── ANTI-ÉCRASEMENT DU TEXTE (incident 26/10 « le texte est revenu à celui de l'ancienne
+    // visite », cf. syncBase.js) : n'envoyer QUE les observations modifiées sur CET appareil.
+    // Une observation inchangée ici mais modifiée ailleurs garde la version du serveur. Seule sa
+    // position (zone / ordre), si elle a changé ici, est mise à jour — sans toucher à son texte.
+    const srvItemById = dbItemsRes?._withContent ? new Map((dbItemsRes.data || []).map(r => [r.id, r])) : null;
+    const locOfRow = new Map(allLocsFlat.map((l, i) => [locRows[i]?.id, l]));
+    const itemsToSend = [];
+    const sentItemSigs = [];
+    const posUpdates = [];
+    let keptServerItems = 0;
+    for (const row of allItems) {
+      const srv = srvItemById?.get(row.id);
+      const lSig = itemRowSig(row);
+      const sSig = srv ? itemRowSig(srv) : null;
+      const base = getBase(`i:${row.id}`);
+      const d = srv ? syncDecision(lSig, sSig, base) : 'send';
+      if (d === 'send') { itemsToSend.push(row); sentItemSigs.push([row.id, lSig]); continue; }
+      if (d === 'conflict') {
+        // Modifiée ici ET ailleurs : champ par champ (ex. titre changé ici, commentaire au PC → les
+        // deux sont gardés). Seul un même champ modifié des deux côtés fait gagner la version locale.
+        const m = mergeGroups(lSig, sSig, base);
+        const merged = { ...row };
+        if (m) ITEM_GROUPS.forEach((cols, gi) => {
+          if (m.pick[gi] !== 'S') return;
+          for (const c of cols) {
+            if (c === 'meta' && !('meta' in row)) continue;
+            merged[c] = c === 'titre' || c === 'commentaire' ? (srv[c] ?? '')
+              : c === 'suivi' ? (srv.suivi ?? 'rien') : c === 'urgence' ? (srv.urgence ?? 'basse')
+              : c === 'commentaire_align' ? (srv.commentaire_align ?? 'left')
+              : c === 'statut' ? (srv.statut === 'brouillon' ? 'brouillon' : 'rapport')
+              : (srv[c] ?? null);
+          }
+        });
+        itemsToSend.push(merged); sentItemSigs.push([row.id, m ? nextBase(lSig, base, m.pick) : lSig]);
+        if (!m || m.clash) {
+          // Modifiée ici ET ailleurs : la version locale (édition en cours) part, l'autre est
+          // copiée dans la corbeille de récupération de cet appareil (restaurable à côté).
+          const l = locOfRow.get(row.localisation_id);
+          logWarn('saveRemote.itemConflict', { projet: p.id, item: row.id });
+          addDeletedItem({
+            id: crypto.randomUUID(), titre: srv.titre ?? '', suivi: srv.suivi ?? 'rien', urgence: srv.urgence ?? 'basse',
+            commentaire: srv.commentaire ?? '', commentaireAlign: srv.commentaire_align ?? 'left',
+            statut: srv.statut === 'brouillon' ? 'brouillon' : 'rapport', photos: [],
+          }, { projectId: p.id, projectNom: p.nom ?? '', visiteId: l?._visiteId ?? null, locId: row.localisation_id, locNom: l?.nom ?? '' }).catch(() => {});
+        }
+        continue;
+      }
+      if (d === 'same') setBase(`i:${row.id}`, lSig); else keptServerItems++;
+      if (srv.localisation_id !== row.localisation_id || (srv.sort_order ?? 0) !== row.sort_order) {
+        posUpdates.push({ id: row.id, localisation_id: row.localisation_id, sort_order: row.sort_order });
+      }
+    }
+    if (keptServerItems) logWarn('saveRemote.itemKeptServer', { projet: p.id, n: keptServerItems });
+
     // ── Parallèle : suppr items retirés (batch) + upsert items + prefetch photos
     const deleteRemovedItemsPromise = allRemovedItemIds.length > 0
       ? (async () => {
@@ -1779,8 +1860,8 @@ async function saveRemote(ps, dirtyIds = null) {
 
     const [, upsertItemsRes, photosRes] = await Promise.all([
       deleteRemovedItemsPromise,
-      allItems.length > 0
-        ? sb.from('aichantier_localisation_items').upsert(allItems, { onConflict: 'id' })
+      itemsToSend.length > 0
+        ? sb.from('aichantier_localisation_items').upsert(itemsToSend, { onConflict: 'id' })
         : Promise.resolve({ error: null }),
       unloadedItemIds.length > 0
         ? sb.from('aichantier_item_photos').select('id,item_id,name,storage_url,sort_order')
@@ -1791,9 +1872,9 @@ async function saveRemote(ps, dirtyIds = null) {
     // on rejoue l'upsert SANS `statut`, puis sans `commentaire_align` → la sauvegarde n'échoue
     // jamais (zéro perte de données).
     const isAlignColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|meta|schema cache/i.test(e?.message || '');
-    if (upsertItemsRes?.error && isAlignColErr(upsertItemsRes.error) && allItems.length > 0) {
+    if (upsertItemsRes?.error && isAlignColErr(upsertItemsRes.error) && itemsToSend.length > 0) {
       // 1er repli : sans `meta` (dates de suivi, migration 20261020 pas encore appliquée).
-      let stripped = allItems.map(({ meta, ...row }) => row); // eslint-disable-line no-unused-vars
+      let stripped = itemsToSend.map(({ meta, ...row }) => row); // eslint-disable-line no-unused-vars
       let retry = await sb.from('aichantier_localisation_items').upsert(stripped, { onConflict: 'id' });
       if (!retry.error) _noItemMetaCol = true;
       if (retry.error && isAlignColErr(retry.error)) {
@@ -1807,6 +1888,14 @@ async function saveRemote(ps, dirtyIds = null) {
       upsertItemsRes.error = retry.error ?? null;
     }
     if (upsertItemsRes?.error) errors.push(upsertItemsRes.error);
+    else sentItemSigs.forEach(([id, sig]) => setBase(`i:${id}`, sig));
+    // Position seule (réordonnée / déplacée ici) des observations dont le texte n'est pas renvoyé.
+    if (!upsertItemsRes?.error && posUpdates.length) {
+      const posRes = await Promise.all(posUpdates.map(u => sb.from('aichantier_localisation_items')
+        .update({ localisation_id: u.localisation_id, sort_order: u.sort_order }).eq('id', u.id)));
+      const posErr = posRes.find(r => r?.error)?.error;
+      if (posErr) errors.push(posErr);
+    }
     // Mettre à jour les IDs d'items connus (pour qu'un item créé en session soit supprimable plus tard)
     if (!upsertItemsRes?.error) {
       const _si = _knownItemIdsByProject.get(p.id) ?? new Set();
@@ -1876,6 +1965,7 @@ async function saveRemote(ps, dirtyIds = null) {
     await plansPromise;
   }
 
+  flushBase();
   if (errors.length > 0) {
     const summary = errors.map(e => ({ msg: e.message, code: e.code, details: e.details, hint: e.hint }));
     console.warn('saveRemote errors:', summary);
@@ -2043,6 +2133,7 @@ export function clearLocalData() {
     }
     delete _mem[SK];
     clearSnapshots(); // purge la boîte noire (évite de proposer les données d'un autre utilisateur)
+    clearBase(); // base de synchro (anti-écrasement) de l'utilisateur précédent
   } catch {}
   _lastRemoteIds = null;
   _knownVisitIdsByProject = new Map();
@@ -2104,6 +2195,15 @@ export async function loadData() {
     // Critique pour le scénario multi-device : un projet supprimé sur PC ne doit pas
     // être ré-uploadé par le tel qui chargerait son cache stale.
     writePersistedRemoteIds(_lastRemoteIds);
+    // Base de synchro : on oublie ce qui n'existe plus en base, puis on persiste.
+    const syncKeys = new Set();
+    for (const p of ps) for (const v of (p.visites || [])) {
+      syncKeys.add(`v:${v.id}`);
+      for (const l of (v.localisations || [])) for (const it of (l.items || [])) syncKeys.add(`i:${it.id}`);
+    }
+    pruneBase(syncKeys);
+    flushBase();
+    pruneHistoryDaily(); // historique serveur : amincissement quotidien (fire-and-forget)
     // NE PAS mettre à jour le cache local ici : seul saveData() écrit dans
     // localStorage. Cela évite que loadData() n'écrase des modifications
     // locales non encore synchronisées (race condition beforeunload vs microtask).
@@ -2353,4 +2453,98 @@ export async function recoverPhotosFromStorage() {
     }
   } catch (e) { errs.push(e.message); }
   return { recovered, errors: errs };
+}
+
+// ── HISTORIQUE SERVEUR & PHOTOS RETROUVÉES (incident 26/10, Pavillons « Visite DET n°5 ») ─────────
+// Lecture seule de aichantier_history (migration 20261026000000_history_versions.sql). Tant que la
+// migration n'est pas appliquée (table absente) → [] : la section correspondante reste masquée.
+export async function listItemHistory(chantierId, limit = 400) {
+  if (!chantierId) return [];
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_history')
+      .select('id,row_id,op,old_row,changed_at,changed_by')
+      .eq('chantier_id', String(chantierId)).eq('table_name', 'aichantier_localisation_items')
+      .order('changed_at', { ascending: false }).limit(limit);
+    return error ? [] : (data || []);
+  } catch { return []; }
+}
+
+// Amincit les vieilles versions (fonction serveur) — au plus une fois par jour et par appareil.
+const HISTORY_PRUNE_KEY = '_chantierai_history_prune_at';
+export async function pruneHistoryDaily() {
+  try {
+    const last = Number((_hasLS && localStorage.getItem(HISTORY_PRUNE_KEY)) || 0);
+    if (Date.now() - last < 86400000) return;
+    if (_hasLS) localStorage.setItem(HISTORY_PRUNE_KEY, String(Date.now()));
+    const sb = await getSupabase();
+    if (typeof sb?.rpc === 'function') await sb.rpc('aichantier_prune_history');
+  } catch { /* migration absente / hors ligne : rien à faire */ }
+}
+
+// Photos présentes dans Storage pour les observations d'un projet mais plus reliées à aucune
+// observation (lien effacé en base ; le FICHIER n'est jamais supprimé). Cherche dans TOUS les
+// dossiers du projet (`*_{8 premiers caractères de l'id}`), y compris ceux d'un ancien nom.
+// → [{ itemId, path, name, url }] (url signée pour l'aperçu). Ne modifie rien.
+export async function findOrphanStoragePhotos(projet) {
+  const out = [];
+  try {
+    const itemIds = new Set();
+    for (const v of (projet?.visites || [])) for (const l of (v.localisations || [])) for (const it of (l.items || [])) if (it?.id) itemIds.add(String(it.id));
+    if (!projet?.id || !itemIds.size) return out;
+    const sb = await getSupabase();
+    const id8 = String(projet.id).slice(0, 8);
+    const slugs = [];
+    for (let offset = 0; offset < 20000; offset += 1000) {
+      const { data, error } = await sb.storage.from('photos').list('', { limit: 1000, offset });
+      if (error || !data?.length) break;
+      data.forEach(e => { if (!e.metadata && e.name?.endsWith(`_${id8}`)) slugs.push(e.name); });
+      if (data.length < 1000) break;
+    }
+    const files = [];
+    for (const slug of slugs) {
+      const { data: folders } = await sb.storage.from('photos').list(slug, { limit: 1000 });
+      for (const f of (folders || [])) {
+        if (f.metadata || !itemIds.has(f.name)) continue;
+        const { data: fl } = await sb.storage.from('photos').list(`${slug}/${f.name}`, { limit: 1000 });
+        for (const file of (fl || [])) {
+          if (!file?.metadata || !file.name || file.name.includes('_annot')) continue;
+          files.push({ itemId: f.name, path: `${slug}/${f.name}/${file.name}`, name: file.name });
+        }
+      }
+    }
+    if (!files.length) return out;
+    const linked = new Set();
+    const ids = [...new Set(files.map(f => f.itemId))];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data } = await sb.from('aichantier_item_photos').select('storage_url,annotated_storage_url').in('item_id', ids.slice(i, i + 100));
+      (data || []).forEach(r => {
+        if (r.storage_url) linked.add(extractPhotoPath(r.storage_url) ?? r.storage_url);
+        if (r.annotated_storage_url) linked.add(extractPhotoPath(r.annotated_storage_url) ?? r.annotated_storage_url);
+      });
+    }
+    const orphans = files.filter(f => !linked.has(f.path));
+    const urls = await signCommentPaths(orphans.map(f => f.path));
+    orphans.forEach(f => out.push({ ...f, url: urls[f.path] || null }));
+  } catch (e) { console.warn('findOrphanStoragePhotos:', e); }
+  return out;
+}
+
+// Re-relie des fichiers Storage à une observation (insère les lignes photo). Additif uniquement.
+// → [{ id, name, storage_url, url }] des photos effectivement reliées.
+export async function relinkStoragePhotos(itemId, files) {
+  const done = [];
+  try {
+    const sb = await getSupabase();
+    const { data: cur } = await sb.from('aichantier_item_photos').select('storage_url,sort_order').eq('item_id', itemId);
+    const have = new Set((cur || []).map(r => extractPhotoPath(r.storage_url) ?? r.storage_url));
+    let order = (cur || []).reduce((m, r) => Math.max(m, (r.sort_order ?? 0) + 1), 0);
+    for (const f of (files || [])) {
+      if (!f?.path || have.has(f.path)) continue;
+      const row = { id: crypto.randomUUID(), item_id: itemId, name: f.name || '', storage_url: f.path, sort_order: order++ };
+      const { error } = await sb.from('aichantier_item_photos').insert(row);
+      if (!error) { have.add(f.path); done.push({ id: row.id, name: row.name, storage_url: f.path, url: f.url || null }); }
+    }
+  } catch (e) { console.warn('relinkStoragePhotos:', e); }
+  return done;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { restoreItemInLocs, restoreZoneInLocs } from './trash.js';
+import { restoreItemInLocs, restoreZoneInLocs, restoreItemTextInLocs } from './trash.js';
 import { mergeZones } from './zoneMerge.js';
 import { createLostAnnotScanner, applyLostAnnots } from './annotRecovery.js';
 
@@ -76,5 +76,28 @@ describe('corbeille : annotations effacées d\'une zone existante', () => {
     const scan = createLostAnnotScanner(projet([T('Palier', 100)]));
     scan.add(snap(3, [T('Palier', 2)]));
     expect(scan.entries()).toEqual([]);
+  });
+});
+
+describe('restoreItemTextInLocs (historique serveur)', () => {
+  const locs = [{ id: 'z', nom: 'RDC', items: [{ id: 'a', titre: 'Coffrage', commentaire: 'ancien', photos: [{ _id: 'p' }], sort: 1 }] }];
+  it('remplace seulement le texte d\'une observation présente', () => {
+    const r = restoreItemTextInLocs(locs, { item: { id: 'a', titre: 'Coffrage voiles', commentaire: 'texte DET 5' }, locId: 'z' });
+    expect(r.ok && r.replaced).toBe(true);
+    const it = r.locs[0].items[0];
+    expect(it.commentaire).toBe('texte DET 5');
+    expect(it.titre).toBe('Coffrage voiles');
+    expect(it.photos).toEqual([{ _id: 'p' }]);
+    expect(r.previous.commentaire).toBe('ancien');
+  });
+  it('déjà identique → rien', () => {
+    const r = restoreItemTextInLocs(locs, { item: { id: 'a', titre: 'Coffrage', commentaire: 'ancien' }, locId: 'z' });
+    expect(r.already).toBe(true);
+    expect(r.locs).toBe(locs);
+  });
+  it('observation absente → remise dans sa zone', () => {
+    const r = restoreItemTextInLocs(locs, { item: { id: 'b', titre: 'Supprimée', photos: [] }, locId: 'z' });
+    expect(r.ok).toBe(true);
+    expect(r.locs[0].items.map(i => i.id)).toEqual(['a', 'b']);
   });
 });

@@ -37,7 +37,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -649,6 +649,8 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onRestoreObservation={restoreObservation}
             onRestoreLostAnnots={restoreLostAnnots}
             onRestoreZoneAnnotations={restoreZoneAnnotations}
+            onRestoreItemText={restoreItemText}
+            onRestoreStoragePhotos={restoreStoragePhotos}
           />
         ) : ouvert ? (
           <VisitesScreen

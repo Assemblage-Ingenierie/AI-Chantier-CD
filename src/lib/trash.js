@@ -57,3 +57,25 @@ export function restoreZoneInLocs(locs, entry) {
   const next = [...rest.slice(0, at), zone, ...rest.slice(at)];
   return { locs: orderZones(next), ok: true, liftIds };
 }
+
+// Champs TEXTE d'une observation repris d'une version précédente (historique serveur).
+export const ITEM_TEXT_FIELDS = ['titre', 'commentaire', 'commentaireAlign', 'suivi', 'urgence', 'statut', 'dateOuverture', 'dateCloture'];
+
+// Rétablit le TEXTE d'une version précédente d'une observation (historique serveur, incident 26/10).
+// Observation présente → seuls ses champs texte sont remplacés (photos, plans, position intacts ;
+// la version remplacée reste dans l'historique serveur → réversible). Observation absente → elle est
+// remise comme une observation supprimée (restoreItemInLocs). → { locs, ok, replaced?, previous?, … }
+export function restoreItemTextInLocs(locs, entry) {
+  const item = entry?.item;
+  if (!item?.id) return { locs, ok: false, reason: 'invalid' };
+  const zone = findItemZone(locs, item.id);
+  if (!zone) return restoreItemInLocs(locs, entry);
+  const cur = zone.items.find(i => i.id === item.id);
+  if (ITEM_TEXT_FIELDS.every(f => (cur[f] ?? null) === (item[f] ?? null))) return { locs, ok: true, already: true };
+  const next = { ...cur };
+  for (const f of ITEM_TEXT_FIELDS) { if (item[f] === undefined) delete next[f]; else next[f] = item[f]; }
+  return {
+    locs: locs.map(l => (l.id === zone.id ? { ...l, items: l.items.map(i => (i.id === item.id ? next : i)) } : l)),
+    ok: true, replaced: true, previous: cur, zone,
+  };
+}

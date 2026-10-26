@@ -182,6 +182,8 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 - La garde anti-mass-delete (>50%) dans `saveRemote` est intentionnelle — ne pas la supprimer, elle protège contre les corruptions de cache
 - `deleteRemoteProjet` a été ajouté pour contourner cette garde **uniquement** pour les suppressions explicites utilisateur
 - `remoteLoaded` doit toujours être géré correctement si on touche au chargement initial
+- **Ne jamais renvoyer au serveur une observation/visite non modifiée sur l'appareil** : `saveRemote` compare local / serveur / base de synchro (`src/lib/syncBase.js`). Ne pas contourner (ex. upsert de toutes les lignes) — c'est ce qui écrasait le texte des autres appareils (incident 26/10).
+- L'historique serveur (`aichantier_history`, trigger) est le filet ultime : ne jamais le supprimer ni donner aux clients le droit d'y écrire.
 
 ---
 
@@ -250,3 +252,4 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 | 2026-05-21 | Projets supprimés réapparaissent sur autre appareil | Garde anti-mass-delete bloquait les suppressions légitimes >50% | `deleteRemoteProjet()` : suppression immédiate sur Supabase |
 | 2026-05-21 | Plans très lents à charger | `hydratePlanLibrary` chargeait aussi les PDF bruts | Requête réduite à `id,bg` uniquement |
 | 2026-07-07 | App plantée en PROD à l'ouverture du panneau Plans (« Cannot access 'M' before initialization ») | `unassignedGroups` référençait `pdfGroups` (useMemo) déclaré 130 lignes plus bas dans `NiveauxModal` — TDZ au rendu, invisible au build et aux tests | Hotfix #182 : useMemo remonté avant ses usages + règle TDZ ajoutée aux Règles de développement ci-dessus |
+| 2026-10-26 | Texte d'une visite revenu à celui de la visite dupliquée + 19 photos sur 21 détachées (Pavillons, DET n°5) | `saveRemote` renvoyait TOUTES les observations : un appareil au state périmé écrasait le texte écrit ailleurs ; aucune copie serveur | `syncBase.js` (n'envoyer que ce qui a été modifié ici, fusion champ par champ) ; historique serveur `aichantier_history` (trigger, migration 20261026) + Corbeille « Versions précédentes » / « Photos détachées » ; copie texte sur le Drive (`driveTextBackup.js`) |

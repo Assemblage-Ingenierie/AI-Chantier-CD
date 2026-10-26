@@ -22,7 +22,7 @@ export function setAffaireNum(projetId, val) {
   } catch { /* localStorage indisponible */ }
 }
 
-async function driveUploadAttempt({ data, name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur }) {
+async function driveUploadAttempt({ data, name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur, replace }) {
   const [header, base64] = data.split(',');
   const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
   // Jeton Supabase (l'endpoint exige désormais un utilisateur connecté). Récupéré à CHAQUE
@@ -32,7 +32,7 @@ async function driveUploadAttempt({ data, name, projetNom, projetNum, visiteLabe
   const res = await fetch('/api/drive-upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur }),
+    body: JSON.stringify({ base64, mimeType, fileName: name, projetNom, projetNum, visiteLabel, visiteDate, ingenieur, ...(replace ? { replace: true } : {}) }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
