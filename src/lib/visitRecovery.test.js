@@ -32,7 +32,8 @@ describe('restauration d\'une visite depuis les sauvegardes de l\'appareil', () 
     expect(c.missing).toBe(2);
     expect(c.exists).toBe(true);
     // « c » supprimée volontairement → jamais proposée.
-    const b2 = collectCandidates(new Map(), snap(200, [full]), now, { tombItems: new Set(['b', 'c']) });
+    const sameA = projetNow([{ ...full, localisations: [{ id: 'z1', nom: 'RDC', items: [full.localisations[0].items[0]] }] }]);
+    const b2 = collectCandidates(new Map(), snap(200, [full]), sameA, { tombItems: new Set(['b', 'c']) });
     expect(b2.has('V')).toBe(false);
   });
 
@@ -55,6 +56,25 @@ describe('restauration d\'une visite depuis les sauvegardes de l\'appareil', () 
     expect(b.photos).toEqual([]);                 // photo sans source connue : pas de lien cassé
     expect(droppedPhotos).toBe(1);
     expect(z2.items[0].id).toBe('c');
+  });
+
+  it('observations encore là mais ANCIEN texte et photos disparues (cas Pavillons) → proposée', () => {
+    const abimee = { ...full, localisations: [
+      { id: 'z1', nom: 'RDC', items: [
+        { id: 'a', titre: 'Fissure', commentaire: 'A voir', _photosHydrated: true, photos: [] },
+        { id: 'b', titre: 'Humidité', commentaire: 'Remontées capillaires', _photosHydrated: true, photos: [] } ] },
+      { id: 'z2', nom: 'Cave', parentId: 'z1', items: [{ id: 'c', titre: 'Poutre', commentaire: 'Poutre bois attaquée' }] } ] };
+    const c = collectCandidates(new Map(), snap(200, [full]), projetNow([abimee])).get('V');
+    expect(c.missing).toBe(0);
+    expect(c.textItems).toBe(1);
+    expect(c.photoGain).toBe(1);   // pa a disparu (pb n'a pas de source connue → pas comptée)
+    // Et la copie restaurée ramène le texte complet + la photo, sans toucher à l'actuelle.
+    const { visit } = buildRestoredVisit(c.visit, projetNow([abimee]), uuid);
+    const a = visit.localisations[0].items[0];
+    expect(a.commentaire).toBe('Fissure en escalier au droit du linteau');
+    expect(a.photos.map(p => p.storage_url)).toEqual(['pav/a/pa.webp']);
+    // Version identique à aujourd'hui → rien à proposer.
+    expect(collectCandidates(new Map(), snap(300, [full]), projetNow([full])).has('V')).toBe(false);
   });
 
   it('ce qui a été supprimé volontairement ne revient pas', () => {

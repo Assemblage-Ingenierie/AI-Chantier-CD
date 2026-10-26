@@ -57,7 +57,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const [dupLoading, setDupLoading] = useState(false);  // photos de la visite en cours de chargement
   // Visites retrouvées dans les sauvegardes de l'appareil (lib/visitRecovery.js) — incident 26/10.
   const [recovery, setRecovery] = useState([]);
-  const itemSig = visites.reduce((n, v) => n + (v.localisations || []).reduce((m, l) => m + (l.items || []).length, 0), 0);
+  // Signature : nb d'observations + photos chargées → nouveau scan quand les photos d'une visite arrivent.
+  const itemSig = visites.reduce((n, v) => n + (v.localisations || []).reduce((m, l) => m + (l.items || []).reduce((k, it) => k + 1 + (it._photosHydrated ? 1000 * (1 + (it.photos || []).length) : 0), 0), 0), 0);
   useEffect(() => {
     let alive = true;
     const t = setTimeout(() => {
@@ -483,7 +484,11 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
               <p style={{ margin:0, fontSize:13, fontWeight:800, color:'#9A3412' }}>Visite retrouvée dans les sauvegardes de cet appareil</p>
               <p style={{ margin:'2px 0 0', fontSize:12, color:'#9A3412' }}>
                 « {c.label} » du {new Date(c.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })} : {c.items} observation{c.items > 1 ? 's' : ''}
-                {c.missing > 0 ? `, dont ${c.missing} absente${c.missing > 1 ? 's' : ''} aujourd'hui` : ', texte plus complet'}.
+                {[
+                  c.missing > 0 && `${c.missing} absente${c.missing > 1 ? 's' : ''} aujourd'hui`,
+                  c.textItems > 0 && `${c.textItems} au texte plus complet`,
+                  c.photoGain > 0 && `${c.photoGain} photo${c.photoGain > 1 ? 's' : ''} disparue${c.photoGain > 1 ? 's' : ''}`,
+                ].filter(Boolean).map(x => `, ${x}`).join('')}.
               </p>
             </div>
             <div style={{ display:'flex', gap:8, flexShrink:0 }}>
