@@ -1964,6 +1964,33 @@ function writePersistedRemoteIds(ids) {
   } catch {}
 }
 
+// ÉDITION À PLUSIEURS (incident 26/10, Amaury + Malo sur la même visite → observations et photos
+// disparues) : loadRemote marque « connues » TOUTES les zones/observations du serveur, y compris
+// celles qu'un collègue vient d'ajouter. Si la fusion garde ensuite la version LOCALE (modifs en
+// attente, ou horloge locale en avance), ces ajouts n'entrent pas dans l'état de cet appareil →
+// à la sauvegarde suivante, « connue mais absente » était lu comme « supprimée par l'utilisateur »
+// → suppression en base (observation + photos, ou zone entière).
+// Après CHAQUE fusion, on ne garde donc comme « connues » que les zones/observations réellement
+// présentes dans l'état de cet appareil. Purement soustractif : ne peut qu'empêcher une
+// suppression, jamais en provoquer. Les suppressions volontaires passent par les pierres
+// tombales (inchangées) ; une suppression faite plus tard dans la session reste détectée (l'élément
+// était bien présent au moment de la fusion).
+export function restrictKnownToState(projets) {
+  for (const p of (projets || [])) {
+    if (!p?.id) continue;
+    const locs = (p.visites || []).flatMap(v => v.localisations || []);
+    const locIds = new Set(locs.map(l => l?.id).filter(Boolean));
+    const itemIds = new Set(locs.flatMap(l => [...(l?.items || []), ...((l?.sections || []).flatMap(s => s.items || []))]).map(i => i?.id).filter(Boolean));
+    let droppedLocs = 0, droppedItems = 0;
+    const kl = _knownLocIdsByProject.get(p.id);
+    if (kl) for (const id of [...kl]) if (!locIds.has(id)) { kl.delete(id); droppedLocs++; }
+    const ki = _knownItemIdsByProject.get(p.id);
+    if (ki) for (const id of [...ki]) if (!itemIds.has(id)) { ki.delete(id); droppedItems++; }
+    // Trace : ces éléments auraient été SUPPRIMÉS à la prochaine sauvegarde avant ce correctif.
+    if (droppedLocs || droppedItems) logWarn('load.knownRestricted', { projet: p.id, nom: p.nom, droppedLocs, droppedItems });
+  }
+}
+
 // Efface le cache local des projets — appelé à la déconnexion pour éviter qu'un autre
 // utilisateur sur le même appareil ne voie (ou ne re-uploade) les données du précédent.
 export function clearLocalData() {

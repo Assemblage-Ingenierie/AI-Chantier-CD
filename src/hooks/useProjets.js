@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState } from '../lib/storage.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
@@ -411,6 +411,8 @@ export function useProjets(onSyncStatus) {
         }
 
         const { allMerged, keptLocal, keptLocalIds, unsynced } = mergeWithLocal(filteredRemote, projetsRef.current, dirtyIds.current, previousRemoteIds, deletedIdsRef.current, getDeletedIds('item'), getDeletedIds('loc'));
+        // Édition à plusieurs : seul ce qui est dans l'état fusionné compte comme « connu » (cf. storage.js).
+        restrictKnownToState(allMerged);
         // Mark locally-newer and unsynced projects dirty so saves are targeted.
         // Prevents the "save ALL when dirtyIds={}" path from re-inserting projects
         // that were deleted by another user between our loadData() and our save.
@@ -575,6 +577,8 @@ export function useProjets(onSyncStatus) {
       const changed = allMerged.length !== projetsRef.current.length
         || allMerged.some(rp => { const lp = localById.get(rp.id); return !lp || lp.updatedAt !== rp.updatedAt; });
       if (changed) setProjets(allMerged);
+      // loadData vient de marquer « connu » tout le serveur : on restreint à l'état réellement gardé.
+      restrictKnownToState(changed ? allMerged : projetsRef.current);
     } catch (e) {
       // Ignore background refresh errors — no banner shown
     }
