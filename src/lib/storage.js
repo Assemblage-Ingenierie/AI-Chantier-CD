@@ -294,18 +294,29 @@ function buildLocFromRow(loc, itemsByLoc) {
   };
 }
 
-async function loadRemote() {
+// onlyId : ne charge QU'UN projet (mise à jour en direct quand un collègue enregistre — cf.
+// loadRemoteProject). Sans onlyId : tous les projets (comportement d'origine, inchangé).
+async function loadRemote(onlyId = null) {
   const sb = await getSupabase();
+  const byProject = (q, col) => (onlyId ? q.eq(col, onlyId) : q);
+  // Observations d'un seul projet : filtrées par ses zones (pas de colonne chantier_id).
+  let projLocIds = null;
+  if (onlyId) {
+    const rl = await sb.from('aichantier_chantier_localisations').select('id').eq('chantier_id', onlyId);
+    if (rl.error) throw rl.error;
+    projLocIds = (rl.data || []).map(l => l.id);
+  }
+  const byLocs = (q) => (projLocIds ? q.in('localisation_id', projLocIds) : q);
   const [r1, r2, r3, r4] = await Promise.all([
     // photo exclu du SELECT — peut être un gros base64 qui cause HTTP 500.
     // Récupéré depuis le cache local lors du merge, ou migré vers Storage à la prochaine save.
-    sb.from('aichantier_chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'),
+    byProject(sb.from('aichantier_chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'), 'id'),
     // bg/data exclus — blobs volumineux (images de plans), chargés lazily à l'ouverture du projet
-    sb.from('aichantier_chantier_plans')
-      .select('id,chantier_id,nom,sort_order')
+    byProject(sb.from('aichantier_chantier_plans')
+      .select('id,chantier_id,nom,sort_order'), 'chantier_id')
       .order('sort_order'),
-    sb.from('aichantier_chantier_localisations')
-      .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id')
+    byProject(sb.from('aichantier_chantier_localisations')
+      .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id'), 'chantier_id')
       .order('sort_order'),
     // commentaire_align / statut : colonnes récentes → tentative avec, repli sans si migration pas
     // encore appliquée (sinon tout le chargement échouerait). Sans `statut`, les observations
@@ -314,22 +325,22 @@ async function loadRemote() {
       const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|meta|schema cache/i.test(e?.message || '');
       // `meta` (dates de suivi) : la plus récente → essayée en premier, repli sans si absente.
       if (!_noItemMetaCol) {
-        const withMeta = await sb.from('aichantier_localisation_items')
-          .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,meta,plan_annotations,sort_order')
+        const withMeta = await byLocs(sb.from('aichantier_localisation_items')
+          .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,meta,plan_annotations,sort_order'))
           .order('sort_order');
         if (!(withMeta.error && isColErr(withMeta.error))) return withMeta;
         _noItemMetaCol = true;
       }
-      const withStatut = await sb.from('aichantier_localisation_items')
-        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations,sort_order')
+      const withStatut = await byLocs(sb.from('aichantier_localisation_items')
+        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations,sort_order'))
         .order('sort_order');
       if (!(withStatut.error && isColErr(withStatut.error))) return withStatut;
-      const withAlign = await sb.from('aichantier_localisation_items')
-        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,plan_annotations,sort_order')
+      const withAlign = await byLocs(sb.from('aichantier_localisation_items')
+        .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,plan_annotations,sort_order'))
         .order('sort_order');
       if (withAlign.error && isColErr(withAlign.error)) {
-        return sb.from('aichantier_localisation_items')
-          .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order')
+        return byLocs(sb.from('aichantier_localisation_items')
+          .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order'))
           .order('sort_order');
       }
       return withAlign;
@@ -347,8 +358,8 @@ async function loadRemote() {
   let _foldersById = {};
   let _ingsById = {};
   try {
-    let rf = await sb.from('aichantier_chantiers').select('id,plan_folders,ingenieurs');
-    if (rf.error) rf = await sb.from('aichantier_chantiers').select('id,plan_folders');
+    let rf = await byProject(sb.from('aichantier_chantiers').select('id,plan_folders,ingenieurs'), 'id');
+    if (rf.error) rf = await byProject(sb.from('aichantier_chantiers').select('id,plan_folders'), 'id');
     if (!rf.error) for (const row of (rf.data ?? [])) {
       _foldersById[row.id] = row.plan_folders ?? [];
       if (row.ingenieurs != null) _ingsById[row.id] = row.ingenieurs;
@@ -2184,6 +2195,13 @@ export async function loadLocalData() {
   } catch { /* pas de snapshot → tableau vide */ }
 
   return [];
+}
+
+// UN projet depuis le serveur (texte + structure, sans blobs) — mise à jour en direct quand un
+// collègue enregistre. Même format que loadData ; null si introuvable / erreur réseau.
+export async function loadRemoteProject(projectId) {
+  if (!projectId) return null;
+  try { return (await loadRemote(projectId))[0] ?? null; } catch { return null; }
 }
 
 export async function loadData() {

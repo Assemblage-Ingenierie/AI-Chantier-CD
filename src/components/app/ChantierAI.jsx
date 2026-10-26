@@ -8,6 +8,8 @@ import { processDriveQueue } from '../../lib/driveUpload.js';
 import { initPhotoUploadQueue, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
 import AccountModal, { isProfileIncomplete } from '../auth/AccountModal.jsx';
+import PresenceBubbles from '../ui/PresenceBubbles.jsx';
+import { startPresence, stopPresence, setPresenceLocation } from '../../lib/presence.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
 import { isProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import SettingsModal from '../ui/SettingsModal.jsx';
@@ -37,7 +39,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject } = useProjets(setSyncStatus);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -53,6 +55,19 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
       }
     } finally { setRefreshing(false); }
   };
+
+  // Travail à plusieurs (lib/presence.js) : présence + mises à jour en direct du projet ouvert.
+  const presenceUserId = session?.user?.id || null;
+  useEffect(() => {
+    if (!presenceUserId) return undefined;
+    const meta = session?.user?.user_metadata || {};
+    startPresence(profile, presenceUserId, meta.avatar_url || meta.picture || null); // photo du compte Google
+    return () => { stopPresence(); };
+  }, [presenceUserId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setPresenceLocation({ projectId: ouvert?.id ?? null, itemId: null });
+    if (ouvert?.id) syncOpenProject(ouvert.id);
+  }, [ouvert?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // File d'upload photos : reprend les envois en attente (photos prises sur site dont
   // l'upload a été interrompu) dès l'ouverture de l'app, puis au retour en ligne/premier plan.
@@ -481,6 +496,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
       {!(isMobile && ouvert) && <div style={{ background:DA.white,borderBottom:`1px solid ${DA.border}`,padding:'8px 16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 }}>
         <div style={{ display:'flex',alignItems:'center',cursor: ouvert ? 'pointer' : 'default' }} onClick={() => setOuvert(null)}>
           <img src={headerLogoUrl} alt="Assemblage Ingénierie" style={{ height:36,objectFit:'contain' }}/>
+          <span onClick={e => e.stopPropagation()}>
+            <PresenceBubbles projets={projets} currentProjectId={ouvert?.id ?? null}
+              onOpenProject={(id) => { const p = projets.find(x => x.id === id); if (p) { setOuvert(p); setSelectedVisiteId(null); hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm)); } }}/>
+          </span>
         </div>
         <div style={{ display:'flex',alignItems:'center',gap:8 }}>
           {/* 'offline' = silencieux : le bandeau hors-ligne global informe déjà */}
