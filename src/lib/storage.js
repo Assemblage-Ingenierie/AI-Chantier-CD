@@ -737,12 +737,18 @@ export async function loadAllPlanBgs(ids = null) {
 // Charge bg + data d'un seul plan — fallback quand la miniature n'est pas encore hydratée
 const _planDataCache = new Map(); // planId → { bg, data }
 
+const _missingPlans = new Map(); // planId → mémorisé « introuvable » jusqu'à (ms)
 export async function fetchPlanData(planId) {
   if (_planDataCache.has(planId)) return _planDataCache.get(planId);
+  // Plan introuvable en base (supprimé, mais encore référencé par une zone) : mémorisé 10 min →
+  // plus de requête répétée à chaque affichage (406 en rouge dans la console, retour Thomas 26/10).
+  if ((_missingPlans.get(planId) || 0) > Date.now()) return null;
   try {
     const sb = await getSupabase();
+    // maybeSingle : 0 ligne = null sans erreur (single() renvoyait une erreur 406).
     const { data, error } = await sb.from('aichantier_chantier_plans')
-      .select('id,bg,data').eq('id', planId).single();
+      .select('id,bg,data').eq('id', planId).maybeSingle();
+    if (!error && !data) _missingPlans.set(planId, Date.now() + 600000);
     if (error || !data) return null;
     const result = { bg: data.bg ?? null, data: data.data ?? null };
     _planDataCache.set(planId, result);
