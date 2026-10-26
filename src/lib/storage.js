@@ -2548,3 +2548,18 @@ export async function relinkStoragePhotos(itemId, files) {
   } catch (e) { console.warn('relinkStoragePhotos:', e); }
   return done;
 }
+
+// Observations supprimées / photos détachées enregistrées par l'historique serveur depuis une date
+// (alerte de la corbeille, cf. trashBadge.js). Migration absente / hors ligne → [].
+export async function listServerDeletionsSince(chantierId, sinceIso) {
+  if (!chantierId) return [];
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_history')
+      .select('row_id,table_name')
+      .eq('chantier_id', String(chantierId)).eq('op', 'DELETE')
+      .in('table_name', ['aichantier_localisation_items', 'aichantier_item_photos'])
+      .gt('changed_at', sinceIso).limit(500);
+    return error ? [] : (data || []);
+  } catch { return []; }
+}

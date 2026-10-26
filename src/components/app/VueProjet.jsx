@@ -20,6 +20,7 @@ import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
+import { countNewTrash, markTrashSeen, TRASH_EVENT } from '../../lib/trashBadge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
 import { applyObsDates, zoneDatesInfo } from '../../lib/obsDates.js';
@@ -172,6 +173,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null,
   onRestoreItemText = null, onRestoreStoragePhotos = null }) {
   const [trashOpen, setTrashOpen] = useState(false); // corbeille du projet (PC)
+  // Alerte corbeille : nombre d'éléments restaurables apparus depuis la dernière ouverture
+  // (suppressions ici, ou observations / photos détachées ailleurs — historique serveur).
+  const [trashNew, setTrashNew] = useState(0);
+  useEffect(() => {
+    if (!onRestoreZone) return undefined; // corbeille = PC
+    if (trashOpen) { markTrashSeen(projet.id); setTrashNew(0); return undefined; }
+    let alive = true;
+    const recount = () => { countNewTrash(projet).then(n => { if (alive) setTrashNew(n); }).catch(() => {}); };
+    const t = setTimeout(recount, 2500); // après stabilisation des modifs en cours
+    window.addEventListener(TRASH_EVENT, recount);
+    return () => { alive = false; clearTimeout(t); window.removeEventListener(TRASH_EVENT, recount); };
+  }, [projet, trashOpen, onRestoreZone]);
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
   const [tab, setTab] = useState('visite');
@@ -745,9 +758,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
               {/* Corbeille du projet (PC) : tout ce qui a été supprimé, restaurable en un clic. */}
               {onRestoreZone && (
-                <button onClick={() => setTrashOpen(true)} aria-label="Corbeille du projet" title="Corbeille du projet — restaurer ce qui a été supprimé"
-                  style={{ width:40, height:40, flexShrink:0, background: trashOpen ? 'rgba(255,255,255,0.12)' : 'transparent', border:'none', borderRadius:8, color:'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <button onClick={() => setTrashOpen(true)} className={trashNew > 0 && !trashOpen ? 'trash-alert' : undefined}
+                  aria-label={trashNew > 0 ? `Corbeille du projet — ${trashNew} élément${trashNew > 1 ? 's' : ''} à restaurer` : 'Corbeille du projet'}
+                  title={trashNew > 0 ? `${trashNew} nouveauté${trashNew > 1 ? 's' : ''} à restaurer dans la corbeille` : 'Corbeille du projet — restaurer ce qui a été supprimé'}
+                  style={{ position:'relative', width:40, height:40, flexShrink:0, background: trashNew > 0 && !trashOpen ? DA.red : trashOpen ? 'rgba(255,255,255,0.12)' : 'transparent', border:'none', borderRadius:8, color: trashNew > 0 && !trashOpen ? 'white' : 'rgba(255,255,255,0.75)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <Ic n="del" s={17}/>
+                  {trashNew > 0 && !trashOpen && (
+                    <span style={{ position:'absolute', top:-5, right:-5, minWidth:18, height:18, padding:'0 4px', borderRadius:9, background:'white', color:DA.red, fontSize:11, fontWeight:800, lineHeight:'18px', textAlign:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.4)' }}>
+                      {trashNew > 99 ? '99+' : trashNew}
+                    </span>
+                  )}
                 </button>
               )}
               {onRefresh && (

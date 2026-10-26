@@ -13,6 +13,8 @@ const DB_NAME = 'chantierai_recovery';
 const STORE   = 'deleted_items';
 const VERSION = 1;
 const MAX_ENTRIES = 300; // rotation : garde les 300 suppressions les plus récentes (vidage manuel sinon)
+// Signal « du nouveau dans la corbeille » (alerte de l'icône, cf. trashBadge.js).
+const notifyChanged = () => { try { window.dispatchEvent(new Event('chantierai:recovery-bin')); } catch { /* hors navigateur */ } };
 
 let _dbPromise = null;
 
@@ -67,7 +69,7 @@ export async function addDeletedItem(item, ctx = {}) {
           for (const k of toDelete) store.delete(k);
         }
       };
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => { notifyChanged(); resolve(); };
       tx.onerror    = () => resolve();
       tx.onabort    = () => resolve();
     } catch { resolve(); }
@@ -102,7 +104,7 @@ export async function addDeletedZone(loc, ctx = {}) {
     try {
       const tx = db.transaction(STORE, 'readwrite');
       tx.objectStore(STORE).put(entry);
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => { notifyChanged(); resolve(); };
       tx.onerror    = () => resolve();
       tx.onabort    = () => resolve();
     } catch { resolve(); }

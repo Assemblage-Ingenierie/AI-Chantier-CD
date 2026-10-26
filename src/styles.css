@@ -220,3 +220,9 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 @media (prefers-reduced-motion: reduce) {
   .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-unlock, .costar-dots span { animation: none; }
 }
+
+/* Alerte corbeille (VueProjet) : du nouveau à restaurer → secousse + halo rouge pulsé. */
+@keyframes trash-shake { 0%, 55%, 100% { transform: rotate(0) scale(1); } 8% { transform: rotate(-14deg) scale(1.12); } 16% { transform: rotate(12deg) scale(1.12); } 24% { transform: rotate(-9deg) scale(1.08); } 32% { transform: rotate(6deg) scale(1.05); } 40% { transform: rotate(-3deg) scale(1.02); } }
+@keyframes trash-halo { 0% { box-shadow: 0 0 0 0 rgba(227, 5, 19, 0.75); } 70% { box-shadow: 0 0 0 10px rgba(227, 5, 19, 0); } 100% { box-shadow: 0 0 0 0 rgba(227, 5, 19, 0); } }
+.trash-alert { animation: trash-shake 1.8s ease-in-out infinite, trash-halo 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .trash-alert { animation: trash-halo 1.8s ease-out infinite; } }
