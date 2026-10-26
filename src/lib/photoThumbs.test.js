@@ -17,6 +17,7 @@ vi.mock('../supabase.js', () => ({
   }),
 }));
 
+vi.mock('./logger.js', () => ({ logWarn: () => {}, logEvent: () => {}, logError: () => {} }));
 const T = await import('./photoThumbs.js');
 const SIGNED = 'https://x.supabase.co/storage/v1/object/sign/photos/proj_ab12/item1/ph%201.webp?token=abc';
 
