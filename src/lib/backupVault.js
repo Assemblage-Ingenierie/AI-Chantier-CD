@@ -170,6 +170,20 @@ export async function listSnapshots() {
   });
 }
 
+// Horodatages de tous les instantanés (clés seules, plus récent d'abord) — sans charger les données
+// (listSnapshots charge tout d'un coup : trop lourd sur un appareil bien rempli).
+export async function listSnapshotKeys() {
+  const db = await openDb();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+      req.onsuccess = () => resolve([...(req.result || [])].sort((a, b) => b - a));
+      req.onerror = () => resolve([]);
+    } catch { resolve([]); }
+  });
+}
+
 // Récupère un instantané précis par son timestamp.
 export async function getSnapshot(ts) {
   const db = await openDb();
