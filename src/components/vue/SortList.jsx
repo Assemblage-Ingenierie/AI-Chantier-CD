@@ -153,7 +153,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
+export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -430,7 +430,17 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                 <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, flexWrap:'wrap', rowGap:4 }}>
-                      <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0, maxWidth:'100%' }}>{item.titre}</p>
+                      <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0, maxWidth:'100%' }}>{liveDrafts?.[item.id] && typeof liveDrafts[item.id].titre === 'string' ? liveDrafts[item.id].titre : item.titre}</p>
+                      {/* Frappe en direct d'un collègue (lib/presence.js) : son prénom, à sa couleur. */}
+                      {liveDrafts?.[item.id] && (
+                        <span title={`${liveDrafts[item.id].name} est en train d'écrire (pas encore enregistré)`}
+                          style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'1px 8px 1px 2px', borderRadius:20, background:liveDrafts[item.id].color, color:'white', fontSize:11, fontWeight:700, flexShrink:0 }}>
+                          <span style={{ width:16, height:16, borderRadius:'50%', overflow:'hidden', background:'rgba(255,255,255,0.25)', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:8 }}>
+                            {liveDrafts[item.id].avatar ? <img src={liveDrafts[item.id].avatar} alt="" referrerPolicy="no-referrer" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : liveDrafts[item.id].initials}
+                          </span>
+                          {liveDrafts[item.id].first} écrit…
+                        </span>
+                      )}
                       {/* Dates de suivi : sur la ligne du titre, à la MÊME taille, en rouge (choix Thomas).
                           Téléphone : sur sa propre ligne sous l'en-tête (sinon elle passe sous les boutons). */}
                       {isDesktop && (() => { const info = obsDatesInfo(item, visitDate); return info ? <ObsDatesChip info={info} fontSize={16}/> : null; })()}
@@ -491,7 +501,11 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                   </div>
                 </div>
                 {!isDesktop && (() => { const info = obsDatesInfo(item, visitDate); return info ? <div style={{ marginTop:6, maxWidth:'100%' }}><ObsDatesChip info={info} fontSize={12} wrap/></div> : null; })()}
-                {item.commentaire && (
+                {liveDrafts?.[item.id] && typeof liveDrafts[item.id].commentaire === 'string' ? (
+                  liveDrafts[item.id].commentaire && (
+                    <p style={{ fontSize: isDesktop ? 14 : 13, color: DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55, borderLeft:`3px solid ${liveDrafts[item.id].color}`, paddingLeft:8 }}>{renderMarkup(liveDrafts[item.id].commentaire)}</p>
+                  )
+                ) : item.commentaire && (
                   <p style={{ fontSize: isDesktop ? 14 : 13, color: draft ? DA.grayL : DA.gray, margin: isDesktop ? '8px 0 0' : '6px 0 0', lineHeight:1.55 }}>{renderMarkup(commentFor(item))}</p>
                 )}
 

@@ -21,7 +21,7 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
 import { countNewTrash, markTrashSeen, TRASH_EVENT } from '../../lib/trashBadge.js';
-import { setPresenceLocation, subscribePresence, groupPresence, colorFor } from '../../lib/presence.js';
+import { setPresenceLocation, subscribePresence, groupPresence, colorFor, subscribeDrafts, firstName } from '../../lib/presence.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
 import { applyObsDates, zoneDatesInfo } from '../../lib/obsDates.js';
@@ -200,6 +200,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   useEffect(() => () => setPresenceLocation({ itemId: null }), []);
   const [presence, setPresence] = useState([]);
   useEffect(() => subscribePresence(setPresence), []);
+  // Frappe en direct des collègues dans CE projet : itemId → { titre, commentaire, prénom, couleur }.
+  const [liveDrafts, setLiveDrafts] = useState(null);
+  useEffect(() => subscribeDrafts((list) => {
+    const m = {};
+    for (const d of list) {
+      if (d.projectId !== projet.id) continue;
+      if (!m[d.itemId] || d.receivedAt > m[d.itemId].receivedAt) m[d.itemId] = { ...d, color: colorFor(d.userId), first: firstName(d.name) };
+    }
+    setLiveDrafts(Object.keys(m).length ? m : null);
+  }), [projet.id]);
   const coEditors = presItemId ? groupPresence(presence).filter(o => o.projectId === projet.id && o.itemId === presItemId) : [];
 
   useEffect(() => {
@@ -1016,6 +1026,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           <div style={{ borderTop:`1px solid ${DA.border}` }}>
                             <SortList
                               items={items}
+                              liveDrafts={liveDrafts}
                               locId={loc.id}
                               visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
