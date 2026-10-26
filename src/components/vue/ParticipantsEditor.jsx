@@ -6,6 +6,7 @@ import {
   seedAssemblageContacts, migrateLocalContacts,
 } from '../../lib/contacts.js';
 import ContactsImporter from './ContactsImporter.jsx';
+import { sameContact } from '../../lib/contactExtract.js';
 
 // Hardcoded Assemblage team — used only for the first-time seeding into Supabase.
 const ASSEMBLAGE_TEAM_SEED = [
@@ -614,16 +615,18 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
         </button>
       </div>
 
-      {/* Import IA depuis un PDF (CR d'archi) ou une capture d'écran → ajoute AU CARNET *et*
-          directement à la page de garde (demande Thomas : « que ça se pré-rentre, sans tout recliquer »). */}
+      {/* Import IA depuis un PDF (CR d'archi) ou une capture d'écran → ajoute AU CARNET (sans
+          doublon) *et* à la page de garde, présence pré-remplie si le CR l'indique (demande Thomas). */}
       <div style={{ marginTop:6 }}>
         <ContactsImporter
           existingContacts={contacts}
+          mode="participants"
+          alreadyListed={(c) => participants.some(p => p.type !== 'separator' && sameContact(p, c))}
           label="Importer depuis PDF / capture"
           onImported={async (list) => {
-            for (const c of list) { try { await upsertContact(c); } catch { /* le carnet peut échouer, on garde la page de garde */ } }
             await reloadContacts();
-            onChange([...participants, ...list.map(c => ({ ...c, id: crypto.randomUUID(), presence: 'na' }))]);
+            const fresh = list.filter(c => !participants.some(p => p.type !== 'separator' && sameContact(p, c)));
+            if (fresh.length) onChange([...participants, ...fresh.map(({ presence, ...c }) => ({ ...c, id: crypto.randomUUID(), presence: presence === 'present' || presence === 'absent' ? presence : 'na' }))]);
           }}/>
       </div>
     </div>

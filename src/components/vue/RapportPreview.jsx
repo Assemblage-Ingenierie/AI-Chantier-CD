@@ -158,7 +158,7 @@ function itemHasReportContent(i) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoRow)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = [], breaks = new Set()) {
+export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = [], breaks = new Set()) {
   const blocks = [];
   const planTail = []; // plans groupés en fin quand plansNoBreak=true
   const cols   = Math.min(ppl, 3);
@@ -212,6 +212,11 @@ function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPho
             blocks.push({ type:'item', id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, vxxPhotoMap });
           }
         });
+      } else {
+        // Intitulé + photos SANS commentaire (Stas écrit son texte dans l'intitulé, retour Thomas
+        // 26/10) : avant, seules les rangées de photos sortaient → l'intitulé n'était pas imprimé.
+        // On imprime l'en-tête (intitulé, urgence, suivi, dates) au-dessus des photos.
+        blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, vxxPhotoMap });
       }
 
       // Photos : une rangée = un bloc. PACKING anti-blancs (validé avec l'utilisateur) :

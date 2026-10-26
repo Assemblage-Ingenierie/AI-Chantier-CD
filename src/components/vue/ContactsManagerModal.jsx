@@ -203,7 +203,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
           <ContactsImporter
             existingContacts={contacts}
             label="PDF / Photo"
-            onImported={async (list) => { for (const c of list) await upsertContact(c); await reload(); }}/>
+            onImported={async () => { await reload(); }}/>
           <button onClick={() => setEditing({ ...EMPTY })}
             style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:800, padding:'8px 14px', borderRadius:8, border:'none', background:DA.red, color:'white', cursor:'pointer' }}>
             <Ic n="plus" s={14}/> Nouveau
