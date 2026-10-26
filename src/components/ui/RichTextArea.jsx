@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useImperativeHandle, forwardRef } from 'react';
 import { sanitizeHtml } from '../../lib/markup.jsx';
 import { mapOffset } from '../../lib/liveText.js';
 
@@ -12,6 +12,29 @@ function pointAt(root, n) {
   let left = n, t = null, last = null;
   while ((t = w.nextNode())) { last = t; if (left <= t.data.length) return [t, left]; left -= t.data.length; }
   return last ? [last, last.data.length] : [root, root.childNodes.length];
+}
+// Variante « texte VISIBLE » : ignore les légendes d'affichage (data-cap-view), absentes du texte
+// enregistré — sert aux curseurs des collègues (positions calculées sur le texte enregistré).
+function inCapView(node) { const el = node.nodeType === 1 ? node : node.parentElement; return !!el?.closest?.('[data-cap-view]'); }
+function visibleOffsetIn(root, node, offset) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n = 0, t = null;
+  const r = document.createRange();
+  try { r.setStart(node, offset); } catch { return null; }
+  while ((t = w.nextNode())) {
+    if (inCapView(t)) continue;
+    if (t === node) return n + offset;
+    const tr = document.createRange(); tr.selectNodeContents(t);
+    if (r.compareBoundaryPoints(Range.START_TO_START, tr) <= 0) return n; // le point est avant ce nœud
+    n += t.data.length;
+  }
+  return n;
+}
+function visiblePointAt(root, n) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let left = n, t = null, last = null;
+  while ((t = w.nextNode())) { if (inCapView(t)) continue; last = t; if (left <= t.data.length) return [t, left]; left -= t.data.length; }
+  return last ? [last, last.data.length] : [root, 0];
 }
 function placeCaret(root, a, b) {
   try {
@@ -156,7 +179,7 @@ function caretRangeFromPoint(x, y) {
 }
 
 const RichTextArea = forwardRef(function RichTextArea(
-  { value, onChange, placeholder, style, onFocus, onBlur, textAlign = 'left', syncKey, onPasteImage, onAnnotateImage },
+  { value, onChange, placeholder, style, onFocus, onBlur, textAlign = 'left', syncKey, onPasteImage, onAnnotateImage, remoteMarks = null },
   ref
 ) {
   const editorRef = useRef(null);
@@ -184,6 +207,12 @@ const RichTextArea = forwardRef(function RichTextArea(
     focus: () => editorRef.current?.focus(),
     getEditor: () => editorRef.current,
     resetTyping: () => { isTyping.current = false; },
+    // Position de MON curseur (caractères visibles depuis le début) — null si pas dans l'éditeur.
+    getCaretOffset: () => {
+      const el = editorRef.current, sel = window.getSelection();
+      if (!el || !sel || !sel.rangeCount || !el.contains(sel.focusNode)) return null;
+      return visibleOffsetIn(el, sel.focusNode, sel.focusOffset);
+    },
     // CO-ÉDITION (lib/liveText.js) : affiche la version fusionnée avec le texte d'un collègue SANS
     // perdre le focus ni le curseur (décalé si du texte arrive avant lui). Renvoie le HTML tel que
     // l'éditeur le sérialise, ou null si ce n'est pas le moment (mot en cours de composition au
@@ -637,8 +666,65 @@ const RichTextArea = forwardRef(function RichTextArea(
 
   const isEmpty = !value || value === '<br>' || value === '';
 
+  // ── CURSEURS DES COLLÈGUES (comme Google Docs) : trait + bandeau prénom à leur curseur, et ce
+  //    qu'ils viennent de taper surligné de leur couleur. Calque d'affichage seul (pointer-events
+  //    none) : n'interfère ni avec la saisie, ni avec la dictée, ni avec le texte enregistré.
+  const [overlay, setOverlay] = useState([]);
+  useLayoutEffect(() => {
+    const el = editorRef.current, wr = wrapperRef.current;
+    if (!el || !wr || !remoteMarks?.length) { setOverlay(o => (o.length ? [] : o)); return undefined; }
+    const compute = () => {
+      const base = wr.getBoundingClientRect();
+      const out = [];
+      for (const m of remoteMarks) {
+        const rects = [];
+        for (const [a, b] of (m.ranges || [])) {
+          try {
+            const [sn, so] = visiblePointAt(el, a), [en, eo] = visiblePointAt(el, b);
+            const r = document.createRange(); r.setStart(sn, so); r.setEnd(en, eo);
+            for (const cr of r.getClientRects()) if (cr.width > 0) rects.push({ x: cr.left - base.left, y: cr.top - base.top, w: cr.width, h: cr.height });
+          } catch { /* plage hors texte */ }
+        }
+        let caret = null;
+        if (m.caret != null) {
+          try {
+            const [cn, co] = visiblePointAt(el, m.caret);
+            const r = document.createRange(); r.setStart(cn, co); r.collapse(true);
+            let cr = r.getClientRects()[0] || r.getBoundingClientRect();
+            if ((!cr || (!cr.height && !cr.top)) && cn.nodeType === 3) { // fin de ligne vide : mesure le caractère précédent
+              const r2 = document.createRange(); r2.setStart(cn, Math.max(0, co - 1)); r2.setEnd(cn, co);
+              const c2 = r2.getClientRects()[0]; if (c2) cr = { left: c2.right, top: c2.top, height: c2.height };
+            }
+            if (cr && (cr.height || cr.top)) caret = { x: cr.left - base.left, y: cr.top - base.top, h: cr.height || 20 };
+            else { const er = el.getBoundingClientRect(); caret = { x: er.left - base.left + 14, y: er.top - base.top + 12, h: 20 }; }
+          } catch { caret = null; }
+        }
+        out.push({ key: m.key, color: m.color, name: m.name, rects, caret });
+      }
+      setOverlay(out);
+    };
+    compute();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(compute) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [remoteMarks, value, syncKey]);
+
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
+      {overlay.length > 0 && (
+        <div aria-hidden="true" style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:3 }}>
+          {overlay.map(o => (
+            <React.Fragment key={o.key}>
+              {o.rects.map((r, i) => <div key={i} style={{ position:'absolute', left:r.x, top:r.y, width:r.w, height:r.h, background:o.color, opacity:0.22, borderRadius:2 }}/>)}
+              {o.caret && (
+                <div style={{ position:'absolute', left:o.caret.x - 1, top:o.caret.y, height:o.caret.h, width:2, background:o.color, borderRadius:1 }}>
+                  <div style={{ position:'absolute', bottom:'100%', left:0, transform:'translateY(-1px)', background:o.color, color:'white', fontSize:10.5, fontWeight:700, lineHeight:'15px', padding:'0 5px', borderRadius:'4px 4px 4px 0', whiteSpace:'nowrap', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }}>{o.name}</div>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
       {/* Placeholder des cases de tableau vides (« insérer un tableau ») — CSS ::before, non éditable.
           + Garde-fou LARGEUR : aucune image de l'éditeur ne peut déborder du cadre, quelle que soit
           la façon dont elle a été insérée (collage natif, glisser-déposer externe) — bug GAB. */}

@@ -211,7 +211,7 @@ export function firstName(name) { return String(name || '').trim().split(/\s+/)[
 // Renvoie false si le direct n'est pas (encore) connecté — l'appelant réessaiera.
 export function sendLive(payload) {
   if (!_channel || !_subscribed || !payload) return false;
-  _channel.send({ type: 'broadcast', event: 'live', payload: { ...payload, tab: TAB } }).catch(() => {});
+  _channel.send({ type: 'broadcast', event: 'live', payload: { ...payload, tab: TAB, name: _me?.name, userId: _me?.userId } }).catch(() => {});
   return true;
 }
 export function onLive(fn) { _liveListeners.add(fn); return () => _liveListeners.delete(fn); }

@@ -79,6 +79,30 @@ export function mapOffset(oldText, newText, offset) {
   return dmp.diff_xIndex(dmp.diff_main(oldText, newText), offset);
 }
 
+// ── Curseurs en direct : position HTML (texte partagé) ↔ position dans le texte affiché. ──────
+// Le texte partagé est du HTML ; le curseur à l'écran se compte en caractères visibles (balises
+// ignorées, entité « &amp; » = 1 caractère).
+function scanHtml(html, stopAt) {
+  // stopAt(i, n) → true pour s'arrêter ; renvoie [indexHtml, nbCaractères]
+  const s = String(html ?? '');
+  let n = 0, i = 0;
+  while (i < s.length) {
+    if (stopAt(i, n)) return [i, n];
+    const c = s[i];
+    if (c === '<') {
+      let q = null; i++;
+      while (i < s.length && (q || s[i] !== '>')) { if (q) { if (s[i] === q) q = null; } else if (s[i] === '"' || s[i] === "'") q = s[i]; i++; }
+      i++;
+      continue;
+    }
+    if (c === '&') { const e = s.indexOf(';', i); if (e > i && e - i <= 10) { i = e + 1; n++; continue; } }
+    i++; n++;
+  }
+  return [s.length, n];
+}
+export function htmlToTextOffset(html, idx) { return scanHtml(html, (i) => i >= idx)[1]; }
+export function textToHtmlIndex(html, off) { return scanHtml(html, (i, n) => n >= off && String(html)[i] !== '<')[0]; }
+
 function norm(fields) {
   const o = {};
   for (const f of LIVE_FIELDS) o[f] = typeof fields?.[f] === 'string' ? fields[f] : '';
@@ -124,7 +148,7 @@ function svAhead(mine, theirs) {
 // send(msg) → true si le message a pu partir. onText(fields) : champs modifiés par les autres
 // (texte sans liens d'images) à afficher — renvoie { champ: true } pour ceux non affichés. onConflict(info|null) : versions différentes non
 // fusionnables (rare) — pour prévenir l'utilisateur.
-export function createLiveSession({ initial, send, onText, onConflict = () => {}, now = () => Date.now(), timers = BROWSER_TIMERS }) {
+export function createLiveSession({ initial, send, onText, onConflict = () => {}, onMarks = () => {}, now = () => Date.now(), timers = BROWSER_TIMERS }) {
   const init = norm(initial);
   let sid = sessionIdOf(init);
   let doc = null;
@@ -138,6 +162,14 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
   let helloSent = false;
   let lastPeerAt = 0;
   let destroyed = false;
+  // Curseurs des collègues ({ f, rp, name, userId, at }) et ce qu'ils viennent de taper
+  // (plages surlignées, effacées ~2,5 s après leur dernière frappe).
+  const cursors = new Map();
+  const typed = new Map();          // tab → { ranges:[{ f, a, b }], at }
+  const peers = new Map();          // tab → { name, userId }
+  let applyingFrom = null;          // onglet dont j'applique les opérations
+  let marksTimer = null;
+  let curTimer = null, curLast = 0, curPending;
 
   const onDocUpdate = (u, origin) => {
     if (origin !== 'local' || destroyed) return;
@@ -148,6 +180,24 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     const d = new Y.Doc();
     Y.applyUpdate(d, update, 'init');
     d.on('update', onDocUpdate);
+    for (const f of LIVE_FIELDS) {
+      const yt = d.getText(f);
+      yt.observe((evt, tr) => {
+        if (tr.origin !== 'remote' || !applyingFrom) return;
+        const t = typed.get(applyingFrom) || { ranges: [], at: 0 };
+        let idx = 0;
+        for (const op of evt.delta) {
+          if (op.retain) idx += op.retain;
+          else if (typeof op.insert === 'string') {
+            t.ranges.push({ f, a: Y.createRelativePositionFromTypeIndex(yt, idx), b: Y.createRelativePositionFromTypeIndex(yt, idx + op.insert.length, -1) });
+            idx += op.insert.length;
+          }
+        }
+        if (t.ranges.length > 200) t.ranges.splice(0, t.ranges.length - 200);
+        t.at = now();
+        typed.set(applyingFrom, t);
+      });
+    }
     return d;
   }
   doc = makeDoc(initialUpdate(init));
@@ -171,10 +221,70 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     const refused = onText(changed) || {};
     for (const f of Object.keys(changed)) if (!refused[f]) ui[f] = t[f];
   }
-  function applyRemote(u) {
-    if (held) { heldQueue.push(u); return; }
-    Y.applyUpdate(doc, u, 'remote');
+  function applyUpdateFrom(u, tab) {
+    applyingFrom = tab || null;
+    try { Y.applyUpdate(doc, u, 'remote'); } finally { applyingFrom = null; }
+  }
+  function applyRemote(u, tab) {
+    if (held) { heldQueue.push([u, tab]); return; }
+    applyUpdateFrom(u, tab);
     pushRemote();
+    emitMarks();
+  }
+
+  // ── Curseurs / surlignage ──
+  const TYPED_MS = 2500;
+  const CURSOR_MS = 60000;
+  function absIndex(rp) {
+    try { const a = Y.createAbsolutePositionFromRelativePosition(rp, doc); return a ? a.index : null; } catch { return null; }
+  }
+  // Positions dans le texte partagé, seulement pour les champs que l'écran affiche à jour.
+  function marks() {
+    const t = now();
+    const out = [];
+    const tabs = new Set([...cursors.keys(), ...typed.keys()]);
+    for (const tab of tabs) {
+      const c = cursors.get(tab);
+      const ty = typed.get(tab);
+      const caretOk = c && c.f && c.rp && t - c.at < CURSOR_MS && ui[c.f] === doc.getText(c.f).toString();
+      const ranges = { titre: [], commentaire: [] };
+      if (ty && t - ty.at < TYPED_MS) {
+        for (const r of ty.ranges) {
+          if (ui[r.f] !== doc.getText(r.f).toString()) continue;
+          const a = absIndex(r.a), b = absIndex(r.b);
+          if (a != null && b != null && b > a) ranges[r.f].push([a, b]);
+        }
+      }
+      if (!caretOk && !ranges.titre.length && !ranges.commentaire.length) continue;
+      const who = peers.get(tab) || {};
+      out.push({ tab, name: who.name || '', userId: who.userId || '', f: caretOk ? c.f : null, caret: caretOk ? absIndex(c.rp) : null, ranges });
+    }
+    return out;
+  }
+  function emitMarks() {
+    if (destroyed) return;
+    onMarks(marks());
+    // le surlignage s'efface tout seul après la dernière frappe
+    if (marksTimer) timers.clearTimeout(marksTimer);
+    const next = [...typed.values()].map(v => v.at + TYPED_MS - now()).filter(d => d > 0);
+    if (next.length) marksTimer = timers.setTimeout(() => { marksTimer = null; for (const [k, v] of typed) if (now() - v.at >= TYPED_MS) typed.delete(k); emitMarks(); }, Math.min(...next) + 30);
+  }
+  // Mon curseur (champ + position dans le texte partagé ; null = je ne suis plus dans un champ).
+  function sendCursor() {
+    curTimer = null; curLast = now();
+    const c = curPending;
+    if (destroyed || c === undefined) return;
+    let rp = null;
+    if (c && c.f && ui[c.f] === doc.getText(c.f).toString()) {
+      const yt = doc.getText(c.f);
+      rp = toB64(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(yt, Math.max(0, Math.min(c.idx, yt.length)))));
+    }
+    send({ k: 'cur', sid, f: rp ? c.f : null, rp });
+  }
+  function cursor(f, idx) {
+    curPending = f && idx != null ? { f, idx } : null;
+    if (curTimer) return;
+    curTimer = timers.setTimeout(sendCursor, Math.max(0, curLast + 80 - now()));
   }
   function stateFor(svB64) {
     const u = svB64 ? Y.encodeStateAsUpdate(doc, fromB64(svB64)) : Y.encodeStateAsUpdate(doc);
@@ -190,6 +300,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
   function receive(m) {
     if (destroyed || !m || !m.k) return;
     lastPeerAt = now();
+    if (m.tab && (m.name || m.userId)) peers.set(m.tab, { name: m.name || '', userId: m.userId || '' });
     if (m.k === 'hello') {
       // Je réponds avec ce qui lui manque (ou tout mon document s'il a une autre version) + mon
       // état pour qu'il me renvoie ce qui me manque.
@@ -200,7 +311,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     }
     if (m.k === 'state') {
       if (m.sid === sid) {
-        if (m.u) applyRemote(fromB64(m.u));
+        if (m.u) applyRemote(fromB64(m.u), m.tab);
         if (m.sv) { const u = stateFor(m.sv); if (u && svAhead(Y.decodeStateVector(Y.encodeStateVector(doc)), Y.decodeStateVector(fromB64(m.sv)))) send({ k: 'u', sid, u }); }
         onConflict(null);
         return;
@@ -212,6 +323,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
         doc = makeDoc(fromB64(m.u));
         sid = m.sid;
         adopted = true;
+        cursors.clear(); typed.clear();
         pushRemote();
         onConflict(null);
       } else {
@@ -220,7 +332,17 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
       return;
     }
     if (m.sid !== sid) return;
-    if (m.k === 'u' && m.u) { applyRemote(fromB64(m.u)); return; }
+    if (m.k === 'u' && m.u) {
+      applyRemote(fromB64(m.u), m.tab);
+      return;
+    }
+    if (m.k === 'cur') {
+      if (!m.rp) cursors.delete(m.tab);
+      else { try { cursors.set(m.tab, { f: m.f, rp: Y.decodeRelativePosition(fromB64(m.rp)), at: now() }); } catch { cursors.delete(m.tab); } }
+      emitMarks();
+      return;
+    }
+    if (m.k === 'bye') { cursors.delete(m.tab); typed.delete(m.tab); emitMarks(); return; }
     if (m.k === 'sv' && m.sv) {
       // Contrôle périodique : je renvoie ce qu'il n'a pas (ou mes suppressions si les textes diffèrent).
       const theirs = Y.decodeStateVector(fromB64(m.sv));
@@ -257,7 +379,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
         changed.push(f);
       }
     }, 'local');
-    if (changed.length) localEdits = true;
+    if (changed.length) { localEdits = true; if (cursors.size || typed.size) emitMarks(); }
     if (fix) {
       // Affiche la version fusionnée ; si l'écran la refuse, il garde SA saisie (rejouée plus tard).
       const refused = onText(fix) || {};
@@ -271,14 +393,16 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     held = !!on;
     if (held || !heldQueue.length) return;
     const q = heldQueue.splice(0);
-    for (const u of q) Y.applyUpdate(doc, u, 'remote');
+    for (const [u, tab] of q) applyUpdateFrom(u, tab);
     pushRemote();
+    emitMarks();
   }
 
   const tick = timers.setInterval(() => {
     if (destroyed) return;
     if (!helloSent) { hello(); return; }
     if (!held) pushRemote(); // un champ refusé plus tôt (composition, saisie) est réaffiché
+    for (const [k, c] of cursors) if (now() - c.at >= CURSOR_MS) { cursors.delete(k); emitMarks(); }
     if (now() - lastPeerAt > PEER_ACTIVE_MS) return;
     send({ k: 'sv', sid, sv: toB64(Y.encodeStateVector(doc)), th: hashText(LIVE_FIELDS.map(f => doc.getText(f).toString()).join('\u0000')) });
   }, TICK_MS);
@@ -286,13 +410,16 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
   function destroy() {
     if (destroyed) return;
     if (flushTimer) { timers.clearTimeout(flushTimer); flush(); }
+    send({ k: 'bye', sid });
     destroyed = true;
     timers.clearInterval(tick);
+    if (marksTimer) timers.clearTimeout(marksTimer);
+    if (curTimer) timers.clearTimeout(curTimer);
     try { doc.off('update', onDocUpdate); doc.destroy(); } catch { /* ignore */ }
   }
 
   return {
-    hello, receive, local, hold, destroy,
+    hello, receive, local, hold, destroy, cursor, marks,
     refresh: () => { if (!destroyed && !held) pushRemote(); },
     flush: () => { if (flushTimer) { timers.clearTimeout(flushTimer); flush(); } },
     text: () => textsOf(doc),
