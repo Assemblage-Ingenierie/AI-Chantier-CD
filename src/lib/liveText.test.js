@@ -231,3 +231,53 @@ describe('co-édition : saisie qui continue pendant que l\'écran refuse', () =>
     expect(B.texts.commentaire).toBe(B.s.text().commentaire);
   });
 });
+
+describe('curseurs en direct (bandeau prénom + surlignage)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const mk = (tab, q, initial, marksOut) => {
+    const texts = { ...initial };
+    const s = createLiveSession({
+      initial,
+      send: (m) => { q.push({ ...m, tab, name: tab === 'A' ? 'Thomas Cassetari' : 'Stas V', userId: tab }); return true; },
+      onText: (f) => { Object.assign(texts, f); return null; },
+      onMarks: (m) => { marksOut.length = 0; marksOut.push(...m); },
+    });
+    return { s, texts };
+  };
+  it('je vois où est le curseur du collègue, qui suit le texte, et ce qu\'il tape surligné puis effacé', () => {
+    const q = [], mB = [], mA = [];
+    const init = { titre: '', commentaire: '<div>Constat : </div>' };
+    const A = mk('A', q, init, mA), B = mk('B', q, init, mB);
+    const deliver = () => { while (q.length) { const m = q.shift(); (m.tab === 'A' ? B : A).s.receive(m); } };
+    A.s.hello(); B.s.hello(); deliver();
+    // Thomas tape « fissure » à la fin du texte (avant </div>) et place son curseur après.
+    const pos = '<div>Constat : '.length;
+    A.s.local({ commentaire: '<div>Constat : fissure</div>' });
+    A.s.cursor('commentaire', pos + 'fissure'.length);
+    vi.advanceTimersByTime(100); deliver();
+    expect(mB[0]).toMatchObject({ name: 'Thomas Cassetari', f: 'commentaire', caret: pos + 7 });
+    expect(mB[0].ranges.commentaire).toEqual([[pos, pos + 7]]);
+    // Stas insère du texte AVANT le curseur de Thomas : le curseur se décale avec le texte.
+    B.s.local({ commentaire: '<div>XX Constat : fissure</div>' });
+    expect(B.s.marks()[0].caret).toBe(pos + 7 + 3);
+    // Thomas a fini d'écrire → le surlignage s'efface, le curseur reste.
+    vi.advanceTimersByTime(2600);
+    expect(mB[0].ranges.commentaire).toEqual([]);
+    expect(mB[0].caret).toBe(pos + 10);
+    // Thomas quitte le champ → plus de curseur.
+    A.s.cursor(null, null); vi.advanceTimersByTime(100); deliver();
+    expect(mB).toEqual([]);
+  });
+});
+
+describe('positions HTML ↔ texte affiché', () => {
+  it('balises ignorées, entité = 1 caractère', async () => {
+    const { htmlToTextOffset, textToHtmlIndex } = await import('./liveText.js');
+    const html = '<div>a&amp;b</div><div data-cap="x>y">cd</div>';
+    expect(htmlToTextOffset(html, html.indexOf('b'))).toBe(2);
+    expect(textToHtmlIndex(html, 2)).toBe(html.indexOf('b'));
+    expect(textToHtmlIndex(html, 3)).toBe(html.indexOf('cd'));
+    expect(htmlToTextOffset(html, html.length)).toBe(5);
+  });
+});

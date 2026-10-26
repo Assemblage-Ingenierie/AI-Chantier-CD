@@ -19,16 +19,25 @@ import { remapParentIds } from './zoneGroups.js';
 
 const MEMO_KEY = 'chantierai_visit_recovery_v1'; // { [visitId]: ts traité (restauré ou ignoré) }
 const MIN_TEXT_GAIN = 200;                        // texte perdu (caractères) qui justifie une proposition
-const MIN_ITEM_TEXT_GAIN = 20;                    // texte plus complet sur une ou plusieurs observations
+const MIN_ITEM_TEXT_GAIN = 200;                   // texte plus complet sur une ou plusieurs observations
+// Bandeau AUTOMATIQUE (retour Thomas 26/10 : « ça force trop, ça relance ce que j'ai déjà ignoré ») :
+// seulement les sauvegardes RÉCENTES ; une visite traitée (Restaurer / Ignorer) ou supprimée
+// volontairement ne revient plus. Une retouche de texte (quelques mots) ne déclenche rien. Toutes
+// les versions restent accessibles à la main (« Versions », Corbeille).
+export const AUTO_MAX_AGE_MS = 12 * 3600 * 1000;
 
 const itemsOf = (l) => [...(l?.items || []), ...((l?.sections || []).flatMap(s => s.items || []))];
 const itemText = (it) => `${it?.titre || ''}${it?.commentaire || ''}`.length;
 const visitText = (v) => (v?.localisations || []).reduce((n, l) => n + (l.nom || '').length + itemsOf(l).reduce((m, it) => m + itemText(it), 0), 0) + (v?.conclusion || '').length;
 
 export function loadRecoveryMemo() { try { return JSON.parse(localStorage.getItem(MEMO_KEY) || '{}') || {}; } catch { return {}; } }
-export function markVisitRecovery(visitId, ts) {
+// Visite traitée (restaurée, ignorée ou supprimée) : plus aucune sauvegarde antérieure à MAINTENANT
+// ne la reproposera (avant : la date de la sauvegarde proposée → les sauvegardes suivantes, qui
+// contenaient la même chose, relançaient le bandeau).
+export function markVisitRecovery(visitId, ts = Date.now()) {
+  if (!visitId) return;
   const m = loadRecoveryMemo();
-  m[visitId] = Math.max(m[visitId] || 0, ts);
+  m[visitId] = Math.max(m[visitId] || 0, ts, Date.now());
   try { localStorage.setItem(MEMO_KEY, JSON.stringify(m)); } catch { /* mode privé */ }
 }
 
@@ -56,9 +65,10 @@ function photoKeys(ph) {
 //   - des observations ABSENTES (hors suppressions volontaires) ;
 //   - des observations au texte PLUS COMPLET (retour Thomas 26/10 : « ancien texte ») ;
 //   - des PHOTOS qui ont disparu (observations dont les photos sont chargées sur l'appareil).
-export function collectCandidates(best, snapshot, projet, { tombItems = new Set(), memo = {} } = {}) {
+export function collectCandidates(best, snapshot, projet, { tombItems = new Set(), memo = {}, maxAgeMs = null, now = Date.now() } = {}) {
   const sp = (snapshot?.data || []).find(p => p?.id === projet?.id);
   if (!sp) return best;
+  if (maxAgeMs != null && now - (snapshot.ts || 0) > maxAgeMs) return best; // trop ancienne pour le bandeau
   const curVisits = new Map((projet.visites || []).map(v => [v.id, v]));
   const curItemById = new Map((projet.visites || []).flatMap(v => (v.localisations || []).flatMap(l => itemsOf(l))).filter(i => i?.id).map(i => [i.id, i]));
   for (const sv of (sp.visites || [])) {
@@ -96,7 +106,9 @@ export function collectCandidates(best, snapshot, projet, { tombItems = new Set(
 // Parcourt TOUS les instantanés de l'appareil (un à la fois → mémoire contenue).
 export async function scanVisitBackups(projet, opts = {}) {
   const best = new Map();
+  opts = { maxAgeMs: AUTO_MAX_AGE_MS, now: Date.now(), ...opts };
   for (const ts of await listSnapshotKeys()) {
+    if (opts.maxAgeMs != null && opts.now - Number(ts) > opts.maxAgeMs) continue; // pas même lue
     try {
       const snap = await getSnapshot(ts);
       if (snap) collectCandidates(best, snap, projet, opts);

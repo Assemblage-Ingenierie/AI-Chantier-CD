@@ -19,7 +19,7 @@ import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
 import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive } from '../../lib/presence.js';
-import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset } from '../../lib/liveText.js';
+import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -208,6 +208,42 @@ Réponds UNIQUEMENT avec le texte du commentaire, sans titre, sans guillemets, s
 
 // Sélecteur de taille de tableau (façon Word) : survoler pour choisir lignes × colonnes,
 // cliquer pour insérer. Max 4 lignes × 5 colonnes (suffisant + reste joli sur A4).
+// Curseurs des collègues dans l'INTITULÉ (champ d'une ligne) : trait + bandeau prénom à leur
+// position, et ce qu'ils viennent de taper surligné. Position mesurée avec la police du champ.
+function TitleCursors({ inputRef, marks, value }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const inp = inputRef.current;
+    if (!inp || !marks.length) return undefined;
+    const on = () => force(x => x + 1);
+    inp.addEventListener('scroll', on);
+    return () => inp.removeEventListener('scroll', on);
+  }, [marks.length, inputRef]);
+  const inp = inputRef.current;
+  if (!inp || !marks.length) return null;
+  let ctx = null;
+  try { ctx = document.createElement('canvas').getContext('2d'); const cs = getComputedStyle(inp); ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; } catch { return null; }
+  const cs = getComputedStyle(inp);
+  const padL = parseFloat(cs.paddingLeft) || 0, bL = parseFloat(cs.borderLeftWidth) || 0;
+  const xAt = (i) => bL + padL + ctx.measureText(String(value || '').slice(0, i)).width - (inp.scrollLeft || 0);
+  const maxX = inp.clientWidth - padL;
+  const top = (inp.offsetHeight - 22) / 2;
+  return (
+    <div aria-hidden="true" style={{ position:'absolute', inset:0, pointerEvents:'none', overflow:'visible' }}>
+      {marks.map(m => (
+        <React.Fragment key={m.key}>
+          {m.ranges.map(([a, b], i) => { const x1 = Math.max(bL + padL, xAt(a)), x2 = Math.min(maxX, xAt(b)); return x2 > x1 ? <div key={i} style={{ position:'absolute', left:x1, top, width:x2 - x1, height:22, background:m.color, opacity:0.22, borderRadius:2 }}/> : null; })}
+          {m.caret != null && xAt(m.caret) <= maxX && (
+            <div style={{ position:'absolute', left:xAt(m.caret) - 1, top, height:22, width:2, background:m.color, borderRadius:1 }}>
+              <div style={{ position:'absolute', bottom:'100%', left:0, background:m.color, color:'white', fontSize:10.5, fontWeight:700, lineHeight:'15px', padding:'0 5px', borderRadius:'4px 4px 4px 0', whiteSpace:'nowrap', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }}>{m.name}</div>
+            </div>
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 function TableSizePicker({ onPick, onClose }) {
   const [hov, setHov] = useState({ r: 0, c: 0 });
   const MAXR = 4, MAXC = 5;
@@ -359,6 +395,20 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const typingFieldRef = useRef(null);
   const [liveDraft, setLiveDraft] = useState(null);     // collègue en train d'écrire ici
   const [liveConflict, setLiveConflict] = useState(false); // il a une autre version (rare)
+  // Curseurs des collègues (positions converties pour l'affichage) : { titre:[…], commentaire:[…] }
+  const [liveMarks, setLiveMarks] = useState({ titre: [], commentaire: [] });
+  const toMarks = (list) => {
+    const html = liveRef.current?.text().commentaire || '';
+    const out = { titre: [], commentaire: [] };
+    for (const m of list || []) {
+      const base = { key: m.tab, color: colorFor(m.userId), name: firstName(m.name) };
+      if (m.f === 'titre' || m.ranges.titre.length) out.titre.push({ ...base, caret: m.f === 'titre' ? m.caret : null, ranges: m.ranges.titre });
+      if (m.f === 'commentaire' || m.ranges.commentaire.length) out.commentaire.push({ ...base,
+        caret: m.f === 'commentaire' && m.caret != null ? htmlToTextOffset(html, m.caret) : null,
+        ranges: m.ranges.commentaire.map(([a, b]) => [htmlToTextOffset(html, a), htmlToTextOffset(html, b)]) });
+    }
+    return out;
+  };
   // Affiche le texte fusionné. Renvoie les champs qu'on ne peut pas afficher tout de suite (ils
   // seront réaffichés un peu plus tard, et ma saisie est rejouée sur le texte partagé).
   const showLiveText = (fields) => {
@@ -404,6 +454,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       send: (m) => sendLive({ ...m, projectId: projetId, itemId: form.id }),
       onText: (fields) => showLiveText(fields),
       onConflict: (c) => setLiveConflict(!!c),
+      onMarks: (list) => setLiveMarks(toMarks(list)),
     });
     liveRef.current = s;
     const off = onLive((m) => { if (m.projectId === projetId && m.itemId === form.id) s.receive(m); });
@@ -419,6 +470,19 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     typingFieldRef.current = changed[changed.length - 1];
     broadcastDraft(projetId, form.id, { titre: form.titre, commentaire: form.commentaire, field: typingFieldRef.current });
   }, [form.titre, form.commentaire]); // eslint-disable-line react-hooks/exhaustive-deps
+  // MON curseur dans le commentaire → envoyé aux autres (ils voient « Thomas » à cet endroit).
+  useEffect(() => {
+    const onSel = () => {
+      const s = liveRef.current, ta = textareaRef.current;
+      if (!s || !ta?.getCaretOffset || titleFocusRef.current) return;
+      const off = ta.getCaretOffset();
+      if (off == null) return;
+      s.cursor('commentaire', textToHtmlIndex(s.text().commentaire, off));
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, []);
+  const sendTitleCursor = (e) => { const s = liveRef.current; if (s) s.cursor('titre', e.target.selectionStart ?? null); };
   // Dictée / correction IA en cours : le texte reçu attend la fin (ces outils réécrivent le champ).
   useEffect(() => {
     liveRef.current?.hold(!!(recording || correcting || improving || spellDiff || improveList || genProposal));
@@ -1192,10 +1256,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé{liveTag('titre')}</label>
-            <input ref={titleInputRef} value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
+            <div style={{ position:'relative' }}>
+            <input ref={titleInputRef} value={form.titre} onChange={e => { setForm(f => ({ ...f, titre: e.target.value })); sendTitleCursor(e); }}
+              onSelect={sendTitleCursor} onKeyUp={sendTitleCursor}
               placeholder="Ex: Fissures, Humidité…"
               style={{ width:'100%',border:`1px solid ${liveDraft?.field === 'titre' ? liveColor : DA.border}`,boxShadow: liveDraft?.field === 'titre' ? `0 0 0 2px ${liveColor}33` : 'none',borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
-              onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; liveRef.current?.refresh(); }}/>
+              onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; liveRef.current?.refresh(); liveRef.current?.cursor(null, null); }}/>
+              <TitleCursors inputRef={titleInputRef} marks={liveMarks.titre} value={form.titre}/>
+            </div>
             {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
                 par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
                 seulement pour une observation existante. */}
@@ -1342,6 +1410,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 ref={textareaRef}
                 value={form.commentaire || ''}
                 syncKey={editorSyncKey}
+                remoteMarks={liveMarks.commentaire.length ? liveMarks.commentaire : null}
                 onChange={val => setForm(f => ({ ...f, commentaire: val }))}
                 onPasteImage={handlePasteCommentImage}
                 onAnnotateImage={handleAnnotateCommentImage}
@@ -1349,7 +1418,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 textAlign={form.commentaireAlign || 'left'}
                 style={{ width:'100%', border:`1px solid ${recording ? DA.red : liveDraft?.field === 'commentaire' ? liveColor : DA.border}`, boxShadow: !recording && liveDraft?.field === 'commentaire' ? `0 0 0 2px ${liveColor}33` : 'none', borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:24, fontSize:16, lineHeight:1.7, minHeight: isDesktop ? 110 : 84, boxSizing:'border-box', fontFamily:'inherit' }}
                 onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
-                onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
+                onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; liveRef.current?.cursor(null, null); }}
               />
 
               {/* Gros bouton rond push-to-talk */}
