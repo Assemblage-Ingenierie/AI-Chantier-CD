@@ -12,6 +12,7 @@ import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
 import { publishPendingCount } from '../lib/pendingSync.js';
+import { adoptRemoteItemText, adoptRemoteVisitMeta } from '../lib/syncBase.js';
 
 const MAX_HISTORY = 20;
 
@@ -89,12 +90,17 @@ export function mergeWithLocal(remotePs, localPs, dirtyIds, previousRemoteIds = 
             if (!rv) return lv;
             const remoteLocById = new Map((rv.localisations || []).map(l => [l.id, l]));
             return {
-              ...lv,
+              // ANTI-TEXTE PÉRIMÉ (incident 26/10, cf. syncBase.js) : ce que cet appareil n'a PAS
+              // modifié depuis sa dernière synchro reprend la version du serveur (conclusion, texte
+              // des observations…). Ses propres modifications en attente restent prioritaires.
+              ...adoptRemoteVisitMeta(lv, rv),
               localisations: (lv.localisations || []).map(ll => {
                 const rl = remoteLocById.get(ll.id);
                 if (!rl) return ll;
+                const remoteItemById = new Map((rl.items || []).map(it => [it?.id, it]));
                 return {
                   ...ll,
+                  items: (ll.items || []).map(it => adoptRemoteItemText(it, remoteItemById.get(it?.id))),
                   // GARDE-FOU (incident 2026-10-15) : une zone locale SANS AUCUNE observation alors
                   // que la même zone en a en base = état local incomplet (cache d'un projet
                   // archivé…), jamais une suppression volontaire (celles-ci sont tombstonées et
