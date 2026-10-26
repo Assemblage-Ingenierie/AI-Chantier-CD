@@ -1256,7 +1256,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           background:'#FFFBEB', border:'1px solid #FCD34D', color:'#92400E', borderRadius:12, padding:'8px 12px', boxShadow:'0 4px 16px rgba(0,0,0,0.18)', fontSize:12.5, fontWeight:600 }}>
           <span style={{ display:'flex' }}>
             {coEditors.slice(0, 3).map((o, i) => (
-              <span key={`${o.userId}|${o.device}`} style={{ width:22, height:22, marginLeft: i ? -6 : 0, borderRadius:'50%', background:colorFor(o.userId), color:'white', fontSize:9.5, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #FFFBEB' }}>{o.initials}</span>
+              <span key={`${o.userId}|${o.device}`} style={{ width:22, height:22, marginLeft: i ? -6 : 0, borderRadius:'50%', overflow:'hidden', background:colorFor(o.userId), color:'white', fontSize:9.5, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #FFFBEB' }}>
+                {o.avatar ? <img src={o.avatar} alt="" referrerPolicy="no-referrer" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : o.initials}
+              </span>
             ))}
           </span>
           <span>{coEditors.map(o => o.name.split(' ')[0]).join(', ')} {coEditors.length > 1 ? 'sont' : 'est'} aussi sur cette observation — les modifications de chacun sont fusionnées.</span>

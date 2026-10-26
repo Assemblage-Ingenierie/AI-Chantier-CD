@@ -60,7 +60,8 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const presenceUserId = session?.user?.id || null;
   useEffect(() => {
     if (!presenceUserId) return undefined;
-    startPresence(profile, presenceUserId);
+    const meta = session?.user?.user_metadata || {};
+    startPresence(profile, presenceUserId, meta.avatar_url || meta.picture || null); // photo du compte Google
     return () => { stopPresence(); };
   }, [presenceUserId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {

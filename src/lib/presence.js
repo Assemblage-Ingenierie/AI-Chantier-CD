@@ -7,6 +7,7 @@
 // Best-effort : sans réseau / Realtime indisponible → l'app fonctionne exactement comme avant.
 
 import { getSupabase } from '../supabase.js';
+import { logWarn } from './logger.js';
 
 const CHANNEL = 'aichantier-presence-v1';
 const TAB = (() => { try { return crypto.randomUUID(); } catch { return String(Math.random()).slice(2); } })();
@@ -15,13 +16,20 @@ let _channel = null;
 let _subscribed = false;
 let _me = null;            // { userId, initials, name, email, device, projectId, itemId, at }
 let _others = [];          // autres onglets / appareils connectés
+let _status = 'off';       // 'off' | 'connecting' | 'ok' | message d'erreur (diagnostic visible)
 const _listeners = new Set();
+const _statusListeners = new Set();
 const _savedListeners = new Set();
 let _trackTimer = null;
 
 const isMobileUA = () => { try { return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); } catch { return false; } };
 
 function emit() { _listeners.forEach(fn => { try { fn(_others); } catch { /* listener */ } }); }
+function setStatus(st) {
+  if (st === _status) return;
+  _status = st;
+  _statusListeners.forEach(fn => { try { fn(_status, _me); } catch { /* listener */ } });
+}
 
 function readState() {
   if (!_channel) return;
@@ -39,14 +47,17 @@ function scheduleTrack() {
   }, 250);
 }
 
-export async function startPresence(profile, userId) {
+// avatar : photo du compte (Google) — sinon initiales.
+export async function startPresence(profile, userId, avatar = null) {
   if (_channel || !userId) return;
+  setStatus('connecting');
   const first = (profile?.first_name || '').trim(), last = (profile?.last_name || '').trim();
   _me = {
     tab: TAB, userId,
     initials: (profile?.initials || `${first[0] || ''}${last[0] || ''}` || (profile?.email || '?')[0]).toUpperCase().slice(0, 3),
     name: [first, last].filter(Boolean).join(' ') || profile?.email || 'Utilisateur',
     device: isMobileUA() ? 'mobile' : 'pc',
+    avatar: typeof avatar === 'string' && /^https:\/\//.test(avatar) ? avatar : null,
     projectId: null, itemId: null,
   };
   try {
@@ -58,17 +69,25 @@ export async function startPresence(profile, userId) {
         if (!payload || payload.tab === TAB) return;
         _savedListeners.forEach(fn => { try { fn(payload); } catch { /* listener */ } });
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         _subscribed = status === 'SUBSCRIBED';
-        if (_subscribed) scheduleTrack();
+        if (_subscribed) { setStatus('ok'); scheduleTrack(); return; }
+        // CHANNEL_ERROR / TIMED_OUT / CLOSED : visible sur ma bulle + remonté dans les logs Vercel.
+        const why = `${status}${err?.message ? ` : ${err.message}` : ''}`;
+        setStatus(why);
+        if (status !== 'CLOSED') logWarn('presence.channel', { status, error: err?.message || null });
       });
-  } catch { _channel = null; }
+  } catch (e) {
+    _channel = null;
+    setStatus(`indisponible : ${e?.message || e}`);
+    logWarn('presence.start', { error: String(e?.message || e) });
+  }
 }
 
 export async function stopPresence() {
   clearTimeout(_trackTimer);
   const ch = _channel;
-  _channel = null; _subscribed = false; _others = []; emit();
+  _channel = null; _subscribed = false; _others = []; emit(); setStatus('off');
   try { if (ch) { await ch.untrack(); const sb = await getSupabase(); await sb.removeChannel(ch); } } catch { /* déjà fermé */ }
 }
 
@@ -90,6 +109,8 @@ export function broadcastSaved(projectIds) {
 }
 
 export function subscribePresence(fn) { _listeners.add(fn); fn(_others); return () => _listeners.delete(fn); }
+// Mon état (ma bulle) : statut du direct + mes infos (initiales, photo).
+export function subscribePresenceStatus(fn) { _statusListeners.add(fn); fn(_status, _me); return () => _statusListeners.delete(fn); }
 export function onRemoteSaved(fn) { _savedListeners.add(fn); return () => _savedListeners.delete(fn); }
 
 // Couleur stable par personne (bulles).
