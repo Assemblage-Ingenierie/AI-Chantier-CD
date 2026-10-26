@@ -20,6 +20,7 @@ let _status = 'off';       // 'off' | 'connecting' | 'ok' | message d'erreur (di
 const _listeners = new Set();
 const _statusListeners = new Set();
 const _savedListeners = new Set();
+const _liveListeners = new Set();
 let _trackTimer = null;
 
 const isMobileUA = () => { try { return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); } catch { return false; } };
@@ -67,6 +68,10 @@ export async function startPresence(profile, userId, avatar = null) {
       .on('presence', { event: 'sync' }, readState)
       .on('broadcast', { event: 'draft' }, ({ payload }) => receiveDraft(payload))
       .on('broadcast', { event: 'draft-end' }, ({ payload }) => receiveDraft(payload, true))
+      .on('broadcast', { event: 'live' }, ({ payload }) => {
+        if (!payload || payload.tab === TAB || (payload.to && payload.to !== TAB)) return;
+        _liveListeners.forEach(fn => { try { fn(payload); } catch (e) { logWarn('presence.live', { error: String(e?.message || e) }); } });
+      })
       .on('broadcast', { event: 'saved' }, ({ payload }) => {
         if (!payload || payload.tab === TAB) return;
         _savedListeners.forEach(fn => { try { fn(payload); } catch { /* listener */ } });
@@ -201,3 +206,12 @@ export function subscribeDrafts(fn) { _draftListeners.add(fn); fn([..._drafts.va
 
 // Prénom pour l'étiquette (« Stas »).
 export function firstName(name) { return String(name || '').trim().split(/\s+/)[0] || 'Quelqu\'un'; }
+
+// ── CO-ÉDITION caractère par caractère (lib/liveText.js) : transport des opérations Yjs. ────
+// Renvoie false si le direct n'est pas (encore) connecté — l'appelant réessaiera.
+export function sendLive(payload) {
+  if (!_channel || !_subscribed || !payload) return false;
+  _channel.send({ type: 'broadcast', event: 'live', payload: { ...payload, tab: TAB } }).catch(() => {});
+  return true;
+}
+export function onLive(fn) { _liveListeners.add(fn); return () => _liveListeners.delete(fn); }

@@ -1,5 +1,27 @@
 import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { sanitizeHtml } from '../../lib/markup.jsx';
+import { mapOffset } from '../../lib/liveText.js';
+
+// Position du curseur exprimée en nombre de caractères de texte depuis le début de l'éditeur
+// (co-édition : on la recalcule après l'arrivée du texte d'un collègue).
+function textOffsetIn(root, node, offset) {
+  try { const r = document.createRange(); r.selectNodeContents(root); r.setEnd(node, offset); return r.toString().length; } catch { return null; }
+}
+function pointAt(root, n) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let left = n, t = null, last = null;
+  while ((t = w.nextNode())) { last = t; if (left <= t.data.length) return [t, left]; left -= t.data.length; }
+  return last ? [last, last.data.length] : [root, root.childNodes.length];
+}
+function placeCaret(root, a, b) {
+  try {
+    const sel = window.getSelection(); if (!sel) return;
+    const r = document.createRange();
+    const [sn, so] = pointAt(root, a), [en, eo] = pointAt(root, b);
+    r.setStart(sn, so); r.setEnd(en, eo);
+    sel.removeAllRanges(); sel.addRange(r);
+  } catch { /* curseur non restauré : sans gravité */ }
+}
 
 // Convertit l'ancien format markdown (** __ *) en HTML pour l'éditeur
 function mdToHtml(text) {
@@ -162,6 +184,30 @@ const RichTextArea = forwardRef(function RichTextArea(
     focus: () => editorRef.current?.focus(),
     getEditor: () => editorRef.current,
     resetTyping: () => { isTyping.current = false; },
+    // CO-ÉDITION (lib/liveText.js) : affiche la version fusionnée avec le texte d'un collègue SANS
+    // perdre le focus ni le curseur (décalé si du texte arrive avant lui). Renvoie le HTML tel que
+    // l'éditeur le sérialise, ou null si ce n'est pas le moment (mot en cours de composition au
+    // clavier Android, image / tableau sélectionné) → réessayé un peu plus tard.
+    applyRemote: (html) => {
+      const el = editorRef.current;
+      if (!el || isComposing.current || selImg || selGrid) return null;
+      const sel = window.getSelection();
+      let caret = null;
+      if (sel && sel.rangeCount && el.contains(sel.anchorNode) && (document.activeElement === el || el.contains(document.activeElement))) {
+        const r = sel.getRangeAt(0);
+        const a = textOffsetIn(el, r.startContainer, r.startOffset), b = textOffsetIn(el, r.endContainer, r.endOffset);
+        if (a != null && b != null) caret = [a, b];
+      }
+      const before = el.textContent;
+      el.innerHTML = sanitizeHtml(normalizeToHtml(html));
+      normalizeStrayImages(el);
+      rebuildCaptionViews(el);
+      const ta = textAlign || 'left';
+      el.style.textAlign = ta;
+      el.querySelectorAll('div,p,li,h1,h2,h3,h4,h5,h6').forEach(bl => { if (bl.getAttribute('data-cap-view') == null) bl.style.textAlign = ta; });
+      if (caret) { const after = el.textContent; placeCaret(el, mapOffset(before, after, caret[0]), mapOffset(before, after, caret[1])); }
+      return normalizeHtmlOutput(strippedHtml(el));
+    },
     // Insère du HTML à la position du curseur (ou en fin si pas de sélection dans l'éditeur).
     // Utilisé pour insérer un « tableau » (rangée de cases côte à côte) depuis la barre d'outils.
     insertHtml: (html) => {
