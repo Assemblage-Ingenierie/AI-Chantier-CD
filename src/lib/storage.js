@@ -592,6 +592,24 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
     //    null par une sauvegarde au cache froid, fichier intact). On teste les chemins
     //    déterministes ; createSignedUrl échoue si le fichier n'existe pas → aucun faux
     //    positif. Si trouvé : on réaffiche ET on réécrit le chemin en DB (réparation durable).
+    // Cherche dans Storage la couverture la plus récente d'une affaire (chemins déterministes +
+    // dossier « par contenu »). createSignedUrl échoue si le fichier n'existe pas → aucun faux positif.
+    const findCover = async (row, exclude = null) => {
+      const slug = `${slugify(row.nom)}_${String(row.id).slice(0, 8)}`;
+      const candidates = [`${slug}/cover/${row.id}.webp`, `${slug}/cover/${row.id}.jpg`, `cover_${row.id}/cover.webp`, `cover_${row.id}/cover.jpg`];
+      // Couvertures par contenu (…/cover/{id}/c<empreinte>.webp) : la plus récente du dossier.
+      try {
+        const { data: files } = await sb.storage.from('photos').list(`${slug}/cover/${row.id}`, { sortBy: { column: 'created_at', order: 'desc' } });
+        const f = (files || []).find(x => x?.name && x.metadata);
+        if (f) candidates.unshift(`${slug}/cover/${row.id}/${f.name}`);
+      } catch { /* dossier absent : candidats classiques */ }
+      for (const cand of candidates) {
+        if (cand === exclude) continue;
+        const { data: sg, error: sgErr } = await sb.storage.from('photos').createSignedUrl(cand, SIGNED_URL_TTL);
+        if (!sgErr && sg?.signedUrl) return { path: cand, url: sg.signedUrl };
+      }
+      return null;
+    };
     const recover = async () => {
       const found = {};
       const noCover = loadNoCover();
@@ -599,25 +617,12 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
       for (const row of (data ?? [])) {
         if (row.photo) { if (noCover[row.id]) delete noCover[row.id]; continue; }
         if (noCover[row.id] && now - noCover[row.id] < NO_COVER_TTL) continue;
-        let ok = false;
-        const slug = `${slugify(row.nom)}_${String(row.id).slice(0, 8)}`;
-        const candidates = [`${slug}/cover/${row.id}.webp`, `${slug}/cover/${row.id}.jpg`, `cover_${row.id}/cover.webp`, `cover_${row.id}/cover.jpg`];
-        // Couvertures par contenu (…/cover/{id}/c<empreinte>.webp) : la plus récente du dossier.
-        try {
-          const { data: files } = await sb.storage.from('photos').list(`${slug}/cover/${row.id}`, { sortBy: { column: 'created_at', order: 'desc' } });
-          const f = (files || []).find(x => x?.name && x.metadata);
-          if (f) candidates.unshift(`${slug}/cover/${row.id}/${f.name}`);
-        } catch { /* dossier absent : candidats classiques */ }
-        for (const cand of candidates) {
-          const { data: sg, error: sgErr } = await sb.storage.from('photos').createSignedUrl(cand, SIGNED_URL_TTL);
-          if (!sgErr && sg?.signedUrl) {
-            found[row.id] = sg.signedUrl;
-            ok = true;
-            sb.from('aichantier_chantiers').update({ photo: cand }).eq('id', row.id).then(() => {}, () => {});
-            break;
-          }
-        }
-        if (ok) delete noCover[row.id]; else noCover[row.id] = now;
+        const hit = await findCover(row);
+        if (hit) {
+          found[row.id] = hit.url;
+          sb.from('aichantier_chantiers').update({ photo: hit.path }).eq('id', row.id).then(() => {}, () => {});
+          delete noCover[row.id];
+        } else noCover[row.id] = now;
       }
       saveNoCover(noCover);
       return found;
@@ -642,12 +647,34 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
     const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(missing, SIGNED_URL_TTL);
     if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); return result; }
     const fresh = {};
+    const broken = [];
     (signed ?? []).forEach((s, idx) => {
       const path = missing[idx];
       const id = pathToId[path];
       if (s.signedUrl && id) { result[id] = s.signedUrl; fresh[path] = s.signedUrl; }
+      else if (id) broken.push({ id, path });
     });
     setCachedUrls(fresh, SIGNED_URL_TTL);
+    // FICHE QUI POINTE VERS UN FICHIER ABSENT (retour Thomas 26/10 : Rue de Cléry / Pouvelle « ça
+    // marchait, puis plus rien », sur tous les appareils) : la couverture ne pouvait plus jamais
+    // s'afficher (icône à vie). On cherche la couverture la plus récente de l'affaire dans Storage
+    // et on répare la fiche — uniquement si elle pointe TOUJOURS sur le chemin cassé (pas
+    // d'écrasement d'une couverture changée entre-temps). Rien n'est supprimé.
+    if (broken.length) {
+      await Promise.all(broken.map(async ({ id, path }) => {
+        const row = (data ?? []).find(r => r.id === id);
+        if (!row) return;
+        console.warn('[cover] fichier de couverture introuvable', id, path);
+        try {
+          const hit = await findCover(row, path);
+          if (!hit) { logWarn('cover.missing', { id, path }); return; }
+          result[id] = hit.url;
+          setCachedUrls({ [hit.path]: hit.url }, SIGNED_URL_TTL);
+          sb.from('aichantier_chantiers').update({ photo: hit.path }).eq('id', id).eq('photo', row.photo).then(() => {}, () => {});
+          logWarn('cover.repaired', { id, from: path, to: hit.path });
+        } catch { /* on ne touche à rien */ }
+      }));
+    }
     return result;
   } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
 }
@@ -1393,7 +1420,9 @@ async function saveRemote(ps, dirtyIds = null) {
     // photo a une nouvelle adresse, l'ancienne n'est jamais écrasée (rien n'est perdu), et la
     // même photo ré-envoyée retombe sur le même fichier (pas de doublons à chaque sauvegarde).
     let coverPhotoUrl = p.photo ?? null;
+    let coverChangedHere = false; // couverture réellement choisie / migrée par CET appareil
     if (coverPhotoUrl?.startsWith('data:')) {
+      coverChangedHere = true;
       const uploaded = await uploadPhotoToStorage(sb, slug, `cover/${p.id}`, `c${contentKey(coverPhotoUrl)}`, 'cover.webp', coverPhotoUrl);
       if (uploaded) coverPhotoUrl = uploaded;
     }
@@ -1471,6 +1500,16 @@ async function saveRemote(ps, dirtyIds = null) {
       participants: firstVisit?.participants ?? [], tableau_recap: firstVisit?.tableauRecap ?? [],
       visites: mergedVisitesMetadata, updated_at: now,
     };
+    // ⚠️ GARDE ANTI-COUVERTURE PÉRIMÉE (incident 26/10, Rue de Cléry / Pouvelle : couverture cassée
+    // sur tous les appareils) : un appareil au cache périmé renvoyait l'ANCIEN chemin de couverture
+    // (fichier depuis déplacé / remplacé par la version allégée) → la fiche pointait vers un fichier
+    // absent. Un vrai changement de couverture passe TOUJOURS par une nouvelle image (data:) ; un
+    // simple chemin non choisi ici n'est donc écrit que si la fiche n'a AUCUNE couverture
+    // (réparation d'une colonne vidée). Sinon la valeur en base est conservée (rien n'est perdu).
+    if (coverPhotoUrl && !coverChangedHere) {
+      const { data: emptyRow, error: emptyErr } = await sb.from('aichantier_chantiers').select('id').eq('id', p.id).is('photo', null).maybeSingle();
+      if (emptyErr || !emptyRow) coverPhotoUrl = null; // couverture déjà en base (ou doute) → on n'y touche pas
+    }
     if (coverPhotoUrl) chantierRow.photo = coverPhotoUrl;
     const chantierRes = await sb.from('aichantier_chantiers').upsert(chantierRow, { onConflict: 'id' });
     if (chantierRes.error) {

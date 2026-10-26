@@ -78,6 +78,8 @@ export function createFakeSupabase() {
   };
 
   const signed = (p) => `https://x.supabase.co/storage/v1/object/sign/photos/${p}?token=t`;
+  // Fichiers ABSENTS du bucket (tests de couverture cassée) : la signature échoue comme sur Supabase.
+  const missing = new Set();
   const client = {
     from,
     auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
@@ -86,10 +88,10 @@ export function createFakeSupabase() {
         upload: async (path) => ({ data: { path }, error: null }),
         move: async () => ({ error: null }),
         remove: async () => ({ error: null }),
-        createSignedUrl: async (p) => ({ data: { signedUrl: signed(p) }, error: null }),
-        createSignedUrls: async (ps) => ({ data: ps.map(p => ({ path: p, signedUrl: signed(p) })), error: null }),
+        createSignedUrl: async (p) => (missing.has(p) ? { data: null, error: { message: 'Object not found' } } : { data: { signedUrl: signed(p) }, error: null }),
+        createSignedUrls: async (ps) => ({ data: ps.map(p => (missing.has(p) ? { path: p, signedUrl: null, error: 'Object not found' } : { path: p, signedUrl: signed(p) })), error: null }),
       }),
     },
   };
-  return { client, T, deleted, rows: table };
+  return { client, T, deleted, rows: table, missing };
 }

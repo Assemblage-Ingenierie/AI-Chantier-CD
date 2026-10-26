@@ -114,6 +114,34 @@ describe('édition à plusieurs — les ajouts d\'un collègue ne sont jamais ef
     expect(photoIds()).toEqual(['pa', 'pj', 'pk']);
   });
 
+  it('couverture : un appareil au cache périmé ne ré-écrit plus l\'ANCIEN chemin ; une nouvelle photo, si', async () => {
+    db.T.aichantier_chantiers[0].photo = 'pav_P/cover/P/cNEW.webp';
+    const A = await device('A');
+    const ps = hydrate(await A.storage.loadData());
+    // Cache périmé de A : ancienne couverture (URL signée d'un fichier depuis remplacé).
+    const stale = withLocs(ps, locsOf(ps), { photo: 'https://x.supabase.co/storage/v1/object/sign/photos/pav_P/cover/P/cOLD.png?token=t' });
+    expect(await A.storage.saveData(stale, null, DIRTY())).toBe(true);
+    expect(db.rows('aichantier_chantiers')[0].photo).toBe('pav_P/cover/P/cNEW.webp');
+    // Fiche SANS couverture (colonne vidée) : le chemin local la répare, comme avant.
+    db.T.aichantier_chantiers[0].photo = null;
+    expect(await A.storage.saveData(stale, null, DIRTY())).toBe(true);
+    expect(db.rows('aichantier_chantiers')[0].photo).toBe('pav_P/cover/P/cOLD.png');
+    // Vraie nouvelle couverture (image choisie) : toujours écrite.
+    const fresh = withLocs(ps, locsOf(ps), { photo: 'data:image/webp;base64,UklGRhYAAABXRUJQVlA4TAoAAAAvAAAAAAfQ//73vw==' });
+    expect(await A.storage.saveData(fresh, null, DIRTY())).toBe(true);
+    expect(db.rows('aichantier_chantiers')[0].photo).toMatch(/\/cover\/P\/c[\w-]+\.webp$/);
+  });
+
+  it('couverture qui pointe vers un fichier ABSENT : retrouvée dans le stockage et fiche réparée', async () => {
+    db.T.aichantier_chantiers[0].photo = 'pav_P/cover/P/cGONE.png';
+    db.missing.add('pav_P/cover/P/cGONE.png');
+    const A = await device('A');
+    const map = await A.storage.hydrateChantierPhotos(['P']);
+    expect(map.P).toMatch(/\/storage\/v1\/object\/sign\/photos\/.+\/cover\/P\.webp/); // candidat le plus probable existant
+    await new Promise(r => setTimeout(r, 0));
+    expect(db.rows('aichantier_chantiers')[0].photo).toMatch(/\/cover\/P\.webp$/);
+  });
+
   it('les suppressions VOLONTAIRES de A restent effectives (pierre tombale, ou retrait après la fusion)', async () => {
     const A = await device('A');
     const remote = await A.storage.loadData();
