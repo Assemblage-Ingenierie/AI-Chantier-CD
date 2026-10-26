@@ -19,6 +19,7 @@ import { remapParentIds } from './zoneGroups.js';
 
 const MEMO_KEY = 'chantierai_visit_recovery_v1'; // { [visitId]: ts traité (restauré ou ignoré) }
 const MIN_TEXT_GAIN = 200;                        // texte perdu (caractères) qui justifie une proposition
+const MIN_ITEM_TEXT_GAIN = 20;                    // texte plus complet sur une ou plusieurs observations
 
 const itemsOf = (l) => [...(l?.items || []), ...((l?.sections || []).flatMap(s => s.items || []))];
 const itemText = (it) => `${it?.titre || ''}${it?.commentaire || ''}`.length;
@@ -31,28 +32,62 @@ export function markVisitRecovery(visitId, ts) {
   try { localStorage.setItem(MEMO_KEY, JSON.stringify(m)); } catch { /* mode privé */ }
 }
 
+// Une photo est re-référençable si on sait où sont ses octets (chemin Storage, URL, file d'envoi).
+const photoHasSource = (ph) => !!(ph && (ph.storage_url || ph._uploadId
+  || (typeof ph.data === 'string' && (/^https?:/i.test(ph.data) || ph.data.startsWith('data:')))));
+
+// Clés d'une photo (id de ligne + chemin Storage) pour savoir si elle est encore là.
+const PATH_RE = /\/storage\/v1\/object\/(?:sign|public)\/photos\/([^?]+)/;
+function photoKeys(ph) {
+  const keys = [];
+  if (ph?._id) keys.push(`id:${ph._id}`);
+  if (ph?.id) keys.push(`id:${ph.id}`);
+  for (const u of [ph?.storage_url, ph?.data]) {
+    if (typeof u !== 'string' || u.startsWith('data:')) continue;
+    const m = u.match(PATH_RE);
+    let path = m ? m[1] : (/^https?:/i.test(u) ? null : u);
+    if (path) { try { path = decodeURIComponent(path); } catch { /* tel quel */ } keys.push(`p:${path.split('?')[0]}`); }
+  }
+  return keys;
+}
+
 // Accumulateur : met à jour `best` (visitId → candidat) avec un instantané { ts, data }.
+// Une version est proposée si, par rapport à aujourd'hui, elle a :
+//   - des observations ABSENTES (hors suppressions volontaires) ;
+//   - des observations au texte PLUS COMPLET (retour Thomas 26/10 : « ancien texte ») ;
+//   - des PHOTOS qui ont disparu (observations dont les photos sont chargées sur l'appareil).
 export function collectCandidates(best, snapshot, projet, { tombItems = new Set(), memo = {} } = {}) {
   const sp = (snapshot?.data || []).find(p => p?.id === projet?.id);
   if (!sp) return best;
   const curVisits = new Map((projet.visites || []).map(v => [v.id, v]));
-  const curItems = new Set((projet.visites || []).flatMap(v => (v.localisations || []).flatMap(l => itemsOf(l).map(i => i?.id))).filter(Boolean));
+  const curItemById = new Map((projet.visites || []).flatMap(v => (v.localisations || []).flatMap(l => itemsOf(l))).filter(i => i?.id).map(i => [i.id, i]));
   for (const sv of (sp.visites || [])) {
     if (!sv?.id || (memo[sv.id] && snapshot.ts <= memo[sv.id])) continue;
-    const items = (sv.localisations || []).flatMap(itemsOf).filter(i => i?.id);
+    const items = (sv.localisations || []).flatMap(itemsOf).filter(i => i?.id && !tombItems.has(i.id));
     if (!items.length) continue;
-    const missing = items.filter(i => !curItems.has(i.id) && !tombItems.has(i.id)).length;
+    let missing = 0, textItems = 0, textGain = 0, photoGain = 0, photos = 0;
+    for (const it of items) {
+      photos += (it.photos || []).length;
+      const cur = curItemById.get(it.id);
+      if (!cur) { missing++; continue; }
+      const gain = itemText(it) - itemText(cur);
+      if (gain > 0) { textItems++; textGain += gain; }
+      // Photos : seulement si celles de l'observation actuelle sont chargées (sinon on ne sait pas).
+      if (cur._photosHydrated) {
+        const have = new Set((cur.photos || []).flatMap(photoKeys));
+        photoGain += (it.photos || []).filter(ph => photoHasSource(ph) && !photoKeys(ph).some(k => have.has(k))).length;
+      }
+    }
     const cur = curVisits.get(sv.id);
     const lostText = cur ? visitText(sv) - visitText(cur) : 0;
-    if (missing < 1 && lostText < MIN_TEXT_GAIN) continue;
-    const cand = { visitId: sv.id, label: sv.label || 'Visite', ts: snapshot.ts, items: items.length, missing, lostText, exists: !!cur, visit: sv };
+    if (missing < 1 && photoGain < 1 && !(textItems >= 1 && textGain >= MIN_ITEM_TEXT_GAIN) && lostText < MIN_TEXT_GAIN) continue;
+    const cand = { visitId: sv.id, label: sv.label || 'Visite', ts: snapshot.ts, items: items.length, photos, missing, textItems, textGain, photoGain, lostText, exists: !!cur, visit: sv };
     const prev = best.get(sv.id);
-    // La plus complète d'abord (observations manquantes, puis total, puis texte), à égalité la plus récente.
-    const better = !prev
-      || cand.missing > prev.missing
-      || (cand.missing === prev.missing && cand.items > prev.items)
-      || (cand.missing === prev.missing && cand.items === prev.items && visitText(sv) > visitText(prev.visit))
-      || (cand.missing === prev.missing && cand.items === prev.items && visitText(sv) === visitText(prev.visit) && cand.ts > prev.ts);
+    // La plus complète d'abord (observations manquantes, photos, texte), à égalité la plus récente.
+    const rank = (c) => [c.missing, c.photoGain, c.textGain, c.items, c.ts];
+    const a = rank(cand), b = prev ? rank(prev) : null;
+    let better = !b;
+    if (b) for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) { better = a[i] > b[i]; break; } }
     if (better) best.set(sv.id, cand);
   }
   return best;
@@ -66,12 +101,9 @@ export async function scanVisitBackups(projet, opts = {}) {
     const snap = await getSnapshot(ts);
     if (snap) collectCandidates(best, snap, projet, opts);
   }
-  return [...best.values()].sort((a, b) => b.missing - a.missing || b.ts - a.ts);
+  return [...best.values()].sort((a, b) => b.missing - a.missing || b.photoGain - a.photoGain || b.textGain - a.textGain || b.ts - a.ts);
 }
 
-// Une photo est re-référençable si on sait où sont ses octets (chemin Storage, URL, file d'envoi).
-const photoHasSource = (ph) => !!(ph && (ph.storage_url || ph._uploadId
-  || (typeof ph.data === 'string' && (/^https?:/i.test(ph.data) || ph.data.startsWith('data:')))));
 
 // Visite prête à être ajoutée au projet (cf. règles en tête de fichier).
 // tomb : pierres tombales { item:Set, loc:Set } — ce qui a été supprimé VOLONTAIREMENT ne revient pas.
