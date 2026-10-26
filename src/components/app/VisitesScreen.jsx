@@ -7,6 +7,8 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import IngenieursEditor, { splitInitials } from '../ui/IngenieursEditor.jsx';
 import { remapParentIds } from '../../lib/zoneGroups.js';
 import BulkReportExport from './BulkReportExport.jsx';
+import { scanVisitBackups, buildRestoredVisit, markVisitRecovery, loadRecoveryMemo } from '../../lib/visitRecovery.js';
+import { getDeletedIds } from '../../lib/tombstones.js';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -53,6 +55,31 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const [editingId, setEditingId] = useState(null); // visite en mode édition
   const [dupSourceId, setDupSourceId] = useState(null); // visite à dupliquer (choix photos en attente)
   const [dupLoading, setDupLoading] = useState(false);  // photos de la visite en cours de chargement
+  // Visites retrouvées dans les sauvegardes de l'appareil (lib/visitRecovery.js) — incident 26/10.
+  const [recovery, setRecovery] = useState([]);
+  const itemSig = visites.reduce((n, v) => n + (v.localisations || []).reduce((m, l) => m + (l.items || []).length, 0), 0);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      scanVisitBackups(projet, { tombItems: getDeletedIds('item'), memo: loadRecoveryMemo() })
+        .then(list => { if (alive) setRecovery(list); })
+        .catch(() => {});
+    }, 1500); // après l'affichage (et l'arrivée du serveur) : jamais bloquant
+    return () => { alive = false; clearTimeout(t); };
+    // projet lu au moment du scan ; relancé si le projet ou son nombre d'observations change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projet.id, itemSig]);
+  const restoreVisit = (c) => {
+    const when = new Date(c.ts).toLocaleString('fr-FR');
+    const msg = `Restaurer « ${c.label} » telle qu'enregistrée sur cet appareil le ${when} (${c.items} observation${c.items > 1 ? 's' : ''}) ?\n\n`
+      + (c.exists ? 'Elle sera ajoutée À CÔTÉ de la visite actuelle (« restaurée ») : rien n\'est écrasé.' : 'Elle sera remise dans le projet.');
+    if (!window.confirm(msg)) return;
+    const { visit, droppedPhotos } = buildRestoredVisit(c.visit, projet, undefined, { item: getDeletedIds('item'), loc: getDeletedIds('loc') });
+    onUpdateProjet({ visites: [...visites, visit] });
+    markVisitRecovery(c.visitId, c.ts);
+    setRecovery(r => r.filter(x => x.visitId !== c.visitId));
+    if (droppedPhotos > 0) window.alert(`Visite restaurée. ${droppedPhotos} photo${droppedPhotos > 1 ? 's' : ''} sans lien connu : un administrateur peut les relier via Administration → « Récupérer les photos ».`);
+  };
   // Toujours la version À JOUR de la visite (photos hydratées entre-temps), pas un instantané.
   const dupSource = dupSourceId ? (visites.find(v => v.id === dupSourceId) || null) : null;
   const setDupSource = (v) => setDupSourceId(v ? v.id : null);
@@ -448,6 +475,29 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
           </div>
         </div>
         {bulkOpen && <BulkReportExport projet={projet} onHydrateVisite={onHydrateVisite} onClose={() => setBulkOpen(false)}/>}
+
+        {/* Visite retrouvée dans les sauvegardes de CET appareil — n'apparaît que s'il y a quelque chose à récupérer. */}
+        {recovery.map(c => (
+          <div key={c.visitId} style={{ background:'#FFF7ED', border:'1.5px solid #FDBA74', borderRadius:12, padding:'12px 14px', marginBottom:12, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+            <div style={{ flex:'1 1 220px', minWidth:0 }}>
+              <p style={{ margin:0, fontSize:13, fontWeight:800, color:'#9A3412' }}>Visite retrouvée dans les sauvegardes de cet appareil</p>
+              <p style={{ margin:'2px 0 0', fontSize:12, color:'#9A3412' }}>
+                « {c.label} » du {new Date(c.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })} : {c.items} observation{c.items > 1 ? 's' : ''}
+                {c.missing > 0 ? `, dont ${c.missing} absente${c.missing > 1 ? 's' : ''} aujourd'hui` : ', texte plus complet'}.
+              </p>
+            </div>
+            <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+              <button onClick={() => restoreVisit(c)}
+                style={{ padding:'8px 14px', borderRadius:9, border:'none', background:'#EA580C', color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
+                Restaurer
+              </button>
+              <button onClick={() => { markVisitRecovery(c.visitId, c.ts); setRecovery(r => r.filter(x => x.visitId !== c.visitId)); }}
+                style={{ padding:'8px 10px', borderRadius:9, border:'1px solid #FDBA74', background:'white', color:'#9A3412', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                Ignorer
+              </button>
+            </div>
+          </div>
+        ))}
 
         {visites.length === 0 && (
           <div style={{ background:'white', borderRadius:14, padding:'56px 24px', textAlign:'center', border:`1px solid ${DA.border}`, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>
