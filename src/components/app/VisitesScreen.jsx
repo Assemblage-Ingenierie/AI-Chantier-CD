@@ -372,6 +372,7 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       : `Supprimer "${v?.label || 'cette visite'}" ?`;
     if (!window.confirm(msg)) return;
     onUpdateProjet({ visites: visites.filter(vv => vv.id !== visiteId) });
+    markVisitRecovery(visiteId); // supprimée volontairement → le bandeau « visite retrouvée » ne la repropose pas
     if (editingId === visiteId) setEditingId(null);
   };
 

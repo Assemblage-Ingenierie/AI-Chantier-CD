@@ -92,12 +92,14 @@ describe('restauration d\'une visite depuis les sauvegardes de l\'appareil', () 
     expect(visit.localisations[0].items[0].photos[0]._id).toBe('pa');
   });
 
-  it('restaurée ou ignorée → plus proposée (sauf sauvegarde plus récente)', () => {
+  it('restaurée ou ignorée → plus proposée ; seule une perte POSTÉRIEURE au clic peut revenir', () => {
     const now = projetNow([]);
+    const t = Date.now();
     markVisitRecovery('V', 200);
-    expect(loadRecoveryMemo().V).toBe(200);
+    expect(loadRecoveryMemo().V).toBeGreaterThanOrEqual(t);   // mémorisé à l'heure du clic
     expect(collectCandidates(new Map(), snap(200, [full]), now, { memo: loadRecoveryMemo() }).has('V')).toBe(false);
-    expect(collectCandidates(new Map(), snap(250, [full]), now, { memo: loadRecoveryMemo() }).has('V')).toBe(true);
+    expect(collectCandidates(new Map(), snap(t - 1000, [full]), now, { memo: loadRecoveryMemo() }).has('V')).toBe(false);
+    expect(collectCandidates(new Map(), snap(t + 3600000, [full]), now, { memo: loadRecoveryMemo() }).has('V')).toBe(true);
   });
 });
 
@@ -112,5 +114,26 @@ describe('versions d\'une visite (choix manuel)', () => {
     expect(vs.map(x => x.ts)).toEqual([300, 100]);
     expect(vs[0]).toMatchObject({ items: 1, photos: 1 });
     expect(addVersions(new Map(), { ts: 1, data: [{ id: 'X', visites: [v1] }] }, 'P').size).toBe(0);
+  });
+});
+
+describe('bandeau « visite retrouvée » : pas d\'insistance (retour Thomas 26/10)', () => {
+  const vestiges = { ...full, localisations: [{ id: 'z1', nom: 'RDC', items: [{ id: 'a', titre: 'Fissure', commentaire: '' }] }] };
+  it('Ignorer / Restaurer : plus jamais reproposée, même par une sauvegarde plus récente que celle proposée', () => {
+    const t0 = Date.now();
+    markVisitRecovery('V', t0 - 3600000);            // proposée depuis une sauvegarde d'il y a 1 h, ignorée maintenant
+    const memo = loadRecoveryMemo();
+    expect(memo.V).toBeGreaterThanOrEqual(t0);
+    const b = collectCandidates(new Map(), snap(t0 - 60000, [full]), projetNow([vestiges]), { memo }); // sauvegarde d'il y a 1 min
+    expect(b.has('V')).toBe(false);
+  });
+  it('sauvegarde trop ancienne → pas de bandeau automatique', () => {
+    const now = Date.now();
+    expect(collectCandidates(new Map(), snap(now - 13 * 3600000, [full]), projetNow([vestiges]), { maxAgeMs: 12 * 3600000, now }).has('V')).toBe(false);
+    expect(collectCandidates(new Map(), snap(now - 3600000, [full]), projetNow([vestiges]), { maxAgeMs: 12 * 3600000, now }).has('V')).toBe(true);
+  });
+  it('simple retouche de texte (quelques mots en moins) → rien', () => {
+    const retouche = { ...full, localisations: full.localisations.map(l => ({ ...l, items: l.items.map(it => it.id === 'a' ? { ...it, commentaire: 'Fissure en escalier' } : it) })) };
+    expect(collectCandidates(new Map(), snap(200, [full]), projetNow([retouche])).has('V')).toBe(false);
   });
 });
