@@ -11,6 +11,7 @@ const channel = {
   presenceState: () => ch.state,
 };
 vi.mock('../supabase.js', () => ({ getSupabase: async () => ({ channel: () => channel, removeChannel: async () => {} }) }));
+vi.mock('./logger.js', () => ({ logWarn: () => {}, logEvent: () => {}, logError: () => {} }));
 const P = await import('./presence.js');
 
 describe('présence (travail à plusieurs)', () => {
@@ -52,3 +53,32 @@ describe('présence (travail à plusieurs)', () => {
     vi.useRealTimers();
   });
 });
+
+describe('frappe en direct (comme Google Sheets)', () => {
+  it('envoi regroupé (≈3/s), réception chez les autres, fin d\'édition', async () => {
+    vi.useFakeTimers();
+    ch.sent.length = 0;
+    // (présence démarrée par le test précédent : même module)
+    P.broadcastDraft('P', 'a', { titre: 'Coffrage', commentaire: 'T', field: 'commentaire' });
+    P.broadcastDraft('P', 'a', { titre: 'Coffrage', commentaire: 'Te', field: 'commentaire' });
+    P.broadcastDraft('P', 'a', { titre: 'Coffrage', commentaire: 'Tex', field: 'commentaire' });
+    await vi.advanceTimersByTimeAsync(400);
+    const drafts = ch.sent.filter(m => m.event === 'draft');
+    expect(drafts).toHaveLength(1);                                    // 3 frappes → 1 message
+    expect(drafts[0].payload).toMatchObject({ projectId: 'P', itemId: 'a', commentaire: 'Tex', field: 'commentaire', name: 'Thomas C' });
+
+    let got = [];
+    P.subscribeDrafts(l => { got = l; });
+    ch.handlers['broadcast:draft']({ payload: { tab: 't9', userId: 'u-stas', name: 'Stas K', projectId: 'P', itemId: 'a', commentaire: 'Fissure V3', field: 'commentaire' } });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ name: 'Stas K', commentaire: 'Fissure V3' });
+    expect(P.firstName(got[0].name)).toBe('Stas');
+    ch.handlers['broadcast:draft-end']({ payload: { tab: 't9', projectId: 'P', itemId: 'a' } });
+    expect(got).toHaveLength(0);                                       // fenêtre fermée → plus d'indication
+
+    P.broadcastDraftEnd('P', 'a');
+    expect(ch.sent.at(-1)).toMatchObject({ event: 'draft-end', payload: { itemId: 'a' } });
+    vi.useRealTimers();
+  });
+});
+

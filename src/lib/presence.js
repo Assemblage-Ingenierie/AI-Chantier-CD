@@ -65,6 +65,8 @@ export async function startPresence(profile, userId, avatar = null) {
     _channel = sb.channel(CHANNEL, { config: { presence: { key: TAB }, broadcast: { self: false } } });
     _channel
       .on('presence', { event: 'sync' }, readState)
+      .on('broadcast', { event: 'draft' }, ({ payload }) => receiveDraft(payload))
+      .on('broadcast', { event: 'draft-end' }, ({ payload }) => receiveDraft(payload, true))
       .on('broadcast', { event: 'saved' }, ({ payload }) => {
         if (!payload || payload.tab === TAB) return;
         _savedListeners.forEach(fn => { try { fn(payload); } catch { /* listener */ } });
@@ -131,3 +133,71 @@ export function groupPresence(others) {
   }
   return [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
+
+// ── FRAPPE EN DIRECT (comme Google Sheets, demande Thomas 26/10 : « je vois en direct ce qu'il
+// écrit, avec son prénom à côté ») ────────────────────────────────────────────────────────────
+// Pendant qu'on modifie une observation (fenêtre ouverte, avant « Enregistrer »), son titre et son
+// commentaire sont diffusés en continu (≈ 3 fois / s au plus). Les autres appareils affichent ce
+// texte EN DIRECT, entouré de la couleur de la personne et avec son prénom. Affichage seulement :
+// rien n'est enregistré tant que la personne n'a pas enregistré elle-même.
+const DRAFT_THROTTLE = 350;
+const DRAFT_TTL = 15000;            // sans nouvelle frappe depuis 15 s → l'indication disparaît
+const MAX_DRAFT_CHARS = 60000;      // garde-fou taille de message Realtime
+const _drafts = new Map();          // `${tab}|${itemId}` → brouillon reçu
+const _draftListeners = new Set();
+const _draftOut = new Map();        // itemId → { timer, payload, last }
+let _draftGc = null;
+
+function emitDrafts() {
+  const list = [..._drafts.values()];
+  _draftListeners.forEach(fn => { try { fn(list); } catch { /* listener */ } });
+}
+function receiveDraft(p, ended = false) {
+  if (!p || p.tab === TAB || !p.itemId) return;
+  const k = `${p.tab}|${p.itemId}`;
+  if (ended) { if (_drafts.delete(k)) emitDrafts(); return; }
+  _drafts.set(k, { ...p, receivedAt: Date.now() });
+  emitDrafts();
+  if (!_draftGc) _draftGc = setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+    for (const [key, d] of _drafts) if (now - d.receivedAt > DRAFT_TTL) { _drafts.delete(key); changed = true; }
+    if (changed) emitDrafts();
+    if (!_drafts.size) { clearInterval(_draftGc); _draftGc = null; }
+  }, 3000);
+}
+
+function sendDraftNow(itemId) {
+  const o = _draftOut.get(itemId);
+  if (!o?.payload || !_channel || !_subscribed) return;
+  o.last = Date.now();
+  _channel.send({ type: 'broadcast', event: 'draft', payload: o.payload }).catch(() => {});
+}
+
+// field : 'titre' | 'commentaire' (le champ en cours de frappe).
+export function broadcastDraft(projectId, itemId, { titre, commentaire, field }) {
+  if (!_me || !projectId || !itemId) return;
+  const c = typeof commentaire === 'string' && commentaire.length > MAX_DRAFT_CHARS ? null : commentaire;
+  const payload = { tab: TAB, userId: _me.userId, name: _me.name, initials: _me.initials, avatar: _me.avatar,
+    projectId, itemId, titre: titre ?? '', commentaire: c, field, at: Date.now() };
+  const o = _draftOut.get(itemId) || { timer: null, payload: null, last: 0 };
+  o.payload = payload;
+  _draftOut.set(itemId, o);
+  if (o.timer) return;
+  const wait = Math.max(0, o.last + DRAFT_THROTTLE - Date.now());
+  o.timer = setTimeout(() => { o.timer = null; sendDraftNow(itemId); }, wait);
+}
+
+// Fenêtre fermée / enregistrée : l'indication disparaît chez les autres.
+export function broadcastDraftEnd(projectId, itemId) {
+  const o = _draftOut.get(itemId);
+  if (o?.timer) clearTimeout(o.timer);
+  _draftOut.delete(itemId);
+  if (!o || !_channel || !_subscribed) return; // jamais tapé → rien à effacer
+  _channel.send({ type: 'broadcast', event: 'draft-end', payload: { tab: TAB, projectId, itemId } }).catch(() => {});
+}
+
+export function subscribeDrafts(fn) { _draftListeners.add(fn); fn([..._drafts.values()]); return () => _draftListeners.delete(fn); }
+
+// Prénom pour l'étiquette (« Stas »).
+export function firstName(name) { return String(name || '').trim().split(/\s+/)[0] || 'Quelqu\'un'; }

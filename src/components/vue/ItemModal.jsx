@@ -18,6 +18,7 @@ import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../
 import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
+import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName } from '../../lib/presence.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -342,6 +343,66 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const lastCommitted  = useRef('');
   const sessionText    = useRef('');
   const restartTimer   = useRef(null);
+
+  // ── FRAPPE EN DIRECT à plusieurs (comme Google Sheets — lib/presence.js) ───────────────────
+  // Ce que je tape est diffusé aux autres ; ce que tape un collègue dans CETTE observation
+  // s'affiche ici en direct, avec son prénom. Son texte ne remplace un champ QUE si je n'y ai
+  // pas tapé moi-même, que je n'y suis pas et que je ne dicte pas : jamais mon texte écrasé.
+  // Additif : la dictée, l'éditeur et l'enregistrement ne sont pas modifiés.
+  const typedRef = useRef({ titre: false, commentaire: false }); // champs que J'AI modifiés
+  const typingFieldRef = useRef(null);                           // dernier champ que je tape
+  const remoteSetRef = useRef({ titre: null, commentaire: null }); // dernières valeurs reçues appliquées
+  const titleFocusRef = useRef(false);
+  const [liveDraft, setLiveDraft] = useState(null); // brouillon d'un collègue sur CETTE observation
+  const markTyping = (field) => { typedRef.current[field] = true; typingFieldRef.current = field; };
+  // Toute modification LOCALE d'un champ (clavier, dictée, correction IA…) = ce champ est à moi.
+  const prevFieldsRef = useRef({ titre: form.titre, commentaire: form.commentaire });
+  useEffect(() => {
+    const prev = prevFieldsRef.current;
+    prevFieldsRef.current = { titre: form.titre, commentaire: form.commentaire };
+    // (seuls les liens des images collées ont changé — re-signature à l'ouverture — ≠ une frappe)
+    const noSrc = (v) => String(v ?? '').replace(/\ssrc="[^"]*"/g, '');
+    for (const f of ['titre', 'commentaire']) {
+      if (form[f] !== prev[f] && form[f] !== remoteSetRef.current[f] && noSrc(form[f]) !== noSrc(prev[f])) markTyping(f);
+    }
+    if (!projetId || !form.id || !typingFieldRef.current) return; // je n'ai encore rien tapé
+    if (form.titre === remoteSetRef.current.titre && form.commentaire === remoteSetRef.current.commentaire) return; // écho
+    broadcastDraft(projetId, form.id, { titre: form.titre, commentaire: form.commentaire, field: typingFieldRef.current });
+  }, [form.titre, form.commentaire]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (projetId && form.id) broadcastDraftEnd(projetId, form.id); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => subscribeDrafts((list) => {
+    const mine = list.filter(d => d.projectId === projetId && d.itemId === form.id).sort((a, b) => b.receivedAt - a.receivedAt)[0] || null;
+    setLiveDraft(mine);
+    if (!mine) return;
+    const editor = textareaRef.current?.getEditor?.();
+    const inEditor = !!(editor && typeof document !== 'undefined' && (document.activeElement === editor || editor.contains(document.activeElement)));
+    const patch = {};
+    if (!typedRef.current.titre && !titleFocusRef.current && typeof mine.titre === 'string') { patch.titre = mine.titre; remoteSetRef.current.titre = mine.titre; }
+    const canComm = !typedRef.current.commentaire && !inEditor && !recordingRef.current && typeof mine.commentaire === 'string';
+    if (canComm) { patch.commentaire = mine.commentaire; remoteSetRef.current.commentaire = mine.commentaire; }
+    if (!Object.keys(patch).length) return;
+    setForm(f => {
+      const next = { ...f, ...patch };
+      if (next.titre === f.titre && next.commentaire === f.commentaire) return f;
+      return next;
+    });
+    if (canComm) bumpSync(); // l'éditeur riche reprend la valeur (même mécanisme que l'IA / la dictée)
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const liveColor = liveDraft ? colorFor(liveDraft.userId) : null;
+  // Étiquette « Stas écrit… » au-dessus du champ qu'il est en train de taper.
+  const liveTag = (field) => {
+    if (!liveDraft || liveDraft.field !== field) return null;
+    const clash = typedRef.current[field];
+    return (
+      <span title={clash ? `${liveDraft.name} modifie aussi ce champ : la dernière version enregistrée l'emportera (l'autre restera dans l'historique).` : `${liveDraft.name} écrit en direct`}
+        style={{ display:'inline-flex', alignItems:'center', gap:5, marginLeft:8, padding:'1px 8px 1px 2px', borderRadius:20, background:liveColor, color:'white', fontSize:11, fontWeight:700, textTransform:'none', letterSpacing:0, verticalAlign:'middle' }}>
+        <span style={{ width:16, height:16, borderRadius:'50%', overflow:'hidden', background:'rgba(255,255,255,0.25)', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:8 }}>
+          {liveDraft.avatar ? <img src={liveDraft.avatar} alt="" referrerPolicy="no-referrer" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (liveDraft.initials || '?')}
+        </span>
+        {firstName(liveDraft.name)} {clash ? 'écrit aussi ici' : 'écrit…'}
+      </span>
+    );
+  };
 
   // Enregistre un handler de retour pour le bouton back Android — ferme d'abord les overlays internes
   useEffect(() => {
@@ -1090,11 +1151,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé</label>
-            <input value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé{liveTag('titre')}</label>
+            <input value={form.titre} onChange={e => { markTyping('titre'); setForm(f => ({ ...f, titre: e.target.value })); }}
               placeholder="Ex: Fissures, Humidité…"
-              style={{ width:'100%',border:`1px solid ${DA.border}`,borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
-              onFocus={e => e.target.style.borderColor=DA.red} onBlur={e => e.target.style.borderColor=DA.border}/>
+              style={{ width:'100%',border:`1px solid ${liveDraft?.field === 'titre' ? liveColor : DA.border}`,boxShadow: liveDraft?.field === 'titre' ? `0 0 0 2px ${liveColor}33` : 'none',borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
+              onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; }}/>
             {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
                 par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
                 seulement pour une observation existante. */}
@@ -1180,7 +1241,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
           {/* Commentaire — pleine largeur */}
           <div style={{ marginBottom:14 }}>
-            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire</label>
+            <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6 }}>Commentaire{liveTag('commentaire')}</label>
 
             {/* Toolbar : G/I/S + séparateur + alignements */}
             <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none' }}>
@@ -1246,7 +1307,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 onAnnotateImage={handleAnnotateCommentImage}
                 placeholder="Description détaillée — fissures, localisation précise, préconisations, réserves… (Ctrl+V pour coller une capture)"
                 textAlign={form.commentaireAlign || 'left'}
-                style={{ width:'100%', border:`1px solid ${recording ? DA.red : DA.border}`, borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:24, fontSize:16, lineHeight:1.7, minHeight: isDesktop ? 110 : 84, boxSizing:'border-box', fontFamily:'inherit' }}
+                style={{ width:'100%', border:`1px solid ${recording ? DA.red : liveDraft?.field === 'commentaire' ? liveColor : DA.border}`, boxShadow: !recording && liveDraft?.field === 'commentaire' ? `0 0 0 2px ${liveColor}33` : 'none', borderRadius:'0 0 8px 8px', padding:'12px 14px', paddingBottom:24, fontSize:16, lineHeight:1.7, minHeight: isDesktop ? 110 : 84, boxSizing:'border-box', fontFamily:'inherit' }}
                 onFocus={() => { if (textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.red; }}
                 onBlur={() => { if (!recording && textareaRef.current?.getEditor()) textareaRef.current.getEditor().style.borderColor = DA.border; }}
               />
