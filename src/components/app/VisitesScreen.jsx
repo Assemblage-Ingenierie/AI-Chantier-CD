@@ -7,7 +7,7 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import IngenieursEditor, { splitInitials } from '../ui/IngenieursEditor.jsx';
 import { remapParentIds } from '../../lib/zoneGroups.js';
 import BulkReportExport from './BulkReportExport.jsx';
-import { scanVisitBackups, buildRestoredVisit, markVisitRecovery, loadRecoveryMemo } from '../../lib/visitRecovery.js';
+import { scanVisitBackups, buildRestoredVisit, markVisitRecovery, loadRecoveryMemo, listVisitVersions, visitSignature } from '../../lib/visitRecovery.js';
 import { getDeletedIds } from '../../lib/tombstones.js';
 
 // État de sync d'une visite pour son badge (V2) :
@@ -70,6 +70,20 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     // projet lu au moment du scan ; relancé si le projet ou son nombre d'observations change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projet.id, itemSig]);
+  // Choix manuel parmi toutes les versions gardées sur l'appareil.
+  const [versions, setVersions] = useState(null); // null | { loading } | { count, oldest, visits }
+  const openVersions = () => {
+    setVersions({ loading: true });
+    listVisitVersions(projet.id).then(setVersions).catch(() => setVersions({ count: 0, oldest: null, visits: [] }));
+  };
+  const restoreVersion = (g, ver) => {
+    const when = new Date(ver.ts).toLocaleString('fr-FR');
+    if (!window.confirm(`Restaurer « ${g.label} » telle qu'enregistrée le ${when} (${ver.items} obs, ${ver.photos} photos) ?\n\nElle sera ajoutée À CÔTÉ : rien n'est écrasé.`)) return;
+    const { visit, droppedPhotos } = buildRestoredVisit(ver.visit, projet, undefined, { item: getDeletedIds('item'), loc: getDeletedIds('loc') });
+    onUpdateProjet({ visites: [...visites, { ...visit, label: `${g.label} (restaurée ${new Date(ver.ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })})` }] });
+    setVersions(null);
+    if (droppedPhotos > 0) window.alert(`Visite restaurée. ${droppedPhotos} photo${droppedPhotos > 1 ? 's' : ''} sans lien connu : un administrateur peut les relier via Administration → « Récupérer les photos ».`);
+  };
   const restoreVisit = (c) => {
     const when = new Date(c.ts).toLocaleString('fr-FR');
     const msg = `Restaurer « ${c.label} » telle qu'enregistrée sur cet appareil le ${when} (${c.items} observation${c.items > 1 ? 's' : ''}) ?\n\n`
@@ -764,8 +778,64 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
           <Ic n="plus" s={18}/> Nouvelle visite
         </button>
 
+        {/* Versions gardées sur CET appareil (boîte noire) — lien discret, choix manuel (incident 26/10). */}
+        <button onClick={openVersions}
+          style={{ display:'block', margin:'14px auto 0', background:'none', border:'none', color:DA.grayL, fontSize:12, textDecoration:'underline', cursor:'pointer' }}>
+          Versions sauvegardées sur cet appareil
+        </button>
+
         </div>
       </div>
+
+      {/* ── Versions sauvegardées sur cet appareil ── */}
+      {versions && (
+        <div onClick={() => setVersions(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'white', borderRadius:16, padding:'18px 16px', width:'100%', maxWidth:520, maxHeight:'85vh', overflowY:'auto', boxShadow:'0 12px 40px rgba(0,0,0,0.3)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+              <p style={{ fontSize:15, fontWeight:800, color:DA.black, margin:0 }}>Versions sauvegardées sur cet appareil</p>
+              <button onClick={() => setVersions(null)} style={{ background:'none', border:'none', fontSize:20, color:DA.grayL, cursor:'pointer' }}>×</button>
+            </div>
+            {versions.loading ? (
+              <p style={{ fontSize:13, color:DA.gray }}>Lecture des sauvegardes…</p>
+            ) : (
+              <>
+                <p style={{ fontSize:12, color:DA.gray, margin:'4px 0 12px', lineHeight:1.45 }}>
+                  {versions.count} sauvegarde{versions.count > 1 ? 's' : ''} sur cet appareil
+                  {versions.oldest ? ` depuis le ${new Date(versions.oldest).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}` : ''}.
+                  {' '}Restaurer ajoute la version choisie À CÔTÉ (« restaurée ») : rien n'est écrasé.
+                </p>
+                {versions.visits.length === 0 && <p style={{ fontSize:13, color:DA.gray }}>Aucune version de ce projet sur cet appareil.</p>}
+                {versions.visits.map(g => {
+                  const now = visites.find(v => v.id === g.visitId);
+                  const sig = now ? visitSignature(now) : null;
+                  return (
+                    <div key={g.visitId} style={{ marginBottom:14 }}>
+                      <p style={{ fontSize:13, fontWeight:800, color:DA.black, margin:'0 0 2px' }}>{g.label}</p>
+                      <p style={{ fontSize:11, color:DA.grayL, margin:'0 0 6px' }}>
+                        {sig ? `Aujourd'hui : ${sig.items} obs · ${sig.photos} photos · ${sig.text} caractères` : 'Absente du projet aujourd\'hui'}
+                      </p>
+                      {g.versions.map(ver => (
+                        <div key={ver.ts} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', borderTop:`1px solid ${DA.border}` }}>
+                          <div style={{ flex:1, minWidth:0, fontSize:12, color:DA.black }}>
+                            <b>{new Date(ver.ts).toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</b>
+                            <span style={{ color:DA.gray }}> — {ver.items} obs · {ver.photos} photos · {ver.text} car.</span>
+                          </div>
+                          <button onClick={() => restoreVersion(g, ver)}
+                            style={{ flexShrink:0, padding:'6px 10px', borderRadius:8, border:'none', background:'#EA580C', color:'white', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                            Restaurer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Duplication : avec ou sans les photos ? ── */}
       {dupSource && (() => {

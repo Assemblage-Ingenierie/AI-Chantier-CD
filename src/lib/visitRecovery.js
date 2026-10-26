@@ -14,7 +14,7 @@
 //     lignes, l'outil Admin « Récupérer les photos » peut relier les fichiers du dossier) ;
 //   - zone / observation encore présente → copie (nouvel identifiant, photos re-référencées).
 // Les observations supprimées VOLONTAIREMENT (pierres tombales) ne sont jamais proposées.
-import { listSnapshots, getSnapshot } from './backupVault.js';
+import { listSnapshotKeys, getSnapshot } from './backupVault.js';
 import { remapParentIds } from './zoneGroups.js';
 
 const MEMO_KEY = 'chantierai_visit_recovery_v1'; // { [visitId]: ts traité (restauré ou ignoré) }
@@ -96,10 +96,11 @@ export function collectCandidates(best, snapshot, projet, { tombItems = new Set(
 // Parcourt TOUS les instantanés de l'appareil (un à la fois → mémoire contenue).
 export async function scanVisitBackups(projet, opts = {}) {
   const best = new Map();
-  const list = await listSnapshots();
-  for (const { ts } of list) {
-    const snap = await getSnapshot(ts);
-    if (snap) collectCandidates(best, snap, projet, opts);
+  for (const ts of await listSnapshotKeys()) {
+    try {
+      const snap = await getSnapshot(ts);
+      if (snap) collectCandidates(best, snap, projet, opts);
+    } catch { /* instantané illisible : on passe au suivant */ }
   }
   return [...best.values()].sort((a, b) => b.missing - a.missing || b.photoGain - a.photoGain || b.textGain - a.textGain || b.ts - a.ts);
 }
@@ -136,4 +137,38 @@ export function buildRestoredVisit(sv, projet, uuid = () => crypto.randomUUID(),
     localisations,
   };
   return { visit, asCopy, droppedPhotos: dropped };
+}
+
+// TOUTES les versions d'une visite gardées sur l'appareil (choix manuel — retour Thomas 26/10 :
+// « toujours rien », la détection automatique ne suffit pas). Versions identiques consécutives
+// fusionnées. Retourne { count, oldest, visits: [{ visitId, label, versions: [{ ts, items, photos, text, visit }] }] }.
+export function visitSignature(v) {
+  const items = (v?.localisations || []).flatMap(itemsOf).filter(Boolean);
+  return { items: items.length, photos: items.reduce((n, it) => n + (it.photos || []).length, 0), text: visitText(v) };
+}
+export function addVersions(acc, snapshot, projectId, maxPerVisit = 40) {
+  const sp = (snapshot?.data || []).find(p => p?.id === projectId);
+  if (!sp) return acc;
+  for (const sv of (sp.visites || [])) {
+    if (!sv?.id) continue;
+    const sig = visitSignature(sv);
+    if (!sig.items) continue;
+    let e = acc.get(sv.id);
+    if (!e) { e = { visitId: sv.id, label: sv.label || 'Visite', versions: [] }; acc.set(sv.id, e); }
+    const last = e.versions[e.versions.length - 1];
+    if (last && last.items === sig.items && last.photos === sig.photos && last.text === sig.text) continue; // identique
+    if (e.versions.length < maxPerVisit) e.versions.push({ ts: snapshot.ts, ...sig, visit: sv });
+  }
+  return acc;
+}
+export async function listVisitVersions(projectId) {
+  const keys = await listSnapshotKeys(); // plus récent d'abord
+  const acc = new Map();
+  for (const ts of keys) {
+    try {
+      const snap = await getSnapshot(ts);
+      if (snap) addVersions(acc, snap, projectId);
+    } catch { /* illisible : suivant */ }
+  }
+  return { count: keys.length, oldest: keys.length ? keys[keys.length - 1] : null, visits: [...acc.values()] };
 }

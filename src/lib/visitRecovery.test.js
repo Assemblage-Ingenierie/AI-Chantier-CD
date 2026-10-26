@@ -100,3 +100,17 @@ describe('restauration d\'une visite depuis les sauvegardes de l\'appareil', () 
     expect(collectCandidates(new Map(), snap(250, [full]), now, { memo: loadRecoveryMemo() }).has('V')).toBe(true);
   });
 });
+
+describe('versions d\'une visite (choix manuel)', () => {
+  it('liste les versions de la plus récente à la plus ancienne, sans doublons identiques', async () => {
+    const { addVersions } = await import('./visitRecovery.js');
+    const acc = new Map();
+    const v1 = { id: 'V', label: 'Visite', localisations: [{ id: 'z', items: [{ id: 'a', titre: 'Fissure', commentaire: 'court', photos: [] }] }] };
+    const v2 = { ...v1, localisations: [{ id: 'z', items: [{ id: 'a', titre: 'Fissure', commentaire: 'texte bien plus complet', photos: [{ _id: 'p' }] }] }] };
+    for (const [ts, v] of [[300, v2], [200, v2], [100, v1]]) addVersions(acc, { ts, data: [{ id: 'P', visites: [v] }] }, 'P');
+    const vs = acc.get('V').versions;
+    expect(vs.map(x => x.ts)).toEqual([300, 100]);
+    expect(vs[0]).toMatchObject({ items: 1, photos: 1 });
+    expect(addVersions(new Map(), { ts: 1, data: [{ id: 'X', visites: [v1] }] }, 'P').size).toBe(0);
+  });
+});
