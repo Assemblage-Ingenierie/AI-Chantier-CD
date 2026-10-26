@@ -21,6 +21,7 @@ import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
 import { countNewTrash, markTrashSeen, TRASH_EVENT } from '../../lib/trashBadge.js';
+import { setPresenceLocation, subscribePresence, groupPresence, colorFor } from '../../lib/presence.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
 import { applyObsDates, zoneDatesInfo } from '../../lib/obsDates.js';
@@ -192,6 +193,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const modalRef = useRef(null);
   const itemModalBackRef = useRef(null); // handler interne de ItemModal (photo/plan annotateur, zoom)
   useEffect(() => { modalRef.current = modal; }, [modal]);
+  // Travail à plusieurs : l'observation ouverte ici est signalée aux autres (bulles), et on
+  // prévient si quelqu'un d'autre est sur la même (ses modifs seront fusionnées champ par champ).
+  const presItemId = modal?.t === 'item' ? (modal.item?.id ?? null) : modal?.t === 'annotate' ? (modal.form?.id ?? modal.item?.id ?? null) : null;
+  useEffect(() => { setPresenceLocation({ itemId: presItemId }); }, [presItemId]);
+  useEffect(() => () => setPresenceLocation({ itemId: null }), []);
+  const [presence, setPresence] = useState([]);
+  useEffect(() => subscribePresence(setPresence), []);
+  const coEditors = presItemId ? groupPresence(presence).filter(o => o.projectId === projet.id && o.itemId === presItemId) : [];
 
   useEffect(() => {
     if (!setBackHandler) return;
@@ -1240,6 +1249,18 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onRestoreZone={onRestoreZone} onRestoreObservation={onRestoreObservation}
           onRestoreLostAnnots={onRestoreLostAnnots} onRestoreZoneAnnotations={onRestoreZoneAnnotations}
           onRestoreItemText={onRestoreItemText} onRestoreStoragePhotos={onRestoreStoragePhotos}/>
+      )}
+
+      {coEditors.length > 0 && (
+        <div role="status" style={{ position:'fixed', top:'calc(env(safe-area-inset-top, 0px) + 10px)', left:'50%', transform:'translateX(-50%)', zIndex:100000, display:'flex', alignItems:'center', gap:8, maxWidth:'calc(100vw - 32px)',
+          background:'#FFFBEB', border:'1px solid #FCD34D', color:'#92400E', borderRadius:12, padding:'8px 12px', boxShadow:'0 4px 16px rgba(0,0,0,0.18)', fontSize:12.5, fontWeight:600 }}>
+          <span style={{ display:'flex' }}>
+            {coEditors.slice(0, 3).map((o, i) => (
+              <span key={`${o.userId}|${o.device}`} style={{ width:22, height:22, marginLeft: i ? -6 : 0, borderRadius:'50%', background:colorFor(o.userId), color:'white', fontSize:9.5, fontWeight:800, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #FFFBEB' }}>{o.initials}</span>
+            ))}
+          </span>
+          <span>{coEditors.map(o => o.name.split(' ')[0]).join(', ')} {coEditors.length > 1 ? 'sont' : 'est'} aussi sur cette observation — les modifications de chacun sont fusionnées.</span>
+        </div>
       )}
 
       {undoToast && (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject } from '../lib/storage.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
@@ -15,6 +15,7 @@ import { logEvent } from '../lib/logger.js';
 import { publishPendingCount } from '../lib/pendingSync.js';
 import { adoptRemoteItemText, adoptRemoteVisitMeta } from '../lib/syncBase.js';
 import { primeVisitTextBackup, scheduleVisitTextBackup } from '../lib/driveTextBackup.js';
+import { broadcastSaved, onRemoteSaved, getMyProjectId } from '../lib/presence.js';
 
 const MAX_HISTORY = 20;
 
@@ -537,6 +538,7 @@ export function useProjets(onSyncStatus) {
       const ok = await saveData(projets, onSyncStatus, ids);
       // Copie du texte des visites modifiées sur le Drive (à côté des photos), même si la synchro a échoué.
       scheduleVisitTextBackup(() => projetsRef.current, ids);
+      if (ok) broadcastSaved(ids); // travail à plusieurs : les autres appareils rechargent ce projet
       if (!ok) {
         dirtyIds.current = new Set([...ids, ...dirtyIds.current]); // restore on failure
         syncDirtyMirror();
@@ -548,6 +550,7 @@ export function useProjets(onSyncStatus) {
           const retryIds = new Set(dirtyIds.current);
           dirtyIds.current.clear();
           const retryOk = await saveData(projetsRef.current, onSyncStatus, retryIds);
+          if (retryOk) broadcastSaved(retryIds);
           if (!retryOk) dirtyIds.current = new Set([...retryIds, ...dirtyIds.current]);
           setPersistedDirtyIds(dirtyIds.current); // refléter l'état après (re)tentative
           syncDirtyMirror();
@@ -1389,6 +1392,56 @@ export function useProjets(onSyncStatus) {
       .catch(() => { dirtyIds.current = new Set([...ids, ...dirtyIds.current]); setPersistedDirtyIds(dirtyIds.current); syncDirtyMirror(); savingRef.current = false; });
   }, [onSyncStatus]);
 
+  // ── TRAVAIL À PLUSIEURS (cf. lib/presence.js) ─────────────────────────────────────────────
+  // Un autre appareil a enregistré un projet → si ce projet est OUVERT ici, on recharge CE projet
+  // seulement (léger) et on le fusionne comme « Actualiser » (mergeWithLocal). Jamais pendant une
+  // sauvegarde ni avec des modifs locales en attente sur ce projet : on réessaie juste après (la
+  // sauvegarde, elle, fusionne déjà champ par champ — syncBase). Projet fermé → marqué « à
+  // recharger » et rechargé à son ouverture (syncOpenProject).
+  const staleRemoteRef = useRef(new Set());
+  const remoteTimersRef = useRef(new Map());
+  const lastRemoteRefreshRef = useRef(new Map());
+  const refreshProject = useCallback(async (projectId) => {
+    if (!projectId || syncPausedRef.current || deletedIdsRef.current.has(projectId)) return 'skip';
+    if (savingRef.current || dirtyIds.current.has(projectId)) return 'busy';
+    if (!projetsRef.current.some(p => p.id === projectId)) return 'skip';
+    const remote = await loadRemoteProject(projectId);
+    if (!remote) return 'skip';
+    if (savingRef.current || dirtyIds.current.has(projectId)) return 'busy'; // modifié pendant le chargement
+    const local = projetsRef.current.find(p => p.id === projectId);
+    if (!local) return 'skip';
+    const { allMerged } = mergeWithLocal([remote], [local], dirtyIds.current, null, deletedIdsRef.current, getDeletedIds('item'), getDeletedIds('loc'));
+    const merged = allMerged.find(p => p.id === projectId);
+    if (!merged) return 'skip';
+    setProjets(ps => ps.map(p => (p.id === projectId ? merged : p)));
+    restrictKnownToState([merged]);
+    return 'ok';
+  }, []);
+  const scheduleRemoteRefresh = useCallback((projectId, delay = 1200) => {
+    if (remoteTimersRef.current.has(projectId)) return;
+    // Au plus un rechargement toutes les 5 s par projet (économie de bande passante Supabase).
+    const wait = Math.max(delay, (lastRemoteRefreshRef.current.get(projectId) || 0) + 5000 - Date.now());
+    remoteTimersRef.current.set(projectId, setTimeout(async () => {
+      remoteTimersRef.current.delete(projectId);
+      if (getMyProjectId() !== projectId) return; // fermé entre-temps → au prochain ouverture
+      lastRemoteRefreshRef.current.set(projectId, Date.now());
+      const r = await refreshProject(projectId);
+      if (r === 'ok' || r === 'skip') staleRemoteRef.current.delete(projectId);
+      else scheduleRemoteRefresh(projectId, 3000); // occupé (sauvegarde / modif en cours) → plus tard
+    }, wait));
+  }, [refreshProject]);
+  useEffect(() => onRemoteSaved(({ projectIds }) => {
+    for (const id of (projectIds || [])) {
+      staleRemoteRef.current.add(id);
+      if (getMyProjectId() === id) scheduleRemoteRefresh(id);
+    }
+  }), [scheduleRemoteRefresh]);
+  useEffect(() => () => { remoteTimersRef.current.forEach(t => clearTimeout(t)); remoteTimersRef.current.clear(); }, []);
+  // À l'ouverture d'un projet modifié ailleurs pendant qu'il était fermé ici.
+  const syncOpenProject = useCallback((projectId) => {
+    if (projectId && staleRemoteRef.current.has(projectId)) scheduleRemoteRefresh(projectId, 300);
+  }, [scheduleRemoteRefresh]);
+
   // Copie Drive du texte : l'état chargé sert de référence (seules les modifs faites ENSUITE ici
   // sont copiées — un appareil au cache ancien ne réécrit pas le fichier au démarrage).
   useEffect(() => {
@@ -1422,5 +1475,5 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject };
 }

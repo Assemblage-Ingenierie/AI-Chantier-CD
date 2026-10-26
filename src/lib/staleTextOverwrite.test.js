@@ -214,3 +214,39 @@ describe('syncBase', () => {
     expect(itemRowSig({ ...built, commentaire: 'x' })).not.toBe(itemRowSig(built));
   });
 });
+
+describe('travail à plusieurs — rechargement en direct d\'un seul projet', () => {
+  it('loadRemoteProject ne charge que ce projet, et la fusion amène le texte du collègue', async () => {
+    const A = await device('A');
+    const aState = await A.storage.loadData();
+    const PC = await device('PC');
+    await pcWritesNewText(PC);
+    // Un autre projet existe en base (créé ailleurs) : il ne doit être ni chargé ni touché.
+    db.T.aichantier_chantiers.push({ id: 'Q', nom: 'Autre', statut: 'en_cours', visites: [{ id: 'VQ', label: 'V' }], updated_at: '2026-10-22T08:00:00.000Z' });
+    db.T.aichantier_chantier_localisations.push({ id: 'zq', chantier_id: 'Q', visite_id: 'VQ', nom: 'Z', sort_order: 0, plan_annotations: null });
+    db.T.aichantier_localisation_items.push({ id: 'q1', localisation_id: 'zq', titre: 'Autre obs', sort_order: 0 });
+
+    switchDevice('A');
+    const remote = await A.storage.loadRemoteProject('P');
+    expect(remote.id).toBe('P');
+    expect(locsOf([remote]).flatMap(l => l.items.map(i => i.id)).sort()).toEqual(['a', 'b']); // pas les obs de Q
+    const local = aState.find(p => p.id === 'P');
+    const { allMerged } = A.mergeWithLocal([remote], [local], new Set());
+    const items = locsOf(allMerged)[0].items;
+    expect(items.find(i => i.id === 'a').commentaire).toBe('Nouveau texte DET 5 (a)');
+    expect(visitOf(allMerged).conclusion).toBe('Conclusion DET 5');
+    A.storage.restrictKnownToState(allMerged);
+    // A continue de travailler sur l'état rechargé : rien n'est perdu de part et d'autre.
+    // Comme l'app (refreshProject) : seul P est remplacé, la liste complète est sauvegardée.
+    const full = aState.map(p => (p.id === 'P' ? editItem(allMerged, 'b', { titre: 'Ferraillage voiles' })[0] : p));
+    expect(await A.storage.saveData(full, null, DIRTY())).toBe(true);
+    expect(row('a').commentaire).toBe('Nouveau texte DET 5 (a)');
+    expect(row('b').titre).toBe('Ferraillage voiles');
+    expect(db.rows('aichantier_localisation_items').find(r => r.id === 'q1').titre).toBe('Autre obs');
+  });
+  it('projet introuvable → null (pas d\'erreur)', async () => {
+    const A = await device('A');
+    expect(await A.storage.loadRemoteProject('nope')).toBeNull();
+  });
+});
+
