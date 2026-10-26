@@ -18,6 +18,8 @@
 //     localStorage) → même URL d'une session à l'autre = cache navigateur = affichage instantané.
 
 import { getSupabase } from '../supabase.js';
+import { invalidateUrls, setCachedUrls } from './urlCache.js';
+import { logWarn } from './logger.js';
 
 const TTL_SEC = 2592000;                     // 30 jours, comme les photos (SIGNED_URL_TTL)
 const SAFETY_MS = 24 * 60 * 60 * 1000;       // re-signe 24 h avant expiration
@@ -212,6 +214,59 @@ export async function getSignedOriginal(src) {
   return p;
 }
 
+// ── AUTO-RÉPARATION d'une image qui ne charge plus (retour Thomas 26/10 : « ça marche, puis ça finit
+// toujours par ne plus marcher », couvertures puis photos) ──────────────────────────────────────
+// Un échec de chargement laissait l'icône pour toute la session, et les liens signés gardés en
+// cache (30 j : urlCache, vignettes, original) étaient resservis tels quels au démarrage suivant.
+// Désormais : on JETTE tous les liens en cache de ce fichier, on en redemande un NEUF à Supabase et
+// on réessaie (3 fois max par fichier et par session, en espaçant). Rien n'est écrit en base.
+export function healPathOf(src) { return photoPathOf(src, true); }
+
+export async function resignFresh(path) {
+  if (!path) return null;
+  try {
+    for (const k of [..._mem.keys()]) if (k.startsWith(`${path}@`)) forget(k);
+    for (const k of [..._bad]) if (k.startsWith(`${path}@`)) _bad.delete(k);
+    invalidateUrls([path]);
+    const sb = await getSupabase();
+    const { data, error } = await sb.storage.from('photos').createSignedUrl(path, TTL_SEC);
+    if (error || !data?.signedUrl) {
+      console.warn('[photo] nouvelle signature impossible', path, error?.message || '');
+      logWarn('photo.resignFailed', { path, error: error?.message || null });
+      return null;
+    }
+    const entry = { url: data.signedUrl, exp: Date.now() + TTL_SEC * 1000 };
+    _mem.set(`${path}@orig`, entry);
+    persist(`${path}@orig`, entry);
+    setCachedUrls({ [path]: data.signedUrl }, TTL_SEC);
+    return data.signedUrl;
+  } catch (e) { console.warn('[photo] nouvelle signature impossible', path, e?.message || e); return null; }
+}
+
+// Diagnostic : code HTTP réel de l'image en échec (console F12 + logs serveur).
+export function probeFailedUrl(url, path) {
+  if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+  fetch(url, { headers: { Range: 'bytes=0-0' } }).then(async (r) => {
+    if (r.ok) return; // passager (l'image se recharge bien maintenant)
+    const body = (await r.text().catch(() => '')).slice(0, 200);
+    console.warn('[photo] chargement refusé par le serveur', r.status, path, body);
+    logWarn('photo.loadFailed', { status: r.status, path, body });
+  }).catch((e) => {
+    console.warn('[photo] chargement impossible (réseau)', path, e?.message || e);
+    logWarn('photo.loadFailed', { status: 0, path, error: String(e?.message || e) });
+  });
+}
+
+const _healCount = new Map(); // chemin → tentatives cette session
+export const HEAL_DELAYS = [1000, 3000, 10000];
+// → délai avant la tentative suivante, ou null si plus de tentative pour ce fichier.
+export function nextHealDelay(path) {
+  const n = _healCount.get(path) || 0;
+  if (n >= HEAL_DELAYS.length) return null;
+  _healCount.set(path, n + 1);
+  return HEAL_DELAYS[n];
+}
+
 // Retours d'affichage du composant <img> : succès (la vignette s'est chargée) / échec.
 export function reportThumbOk() { _fails = 0; }
 export function reportThumbError(key) {
@@ -223,7 +278,7 @@ export function reportThumbError(key) {
 
 // Tests uniquement.
 export function _resetThumbsForTests() {
-  _mem.clear(); _pending.clear(); _bad.clear();
+  _mem.clear(); _pending.clear(); _bad.clear(); _healCount.clear();
   _fails = 0; _off = false;
   _loadPromise = null; _loaded = false; _dbPromise = null;
   _active = 0; _queue.length = 0;
