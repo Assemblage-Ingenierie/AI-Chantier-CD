@@ -2203,6 +2203,7 @@ export async function loadData() {
     }
     pruneBase(syncKeys);
     flushBase();
+    pruneHistoryDaily(); // historique serveur : amincissement quotidien (fire-and-forget)
     // NE PAS mettre à jour le cache local ici : seul saveData() écrit dans
     // localStorage. Cela évite que loadData() n'écrase des modifications
     // locales non encore synchronisées (race condition beforeunload vs microtask).
@@ -2452,4 +2453,98 @@ export async function recoverPhotosFromStorage() {
     }
   } catch (e) { errs.push(e.message); }
   return { recovered, errors: errs };
+}
+
+// ── HISTORIQUE SERVEUR & PHOTOS RETROUVÉES (incident 26/10, Pavillons « Visite DET n°5 ») ─────────
+// Lecture seule de aichantier_history (migration 20261026000000_history_versions.sql). Tant que la
+// migration n'est pas appliquée (table absente) → [] : la section correspondante reste masquée.
+export async function listItemHistory(chantierId, limit = 400) {
+  if (!chantierId) return [];
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_history')
+      .select('id,row_id,op,old_row,changed_at,changed_by')
+      .eq('chantier_id', String(chantierId)).eq('table_name', 'aichantier_localisation_items')
+      .order('changed_at', { ascending: false }).limit(limit);
+    return error ? [] : (data || []);
+  } catch { return []; }
+}
+
+// Amincit les vieilles versions (fonction serveur) — au plus une fois par jour et par appareil.
+const HISTORY_PRUNE_KEY = '_chantierai_history_prune_at';
+export async function pruneHistoryDaily() {
+  try {
+    const last = Number((_hasLS && localStorage.getItem(HISTORY_PRUNE_KEY)) || 0);
+    if (Date.now() - last < 86400000) return;
+    if (_hasLS) localStorage.setItem(HISTORY_PRUNE_KEY, String(Date.now()));
+    const sb = await getSupabase();
+    if (typeof sb?.rpc === 'function') await sb.rpc('aichantier_prune_history');
+  } catch { /* migration absente / hors ligne : rien à faire */ }
+}
+
+// Photos présentes dans Storage pour les observations d'un projet mais plus reliées à aucune
+// observation (lien effacé en base ; le FICHIER n'est jamais supprimé). Cherche dans TOUS les
+// dossiers du projet (`*_{8 premiers caractères de l'id}`), y compris ceux d'un ancien nom.
+// → [{ itemId, path, name, url }] (url signée pour l'aperçu). Ne modifie rien.
+export async function findOrphanStoragePhotos(projet) {
+  const out = [];
+  try {
+    const itemIds = new Set();
+    for (const v of (projet?.visites || [])) for (const l of (v.localisations || [])) for (const it of (l.items || [])) if (it?.id) itemIds.add(String(it.id));
+    if (!projet?.id || !itemIds.size) return out;
+    const sb = await getSupabase();
+    const id8 = String(projet.id).slice(0, 8);
+    const slugs = [];
+    for (let offset = 0; offset < 20000; offset += 1000) {
+      const { data, error } = await sb.storage.from('photos').list('', { limit: 1000, offset });
+      if (error || !data?.length) break;
+      data.forEach(e => { if (!e.metadata && e.name?.endsWith(`_${id8}`)) slugs.push(e.name); });
+      if (data.length < 1000) break;
+    }
+    const files = [];
+    for (const slug of slugs) {
+      const { data: folders } = await sb.storage.from('photos').list(slug, { limit: 1000 });
+      for (const f of (folders || [])) {
+        if (f.metadata || !itemIds.has(f.name)) continue;
+        const { data: fl } = await sb.storage.from('photos').list(`${slug}/${f.name}`, { limit: 1000 });
+        for (const file of (fl || [])) {
+          if (!file?.metadata || !file.name || file.name.includes('_annot')) continue;
+          files.push({ itemId: f.name, path: `${slug}/${f.name}/${file.name}`, name: file.name });
+        }
+      }
+    }
+    if (!files.length) return out;
+    const linked = new Set();
+    const ids = [...new Set(files.map(f => f.itemId))];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data } = await sb.from('aichantier_item_photos').select('storage_url,annotated_storage_url').in('item_id', ids.slice(i, i + 100));
+      (data || []).forEach(r => {
+        if (r.storage_url) linked.add(extractPhotoPath(r.storage_url) ?? r.storage_url);
+        if (r.annotated_storage_url) linked.add(extractPhotoPath(r.annotated_storage_url) ?? r.annotated_storage_url);
+      });
+    }
+    const orphans = files.filter(f => !linked.has(f.path));
+    const urls = await signCommentPaths(orphans.map(f => f.path));
+    orphans.forEach(f => out.push({ ...f, url: urls[f.path] || null }));
+  } catch (e) { console.warn('findOrphanStoragePhotos:', e); }
+  return out;
+}
+
+// Re-relie des fichiers Storage à une observation (insère les lignes photo). Additif uniquement.
+// → [{ id, name, storage_url, url }] des photos effectivement reliées.
+export async function relinkStoragePhotos(itemId, files) {
+  const done = [];
+  try {
+    const sb = await getSupabase();
+    const { data: cur } = await sb.from('aichantier_item_photos').select('storage_url,sort_order').eq('item_id', itemId);
+    const have = new Set((cur || []).map(r => extractPhotoPath(r.storage_url) ?? r.storage_url));
+    let order = (cur || []).reduce((m, r) => Math.max(m, (r.sort_order ?? 0) + 1), 0);
+    for (const f of (files || [])) {
+      if (!f?.path || have.has(f.path)) continue;
+      const row = { id: crypto.randomUUID(), item_id: itemId, name: f.name || '', storage_url: f.path, sort_order: order++ };
+      const { error } = await sb.from('aichantier_item_photos').insert(row);
+      if (!error) { have.add(f.path); done.push({ id: row.id, name: row.name, storage_url: f.path, url: f.url || null }); }
+    }
+  } catch (e) { console.warn('relinkStoragePhotos:', e); }
+  return done;
 }

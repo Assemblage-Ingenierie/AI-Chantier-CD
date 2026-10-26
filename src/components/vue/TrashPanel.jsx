@@ -5,6 +5,9 @@ import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { listSnapshots, getSnapshot } from '../../lib/backupVault.js';
 import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner } from '../../lib/annotRecovery.js';
 import { getDeletedIds } from '../../lib/tombstones.js';
+import { listItemHistory, findOrphanStoragePhotos } from '../../lib/storage.js';
+import { itemMetaFromRow } from '../../lib/obsDates.js';
+import { ITEM_TEXT_FIELDS } from '../../lib/trash.js';
 
 // CORBEILLE DU PROJET (PC — demande Thomas 13/10/2026) : tout ce qui a été supprimé dans CE
 // projet, au même endroit, restaurable en un clic — sans jamais rien écraser :
@@ -12,20 +15,35 @@ import { getDeletedIds } from '../../lib/tombstones.js';
 //   • observations supprimées ;
 //   • annotations disparues des plans (retrouvées dans les sauvegardes de l'appareil).
 // Un élément revenu dans le projet (Annuler, restauration…) disparaît tout seul de la liste.
+// + (incident 26/10) versions précédentes du TEXTE des observations (historique tenu par la base,
+//   migration 20261026) et photos détachées retrouvées dans le stockage (fichier intact, lien perdu).
+
+// Observation (format app) à partir d'une ligne de l'historique serveur.
+const itemFromRow = (r) => ({
+  id: r.id, titre: r.titre ?? '', commentaire: r.commentaire ?? '', commentaireAlign: r.commentaire_align ?? 'left',
+  suivi: r.suivi ?? 'rien', urgence: r.urgence ?? 'basse', statut: r.statut === 'brouillon' ? 'brouillon' : 'rapport',
+  ...itemMetaFromRow(r.meta), photos: [], _photosHydrated: false,
+});
+const TEXT_DEFAULTS = { titre: '', commentaire: '', commentaireAlign: 'left', suivi: 'rien', urgence: 'basse', statut: 'rapport' };
+const textKey = (it) => JSON.stringify(ITEM_TEXT_FIELDS.map(f => (f === 'statut' ? (it?.statut === 'brouillon' ? 'brouillon' : 'rapport') : (it?.[f] ?? TEXT_DEFAULTS[f] ?? null))));
+const excerpt = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
 
 const fmtDate = (ts) => new Date(ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreObservation, onRestoreLostAnnots, onRestoreZoneAnnotations }) {
+export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreObservation, onRestoreLostAnnots, onRestoreZoneAnnotations, onRestoreItemText, onRestoreStoragePhotos }) {
   const [bin, setBin] = useState(null);       // entrées zones + observations de CE projet
   const [lost, setLost] = useState(null);     // annotations disparues (zones existantes)
   const [mergeLost, setMergeLost] = useState(null); // annotations de zones fusionnées (ancienne fusion)
   const [lostItems, setLostItems] = useState(null); // observations disparues (sauvegardes de l'appareil)
   const [done, setDone] = useState({});       // clé → message après restauration
+  const [hist, setHist] = useState(null);     // versions précédentes (historique serveur)
+  const [orphans, setOrphans] = useState(null); // photos détachées : null | 'loading' | [...]
   const multiVisits = (projet.visites || []).length > 1;
 
   useEffect(() => {
     let alive = true;
     listDeletedItems().then(all => { if (alive) setBin(all.filter(e => e.projectId === projet.id)); }).catch(() => alive && setBin([]));
+    listItemHistory(projet.id).then(h => { if (alive) setHist(h); }).catch(() => alive && setHist([]));
     (async () => {
       try {
         const lostScan = createLostAnnotScanner(projet);
@@ -64,9 +82,53 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   // de l'appareil ; celles déjà proposées par la corbeille (suppression volontaire) n'y sont pas.
   const binItemIds = new Set(obs.map(e => e.item.id));
   const lostObs = (lostItems || []).filter(e => !present.items.has(e.item.id) && !binItemIds.has(e.item.id));
+  // Versions précédentes du texte (historique serveur) : seulement celles qui diffèrent du texte
+  // actuel, sans doublon, 5 au plus par observation, dans une zone qui existe encore.
+  const versions = useMemo(() => {
+    const locVisit = new Map(), locNom = new Map(), current = new Map();
+    for (const v of (projet.visites || [])) for (const l of (v.localisations || [])) {
+      locVisit.set(l.id, v.id); locNom.set(l.id, l.nom);
+      for (const it of (l.items || [])) current.set(it.id, it);
+    }
+    const binIds = new Set(obs.map(e => e.item.id));
+    const seen = new Map(), out = [];
+    for (const h of (hist || [])) {
+      const r = h.old_row || {};
+      if (!r.id || !locVisit.has(r.localisation_id)) continue;
+      const cur = current.get(r.id);
+      if (h.op === 'DELETE' && (cur || binIds.has(r.id))) continue;
+      const item = itemFromRow(r);
+      const k = textKey(item);
+      if (cur && k === textKey(cur)) continue;
+      const s = seen.get(r.id) || new Set();
+      if (s.has(k) || s.size >= 5) continue;
+      s.add(k); seen.set(r.id, s);
+      out.push({ key: `h|${h.id}`, op: h.op, ts: h.changed_at, projectId: projet.id, visiteId: locVisit.get(r.localisation_id),
+        locId: r.localisation_id, locNom: locNom.get(r.localisation_id), item, curTitre: cur?.titre });
+    }
+    return out;
+  }, [hist, projet, obs]);
+  const itemTitre = useMemo(() => {
+    const m = new Map();
+    for (const v of (projet.visites || [])) for (const l of (v.localisations || [])) for (const it of (l.items || [])) m.set(it.id, it.titre);
+    return m;
+  }, [projet]);
+  const orphanGroups = useMemo(() => {
+    if (!Array.isArray(orphans)) return [];
+    const g = new Map();
+    for (const f of orphans) { if (!g.has(f.itemId)) g.set(f.itemId, []); g.get(f.itemId).push(f); }
+    return [...g.entries()].map(([itemId, files]) => ({ itemId, files }));
+  }, [orphans]);
+  const scanOrphans = async () => { setOrphans('loading'); setOrphans(await findOrphanStoragePhotos(projet)); };
+  const runAsync = async (key, fn) => {
+    setDone(d => ({ ...d, [key]: '…' }));
+    const r = fn ? await fn() : { ok: false };
+    setDone(d => ({ ...d, [key]: r?.ok ? `✓ ${r.added} remise${r.added > 1 ? 's' : ''}` : 'Impossible' }));
+  };
+
   const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])];
   const scanning = lost == null || mergeLost == null || lostItems == null;
-  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length;
+  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length;
 
   const run = (key, fn, entry) => {
     const res = fn ? fn(entry) : { ok: false };
@@ -162,6 +224,58 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
             })}
           </Section>
 
+          <Section title="Versions précédentes du texte" n={versions.length}>
+            <p style={{ fontSize:11.5, color:DA.gray, lineHeight:1.4, margin:'4px 0 6px' }}>
+              Gardées par le serveur à chaque modification. « Rétablir » remet ce texte ; le texte actuel reste dans l'historique.
+            </p>
+            {versions.map(e => (
+              <Row key={e.key} k={e.key} icon={e.op === 'DELETE' ? '📝' : '🕘'}
+                title={e.item.titre || e.curTitre || 'Observation sans titre'}
+                sub={`${where(e) || 'Zone'} · ${e.op === 'DELETE' ? 'supprimée' : 'version'} du ${fmtDate(e.ts)}${excerpt(e.item.commentaire) ? ` · « ${excerpt(e.item.commentaire)} »` : ''}`}
+                label="Rétablir"
+                onRestore={() => run(e.key, onRestoreItemText, e)}/>
+            ))}
+          </Section>
+
+          {onRestoreStoragePhotos && (
+            <div style={{ marginBottom:14 }}>
+              <p style={{ fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 2px' }}>
+                Photos détachées{Array.isArray(orphans) ? ` (${orphans.length})` : ''}
+              </p>
+              {orphans == null && (
+                <button onClick={scanOrphans}
+                  style={{ marginTop:4, padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:`1.5px solid ${DA.border}`, background:'white', color:DA.black }}>
+                  Chercher les photos détachées de ce projet
+                </button>
+              )}
+              {orphans === 'loading' && <p style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, color:DA.grayL, margin:'4px 0 0' }}><Ic n="spn" s={12}/> Recherche dans le stockage…</p>}
+              {Array.isArray(orphans) && !orphans.length && <p style={{ fontSize:12, color:DA.grayL, margin:'4px 0 0' }}>Aucune photo détachée : toutes les photos stockées sont reliées.</p>}
+              {orphanGroups.map(g => {
+                const k = `p|${g.itemId}`;
+                return (
+                  <div key={k} style={{ padding:'9px 0', borderTop:`1px solid ${DA.grayXL}` }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <div style={{ minWidth:0, flex:1, fontSize:13, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {itemTitre.get(g.itemId) || 'Observation'} · {g.files.length} photo{g.files.length > 1 ? 's' : ''}
+                      </div>
+                      {done[k]
+                        ? <span style={{ flexShrink:0, fontSize:12, fontWeight:700, color: done[k].startsWith('✓') ? DA.urgGrn : DA.gray }}>{done[k]}</span>
+                        : <button onClick={() => runAsync(k, () => onRestoreStoragePhotos(projet.id, g.itemId, g.files))}
+                            style={{ flexShrink:0, padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:`1.5px solid ${DA.red}`, background:'white', color:DA.red, whiteSpace:'nowrap' }}>
+                            Remettre
+                          </button>}
+                    </div>
+                    <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginTop:6 }}>
+                      {g.files.map(f => f.url
+                        ? <img key={f.path} src={f.url} alt="" loading="lazy" style={{ width:44, height:44, objectFit:'cover', borderRadius:5, background:DA.grayXL }}/>
+                        : <span key={f.path} style={{ width:44, height:44, borderRadius:5, background:DA.grayXL }}/>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <Section title="Annotations de plan" n={annots.length}>
             {annots.map(e => {
               const k = e._merge ? `m|${e.srcLocId}` : `a|${e.visiteId}|${e.locId}|${e.planId}`;
@@ -192,7 +306,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
 
           {!empty && (
             <p style={{ fontSize:11, color:DA.grayL, margin:'6px 0 0', lineHeight:1.5 }}>
-              Restaurer ajoute l'élément au projet, sans rien retirer ni écraser.
+              Restaurer ajoute l'élément au projet, sans rien retirer ni écraser{versions.length > 0 && ' (« Rétablir » remplace le texte, l\'ancien reste dans l\'historique)'}.
               {annots.length > 0 && ' Les annotations proviennent des sauvegardes de cet ordinateur.'}
             </p>
           )}
