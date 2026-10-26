@@ -2,16 +2,36 @@ import React, { useRef, useState, useEffect, useLayoutEffect, useImperativeHandl
 import { sanitizeHtml } from '../../lib/markup.jsx';
 import { mapOffset } from '../../lib/liveText.js';
 
-// Position du curseur exprimée en nombre de caractères de texte depuis le début de l'éditeur
-// (co-édition : on la recalcule après l'arrivée du texte d'un collègue).
-function textOffsetIn(root, node, offset) {
-  try { const r = document.createRange(); r.selectNodeContents(root); r.setEnd(node, offset); return r.toString().length; } catch { return null; }
+// CO-ÉDITION : position du curseur repérée dans le HTML (et non en caractères visibles — une
+// LIGNE VIDE n'a aucun caractère : le curseur retombait en fin de ligne précédente et le texte
+// tapé après « Entrée » s'empilait sur la première ligne, retour Thomas 26/10). On pose des
+// repères invisibles au curseur, on lit leur position dans le HTML, on la recalcule dans le HTML
+// fusionné, puis on y replace le curseur.
+const CARET_A = '\uE000', CARET_B = '\uE001';
+function outsideMarkup(html, i) {
+  const lt = html.lastIndexOf('<', i - 1), gt = html.lastIndexOf('>', i - 1);
+  if (lt > gt) { const e = html.indexOf('>', i); i = e < 0 ? html.length : e + 1; }   // dans une balise
+  const amp = html.lastIndexOf('&', i - 1);
+  if (amp >= 0 && i - amp <= 10 && !html.slice(amp, i).includes(';')) {                 // dans « &amp; »
+    const e = html.indexOf(';', amp); if (e >= 0 && e - amp <= 10) i = e + 1;
+  }
+  return i;
 }
-function pointAt(root, n) {
+function takeMarker(root, ch) {
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let left = n, t = null, last = null;
-  while ((t = w.nextNode())) { last = t; if (left <= t.data.length) return [t, left]; left -= t.data.length; }
-  return last ? [last, last.data.length] : [root, root.childNodes.length];
+  let t = null;
+  while ((t = w.nextNode())) {
+    const k = t.data.indexOf(ch);
+    if (k < 0) continue;
+    t.data = t.data.slice(0, k) + t.data.slice(k + 1);
+    if (!t.data.length) { // nœud vide (ligne vide) : curseur posé à sa place dans le parent
+      const parent = t.parentNode, idx = Array.prototype.indexOf.call(parent.childNodes, t);
+      parent.removeChild(t);
+      return [parent, idx];
+    }
+    return [t, k];
+  }
+  return null;
 }
 // Variante « texte VISIBLE » : ignore les légendes d'affichage (data-cap-view), absentes du texte
 // enregistré — sert aux curseurs des collègues (positions calculées sur le texte enregistré).
@@ -36,16 +56,6 @@ function visiblePointAt(root, n) {
   while ((t = w.nextNode())) { if (inCapView(t)) continue; last = t; if (left <= t.data.length) return [t, left]; left -= t.data.length; }
   return last ? [last, last.data.length] : [root, 0];
 }
-function placeCaret(root, a, b) {
-  try {
-    const sel = window.getSelection(); if (!sel) return;
-    const r = document.createRange();
-    const [sn, so] = pointAt(root, a), [en, eo] = pointAt(root, b);
-    r.setStart(sn, so); r.setEnd(en, eo);
-    sel.removeAllRanges(); sel.addRange(r);
-  } catch { /* curseur non restauré : sans gravité */ }
-}
-
 // Convertit l'ancien format markdown (** __ *) en HTML pour l'éditeur
 function mdToHtml(text) {
   if (!text) return '';
@@ -221,20 +231,45 @@ const RichTextArea = forwardRef(function RichTextArea(
       const el = editorRef.current;
       if (!el || isComposing.current || selImg || selGrid) return null;
       const sel = window.getSelection();
-      let caret = null;
+      let mark = null; // [indexA, indexB, html sans repères]
       if (sel && sel.rangeCount && el.contains(sel.anchorNode) && (document.activeElement === el || el.contains(document.activeElement))) {
-        const r = sel.getRangeAt(0);
-        const a = textOffsetIn(el, r.startContainer, r.startOffset), b = textOffsetIn(el, r.endContainer, r.endOffset);
-        if (a != null && b != null) caret = [a, b];
+        try {
+          const r = sel.getRangeAt(0);
+          const endR = r.cloneRange(); endR.collapse(false);
+          const startR = r.cloneRange(); startR.collapse(true);
+          const nB = document.createTextNode(CARET_B); endR.insertNode(nB);
+          const nA = document.createTextNode(CARET_A); startR.insertNode(nA);
+          const marked = el.innerHTML;
+          nA.remove(); nB.remove();
+          const plain = marked.replace(CARET_A, '').replace(CARET_B, '');
+          mark = [marked.indexOf(CARET_A), marked.replace(CARET_A, '').indexOf(CARET_B), plain];
+        } catch { mark = null; }
       }
-      const before = el.textContent;
-      el.innerHTML = sanitizeHtml(normalizeToHtml(html));
+      const next = sanitizeHtml(normalizeToHtml(html));
+      if (mark && mark[0] >= 0 && mark[1] >= 0) {
+        const ia = outsideMarkup(next, mapOffset(mark[2], next, mark[0]));
+        const ib = Math.max(ia, outsideMarkup(next, mapOffset(mark[2], next, mark[1])));
+        el.innerHTML = next.slice(0, ia) + CARET_A + next.slice(ia, ib) + CARET_B + next.slice(ib);
+      } else {
+        el.innerHTML = next;
+        mark = null;
+      }
       normalizeStrayImages(el);
       rebuildCaptionViews(el);
       const ta = textAlign || 'left';
       el.style.textAlign = ta;
       el.querySelectorAll('div,p,li,h1,h2,h3,h4,h5,h6').forEach(bl => { if (bl.getAttribute('data-cap-view') == null) bl.style.textAlign = ta; });
-      if (caret) { const after = el.textContent; placeCaret(el, mapOffset(before, after, caret[0]), mapOffset(before, after, caret[1])); }
+      if (mark) {
+        const pa = takeMarker(el, CARET_A), pb = takeMarker(el, CARET_B);
+        try {
+          if (pa) {
+            const r = document.createRange();
+            r.setStart(pa[0], pa[1]);
+            if (pb) r.setEnd(pb[0], pb[1]); else r.collapse(true);
+            sel.removeAllRanges(); sel.addRange(r);
+          }
+        } catch { /* curseur non restauré : sans gravité */ }
+      }
       return normalizeHtmlOutput(strippedHtml(el));
     },
     // Insère du HTML à la position du curseur (ou en fin si pas de sélection dans l'éditeur).
