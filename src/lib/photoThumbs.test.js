@@ -104,3 +104,25 @@ describe('vignettes allégées des photos', () => {
     expect(T.thumbsDisabled()).toBe(false);
   });
 });
+
+describe('auto-réparation d\'une image qui ne charge plus', () => {
+  it('resignFresh jette les liens en cache du fichier et en redemande un neuf', async () => {
+    const PATH = 'proj_ab12/cover/P/c1.webp';
+    await T.getThumbUrl(PATH, 640, true);           // vignette mise en cache
+    T.reportThumbError(`${PATH}@w640`);             // vignette en échec cette session
+    localStorage.setItem('_sb_url_cache_v1', JSON.stringify({ [PATH]: { url: 'https://old', expiresAt: Date.now() + 9e9 } }));
+    const u = await T.resignFresh(PATH);
+    expect(u).toMatch(/token=T\d+/);
+    expect(calls.at(-1)).toMatchObject({ path: PATH }); expect(calls.at(-1).opts).toBeUndefined(); // original, sans transformation
+    expect(JSON.parse(localStorage.getItem('_sb_url_cache_v1'))[PATH].url).toBe(u); // cache remplacé par le lien neuf
+    expect(T.peekThumb(`${PATH}@w640`)).toBeNull();
+  });
+  it('3 nouveaux essais espacés par fichier et par session, puis on s\'arrête', () => {
+    expect([T.nextHealDelay('a'), T.nextHealDelay('a'), T.nextHealDelay('a'), T.nextHealDelay('a')]).toEqual([1000, 3000, 10000, null]);
+    expect(T.nextHealDelay('b')).toBe(1000);
+  });
+  it('signature refusée → null (l\'appelant garde l\'icône / la copie locale)', async () => {
+    sb.fail = true;
+    expect(await T.resignFresh('x/y.webp')).toBeNull();
+  });
+});

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { thumbKey, peekThumb, getThumbUrl, reportThumbOk, reportThumbError, thumbsDisabled, isPlainPath, getSignedOriginal } from '../../lib/photoThumbs.js';
+import { thumbKey, peekThumb, getThumbUrl, reportThumbOk, reportThumbError, thumbsDisabled, isPlainPath, getSignedOriginal, healPathOf, resignFresh, probeFailedUrl, nextHealDelay } from '../../lib/photoThumbs.js';
 
 // Vignette allégée d'une photo Supabase (cf. lib/photoThumbs.js). Retourne :
 //   src    : URL à afficher — vignette si dispo, ORIGINAL sinon ; null le temps de la signature
@@ -32,6 +32,7 @@ export function useThumb(src, width, { allowPath = false } = {}) {
   // l'original nous-mêmes, sinon la carte restait sur l'icône (retour Thomas 21/10).
   const needOrig = !!(allowPath && cur?.fallback && isPlainPath(src));
   const [orig, setOrig] = useState(null); // { src, url }
+  const [healed, setHealed] = useState(null); // { src, url } — lien re-signé après échec
   useEffect(() => {
     if (!needOrig) return;
     let cancelled = false;
@@ -42,13 +43,25 @@ export function useThumb(src, width, { allowPath = false } = {}) {
   if (!key) return { src, onLoad: () => {}, onError: () => false };
   const usingThumb = !!cur.url && !cur.fallback;
   const fallbackSrc = needOrig ? (orig?.src === src ? orig.url : null) : src;
+  // Auto-réparation (cf. photoThumbs.js) : l'original ne charge pas non plus → lien NEUF, nouvel essai.
+  const healedSrc = healed?.src === src ? healed.url : null;
+  const shown = usingThumb ? cur.url : (cur.fallback ? (healedSrc || fallbackSrc) : null);
   return {
-    src: usingThumb ? cur.url : (cur.fallback ? fallbackSrc : null),
+    src: shown,
     onLoad: () => { if (usingThumb) reportThumbOk(); },
     onError: () => {
-      if (!usingThumb) return false;
-      reportThumbError(key);
-      setState({ key, url: null, fallback: true });
+      if (usingThumb) {
+        reportThumbError(key);
+        setState({ key, url: null, fallback: true });
+        return true;
+      }
+      const path = healPathOf(src);
+      const delay = path ? nextHealDelay(path) : null;
+      if (delay == null) return false; // 3 essais épuisés → l'appelant affiche l'icône
+      probeFailedUrl(shown, path);
+      setTimeout(() => {
+        resignFresh(path).then((u) => { if (u) setHealed({ src, url: u }); });
+      }, delay);
       return true;
     },
   };
