@@ -18,7 +18,8 @@ import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../
 import { mergePrefix } from '../../lib/zoneMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
-import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName } from '../../lib/presence.js';
+import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive } from '../../lib/presence.js';
+import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset } from '../../lib/liveText.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
@@ -344,62 +345,101 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const sessionText    = useRef('');
   const restartTimer   = useRef(null);
 
-  // ── FRAPPE EN DIRECT à plusieurs (comme Google Sheets — lib/presence.js) ───────────────────
-  // Ce que je tape est diffusé aux autres ; ce que tape un collègue dans CETTE observation
-  // s'affiche ici en direct, avec son prénom. Son texte ne remplace un champ QUE si je n'y ai
-  // pas tapé moi-même, que je n'y suis pas et que je ne dicte pas : jamais mon texte écrasé.
-  // Additif : la dictée, l'éditeur et l'enregistrement ne sont pas modifiés.
-  const typedRef = useRef({ titre: false, commentaire: false }); // champs que J'AI modifiés
-  const typingFieldRef = useRef(null);                           // dernier champ que je tape
-  const remoteSetRef = useRef({ titre: null, commentaire: null }); // dernières valeurs reçues appliquées
+  // ── TRAVAIL À PLUSIEURS dans la même observation (comme Google Docs — lib/liveText.js) ──────
+  // Chaque frappe part comme une petite opération (insérer / supprimer) et se FUSIONNE avec celles
+  // du collègue, caractère par caractère : on peut écrire à deux dans la même case, rien n'est
+  // effacé (retour Thomas 26/10 sur la v1 « texte entier » qui écrasait l'autre). Le texte reçu
+  // s'insère sans faire perdre le curseur. Pendant une dictée / une correction IA, il attend la fin.
+  // Le prénom de la personne qui écrit s'affiche au-dessus du champ (lib/presence.js).
+  const titleInputRef = useRef(null);
   const titleFocusRef = useRef(false);
-  const [liveDraft, setLiveDraft] = useState(null); // brouillon d'un collègue sur CETTE observation
-  const markTyping = (field) => { typedRef.current[field] = true; typingFieldRef.current = field; };
-  // Toute modification LOCALE d'un champ (clavier, dictée, correction IA…) = ce champ est à moi.
-  const prevFieldsRef = useRef({ titre: form.titre, commentaire: form.commentaire });
-  useEffect(() => {
-    const prev = prevFieldsRef.current;
-    prevFieldsRef.current = { titre: form.titre, commentaire: form.commentaire };
-    // (seuls les liens des images collées ont changé — re-signature à l'ouverture — ≠ une frappe)
-    const noSrc = (v) => String(v ?? '').replace(/\ssrc="[^"]*"/g, '');
-    for (const f of ['titre', 'commentaire']) {
-      if (form[f] !== prev[f] && form[f] !== remoteSetRef.current[f] && noSrc(form[f]) !== noSrc(prev[f])) markTyping(f);
+  const titleCaretRef = useRef(null);  // curseur du titre à restaurer après un texte reçu
+  const liveRef = useRef(null);        // session de co-édition de CETTE observation
+  const srcMapRef = useRef({});        // liens signés des images du commentaire, par chemin
+  const typingFieldRef = useRef(null);
+  const [liveDraft, setLiveDraft] = useState(null);     // collègue en train d'écrire ici
+  const [liveConflict, setLiveConflict] = useState(false); // il a une autre version (rare)
+  // Affiche le texte fusionné. Renvoie les champs qu'on ne peut pas afficher tout de suite (ils
+  // seront réaffichés un peu plus tard, et ma saisie est rejouée sur le texte partagé).
+  const showLiveText = (fields) => {
+    const refused = {};
+    const patch = {};
+    if (typeof fields.titre === 'string') {
+      const inp = titleInputRef.current;
+      if (titleFocusRef.current && inp) titleCaretRef.current = { before: inp.value, a: inp.selectionStart, b: inp.selectionEnd };
+      patch.titre = fields.titre;
     }
-    if (!projetId || !form.id || !typingFieldRef.current) return; // je n'ai encore rien tapé
-    if (form.titre === remoteSetRef.current.titre && form.commentaire === remoteSetRef.current.commentaire) return; // écho
+    if (typeof fields.commentaire === 'string') {
+      const ta = textareaRef.current;
+      if (recordingRef.current || !ta?.applyRemote) refused.commentaire = true;
+      else {
+        Object.assign(srcMapRef.current, srcMapOf(ta.getEditor?.()?.innerHTML || ''));
+        const { html, missing } = restoreSrc(fields.commentaire, srcMapRef.current);
+        const out = ta.applyRemote(html);
+        if (out == null) refused.commentaire = true;
+        else {
+          patch.commentaire = out;
+          // Image collée par le collègue : je signe son lien pour l'afficher ici.
+          if (missing.length) signCommentPaths(missing).then((map) => {
+            Object.assign(srcMapRef.current, map || {});
+            const ed = textareaRef.current?.getEditor?.();
+            ed?.querySelectorAll('img[data-cimg]').forEach(img => { const u = map?.[img.getAttribute('data-cimg')]; if (u && !img.getAttribute('src')) img.setAttribute('src', u); });
+          }).catch(() => {});
+        }
+      }
+    }
+    if (Object.keys(patch).length) setForm(f => ({ ...f, ...patch }));
+    return refused;
+  };
+  useLayoutEffect(() => {
+    const c = titleCaretRef.current, inp = titleInputRef.current;
+    if (!c || !inp) return;
+    titleCaretRef.current = null;
+    try { inp.setSelectionRange(mapOffset(c.before, inp.value, c.a), mapOffset(c.before, inp.value, c.b)); } catch { /* ignore */ }
+  }, [form.titre]);
+  useEffect(() => {
+    if (!projetId || !form.id) return undefined;
+    const s = createLiveSession({
+      initial: { titre: form.titre || '', commentaire: stripSrc(form.commentaire || '') },
+      send: (m) => sendLive({ ...m, projectId: projetId, itemId: form.id }),
+      onText: (fields) => showLiveText(fields),
+      onConflict: (c) => setLiveConflict(!!c),
+    });
+    liveRef.current = s;
+    const off = onLive((m) => { if (m.projectId === projetId && m.itemId === form.id) s.receive(m); });
+    s.hello();
+    return () => { off(); s.destroy(); liveRef.current = null; broadcastDraftEnd(projetId, form.id); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Toute modification ICI (clavier, dictée, IA…) → opérations envoyées + « Thomas écrit… » chez les autres.
+  useEffect(() => {
+    const s = liveRef.current;
+    if (!s) return;
+    const { changed } = s.local({ titre: form.titre ?? '', commentaire: stripSrc(form.commentaire ?? '') });
+    if (!changed.length) return;
+    typingFieldRef.current = changed[changed.length - 1];
     broadcastDraft(projetId, form.id, { titre: form.titre, commentaire: form.commentaire, field: typingFieldRef.current });
   }, [form.titre, form.commentaire]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => { if (projetId && form.id) broadcastDraftEnd(projetId, form.id); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Dictée / correction IA en cours : le texte reçu attend la fin (ces outils réécrivent le champ).
+  useEffect(() => {
+    liveRef.current?.hold(!!(recording || correcting || improving || spellDiff || improveList || genProposal));
+  }, [recording, correcting, improving, spellDiff, improveList, genProposal]);
   useEffect(() => subscribeDrafts((list) => {
-    const mine = list.filter(d => d.projectId === projetId && d.itemId === form.id).sort((a, b) => b.receivedAt - a.receivedAt)[0] || null;
-    setLiveDraft(mine);
-    if (!mine) return;
-    const editor = textareaRef.current?.getEditor?.();
-    const inEditor = !!(editor && typeof document !== 'undefined' && (document.activeElement === editor || editor.contains(document.activeElement)));
-    const patch = {};
-    if (!typedRef.current.titre && !titleFocusRef.current && typeof mine.titre === 'string') { patch.titre = mine.titre; remoteSetRef.current.titre = mine.titre; }
-    const canComm = !typedRef.current.commentaire && !inEditor && !recordingRef.current && typeof mine.commentaire === 'string';
-    if (canComm) { patch.commentaire = mine.commentaire; remoteSetRef.current.commentaire = mine.commentaire; }
-    if (!Object.keys(patch).length) return;
-    setForm(f => {
-      const next = { ...f, ...patch };
-      if (next.titre === f.titre && next.commentaire === f.commentaire) return f;
-      return next;
-    });
-    if (canComm) bumpSync(); // l'éditeur riche reprend la valeur (même mécanisme que l'IA / la dictée)
+    setLiveDraft(list.filter(d => d.projectId === projetId && d.itemId === form.id && Date.now() - d.receivedAt < 15000).sort((x, y) => y.receivedAt - x.receivedAt)[0] || null);
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const liveColor = liveDraft ? colorFor(liveDraft.userId) : null;
   // Étiquette « Stas écrit… » au-dessus du champ qu'il est en train de taper.
   const liveTag = (field) => {
     if (!liveDraft || liveDraft.field !== field) return null;
-    const clash = typedRef.current[field];
+    const title = liveConflict
+      ? `${liveDraft.name} a ouvert une autre version de cette observation : vos textes ne se fusionnent pas. Fermez puis rouvrez l'observation pour écrire ensemble.`
+      : `${liveDraft.name} écrit en direct — vos textes se fusionnent`;
     return (
-      <span title={clash ? `${liveDraft.name} modifie aussi ce champ : la dernière version enregistrée l'emportera (l'autre restera dans l'historique).` : `${liveDraft.name} écrit en direct`}
+      <span title={title}
         style={{ display:'inline-flex', alignItems:'center', gap:5, marginLeft:8, padding:'1px 8px 1px 2px', borderRadius:20, background:liveColor, color:'white', fontSize:11, fontWeight:700, textTransform:'none', letterSpacing:0, verticalAlign:'middle' }}>
         <span style={{ width:16, height:16, borderRadius:'50%', overflow:'hidden', background:'rgba(255,255,255,0.25)', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:8 }}>
           {liveDraft.avatar ? <img src={liveDraft.avatar} alt="" referrerPolicy="no-referrer" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : (liveDraft.initials || '?')}
         </span>
-        {firstName(liveDraft.name)} {clash ? 'écrit aussi ici' : 'écrit…'}
+        {firstName(liveDraft.name)} {liveConflict ? 'a une autre version' : 'écrit…'}
       </span>
     );
   };
@@ -1152,10 +1192,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           {/* Titre */}
           <div style={{ marginBottom:14 }}>
             <label style={{ display:'block',fontSize:12,fontWeight:600,color:DA.gray,marginBottom:6,textTransform:'uppercase',letterSpacing:0.5 }}>Intitulé{liveTag('titre')}</label>
-            <input value={form.titre} onChange={e => { markTyping('titre'); setForm(f => ({ ...f, titre: e.target.value })); }}
+            <input ref={titleInputRef} value={form.titre} onChange={e => setForm(f => ({ ...f, titre: e.target.value }))}
               placeholder="Ex: Fissures, Humidité…"
               style={{ width:'100%',border:`1px solid ${liveDraft?.field === 'titre' ? liveColor : DA.border}`,boxShadow: liveDraft?.field === 'titre' ? `0 0 0 2px ${liveColor}33` : 'none',borderRadius:8,padding:'12px 14px',fontSize:16,outline:'none',boxSizing:'border-box' }}
-              onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; }}/>
+              onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; liveRef.current?.refresh(); }}/>
             {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
                 par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
                 seulement pour une observation existante. */}
