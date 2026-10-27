@@ -278,7 +278,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0 }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -1053,13 +1053,17 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         setForm(prev => {
           // REPÉRAGE EN DIRECT (retour Thomas 27/10) : photo prise à l'appareil + l'observation a
           // un plan → le plan s'ouvre pour poser le repère de la photo, puis on revient ici.
+          const next = { ...prev, photos: [...prev.photos, ...valid] };
           if (fromCamera && valid.length === 1 && (prev.plans || []).length > 0) {
             const idx = prev.photos.length;
             const counts = prev.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
             const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
             setTimeout(() => { setPlacePhotoIdx(idx); setAnnotatingPlanIdx(Math.max(0, planIdx)); }, 0);
+          } else if (fromCamera && valid.length === 1 && onPlaceOnZonePlan) {
+            // Pas de plan sur l'observation → plan de la ZONE (ou du groupe au-dessus), puis retour ici.
+            setTimeout(() => onPlaceOnZonePlan(next, valid[0]._id), 0);
           }
-          return { ...prev, photos: [...prev.photos, ...valid] };
+          return next;
         });
         if (fromCamera) {
           const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
