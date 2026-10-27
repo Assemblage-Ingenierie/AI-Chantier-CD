@@ -310,6 +310,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
+  // Repérage en direct : photo qu'on vient de prendre à placer sur le plan de l'observation.
+  const [placePhotoIdx, setPlacePhotoIdx] = useState(null);
   const [annotatingCommentImg, setAnnotatingCommentImg] = useState(null); // { path, src } image collée du commentaire
   const [annotatingPlanIdx, setAnnotatingPlanIdx] = useState(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
@@ -493,7 +495,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const [livePhotoPending, setLivePhotoPending] = useState([]); // prénoms de ceux qui envoient une photo
   const photoOverlayRef = useRef(false);
   const removedPhotoKeysRef = useRef(new Set()); // photos que J'AI supprimées : jamais remises
-  photoOverlayRef.current = annotatingPhotoIdx !== null || zoomPhotoIdx !== null || confirmDelPhotoIdx !== null;
+  photoOverlayRef.current = annotatingPhotoIdx !== null || annotatingPlanIdx !== null || zoomPhotoIdx !== null || confirmDelPhotoIdx !== null;
   const photoPathOf = (ph) => {
     const u = ph?.storage_url || (typeof ph?.data === 'string' && /^https?:/.test(ph.data) ? ph.data : null);
     if (!u) return null;
@@ -534,7 +536,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   // l'effet ci-dessus : ma propre suppression est déjà inscrite ; et ici on ne fait que RETIRER.)
   useEffect(() => {
     if (!photoOverlayRef.current && liveRef.current) showLivePhotos(liveRef.current.photos(), { removeOnly: true });
-  }, [annotatingPhotoIdx, zoomPhotoIdx, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [annotatingPhotoIdx, annotatingPlanIdx, zoomPhotoIdx, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   // Mes photos en cours d'envoi : dès que le fichier est en ligne, son chemin est connu → partagée.
   const uploadingKey = (form.photos || []).filter(ph => ph._uploadId && !ph.storage_url).map(ph => ph._uploadId).join(',');
   useEffect(() => {
@@ -1048,7 +1050,17 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             uploadId: ph._uploadId, projetNom, projetId, itemId: form.id, name: ph.name, dataUrl: ph.data,
           }));
         }
-        setForm(prev => ({ ...prev, photos: [...prev.photos, ...valid] }));
+        setForm(prev => {
+          // REPÉRAGE EN DIRECT (retour Thomas 27/10) : photo prise à l'appareil + l'observation a
+          // un plan → le plan s'ouvre pour poser le repère de la photo, puis on revient ici.
+          if (fromCamera && valid.length === 1 && (prev.plans || []).length > 0) {
+            const idx = prev.photos.length;
+            const counts = prev.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
+            const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
+            setTimeout(() => { setPlacePhotoIdx(idx); setAnnotatingPlanIdx(Math.max(0, planIdx)); }, 0);
+          }
+          return { ...prev, photos: [...prev.photos, ...valid] };
+        });
         if (fromCamera) {
           const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
           if (!isIOS) valid.forEach(autoSaveToDevice); // download link ouvre un onglet sur iOS, skip
@@ -1162,14 +1174,16 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         photoVpNums={planPhotoVpNums}
         vpNumByPath={vpNumByPath}
         vpBase={planSessionBase}
+        placePhotoIdx={placePhotoIdx}
         onSave={(paths, exported) => {
           setForm(f => ({
             ...f,
             plans: f.plans.map((p, i) => i === annotatingPlanIdx ? { ...p, planAnnotations: { paths, exported } } : p),
           }));
           setAnnotatingPlanIdx(null);
+          setPlacePhotoIdx(null);
         }}
-        onClose={() => setAnnotatingPlanIdx(null)}
+        onClose={() => { setAnnotatingPlanIdx(null); setPlacePhotoIdx(null); }}
       />
     );
   }

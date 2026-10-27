@@ -630,7 +630,7 @@ function movePath(p, dx, dy) {
   return q;
 }
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null, placePhotoIdx = null }, ref) {
   // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   const cvRef          = useRef();
@@ -662,7 +662,12 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Derniers réglages utilisés (couleur, épaisseur, symbole, forme, mode texte) : retrouvés à la
   // prochaine ouverture, comme dans toute appli de dessin. Lus une fois, jamais bloquant.
   const prefs0 = useMemo(() => { try { return JSON.parse(_lsGet(ANNOT_PREFS_KEY) || '{}') || {}; } catch { return {}; } }, []);
-  const [tool,       setTool]       = useState(initialTool || 'pen');
+  // REPÉRAGE EN DIRECT (retour Thomas 27/10, téléphone) : juste après une prise de vue, le plan
+  // de l'observation s'ouvre avec la photo déjà choisie → on touche le plan à l'endroit de la
+  // photo (glisser = orienter), le repère Vxx est posé, le plan s'enregistre et on revient à
+  // l'observation. « Passer » = revenir sans repérer.
+  const placing = placePhotoIdx != null && !!photos?.[placePhotoIdx];
+  const [tool,       setTool]       = useState(placing ? 'viewpoint' : (initialTool || 'pen'));
   const [color,      setColor]      = useState(() => (typeof prefs0.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(prefs0.color) ? prefs0.color : DA.red));
   const [size,       setSize]       = useState(() => (Number.isFinite(prefs0.size) && prefs0.size > 0 && prefs0.size <= 40 ? prefs0.size : 3));
   const [sym,        setSym]        = useState(() => [...SYMBOLS, ...getCustomSymbolDefs()].find(x => x.id === prefs0.symId) || SYMBOLS[0]);
@@ -682,7 +687,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [inlineEditVal, setInlineEditVal] = useState('');
   const inlineEditCanvasPt = useRef(null); // coords canvas du tap pour les nouveaux textes
   const [selTextIdx, setSelTextIdx] = useState(null);  // index dans paths du texte sélectionné
-  const [activePh,   setActivePh]   = useState(null);
+  const [activePh,   setActivePh]   = useState(() => (placing ? { photoIdx: placePhotoIdx, src: photos[placePhotoIdx].data } : null));
+  const autoPlaceRef = useRef(placing); // repère de la nouvelle photo posé → enregistrer + revenir
+  const vpOfPlaced = (ps) => JSON.stringify((ps || []).find(p => p.type === 'viewpoint' && p.photoIdx === placePhotoIdx) || null);
+  const placeInitRef = useRef(placing ? vpOfPlaced(savedPaths) : null);
   const [pendingVP,  setPendingVP]  = useState(null);
   const [vt,         setVt]         = useState({ z: 1, px: 0, py: 0 });
   const vtRef     = useRef({ z: 1, px: 0, py: 0 });
@@ -2781,6 +2789,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     onClose();
   };
 
+  // Repère de la photo qu'on vient de prendre posé (ou déplacé) → enregistrement automatique et
+  // retour à l'observation (petit délai : on voit le repère apparaître).
+  useEffect(() => {
+    if (!autoPlaceRef.current) return undefined;
+    const vp = vpOfPlaced(paths);
+    if (vp === 'null' || vp === placeInitRef.current) return undefined; // pas encore posé / déplacé
+    if (drawing) return undefined;
+    autoPlaceRef.current = false;
+    const t = setTimeout(() => saveAndClose(), 450);
+    return () => clearTimeout(t);
+  }, [paths, drawing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Fermer : si des modifications ne sont pas enregistrées, on DEMANDE (Thomas : « ne jamais
   // perdre »). Rien à enregistrer → fermeture directe, comme avant. ──
   const hasUnsaved = () => isDirty || !!pendingPolyShape() || (inlineEditPos !== null && inlineEditVal.trim() !== '');
@@ -2911,6 +2931,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     <div style={{ position:'fixed',inset:0,background:'#111',zIndex:50,display:'flex',flexDirection:'column',
       paddingTop:'env(safe-area-inset-top, 0px)',paddingBottom:'env(safe-area-inset-bottom, 0px)',
       paddingLeft:'env(safe-area-inset-left, 0px)',paddingRight:'env(safe-area-inset-right, 0px)' }}>
+
+      {placing && autoPlaceRef.current && (
+        <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:'calc(env(safe-area-inset-bottom, 0px) + 96px)', zIndex:61,
+          display:'flex', alignItems:'center', gap:10, padding:'8px 8px 8px 10px', borderRadius:12, background:'rgba(17,17,17,0.9)', color:'white',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.35)', width:'min(520px, calc(100vw - 24px))', boxSizing:'border-box', pointerEvents:'auto' }}>
+          {photos[placePhotoIdx]?.data && <img src={photos[placePhotoIdx].data} alt="" style={{ width:40, height:40, objectFit:'cover', borderRadius:6, flexShrink:0 }}/>}
+          <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:700, lineHeight:1.3 }}>Touchez le plan là où la photo a été prise<span style={{ display:'block', fontSize:11, fontWeight:500, opacity:0.75 }}>glissez pour indiquer la direction</span></span>
+          <button onClick={() => { autoPlaceRef.current = false; onClose(); }}
+            style={{ flexShrink:0, padding:'8px 12px', borderRadius:9, border:'1px solid rgba(255,255,255,0.3)', background:'transparent', color:'white', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>
+            Passer
+          </button>
+        </div>
+      )}
 
       {/* ── Navigation photo précédente / suivante (flèches cliquables + touches ←/→) ── */}
       {onPrev && (
