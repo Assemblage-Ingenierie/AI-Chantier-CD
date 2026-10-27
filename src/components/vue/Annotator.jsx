@@ -630,6 +630,14 @@ function movePath(p, dx, dy) {
   return q;
 }
 
+// Outils de dessin du tiroir mobile (barre sur une seule ligne).
+const DRAWER_TOOLS = [
+  { k:'pen',    n:'pen', lbl:'Dessin'  },
+  { k:'text',   n:'txt', lbl:'Texte'   },
+  { k:'shape',  n:'shp', lbl:'Formes'  },
+  { k:'symbol', n:'sym', lbl:'Symbole' },
+];
+
 const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null, placePhotoIdx = null }, ref) {
   // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
@@ -763,6 +771,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const [textMode,      setTextMode]      = useState(() => (['plain', 'boxed', 'arrow'].includes(prefs0.textMode) ? prefs0.textMode : 'plain'));
   const [symCat,           setSymCat]           = useState('fissures'); // (conservé — plus d'onglets, rangée unifiée)
   const [showPalette,      setShowPalette]      = useState(false);
+  // Téléphone : outils de dessin regroupés dans un TIROIR (retour Thomas 27/10 : « la barre est sur
+  // deux lignes, pas pratique ») → toute la barre tient sur UNE ligne.
+  const [toolDrawer,       setToolDrawer]       = useState(false);
+  const lastDrawToolRef = useRef('pen');
   const [sizeOpen,         setSizeOpen]         = useState(false); // curseur « Taille » contextuel (tuile épinglée des menus outil)
   const [pendingPortee,    setPendingPortee]    = useState(null);
   const [selAnnot,         setSelAnnot]         = useState(null); // { idx } symbole/viewpoint sélectionné
@@ -1188,6 +1200,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const selectTool = (k) => {
     finishPoly(); // tracé en cours (polyligne/zone) conservé, pas jeté
     setTool(k);
+    if (DRAWER_TOOLS.some(t => t.k === k)) lastDrawToolRef.current = k;
+    setToolDrawer(false);
     if (k === 'symbol') setShowSyms(v => !v); else setShowSyms(false);
     setShowPalette(false); // UN SEUL tiroir à la fois : changer d'outil replie la palette
     setSizeOpen(false);
@@ -2981,10 +2995,34 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         {/* Rangée 1 : outils + undo + sauvegarder. Sur MOBILE, flex-wrap → les outils prennent une
             ligne PLEINE (tous visibles avec label, pas de scroll caché) et les actions passent
             sur la ligne suivante. (retour Thomas : ergonomie téléphone) */}
-        <div style={{ display:'flex',alignItems:'center',gap:8,flexWrap:isMob?'wrap':'nowrap' }}>
-          {/* Outils */}
-          <div style={{ flex:isMob?'1 1 100%':1,overflowX:isMob?'visible':'auto',scrollbarWidth:'none',minWidth:0 }}>
-            <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10,width:isMob?'100%':'max-content' }}>
+        <div style={{ display:'flex',alignItems:'center',gap:isMob?5:8,flexWrap:'nowrap' }}>
+          {/* Outils — téléphone : [Sélect.] [Outil ▾ (tiroir)] [Couleurs], tout sur une ligne */}
+          {isMob ? (() => {
+            const cur = DRAWER_TOOLS.find(t => t.k === tool) || DRAWER_TOOLS.find(t => t.k === lastDrawToolRef.current) || DRAWER_TOOLS[0];
+            const drawActive = DRAWER_TOOLS.some(t => t.k === tool);
+            const mb = (active) => ({ padding:'8px 2px',borderRadius:8,background:active?DA.red:'transparent',color:active?'white':'#aaa',transition:'all 0.15s',flex:1,
+              display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:0 });
+            return (
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10 }}>
+                  <button onClick={() => selectTool('select')} style={mb(tool === 'select')}>
+                    <Ic n="sel" s={24}/><span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>Sélect.</span>
+                  </button>
+                  <button onClick={() => { setToolDrawer(v => !v); setShowPalette(false); setShowSyms(false); }} aria-expanded={toolDrawer}
+                    title="Choisir l'outil (dessin, texte, formes, symbole)" style={{ ...mb(drawActive || toolDrawer), position:'relative' }}>
+                    <Ic n={cur.n} s={24}/>
+                    <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap' }}>{cur.lbl} {toolDrawer ? '▴' : '▾'}</span>
+                  </button>
+                  <button onClick={() => { setShowPalette(v => !v); setShowSyms(false); setToolDrawer(false); }}
+                    style={{ ...mb(showPalette), color:showPalette?'white':color }} title="Couleurs et épaisseur">
+                    <Ic n="pal" s={24}/><span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>Couleurs</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })() : (
+          <div style={{ flex:1,overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
+            <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10,width:'max-content' }}>
               {[
                 // « Sélect. » est le mode PAR DÉFAUT : pas de bouton sur desktop (on en sort en
                 // choisissant un outil, on y revient avec Échap). Conservé sur mobile (pas d'Échap).
@@ -3003,33 +3041,23 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   <span style={{ fontSize:isMob?9:12,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
                 </button>
               ))}
-              {/* Palette — dans le groupe sur mobile */}
-              {isMob && (
-                <button onClick={() => { setShowPalette(v => !v); setShowSyms(false); }}
-                  style={{ padding:'9px 4px',borderRadius:8,background:showPalette?DA.red:'transparent',
-                    color:showPalette?'white':color,transition:'all 0.15s',flex:1,
-                    display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:0 }}
-                  title="Couleurs et épaisseur">
-                  <Ic n="pal" s={26}/>
-                  <span style={{ fontSize:9,fontWeight:700,letterSpacing:0.3 }}>Couleurs</span>
-                </button>
-              )}
             </div>
           </div>
-          {/* Actions — sur mobile, sur leur PROPRE ligne (flex-wrap) et alignées à droite. */}
-          <div style={{ display:'flex',gap:6,flexShrink:0,flex:isMob?'1 1 100%':'0 0 auto',justifyContent:'flex-end' }}>
+          )}
+          {/* Actions — même ligne que les outils (téléphone compris). */}
+          <div style={{ display:'flex',gap:isMob?4:6,flexShrink:0,flex:'0 0 auto',justifyContent:'flex-end' }}>
             <button onClick={requestClose}
-              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
-                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
+              style={{ padding:isMob?'8px 6px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:isMob?44:50,minHeight:44 }}
               title="Fermer">
-              <Ic n="x" s={26}/>
+              <Ic n="x" s={isMob?22:26}/>
               <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Fermer</span>
             </button>
             <button onClick={undoLast} disabled={!canUndo}
-              style={{ padding:isMob?'8px 10px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default',
-                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:50,minHeight:44 }}
+              style={{ padding:isMob?'8px 6px':'8px 12px',borderRadius:8,background:'#333',color:'#aaa',opacity: canUndo ? 1 : 0.4, cursor: canUndo ? 'pointer' : 'default',
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,minWidth:isMob?44:50,minHeight:44 }}
               title="Annuler dernière action (Ctrl+Z)">
-              <Ic n="und" s={26}/>
+              <Ic n="und" s={isMob?22:26}/>
               <span style={{ fontSize:isMob?8:11,color:'#999',letterSpacing:0.3 }}>Annuler</span>
             </button>
             {/* Rétablir — PC (demande Thomas). Grisé tant qu'il n'y a rien à rétablir. */}
@@ -3044,7 +3072,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               </button>
             )}
             <button onClick={saveAndClose}
-              style={{ padding:isMob?'8px 12px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
+              style={{ padding:isMob?'8px 8px':'8px 14px',borderRadius:8,background:DA.red,color:'white',
                 display:'flex',flexDirection:'column',alignItems:'center',gap:3 }}>
               <Ic n="chk" s={isMob?24:20}/>
               <span style={{ fontSize:isMob?9:12,fontWeight:800,letterSpacing:0.3,whiteSpace:'nowrap' }}>{isMob?'Sauv.':'Sauvegarder'}</span>
@@ -3086,6 +3114,22 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           ))}
         </div>}
       </div>
+
+      {/* ── Tiroir des outils (téléphone) : on choisit, il se referme. ── */}
+      {isMob && toolDrawer && (
+        <div style={{ background:DA.black,padding:'4px 12px 8px',flexShrink:0,borderBottom:'1px solid #333' }}>
+          <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10 }}>
+            {DRAWER_TOOLS.map(t => (
+              <button key={t.k} onClick={() => selectTool(t.k)}
+                style={{ padding:'9px 4px',borderRadius:8,background:tool===t.k?DA.red:'transparent',color:tool===t.k?'white':'#ddd',flex:1,
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:3,minWidth:0 }}>
+                <Ic n={t.n} s={26}/>
+                <span style={{ fontSize:10,fontWeight:700,letterSpacing:0.3 }}>{t.lbl}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Palette mobile (tiroir COMPACT : une ligne couleurs + épaisseur ; les curseurs de
              taille sont repliés derrière « Tailles » — on ne les règle qu'occasionnellement).
@@ -3481,8 +3525,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           <div style={{ position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center' }}>
             <canvas ref={cvRef}
               style={{ ...(dispSize ? { width:dispSize.w, height:dispSize.h } : {}), maxWidth:'100%',maxHeight:'100%',display:'block',touchAction:'none',boxShadow:'0 0 40px rgba(0,0,0,0.5)',cursor:spaceDown?'grab':tool==='text'?'text':tool==='select'?'default':'crosshair',transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`,transformOrigin:'50% 50%' }}
-              onMouseDown={e => { if (showPalette) setShowPalette(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
-              onTouchStart={e => { if (showPalette) setShowPalette(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
+              onMouseDown={e => { if (showPalette) setShowPalette(false); if (toolDrawer) setToolDrawer(false); onStart(e); }} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
+              onTouchStart={e => { if (showPalette) setShowPalette(false); if (toolDrawer) setToolDrawer(false); onStart(e); }} onTouchMove={onMove} onTouchEnd={onEnd}
               onContextMenu={e => { e.preventDefault(); finishPoly(); }}
               onDoubleClick={() => {
                 // Double-clic dans le VIDE (outil Sélection) = revenir à la vue entière.
