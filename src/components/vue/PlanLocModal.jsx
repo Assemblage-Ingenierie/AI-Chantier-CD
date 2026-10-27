@@ -7,7 +7,7 @@ import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { freezeVpNumsForZone } from '../../lib/vpNumbering.js';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0, onUploadHd = null }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0, onUploadHd = null, placePhotoIdx = null }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -24,9 +24,16 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     // plan. Persisté à l'enregistrement → la numérotation devient stable définitivement.
     return freezeVpNumsForZone(result, vpNumByPath, vpBase, loc.id ?? null);
   });
-  const directAnnot = annotIdx != null; // opened from thumbnail click — jump straight to annotator
+  // Repérage d'une photo qu'on vient de prendre (lib/zonePlacement.js) : annotateur direct, puis
+  // enregistrement automatique et retour à l'observation.
+  const placing = placePhotoIdx != null;
+  const directAnnot = annotIdx != null || placing; // opened from thumbnail click — jump straight to annotator
   const [annotatingIdx, setAnnotatingIdx] = useState(() => {
     if (annotIdx != null) return annotIdx;
+    if (placing && plans.length) {
+      const counts = plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
+      return Math.max(0, counts.indexOf(Math.max(...counts))); // le plan où l'on repère déjà le plus
+    }
     if (autoAnnot && (loc.planBg || loc.planId)) return 0;
     return null;
   });
@@ -151,6 +158,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
         hqImage={hqImageData}
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
+        placePhotoIdx={placePhotoIdx}
         locId={loc?.id ?? null}
         photoVpNums={photoVpNums}
         exportSizeMultiplier={2}

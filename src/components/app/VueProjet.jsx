@@ -5,6 +5,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
 import { addTombstone, liftTombstone } from '../../lib/tombstones.js';
 import { keepCollaboratorPhotos } from '../../lib/photoMerge.js';
+import { planTargetLoc, placementItems, placementPhotoIdx } from '../../lib/zonePlacement.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -220,6 +221,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       if (!m) return false;
       if (m.t === 'annotate') {
         setModal({ t:'item', locId:m.locId, item:m.form, savedForm:m.form });
+      } else if (m.t === 'plan' && m.placeFor) {
+        // Repérage d'une photo : retour à l'observation en cours (jamais perdue)
+        setModal({ t:'item', locId: m.placeFor.itemLocId, item: m.placeFor.item ?? m.placeFor.form, savedForm: m.placeFor.form });
       } else if (m.t === 'item') {
         // Vérifie si ItemModal a un overlay interne à fermer d'abord
         if (itemModalBackRef.current?.()) return true;
@@ -1333,6 +1337,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               setModal(null);
             }}
             onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
+            // Photo prise sans plan sur l'observation → plan de sa zone (ou du groupe au-dessus)
+            // pour la repérer, puis retour à l'observation telle quelle (lib/zonePlacement.js).
+            onPlaceOnZonePlan={(() => {
+              const target = planTargetLoc(visitProjet.localisations, modal.locId);
+              return target ? (form, key) => setModal({ t:'plan', locId: target.id, placeFor: { form, key, itemLocId: modal.locId, item: modal.item } }) : null;
+            })()}
             onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
             projetId={projet.id ?? null}
@@ -1345,6 +1355,16 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
       {modal?.t === 'plan' && (() => {
         const loc = visitProjet.localisations.find(l => l.id === modal.locId);
+        // Repérage d'une photo qu'on vient de prendre : l'observation en cours (pas encore
+        // enregistrée) figure dans les photos du plan ; à la fermeture → retour à l'observation.
+        const pf = modal.placeFor || null;
+        const planItems = pf ? placementItems(visitProjet.localisations, loc, pf.itemLocId, pf.form) : zonePlanItems(visitProjet.localisations, loc);
+        const placeIdx = pf ? placementPhotoIdx(planItems, pf.key) : null;
+        const closePlan = () => {
+          if (pf) setModal({ t:'item', locId: pf.itemLocId, item: pf.item ?? pf.form, savedForm: pf.form });
+          else if (modal.returnToNiveaux) setModal({ t:'niveaux' });
+          else setModal(null);
+        };
         // Merge annotations from ALL locs sharing the same planId.
         // Deduplication by JSON string prevents doubling when locs are already in sync after a propagation save.
         const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
@@ -1376,14 +1396,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             loc={locForModal}
             // Zone groupe (« R+4 ») : photos de la zone + de ses sous-zones → on peut placer les
             // repères des appartements sur le plan du R+4.
-            items={zonePlanItems(visitProjet.localisations, loc)}
+            items={planItems}
             planLibrary={projet.planLibrary || []}
-            autoAnnot={!!modal.autoAnnot}
+            autoAnnot={!!modal.autoAnnot || !!pf}
+            placePhotoIdx={placeIdx}
             annotIdx={modal.annotIdx ?? null}
             vpNumByPath={vpNumGlobal}
             vpBase={vpMaxGlobal}
             onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
-            onClose={() => modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null)}
+            onClose={closePlan}
             onSave={({ planId, planBg, planData, planAnnotations, extraPlans }) => {
               const prevLoc = visitProjet.localisations.find(l => l.id === modal.locId);
               const planChanged = prevLoc?.planId !== planId || prevLoc?.planBg !== planBg;
@@ -1422,7 +1443,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 }),
               }));
               onUpdate({ visites: updatedVisites });
-              modal.returnToNiveaux ? setModal({ t:'niveaux' }) : setModal(null);
+              closePlan();
             }}
             onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
