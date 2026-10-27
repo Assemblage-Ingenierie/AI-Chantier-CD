@@ -696,7 +696,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const inlineEditCanvasPt = useRef(null); // coords canvas du tap pour les nouveaux textes
   const [selTextIdx, setSelTextIdx] = useState(null);  // index dans paths du texte sélectionné
   const [activePh,   setActivePh]   = useState(() => (placing ? { photoIdx: placePhotoIdx, src: photos[placePhotoIdx].data } : null));
-  const autoPlaceRef = useRef(placing); // repère de la nouvelle photo posé → enregistrer + revenir
+  const autoPlaceRef = useRef(placing); // mode repérage de la nouvelle photo en cours
+  const [placedVp, setPlacedVp] = useState(false); // repère posé → bouton « Valider »
   const vpOfPlaced = (ps) => JSON.stringify((ps || []).find(p => p.type === 'viewpoint' && p.photoIdx === placePhotoIdx) || null);
   const placeInitRef = useRef(placing ? vpOfPlaced(savedPaths) : null);
   const [pendingVP,  setPendingVP]  = useState(null);
@@ -2803,16 +2804,19 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     onClose();
   };
 
-  // Repère de la photo qu'on vient de prendre posé (ou déplacé) → enregistrement automatique et
-  // retour à l'observation (petit délai : on voit le repère apparaître).
+  // Repère de la photo qu'on vient de prendre posé (ou déplacé) → PAS d'enregistrement automatique
+  // (retour Thomas 27/10 : « si je miss-clique, boum, il le met et ferme ») : le repère reste
+  // déplaçable (un nouveau toucher le replace) et on confirme avec « Valider ».
   useEffect(() => {
-    if (!autoPlaceRef.current) return undefined;
+    if (!autoPlaceRef.current || drawing) return;
     const vp = vpOfPlaced(paths);
-    if (vp === 'null' || vp === placeInitRef.current) return undefined; // pas encore posé / déplacé
-    if (drawing) return undefined;
-    autoPlaceRef.current = false;
-    const t = setTimeout(() => saveAndClose(), 450);
-    return () => clearTimeout(t);
+    if (vp === 'null' || vp === placeInitRef.current) return; // pas encore posé / déplacé
+    if (!placedVp) setPlacedVp(true);
+    // Le prochain toucher DÉPLACE ce repère (même photo) au lieu d'en poser un sans photo.
+    if (activePh?.photoIdx !== placePhotoIdx && photos?.[placePhotoIdx]) {
+      setActivePh({ photoIdx: placePhotoIdx, src: photos[placePhotoIdx].data });
+      setTool('viewpoint');
+    }
   }, [paths, drawing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fermer : si des modifications ne sont pas enregistrées, on DEMANDE (Thomas : « ne jamais
@@ -2951,11 +2955,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           display:'flex', alignItems:'center', gap:10, padding:'8px 8px 8px 10px', borderRadius:12, background:'rgba(17,17,17,0.9)', color:'white',
           boxShadow:'0 4px 16px rgba(0,0,0,0.35)', width:'min(520px, calc(100vw - 24px))', boxSizing:'border-box', pointerEvents:'auto' }}>
           {photos[placePhotoIdx]?.data && <img src={photos[placePhotoIdx].data} alt="" style={{ width:40, height:40, objectFit:'cover', borderRadius:6, flexShrink:0 }}/>}
-          <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:700, lineHeight:1.3 }}>Touchez le plan là où la photo a été prise<span style={{ display:'block', fontSize:11, fontWeight:500, opacity:0.75 }}>glissez pour indiquer la direction</span></span>
+          <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:700, lineHeight:1.3 }}>
+            {placedVp ? 'Repère posé' : 'Touchez le plan là où la photo a été prise'}
+            <span style={{ display:'block', fontSize:11, fontWeight:500, opacity:0.75 }}>{placedVp ? 'touchez ailleurs pour le déplacer' : 'glissez pour indiquer la direction'}</span>
+          </span>
           <button onClick={() => { autoPlaceRef.current = false; onClose(); }}
-            style={{ flexShrink:0, padding:'8px 12px', borderRadius:9, border:'1px solid rgba(255,255,255,0.3)', background:'transparent', color:'white', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>
-            Passer
+            style={{ flexShrink:0, padding:'8px 10px', borderRadius:9, border:'1px solid rgba(255,255,255,0.3)', background:'transparent', color:'white', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>
+            {placedVp ? 'Annuler' : 'Passer'}
           </button>
+          {placedVp && (
+            <button onClick={() => { autoPlaceRef.current = false; saveAndClose(); }}
+              style={{ flexShrink:0, padding:'8px 14px', borderRadius:9, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
+              Valider
+            </button>
+          )}
         </div>
       )}
 
