@@ -107,6 +107,7 @@ export function setPresenceLocation(patch) {
   scheduleTrack();
 }
 export function getMyProjectId() { return _me?.projectId ?? null; }
+export function getMyName() { return _me?.name || ''; }
 
 // Après une sauvegarde réussie : prévient les autres appareils (projets concernés).
 export function broadcastSaved(projectIds) {

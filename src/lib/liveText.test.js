@@ -281,3 +281,50 @@ describe('positions HTML ↔ texte affiché', () => {
     expect(htmlToTextOffset(html, html.length)).toBe(5);
   });
 });
+
+describe('photos à plusieurs (liste partagée)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const mk = (tab, q, out) => createLiveSession({
+    initial: { titre: '', commentaire: '' },
+    send: (m) => { q.push({ ...m, tab }); return true; },
+    onText: () => null,
+    onPhotos: (st) => { out.state = st; },
+  });
+  it('une photo prise par Thomas apparaît chez Stas une fois en ligne ; « en cours » avant ; suppression partagée', () => {
+    const q = [], oA = {}, oB = {};
+    const A = mk('A', q, oA), B = mk('B', q, oB);
+    const deliver = () => { while (q.length) { const m = q.shift(); (m.tab === 'A' ? B : A).receive(m); } vi.advanceTimersByTime(80); while (q.length) { const m = q.shift(); (m.tab === 'A' ? B : A).receive(m); } vi.advanceTimersByTime(1); };
+    A.hello(); B.hello(); deliver();
+    A.photosLocal([{ id: 'p0', path: 'proj/i/p0.webp', name: 'a' }], 'Thomas');   // photo déjà là à l'ouverture
+    B.photosLocal([{ id: 'p0', path: 'proj/i/p0.webp', name: 'a' }], 'Stas');
+    deliver();
+    // Thomas prend une photo : pas encore envoyée
+    A.photosLocal([{ id: 'p0', path: 'proj/i/p0.webp' }, { id: 'p1', path: null, pending: true }], 'Thomas');
+    deliver();
+    expect(oB.state.p1).toMatchObject({ pending: true, by: 'Thomas' });
+    // envoyée → chemin réel
+    A.photosLocal([{ id: 'p0', path: 'proj/i/p0.webp' }, { id: 'p1', path: 'proj/i/p1.webp' }], 'Thomas');
+    deliver();
+    expect(oB.state.p1).toMatchObject({ path: 'proj/i/p1.webp' });
+    expect(oB.state.p1.pending).toBeUndefined();
+    // Stas supprime p0 → marquée supprimée chez Thomas
+    B.photosLocal([{ id: 'p1', path: 'proj/i/p1.webp' }], 'Stas');
+    deliver();
+    expect(oA.state.p0).toMatchObject({ del: true });
+    expect(oA.state.p1.path).toBe('proj/i/p1.webp');
+  });
+  it('ajouts simultanés des deux côtés : les deux photos restent', () => {
+    const q = [], oA = {}, oB = {};
+    const A = mk('A', q, oA), B = mk('B', q, oB);
+    const deliver = () => { for (let k = 0; k < 3; k++) { while (q.length) { const m = q.shift(); (m.tab === 'A' ? B : A).receive(m); } vi.advanceTimersByTime(80); } };
+    A.hello(); B.hello(); deliver();
+    A.photosLocal([], 'Thomas'); B.photosLocal([], 'Stas');
+    A.photosLocal([{ id: 'a1', path: 'x/a1.webp' }], 'Thomas');
+    B.photosLocal([{ id: 'b1', path: 'x/b1.webp' }], 'Stas');
+    deliver();
+    expect(Object.keys(oA.state).sort()).toEqual(['a1', 'b1']);
+    expect(Object.keys(oB.state).sort()).toEqual(['a1', 'b1']);
+    expect(oA.state.a1.del).toBeUndefined();
+  });
+});

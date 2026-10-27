@@ -148,7 +148,7 @@ function svAhead(mine, theirs) {
 // send(msg) → true si le message a pu partir. onText(fields) : champs modifiés par les autres
 // (texte sans liens d'images) à afficher — renvoie { champ: true } pour ceux non affichés. onConflict(info|null) : versions différentes non
 // fusionnables (rare) — pour prévenir l'utilisateur.
-export function createLiveSession({ initial, send, onText, onConflict = () => {}, onMarks = () => {}, now = () => Date.now(), timers = BROWSER_TIMERS }) {
+export function createLiveSession({ initial, send, onText, onConflict = () => {}, onMarks = () => {}, onPhotos = () => {}, now = () => Date.now(), timers = BROWSER_TIMERS }) {
   const init = norm(initial);
   let sid = sessionIdOf(init);
   let doc = null;
@@ -180,6 +180,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     const d = new Y.Doc();
     Y.applyUpdate(d, update, 'init');
     d.on('update', onDocUpdate);
+    d.getMap('photos').observe((evt, tr) => { if (tr.origin !== 'local' && !destroyed) timers.setTimeout(emitPhotos, 0); });
     for (const f of LIVE_FIELDS) {
       const yt = d.getText(f);
       yt.observe((evt, tr) => {
@@ -388,6 +389,34 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
     return { changed, fix };
   }
 
+  // ── PHOTOS à plusieurs : liste partagée { id → { path, name, ord, by, pending, del } }. Une photo
+  //    n'est partagée qu'avec un fichier RÉELLEMENT en ligne (path) ; avant : « pending » (affiché
+  //    « Thomas ajoute une photo… » chez les autres). Suppression = marque « del » (pour qu'un
+  //    appareil qui l'avait à l'ouverture la retire aussi).
+  let lastPhotoIds = null;          // photos de MON écran au dernier passage
+  function photoState() { return doc.getMap('photos').toJSON(); }
+  function emitPhotos() { if (!destroyed) onPhotos(photoState()); }
+  // list : [{ id, path|null, name, pending }] = les photos de mon écran, dans l'ordre.
+  function photosLocal(list, myName = '') {
+    if (destroyed || !Array.isArray(list)) return;
+    const map = doc.getMap('photos');
+    const ids = new Set(list.map(p => p.id).filter(Boolean));
+    doc.transact(() => {
+      list.forEach((p, i) => {
+        if (!p.id) return;
+        const cur = map.get(p.id);
+        if (cur?.del && lastPhotoIds?.has(p.id)) return; // supprimée par un collègue : je ne la fais pas revenir
+        if (p.path) {
+          if (!cur || cur.del || cur.pending || cur.path !== p.path) map.set(p.id, { path: p.path, name: p.name || '', ord: cur?.ord ?? now() + i, by: cur?.by || myName });
+        } else if (p.pending && !cur) {
+          map.set(p.id, { pending: true, name: p.name || '', ord: now() + i, by: myName });
+        }
+      });
+      if (lastPhotoIds) for (const id of lastPhotoIds) if (!ids.has(id)) { const cur = map.get(id); if (!cur?.del) map.set(id, { del: true, ord: cur?.ord ?? now() }); }
+    }, 'local');
+    lastPhotoIds = ids;
+  }
+
   function hold(on) {
     if (destroyed) return;
     held = !!on;
@@ -419,7 +448,7 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
   }
 
   return {
-    hello, receive, local, hold, destroy, cursor, marks,
+    hello, receive, local, hold, destroy, cursor, marks, photosLocal, photos: photoState,
     refresh: () => { if (!destroyed && !held) pushRemote(); },
     flush: () => { if (flushTimer) { timers.clearTimeout(flushTimer); flush(); } },
     text: () => textsOf(doc),

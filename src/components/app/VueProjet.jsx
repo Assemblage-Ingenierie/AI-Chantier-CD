@@ -4,6 +4,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
 import { addTombstone, liftTombstone } from '../../lib/tombstones.js';
+import { keepCollaboratorPhotos } from '../../lib/photoMerge.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -1311,6 +1312,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               // eslint-disable-next-line no-unused-vars
               const { _moveTo, ...clean } = form;
               const saved = { ...clean, id: clean.id || crypto.randomUUID() };
+              // Photos ajoutées par un collègue pendant que la fenêtre était ouverte : conservées
+              // (sinon « Enregistrer » les supprimait — lib/photoMerge.js).
+              if (clean.id) {
+                const curItem = (loc?.items || []).find(i => i.id === clean.id);
+                if (curItem?.photos?.length) saved.photos = keepCollaboratorPhotos(modal.item?.photos, saved.photos, curItem.photos);
+              }
               if (_moveTo) {
                 // Déplacement vers une autre zone (ou nouvelle zone) : l'observation garde son id →
                 // la sauvegarde la ré-enregistre sous sa nouvelle zone (garde anti-perte saveRemote).
