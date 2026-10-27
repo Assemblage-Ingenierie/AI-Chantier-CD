@@ -11,14 +11,15 @@ import { buildDiffSegments, diffChunks, applyFixesAtPositions } from '../../lib/
 import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
-import { enqueuePhotoUpload } from '../../lib/photoUploadQueue.js';
+import { enqueuePhotoUpload, getQueuedUploadPath } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 import { mergePrefix } from '../../lib/zoneMerge.js';
+import { photoKey } from '../../lib/photoMerge.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
-import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive } from '../../lib/presence.js';
+import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive, getMyName } from '../../lib/presence.js';
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
@@ -455,6 +456,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       onText: (fields) => showLiveText(fields),
       onConflict: (c) => setLiveConflict(!!c),
       onMarks: (list) => setLiveMarks(toMarks(list)),
+      onPhotos: (state) => showLivePhotos(state),
     });
     liveRef.current = s;
     const off = onLive((m) => { if (m.projectId === projetId && m.itemId === form.id) s.receive(m); });
@@ -483,6 +485,72 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     return () => document.removeEventListener('selectionchange', onSel);
   }, []);
   const sendTitleCursor = (e) => { const s = liveRef.current; if (s) s.cursor('titre', e.target.selectionStart ?? null); };
+  // ── PHOTOS À PLUSIEURS : une photo prise / supprimée ici apparaît / disparaît chez le collègue
+  //    qui a la même observation ouverte (lib/liveText.js). Partagée seulement une fois son fichier
+  //    EN LIGNE (sinon « Thomas ajoute une photo… »). Ajout = à la fin (n'insère rien au milieu).
+  //    Suppression reçue pendant une annotation / un zoom : attend (les photos ne bougent pas
+  //    sous les doigts).
+  const [livePhotoPending, setLivePhotoPending] = useState([]); // prénoms de ceux qui envoient une photo
+  const photoOverlayRef = useRef(false);
+  const removedPhotoKeysRef = useRef(new Set()); // photos que J'AI supprimées : jamais remises
+  photoOverlayRef.current = annotatingPhotoIdx !== null || zoomPhotoIdx !== null || confirmDelPhotoIdx !== null;
+  const photoPathOf = (ph) => {
+    const u = ph?.storage_url || (typeof ph?.data === 'string' && /^https?:/.test(ph.data) ? ph.data : null);
+    if (!u) return null;
+    if (!/^https?:/.test(u)) return u;
+    const m = u.match(/\/object\/(?:public|authenticated|sign)\/photos\/([^?]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  const showLivePhotos = (state, { removeOnly = false } = {}) => {
+    const me = getMyName();
+    const entries = Object.entries(state || {});
+    setLivePhotoPending(entries.filter(([, e]) => e?.pending && !e.del && e.by && e.by !== me).map(([, e]) => firstName(e.by)));
+    const adds = removeOnly ? [] : entries.filter(([, e]) => e && !e.del && e.path).sort((a, b) => (a[1].ord || 0) - (b[1].ord || 0));
+    const dels = new Set(entries.filter(([, e]) => e?.del).map(([id]) => id));
+    setForm(f => {
+      const have = new Set((f.photos || []).map(photoKey));
+      const missing = adds.filter(([id]) => !have.has(id) && !removedPhotoKeysRef.current.has(id));
+      if (missing.length) {
+        signCommentPaths(missing.map(([, e]) => e.path)).then((map) => {
+          setForm(g => {
+            const has2 = new Set((g.photos || []).map(photoKey));
+            const add = missing.filter(([id, e]) => !has2.has(id) && !removedPhotoKeysRef.current.has(id) && map[e.path]).map(([id, e]) => ({ _id: id, id, name: e.name || '', storage_url: e.path, data: map[e.path] }));
+            return add.length ? { ...g, photos: [...(g.photos || []), ...add] } : g;
+          });
+        }).catch(() => {});
+      }
+      if (!dels.size || photoOverlayRef.current) return f;
+      const kept = (f.photos || []).filter(ph => !dels.has(photoKey(ph)));
+      return kept.length === (f.photos || []).length ? f : { ...f, photos: kept };
+    });
+  };
+  // Mes photos → liste partagée (à chaque ajout / suppression / envoi terminé).
+  useEffect(() => {
+    const s = liveRef.current;
+    if (!s) return;
+    s.photosLocal((form.photos || []).map(ph => ({ id: photoKey(ph), path: photoPathOf(ph), name: ph.name || '', pending: !photoPathOf(ph) && !!ph._uploadId })), getMyName());
+  }, [form.photos]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Suppressions reçues pendant une annotation / un zoom : appliquées à la fermeture. (APRÈS
+  // l'effet ci-dessus : ma propre suppression est déjà inscrite ; et ici on ne fait que RETIRER.)
+  useEffect(() => {
+    if (!photoOverlayRef.current && liveRef.current) showLivePhotos(liveRef.current.photos(), { removeOnly: true });
+  }, [annotatingPhotoIdx, zoomPhotoIdx, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mes photos en cours d'envoi : dès que le fichier est en ligne, son chemin est connu → partagée.
+  const uploadingKey = (form.photos || []).filter(ph => ph._uploadId && !ph.storage_url).map(ph => ph._uploadId).join(',');
+  useEffect(() => {
+    if (!uploadingKey || !projetId) return undefined;
+    let alive = true;
+    const check = async () => {
+      const ids = uploadingKey.split(',');
+      const found = {};
+      for (const id of ids) { const path = await getQueuedUploadPath(id).catch(() => null); if (path) found[id] = path; }
+      if (!alive || !Object.keys(found).length) return;
+      setForm(f => ({ ...f, photos: (f.photos || []).map(ph => (ph._uploadId && found[ph._uploadId] && !ph.storage_url ? { ...ph, storage_url: found[ph._uploadId] } : ph)) }));
+    };
+    check();
+    const t = setInterval(check, 2500);
+    return () => { alive = false; clearInterval(t); };
+  }, [uploadingKey, projetId]); // eslint-disable-line react-hooks/exhaustive-deps
   // Dictée / correction IA en cours : le texte reçu attend la fin (ces outils réécrivent le champ).
   useEffect(() => {
     liveRef.current?.hold(!!(recording || correcting || improving || spellDiff || improveList || genProposal));
@@ -1589,7 +1657,13 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           {/* Photos — pleine largeur */}
           <div style={{ marginBottom:14 }}>
             <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:6,flexWrap:'wrap' }}>
-              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})</label>
+              <label style={{ fontSize:12,fontWeight:600,color:DA.gray,textTransform:'uppercase',letterSpacing:0.5 }}>Photos ({form.photos.length})
+                {livePhotoPending.length > 0 && (
+                  <span style={{ marginLeft:8, display:'inline-flex', alignItems:'center', gap:4, padding:'1px 8px', borderRadius:20, background:DA.grayXL, color:DA.gray, fontSize:11, fontWeight:700, textTransform:'none', letterSpacing:0 }}>
+                    <Ic n="spn" s={11}/> {[...new Set(livePhotoPending)].join(', ')} ajoute{livePhotoPending.length > 1 ? 'nt' : ''} une photo…
+                  </span>
+                )}
+              </label>
               <div style={{ display:'flex',gap:6,flexShrink:0 }}>
                 {form.photos.length > 0 && (
                   <button onClick={saveAllPhotosToDevice} disabled={savingPhone} title="Enregistrer les photos dans le téléphone (galerie / Photos)"
@@ -1772,7 +1846,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             <div style={{ width:36, height:4, background:'#DDD', borderRadius:2, margin:'0 auto 18px' }}/>
             <p style={{ textAlign:'center', fontSize:13, color:DA.gray, margin:'0 0 16px', fontWeight:600 }}>Supprimer cette photo ?</p>
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              <button onClick={() => { setForm(f => ({ ...f, photos: f.photos.filter((_,j) => j !== confirmDelPhotoIdx) })); setConfirmDelPhotoIdx(null); }}
+              <button onClick={() => { const k = photoKey(form.photos[confirmDelPhotoIdx]); if (k) removedPhotoKeysRef.current.add(k); setForm(f => ({ ...f, photos: f.photos.filter((_,j) => j !== confirmDelPhotoIdx) })); setConfirmDelPhotoIdx(null); }}
                 style={{ width:'100%', padding:'15px', background:'#B91C1C', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:800, cursor:'pointer' }}>
                 Supprimer
               </button>
