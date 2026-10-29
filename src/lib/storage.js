@@ -568,8 +568,15 @@ const NO_COVER_TTL = 3 * 24 * 3600 * 1000;
 function loadNoCover() { try { return JSON.parse((_hasLS && localStorage.getItem(NO_COVER_KEY)) || '{}') || {}; } catch { return {}; } }
 function saveNoCover(m) { try { if (_hasLS) localStorage.setItem(NO_COVER_KEY, JSON.stringify(m)); } catch { /* mode privé / quota */ } }
 
+// Le dernier chargement des couvertures a-t-il ÉCHOUÉ (serveur / stockage injoignable) ? Dans ce
+// cas on ne conclut PAS que les affaires n'ont plus de couverture : les copies gardées sur
+// l'appareil restent affichées (retour Thomas 29/10 : toutes les couvertures disparues d'un coup).
+let _coverLoadFailed = false;
+export function coverLoadFailed() { return _coverLoadFailed; }
+
 export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
   if (!chantierIds.length) return {};
+  _coverLoadFailed = false;
   try {
     const sb = await getSupabase();
     const BATCH = 10;
@@ -585,10 +592,12 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
       if (!dbErr) return data || [];
       console.warn('hydrateChantierPhotos DB error (lot repris une par une):', dbErr);
       const one = [];
+      let lastErr = dbErr;
       for (const id of batch) {
         const { data: d1, error: e1 } = await selectRows([id]);
-        if (!e1 && d1) one.push(...d1);
+        if (!e1 && d1) one.push(...d1); else lastErr = e1 || lastErr;
       }
+      if (!one.length) { _coverLoadFailed = true; logWarn('cover.load', { stage: 'db', code: lastErr?.code ?? null, status: lastErr?.status ?? null, error: lastErr?.message || String(lastErr) }); }
       return one;
     }))).flat();
     const data = rows;
@@ -662,7 +671,12 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
     if (missing.length === 0) return result;
 
     const { data: signed, error: storErr } = await sb.storage.from('photos').createSignedUrls(missing, SIGNED_URL_TTL);
-    if (storErr) { console.warn('hydrateChantierPhotos storage error:', storErr); return result; }
+    if (storErr) {
+      console.warn('hydrateChantierPhotos storage error:', storErr);
+      _coverLoadFailed = true;
+      logWarn('cover.load', { stage: 'storage', status: storErr?.statusCode ?? storErr?.status ?? null, error: storErr?.message || String(storErr), n: missing.length });
+      return result;
+    }
     const fresh = {};
     const broken = [];
     (signed ?? []).forEach((s, idx) => {
@@ -693,7 +707,12 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
       }));
     }
     return result;
-  } catch (e) { console.warn('hydrateChantierPhotos error:', e); return {}; }
+  } catch (e) {
+    console.warn('hydrateChantierPhotos error:', e);
+    _coverLoadFailed = true;
+    logWarn('cover.load', { stage: 'exception', error: String(e?.message || e) });
+    return {};
+  }
 }
 
 export async function hydratePlanLibrary(projectId) {
