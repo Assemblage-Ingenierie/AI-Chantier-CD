@@ -300,7 +300,6 @@ export const COSTAR_HELLO = [
   'J\'ai mon casque, j\'ai mes lunettes, go !',
   'Je relis plus vite qu\'un castor abat un bouleau',
   'Tu veux une note ? Je suis sévère mais juste',
-  'Peace ! Montre-moi ce rapport ✌️',
   'J\'ai fini ma sieste, je suis tout ouïe (et tout dents)',
   'Un rapport ? Je laisse tomber ma guitare, j\'arrive',
   'Tu me paies en sirop d\'érable ? Bon, OK, je relis gratis',
@@ -316,7 +315,6 @@ export const COSTAR_SCORE_QUIPS = {
     'C\'est écœurant ! J\'en ai la queue qui frétille.',
     'Au boutte ! Je l\'encadre dans ma cabane.',
     'Même ma mère castor aurait rien à redire.',
-    'Peace & love, rien à redire ✌️',
     'Je sors le haut-de-forme : chapeau bas, l\'ingénieur.',
   ],
   good: [

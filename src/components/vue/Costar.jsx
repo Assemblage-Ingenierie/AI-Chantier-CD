@@ -264,9 +264,9 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       {o.body === 'slip' && !o.feet && (
         <path d="M34.6 121.4 Q44 116.4 53.4 121.4 M62.6 121.4 Q72 116.4 81.4 121.4" stroke="#111827" strokeWidth="1.8" fill="none" strokeLinecap="round"/>
       )}
-      {o.hand !== 'peace' && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>}
-      {o.hand !== 'peace' && <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>}
-      {o.body === 'costard' && o.hand !== 'peace' && (
+      <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>
+      <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {o.body === 'costard' && (
         <g>
           <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>
           <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>
@@ -278,7 +278,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <path d="M66.6 93.4 L72.4 92.2" stroke="#9CA3AF" strokeWidth="0.8"/>
         </g>
       )}
-      {o.body === 'pull' && o.hand !== 'peace' && (
+      {o.body === 'pull' && (
         <g stroke="#5FA8E0" strokeWidth="0.8">
           <ellipse cx="37" cy="91" rx="5.5" ry="4" transform="rotate(20 37 91)" fill="#A5D8FF"/>
           <ellipse cx="79" cy="91" rx="5.5" ry="4" transform="rotate(-20 79 91)" fill="#A5D8FF"/>
@@ -311,19 +311,16 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <ellipse cx="80" cy="93" rx="4.5" ry="5.5" fill="#6E4521"/>
         </g>
       )}
-      {/* Peace & love : les deux pattes levées, index et majeur en V (le droit = le gauche en miroir) */}
+      {/* Peace & love, version MIGNONNE (retour Thomas : « les mains comme maintenant, juste deux tout
+          petits doigts ») : pattes au repos, deux mini-doigts en V qui dépassent de chacune. */}
       {o.hand === 'peace' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          {[1, -1].map(d => (
-            <g key={d} transform={d === 1 ? undefined : 'translate(116 0) scale(-1 1)'}>
-              <path d="M38 94 Q27 89 22 76" stroke="#6E4521" strokeWidth="9" fill="none"/>
-              <path d="M19.6 68 L15.4 55.6" stroke="#6E4521" strokeWidth="4.4"/>
-              <path d="M24 67.4 L25.4 54.6" stroke="#6E4521" strokeWidth="4.4"/>
-              <circle cx="21.6" cy="72" r="6" fill="#6E4521"/>
-              <path d="M17 73.4 Q21.6 76.6 26.4 73" stroke="#4A2E17" strokeWidth="1" fill="none"/>
-              <path d="M26 70 Q28.4 71.6 27 74.2" stroke="#4A2E17" strokeWidth="1" fill="none"/>
-              <ellipse cx="15.2" cy="55.2" rx="1.2" ry="0.9" fill="#DDAA78"/>
-              <ellipse cx="25.4" cy="54.2" rx="1.2" ry="0.9" fill="#DDAA78"/>
+        <g strokeLinecap="round">
+          {(o.body === 'costard' ? [[36.4, 103.4, 1], [79.6, 103.4, -1]] : [[38.6, 91.4, 1], [77.4, 91.4, -1]]).map(([x, y, d]) => (
+            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`}>
+              <path d="M-1.6 0.6 L-2.8 -4.2" stroke="#6E4521" strokeWidth="2.9"/>
+              <path d="M1.4 0.6 L2.2 -4.3" stroke="#6E4521" strokeWidth="2.9"/>
+              <circle cx="-2.8" cy="-4.4" r="0.75" fill="#E8B48A"/>
+              <circle cx="2.2" cy="-4.5" r="0.75" fill="#E8B48A"/>
             </g>
           ))}
         </g>
