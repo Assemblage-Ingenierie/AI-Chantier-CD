@@ -39,8 +39,21 @@ function useCostarState() {
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
 // Bottes vues DE FACE (comme le reste de Costar), dessinées autour de x = 0 : la gauche est
-// posée en x = 44, la droite en x = 72 (en miroir). kind = 'santiags' | 'securite'.
+// posée en x = 44, la droite en x = 72 (en miroir). kind = 'santiags' | 'securite' | 'claquettes'.
 function Boot({ kind }) {
+  // Claquettes-chaussettes : chaussette blanche de sport à rayures + claquette noire.
+  if (kind === 'claquettes') {
+    return (
+      <g strokeLinejoin="round" strokeLinecap="round">
+        <path d="M-6.4 111 L6.4 111 L6.6 122 Q7.6 128 0 128.4 Q-7.6 128 -6.6 122 Z" fill="white" stroke="#D1D5DB" strokeWidth="0.8"/>
+        <rect x="-6.4" y="112.6" width="12.8" height="1.6" fill="#DC2626"/>
+        <rect x="-6.4" y="115.2" width="12.8" height="1.6" fill="#2563EB"/>
+        <path d="M-9.4 127.4 Q-9.4 130.4 -6.4 130.4 L6.4 130.4 Q9.4 130.4 9.4 127.4 Z" fill="#111827"/>
+        <path d="M-8.6 121.8 Q0 118.6 8.6 121.8 L8.8 126.6 Q0 123.8 -8.8 126.6 Z" fill="#1F2937" stroke="#0B0F1A" strokeWidth="0.6"/>
+        <path d="M-4.4 123.4 L4.4 122.6" stroke="white" strokeWidth="1.1"/>
+      </g>
+    );
+  }
   if (kind === 'santiags') {
     return (
       <g strokeLinejoin="round" strokeLinecap="round">
@@ -79,11 +92,57 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
+      {/* Skis plantés DERRIÈRE Costar, même style que la planche (retour Thomas) : spatules relevées,
+          dégradé, bande déco, fixations. */}
+      {o.extra === 'skis' && (
+        <g strokeLinejoin="round" strokeLinecap="round">
+          <defs>
+            <linearGradient id="costar-ski" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#F43F5E"/><stop offset="0.55" stopColor="#FB923C"/><stop offset="1" stopColor="#FDE68A"/>
+            </linearGradient>
+          </defs>
+          {[[103, -6], [103, 7]].map(([x, a]) => ( // croisés en X, dans le cadre
+            <g key={a} transform={`rotate(${a} ${x} 116)`}>
+              <path d={`M${x - 3.4} 116 L${x - 3.4} 26 Q${x - 3.4} 17 ${x} 15 Q${x + 3.4} 17 ${x + 3.4} 26 L${x + 3.4} 116 Q${x} 118.6 ${x - 3.4} 116 Z`} fill="url(#costar-ski)" stroke="#9F1239" strokeWidth="0.9"/>
+              <path d={`M${x - 3.4} 46 L${x + 3.4} 43 M${x - 3.4} 49.4 L${x + 3.4} 46.4`} stroke="white" strokeWidth="1.1"/>
+              <circle cx={x} cy="34" r="1.6" fill="white"/>
+              <rect x={x - 4.2} y="82" width="8.4" height="5" rx="1.2" fill="#1F2937"/>
+              <rect x={x - 3} y="90" width="6" height="2.6" rx="1" fill="#6B7280"/>
+              <path d={`M${x - 1.6} 30 L${x - 1.6} 110`} stroke="white" strokeWidth="0.6" opacity="0.5"/>
+            </g>
+          ))}
+        </g>
+      )}
       {/* Queue (derrière) */}
       <g className="costar-tail">
         <ellipse cx="94" cy="108" rx="23" ry="11" transform="rotate(-28 94 108)" fill="#4A2E17"/>
         <path d="M80 104 L106 98 M82 111 L109 104 M86 117 L110 110 M88 98 L96 121 M97 95 L104 117" stroke="#36210F" strokeWidth="1.2" opacity="0.7"/>
       </g>
+      {/* Planche de surf, plantée DERRIÈRE Costar (accessoire) : large, dégradé lagon, latte centrale,
+          soleil couchant + vague, liseré de rail, dérive. */}
+      {o.extra === 'surf' && (
+        <g transform="rotate(-10 19 76)" strokeLinejoin="round" strokeLinecap="round">
+          <defs>
+            <linearGradient id="costar-surf" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#FDE68A"/><stop offset="0.45" stopColor="#5EEAD4"/><stop offset="1" stopColor="#0EA5E9"/>
+            </linearGradient>
+            <clipPath id="costar-surf-clip"><path d="M19 24 C35 40 36 98 19 124 C2 98 3 40 19 24 Z"/></clipPath>
+          </defs>
+          <path d="M19 24 C35 40 36 98 19 124 C2 98 3 40 19 24 Z" fill="url(#costar-surf)" stroke="#0E7490" strokeWidth="1.1"/>
+          <g clipPath="url(#costar-surf-clip)">
+            <circle cx="19" cy="60" r="7.5" fill="#FB923C"/>
+            <path d="M0 64 Q6 58 12 64 Q18 70 24 64 Q30 58 38 64 L38 72 L0 72 Z" fill="#0284C7"/>
+            <path d="M0 64 Q6 58 12 64 Q18 70 24 64 Q30 58 38 64" stroke="white" strokeWidth="1.2" fill="none"/>
+            <path d="M0 92 L38 86 L38 90 L0 96 Z" fill="#F43F5E" opacity="0.9"/>
+            <path d="M0 98 L38 92 L38 93.6 L0 99.6 Z" fill="white" opacity="0.9"/>
+          </g>
+          <path d="M19 26 L19 122" stroke="white" strokeWidth="0.7" opacity="0.7"/>
+          <path d="M11.6 42 C8.4 58 8 80 10.4 100" stroke="white" strokeWidth="1.3" fill="none" opacity="0.55"/>
+          <path d="M16.6 114 L19 123 L21.4 114 Z" fill="#0E7490"/>
+        </g>
+      )}
+      {/* Bouée canard : arrière de l'anneau (derrière le corps) */}
+      {o.waist === 'bouee' && <path d="M22 108 Q58 92 94 108" stroke="#EAB308" strokeWidth="8" fill="none" strokeLinecap="round"/>}
       {/* Corps */}
       <ellipse cx="58" cy="100" rx="33" ry="27" fill="#8A5A2E"/>
       <ellipse cx="58" cy="106" rx="21" ry="17" fill="#C9935C"/>
@@ -156,6 +215,62 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <path d="M56.5 111 Q58 113.5 59.5 111" stroke="#8A5A2E" strokeWidth="1.2" fill="none"/>
         </g>
       )}
+      {/* Chemise hawaïenne turquoise à fleurs d'hibiscus, col ouvert, boutons */}
+      {o.body === 'hawai' && (
+        <g strokeLinecap="round" strokeLinejoin="round">
+          <defs><clipPath id="costar-shirt-clip"><ellipse cx="58" cy="100" rx="33" ry="27"/></clipPath></defs>
+          <g clipPath="url(#costar-shirt-clip)">
+            <path d="M20 70 L96 70 L96 112 Q58 120 20 112 Z" fill="#0891B2"/>
+            {[[33, 92], [45, 108], [73, 91], [82, 106], [60, 113], [36, 104]].map(([x, y], k) => (
+              <g key={k} transform={`translate(${x} ${y}) rotate(${k * 37})`}>
+                {[0, 72, 144, 216, 288].map(a => <ellipse key={a} cx="0" cy="-3" rx="2" ry="3.2" fill="#F472B6" transform={`rotate(${a})`}/>)}
+                <circle r="1.3" fill="#FDE047"/>
+              </g>
+            ))}
+            {[[40, 88], [70, 100], [52, 116], [87, 96]].map(([x, y], k) => <path key={k} d={`M${x} ${y} q3 -4 7 -1 q-3 4 -7 1 Z`} fill="#22C55E"/>)}
+            <path d="M20 112 Q58 120 96 112" stroke="#0E7490" strokeWidth="1.2" fill="none"/>
+          </g>
+          <polygon points="58,99 47,84 52,82 58,93" fill="#22D3EE" stroke="#0E7490" strokeWidth="0.7"/>
+          <polygon points="58,99 69,84 64,82 58,93" fill="#22D3EE" stroke="#0E7490" strokeWidth="0.7"/>
+          <circle cx="58" cy="104" r="1" fill="white"/><circle cx="58" cy="110" r="1" fill="white"/>
+        </g>
+      )}
+      {/* Chemise de bûcheron : carreaux rouges et noirs, poches à rabat, boutons */}
+      {o.body === 'bucheron' && (
+        <g>
+          <defs>
+            <clipPath id="costar-plaid-clip"><ellipse cx="58" cy="100" rx="33" ry="27"/></clipPath>
+            <pattern id="costar-plaid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="#B91C1C"/>
+              <rect width="10" height="4" fill="#111827" opacity="0.55"/>
+              <rect width="4" height="10" fill="#111827" opacity="0.55"/>
+              <path d="M7 0 L7 10 M0 7 L10 7" stroke="#7F1D1D" strokeWidth="0.6"/>
+            </pattern>
+          </defs>
+          <g clipPath="url(#costar-plaid-clip)">
+            <path d="M20 70 L96 70 L96 116 Q58 124 20 116 Z" fill="url(#costar-plaid)"/>
+          </g>
+          <path d="M58 92 L58 118" stroke="#111827" strokeWidth="0.8"/>
+          <circle cx="58" cy="99" r="1" fill="#F3F4F6"/><circle cx="58" cy="106" r="1" fill="#F3F4F6"/><circle cx="58" cy="113" r="1" fill="#F3F4F6"/>
+          <rect x="41" y="94" width="10" height="9" rx="1" fill="url(#costar-plaid)" stroke="#111827" strokeWidth="0.7"/>
+          <rect x="65" y="94" width="10" height="9" rx="1" fill="url(#costar-plaid)" stroke="#111827" strokeWidth="0.7"/>
+          <path d="M41 97 L51 97 M65 97 L75 97" stroke="#111827" strokeWidth="0.8"/>
+          <polygon points="58,93 49,85 53,83 58,89" fill="#991B1B" stroke="#111827" strokeWidth="0.6"/>
+          <polygon points="58,93 67,85 63,83 58,89" fill="#991B1B" stroke="#111827" strokeWidth="0.6"/>
+        </g>
+      )}
+      {/* Bouée canard : avant de l'anneau (rayures rouges) + tête de canard */}
+      {o.waist === 'bouee' && (
+        <g strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 108 Q58 126 94 108" stroke="#FACC15" strokeWidth="9" fill="none"/>
+          <path d="M34 115.6 L36 112 M50 119.6 L51 115.6 M66 119.6 L65 115.6 M82 115.6 L80 112" stroke="#EF4444" strokeWidth="4"/>
+          <path d="M30 111 Q58 124 86 111" stroke="white" strokeWidth="1.2" fill="none" opacity="0.6"/>
+          <path d="M93 109 Q91 96 99 94 Q106 94 105 101" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.8"/>
+          <circle cx="100" cy="93" r="6" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.8"/>
+          <path d="M105 92 L111 93.5 L105 96 Z" fill="#F97316"/>
+          <circle cx="101.6" cy="91.4" r="1.1" fill="#111827"/>
+        </g>
+      )}
       {/* Pattes (les chaussures du vestiaire les remplacent) */}
       {!o.feet && <ellipse cx="44" cy="124" rx="9" ry="5" fill="#3B2412"/>}
       {!o.feet && <ellipse cx="72" cy="124" rx="9" ry="5" fill="#3B2412"/>}
@@ -214,6 +329,35 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <ellipse cx="86" cy="83.6" rx="6.3" ry="1.6" fill="#5B3A1E"/>
           <rect x="81" y="89" width="10" height="3" rx="1" fill="white" opacity="0.85"/>
           <ellipse cx="80" cy="93" rx="4.5" ry="5.5" fill="#6E4521"/>
+        </g>
+      )}
+      {/* Peace & love, version castor (retour Thomas : « des petites griffes de castor ») : pattes au
+          repos, deux petites griffes claires qui dépassent en V. */}
+      {o.hand === 'peace' && (
+        <g>
+          {(o.body === 'costard' ? [[36.4, 103.2, 1], [79.6, 103.2, -1]] : [[38.8, 91.6, 1], [77.2, 91.6, -1]]).map(([x, y, d]) => (
+            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`} fill="#F5E6D3" stroke="#A47148" strokeWidth="0.45" strokeLinejoin="round">
+              <path d="M-2.6 0.4 Q-3.6 -1.8 -3.4 -3.6 Q-1.8 -2.2 -1 0.2 Z"/>
+              <path d="M0.6 0.2 Q1.4 -2.2 2.8 -3.6 Q3.2 -1.6 2.2 0.4 Z"/>
+            </g>
+          ))}
+        </g>
+      )}
+      {/* Guitare électrique rouge en bandoulière (accessoire) + pattes qui la tiennent */}
+      {o.extra === 'guitare' && (
+        <g strokeLinecap="round" strokeLinejoin="round">
+          <path d="M34 84 Q58 112 80 118" stroke="#111827" strokeWidth="2" fill="none"/>
+          <path d="M50 101 L92 72" stroke="#92400E" strokeWidth="4.4"/>
+          <path d="M56 97.2 L57.8 99.6 M62 93 L63.8 95.4 M68 88.8 L69.8 91.2 M74 84.6 L75.8 87 M80 80.4 L81.8 82.8 M86 76.2 L87.8 78.6" stroke="#FDE68A" strokeWidth="0.7"/>
+          <path d="M90.4 74 L97.6 66.4 L100 68.4 L94 76 Z" fill="#111827"/>
+          <circle cx="96" cy="67.6" r="0.9" fill="#E5E7EB"/><circle cx="97.8" cy="69.6" r="0.9" fill="#E5E7EB"/>
+          <path d="M32 106 Q30 96 40 96 Q46 92 52 97 Q58 100 55 106 Q60 114 52 119 Q44 124 36 118 Q28 114 32 106 Z" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.9"/>
+          <path d="M38 104 Q44 100 50 104 Q52 110 46 113 Q40 113 38 108 Z" fill="white"/>
+          <rect x="41" y="105" width="6" height="1.6" rx="0.6" fill="#374151" transform="rotate(-34 44 106)"/>
+          <rect x="43" y="108.6" width="6" height="1.6" rx="0.6" fill="#374151" transform="rotate(-34 46 109)"/>
+          <path d="M44 112 L92 74" stroke="#E5E7EB" strokeWidth="0.45"/>
+          <ellipse cx="76" cy="85" rx="5.4" ry="4.4" fill="#6E4521"/>
+          <ellipse cx="52" cy="110" rx="5" ry="4.2" fill="#6E4521"/>
         </g>
       )}
       {/* Tête */}
@@ -299,6 +443,17 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             <circle cx="69" cy="63" r="8" fill="white" fillOpacity="0.18" stroke="#CA8A04" strokeWidth="2.2"/>
           </g>
         )}
+        {/* Masque de nuit violet, yeux fermés brodés, petits « z » (il dort à moitié) */}
+        {o.eyes === 'masque' && (
+          <g strokeLinecap="round">
+            <path d="M33 60 L28 57 M83 60 L88 57" stroke="#4C1D95" strokeWidth="1.6"/>
+            <path d="M34 59 Q35 53 45 53.4 Q52 53.6 58 56.4 Q64 53.6 71 53.4 Q81 53 82 59 Q82.6 70 70 71 Q63 71.2 58 67.4 Q53 71.2 46 71 Q33.4 70 34 59 Z" fill="#7C3AED" stroke="#4C1D95" strokeWidth="1"/>
+            <path d="M41.6 62 Q46 66 50.4 62 M65.6 62 Q70 66 74.4 62" stroke="#F5F3FF" strokeWidth="1.3" fill="none"/>
+            <path d="M42.6 64.6 L41.6 66.4 M46 65.6 L46 67.6 M49.4 64.6 L50.4 66.4 M66.6 64.6 L65.6 66.4 M70 65.6 L70 67.6 M73.4 64.6 L74.4 66.4" stroke="#F5F3FF" strokeWidth="0.9"/>
+            <text x="91" y="60" fontSize="7" fontWeight="800" fill="#7C3AED" fontFamily="sans-serif">z</text>
+            <text x="97" y="51" fontSize="9.5" fontWeight="800" fill="#7C3AED" fontFamily="sans-serif">Z</text>
+          </g>
+        )}
         {o.face === 'pansement' && (
           <g transform="rotate(-24 40 71)">
             <rect x="32" y="68" width="16" height="6" rx="3" fill="#F5D0A9" stroke="#D6A77A" strokeWidth="0.8"/>
@@ -315,8 +470,55 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             <circle cx="79.4" cy="84.4" r="0.6" fill="#FDE047"/>
           </g>
         )}
-        {/* Coiffe : casque de chantier (défaut), cowboy, Noël, tuque, couronne, citrouille (vestiaire) */}
-        {o.head === 'citrouille' ? null : o.head === 'noel' ? (
+        {/* Rose rouge entre les dents : tige et épines, feuille, fleur à droite */}
+        {o.mouth === 'rose' && (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            <path d="M46 84 Q60 87 84 82" stroke="#15803D" strokeWidth="1.8" fill="none"/>
+            <path d="M54 85.4 L55 87.6 M70 85 L71 82.8" stroke="#15803D" strokeWidth="1.1"/>
+            <path d="M74 84 Q77 89 82 88 Q80 83.4 74 84 Z" fill="#22C55E" stroke="#15803D" strokeWidth="0.6"/>
+            <circle cx="88" cy="81" r="6.4" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.8"/>
+            <path d="M88 77 Q92 79 90 83 Q86 85.4 84.6 81.6 Q85 78.6 88 79.4 Q90 80.4 88.6 82" stroke="#7F1D1D" strokeWidth="0.9" fill="none"/>
+            <path d="M83 84.4 Q85 87.6 88 87.4 Q91 87.6 93 84.4" stroke="#15803D" strokeWidth="1.4" fill="none"/>
+          </g>
+        )}
+        {/* Coiffe : casque de chantier (défaut), cowboy, Noël, tuque, couronne, citrouille, haut-de-forme,
+            licorne, ninja (vestiaire) */}
+        {o.head === 'citrouille' ? null : o.head === 'hautforme' ? (
+          <g>
+            <ellipse cx="58" cy="47" rx="30" ry="5.4" fill="#111827"/>
+            <rect x="40" y="13" width="36" height="34" rx="2.5" fill="#1F2937"/>
+            <ellipse cx="58" cy="13.4" rx="18" ry="3.2" fill="#374151"/>
+            <rect x="40" y="37" width="36" height="6.4" fill="#7F1D1D"/>
+            <path d="M44 17 L44 35" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.18"/>
+            <path d="M30 47.6 Q58 52.6 86 47.6" stroke="#374151" strokeWidth="0.8" fill="none"/>
+          </g>
+        ) : o.head === 'licorne' ? (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            <defs>
+              <linearGradient id="costar-horn" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" stopColor="#FDE68A"/><stop offset="0.5" stopColor="#F9A8D4"/><stop offset="1" stopColor="#C4B5FD"/>
+              </linearGradient>
+            </defs>
+            <path d="M31 46 Q58 26 85 46" stroke="#F472B6" strokeWidth="5" fill="none"/>
+            <polygon points="51,36 65,36 59,2" fill="url(#costar-horn)" stroke="#DB2777" strokeWidth="0.9"/>
+            <path d="M52.6 31 L63.6 28.4 M54 24.6 L62.6 22.4 M55.4 18 L61.6 16.6 M56.8 11.6 L60.6 10.6" stroke="#DB2777" strokeWidth="0.9"/>
+            <circle cx="42" cy="37" r="3" fill="#FDE047"/><circle cx="42" cy="37" r="1.2" fill="#F97316"/>
+            <circle cx="74" cy="37" r="3" fill="#A78BFA"/><circle cx="74" cy="37" r="1.2" fill="#FDE047"/>
+            <polygon transform="translate(80 22) scale(0.4)" fill="#FDE047" points="0,-6 1.2,-1.2 6,0 1.2,1.2 0,6 -1.2,1.2 -6,0 -1.2,-1.2"/>
+            <polygon transform="translate(38 20) scale(0.3)" fill="#F9A8D4" points="0,-6 1.2,-1.2 6,0 1.2,1.2 0,6 -1.2,1.2 -6,0 -1.2,-1.2"/>
+          </g>
+        ) : o.head === 'ninja' ? (
+          <g strokeLinecap="round" strokeLinejoin="round">
+            <path d="M29.6 43 Q58 36 86.4 43 L86.8 51.6 Q58 44.6 29.2 51.6 Z" fill="#111827"/>
+            <path d="M86 45 Q96 40 103 44 Q97 46 92 48 M86 49 Q95 50 100 57 Q93 55 87 52" fill="#111827" stroke="#111827" strokeWidth="1.6"/>
+            <circle cx="87" cy="47" r="2.4" fill="#1F2937"/>
+            <rect x="50" y="40" width="16" height="8.6" rx="1.6" fill="#9CA3AF" stroke="#4B5563" strokeWidth="0.8"/>
+            <circle cx="52" cy="42" r="0.6" fill="#4B5563"/><circle cx="64" cy="42" r="0.6" fill="#4B5563"/>
+            <circle cx="52" cy="46.6" r="0.6" fill="#4B5563"/><circle cx="64" cy="46.6" r="0.6" fill="#4B5563"/>
+            <polygon transform="translate(58 44.4) scale(0.62)" fill="#D52B1E"
+              points="0,-5 1.2,-2.6 2.6,-3.2 2.1,-0.6 4.6,-1.4 3.8,0.4 5,1 2.4,2.2 2.8,3.2 0.4,2.6 0.4,5 -0.4,5 -0.4,2.6 -2.8,3.2 -2.4,2.2 -5,1 -3.8,0.4 -4.6,-1.4 -2.1,-0.6 -2.6,-3.2 -1.2,-2.6"/>
+          </g>
+        ) : o.head === 'noel' ? (
           <g>
             <path d="M30 50 Q30 22 58 17 Q80 14 93 33 Q86 30 81 33 Q85 41 86 50 Z" fill="#DC2626"/>
             <path d="M40 26 Q50 20 62 19" stroke="#F87171" strokeWidth="2.4" fill="none" strokeLinecap="round" opacity="0.7"/>
@@ -374,6 +576,19 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
             <polygon points="58,92 46,85.5 46,98.5" fill="#B91C1C" stroke="#7F1D1D" strokeWidth="0.8" strokeLinejoin="round"/>
             <polygon points="58,92 70,85.5 70,98.5" fill="#B91C1C" stroke="#7F1D1D" strokeWidth="0.8" strokeLinejoin="round"/>
             <circle cx="58" cy="92" r="3.2" fill="#7F1D1D"/>
+          </g>
+        )}
+        {/* Grosse chaîne en or (maillons) + médaillon feuille d'érable */}
+        {o.neck === 'chaine' && (
+          <g>
+            {Array.from({ length: 13 }, (_, k) => {
+              const t = k / 12, x = 38 + 40 * t, y = 86 + 22 * t * (1 - t) * 2;
+              return <ellipse key={k} cx={x} cy={y} rx="2.3" ry="1.5" fill="none" stroke="#EAB308" strokeWidth="1.3" transform={`rotate(${(t - 0.5) * 60} ${x} ${y})`}/>;
+            })}
+            <circle cx="58" cy="104" r="5.6" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.1"/>
+            <polygon transform="translate(58 104.3) scale(0.7)" fill="#B45309"
+              points="0,-5 1.2,-2.6 2.6,-3.2 2.1,-0.6 4.6,-1.4 3.8,0.4 5,1 2.4,2.2 2.8,3.2 0.4,2.6 0.4,5 -0.4,5 -0.4,2.6 -2.8,3.2 -2.4,2.2 -5,1 -3.8,0.4 -4.6,-1.4 -2.1,-0.6 -2.6,-3.2 -1.2,-2.6"/>
+            <path d="M55 101.6 l1 -1" stroke="white" strokeWidth="1" strokeLinecap="round" opacity="0.8"/>
           </g>
         )}
         {o.neck === 'echarpe' && (
