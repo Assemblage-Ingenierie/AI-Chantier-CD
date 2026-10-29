@@ -165,7 +165,21 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
   // « déposer dans un cadre vide ne marchait pas »). Signalé par événement window car il y a
   // une instance de SortList PAR zone → le drag traverse les instances.
   const [photoDragging, setPhotoDragging] = useState(false);
-  const [overEmptyId, setOverEmptyId] = useState(null); // cadre vide survolé pendant le glisser
+  // Point de dépôt d'une photo glissée (PC) : { itemId, idx } = observation visée et position
+  // d'insertion (idx = nb de photos → à la fin, ce qui ouvre un nouveau rang si le rang est plein).
+  // Retour Thomas 29/10 : « plein de fois je dépose et ça ne fait rien, ce n'est pas pile au bon
+  // endroit » → TOUTE la carte de l'observation accepte la photo, et un trait rouge montre où
+  // elle va s'insérer. dropRef = copie synchrone (le drop peut arriver avant le re-rendu).
+  const [photoDrop, setPhotoDrop] = useState(null);
+  const dropRef = useRef(null);
+  const [dragSrc, setDragSrc] = useState(null); // { itemId, idx } photo en cours de glisser (atténuée)
+  const listMarkRef = useRef(Symbol('sortlist'));
+  const setDrop = (itemId, idx) => {
+    const cur = dropRef.current;
+    if (cur && cur.itemId === itemId && cur.idx === idx) return;
+    dropRef.current = itemId == null ? null : { itemId, idx };
+    setPhotoDrop(dropRef.current);
+  };
 
   // Images COLLÉES dans les commentaires : leur URL signée expire → on la RE-SIGNE pour
   // l'affichage (comme l'éditeur le fait). Sans ça, une image collée (surtout d'une session
@@ -191,11 +205,29 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
   const commentFor = (it) => (resolvedComments[it.id]?.src === it.commentaire ? resolvedComments[it.id].html : it.commentaire);
   useEffect(() => {
     const on = () => setPhotoDragging(true);
-    const off = () => setPhotoDragging(false);
+    const off = () => { setPhotoDragging(false); setDragSrc(null); dropRef.current = null; setPhotoDrop(null); };
+    // Curseur sorti des observations de CETTE liste → plus de point de dépôt affiché ici.
+    const over = (e) => { if (_photoDragPayload && e._aiPhotoList !== listMarkRef.current && dropRef.current) { dropRef.current = null; setPhotoDrop(null); } };
     window.addEventListener('ai-photo-drag-start', on);
     window.addEventListener('ai-photo-drag-end', off);
-    return () => { window.removeEventListener('ai-photo-drag-start', on); window.removeEventListener('ai-photo-drag-end', off); };
+    window.addEventListener('dragover', over);
+    return () => { window.removeEventListener('ai-photo-drag-start', on); window.removeEventListener('ai-photo-drag-end', off); window.removeEventListener('dragover', over); };
   }, []);
+
+  const readPhotoPayload = (e) => {
+    let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch { /* repli */ }
+    return d || photoDragRef.current || _photoDragPayload;
+  };
+  // Dépose la photo glissée dans `item` à la position d'insertion `ins` (0…nb photos).
+  const dropPhotoInto = (item, ins, d) => {
+    if (!d) return;
+    if (d.fromItemId === item.id) {
+      const to = ins > d.fromPhotoIdx ? ins - 1 : ins;
+      reorderPhotos(item, d.fromPhotoIdx, Math.min(to, (item.photos || []).length - 1));
+    } else {
+      onMovePhotoAcross?.(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id, ins);
+    }
+  };
 
   // Réordonne les photos d'un item (déplace from → to) puis remonte au parent.
   const reorderPhotos = (item, from, to) => {
@@ -391,11 +423,29 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
             <div key={item.id}
               draggable
               onDragStart={() => onDragStart(i)}
-              onDragEnter={() => onDragEnter(i)}
+              onDragEnter={() => { if (!_photoDragPayload) onDragEnter(i); }}
               onDragEnd={onDragEnd}
               // Filet : glisser annulé par le navigateur (pas de dragend) → la ligne ne reste pas grisée.
               onMouseUp={() => { if (dragIdx !== null) { setDragIdx(null); setOverIdx(null); } }}
-              onDragOver={e => e.preventDefault()}
+              onDragOver={e => {
+                e.preventDefault();
+                // Photo glissée au-dessus de la carte (hors vignettes) → dépôt à la FIN.
+                if (_photoDragPayload && (onMovePhotoAcross || onReorderPhoto)) {
+                  e.nativeEvent._aiPhotoList = listMarkRef.current;
+                  if (!e.nativeEvent._aiPhotoTile) setDrop(item.id, (item.photos || []).length);
+                }
+              }}
+              onDrop={e => {
+                if (!_photoDragPayload && !e.dataTransfer.types.includes('text/photo')) return;
+                e.preventDefault(); e.stopPropagation();
+                const d = readPhotoPayload(e);
+                const tgt = dropRef.current;
+                const ins = tgt && tgt.itemId === item.id ? tgt.idx : (item.photos || []).length;
+                photoDragRef.current = null; dropRef.current = null; setPhotoDrop(null);
+                if (!d) return;
+                if (d.fromItemId !== item.id && !onMovePhotoAcross) return;
+                dropPhotoInto(item, ins, d);
+              }}
               onClick={() => { if (dragDidMoveRef.current) { dragDidMoveRef.current = false; return; } onEdit(item); }}
               style={{
                 display:'flex', alignItems:'flex-start', gap: isDesktop ? 12 : 8,
@@ -404,6 +454,8 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                 borderLeft:`4px solid ${draft ? '#D1D5DB' : (URGENCE[item.urgence]?.dot || DA.border)}`,
                 cursor:'pointer',
                 background: isDragging ? '#f0f0f0' : isOver ? DA.redL : draft ? '#F3F4F6' : 'white',
+                // Observation visée par une photo glissée : liseré intérieur rouge (où elle va atterrir).
+                boxShadow: photoDrop?.itemId === item.id ? `inset 0 0 0 2px ${DA.red}` : 'none',
                 borderTop: isOver ? `2px solid ${DA.red}` : 'none',
                 opacity: isDragging ? 0.45 : 1,
                 transition: 'background 0.08s, opacity 0.08s',
@@ -520,18 +572,9 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                       // que soit l'orientation → plus de « blanc » à droite avec les photos paysage
                       // (retour Bach). Mobile = 2 colonnes ; desktop = autant de colonnes de ≥150px
                       // que la largeur permet (≥2), sans trou.
-                      <div style={{ display:'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, ...(draft ? { filter:'grayscale(1)', opacity:0.6 } : {}) }}
-                        // Déposer dans le vide de la zone photos d'une observation → y déplacer la
-                        // photo glissée (depuis une autre observation/zone). Les photos elles-mêmes
-                        // gèrent leur propre drop (réordonner / déposer dessus) via stopPropagation.
-                        onDragOver={onMovePhotoAcross ? (e => { if (e.dataTransfer.types.includes('text/photo')) e.preventDefault(); }) : undefined}
-                        onDrop={onMovePhotoAcross ? (e => {
-                          let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
-                          if (!d) d = _photoDragPayload; // fallback cross-zone
-                          if (!d || d.fromItemId === item.id) return;
-                          e.preventDefault();
-                          onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
-                        }) : undefined}>
+                      // Le dépôt (vide de la grille, sous les photos, titre…) est géré par la CARTE
+                      // entière ; les vignettes ne font que choisir la position d'insertion.
+                      <div style={{ display:'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(2, minmax(0, 1fr))', gap: isDesktop ? 10 : 6, marginTop: isDesktop ? 14 : 10, ...(draft ? { filter:'grayscale(1)', opacity:0.6 } : {}) }}>
                         {shown.map((ph, pi) => {
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);
@@ -546,24 +589,30 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                               e.stopPropagation(); clearTimeout(photoLP.current.timer);
                               const payload = { fromLocId: locId, fromItemId: item.id, fromPhotoIdx: realIdx };
                               photoDragRef.current = payload;
+                              setDragSrc({ itemId: item.id, idx: realIdx });
                               _photoDragPayload = payload; // partagé entre zones (fallback robuste au drop)
                               // dataTransfer = canal qui survit au passage d'une zone (SortList) à l'autre.
                               try { e.dataTransfer.setData('text/photo', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'move'; } catch {}
                               window.dispatchEvent(new Event('ai-photo-drag-start')); // révèle les cadres vides
                             }) : undefined}
-                            onDragOver={canDrag ? (e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); e.stopPropagation(); } }) : undefined}
-                            onDrop={canDrag ? (e => {
-                              e.preventDefault(); e.stopPropagation();
-                              let d = null;
-                              try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
-                              if (!d) d = photoDragRef.current || _photoDragPayload;
-                              if (!d) return;
-                              if (d.fromItemId === item.id) reorderPhotos(item, d.fromPhotoIdx, realIdx);
-                              else onMovePhotoAcross?.(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
-                              photoDragRef.current = null;
+                            // Survol d'une vignette : moitié gauche = insérer AVANT, moitié droite =
+                            // APRÈS (trait rouge). La carte reçoit ensuite le drop.
+                            onDragOver={canDrag ? (e => {
+                              if (!_photoDragPayload && !e.dataTransfer.types.includes('text/photo')) return;
+                              e.preventDefault();
+                              const r = e.currentTarget.getBoundingClientRect();
+                              e.nativeEvent._aiPhotoTile = true;
+                              e.nativeEvent._aiPhotoList = listMarkRef.current;
+                              setDrop(item.id, e.clientX < r.left + r.width / 2 ? realIdx : realIdx + 1);
                             }) : undefined}
                             onDragEnd={canDrag ? (() => { photoDragRef.current = null; _photoDragPayload = null; window.dispatchEvent(new Event('ai-photo-drag-end')); }) : undefined}
-                            style={{ position:'relative', flexShrink:0 }}>
+                            style={{ position:'relative', flexShrink:0,
+                              opacity: dragSrc && dragSrc.itemId === item.id && dragSrc.idx === realIdx ? 0.35 : 1 }}>
+                            {/* Trait d'insertion (avant / après cette vignette) */}
+                            {photoDrop?.itemId === item.id && (photoDrop.idx === realIdx || (photoDrop.idx === realIdx + 1 && pi === shown.length - 1)) && (
+                              <span aria-hidden="true" style={{ position:'absolute', top:-3, bottom:-3, width:4, borderRadius:2, background:DA.red, zIndex:3, pointerEvents:'none',
+                                ...(photoDrop.idx === realIdx ? { left: isDesktop ? -7 : -5 } : { right: isDesktop ? -7 : -5 }) }}/>
+                            )}
                             <AnnotatedThumb
                               photo={ph}
                               onOpen={openPhoto}
@@ -606,21 +655,10 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                   // Observation SANS photo : cadre de dépôt révélé PENDANT un glisser de photo
                   // → on peut y déposer une photo venue d'une autre observation (demande Thomas).
                   if (onMovePhotoAcross && photoDragging) {
-                    const over = overEmptyId === item.id;
+                    // Le dépôt est géré par la carte entière (voir onDrop de la ligne).
+                    const over = photoDrop?.itemId === item.id;
                     return (
                       <div
-                        onDragOver={e => { if (e.dataTransfer.types.includes('text/photo')) { e.preventDefault(); setOverEmptyId(item.id); } }}
-                        onDragLeave={() => setOverEmptyId(prev => prev === item.id ? null : prev)}
-                        onDrop={e => {
-                          e.preventDefault(); e.stopPropagation();
-                          let d = null; try { d = JSON.parse(e.dataTransfer.getData('text/photo')); } catch {}
-                          if (!d) d = photoDragRef.current || _photoDragPayload;
-                          setOverEmptyId(null);
-                          _photoDragPayload = null;
-                          window.dispatchEvent(new Event('ai-photo-drag-end'));
-                          if (!d || d.fromItemId === item.id) return;
-                          onMovePhotoAcross(d.fromLocId, d.fromItemId, d.fromPhotoIdx, locId, item.id);
-                        }}
                         style={{ marginTop: isDesktop ? 14 : 10, border:`2px dashed ${over ? DA.red : '#C9CDD2'}`,
                           background: over ? DA.redL : '#FAFBFC', borderRadius: isDesktop ? 10 : 8,
                           padding: isDesktop ? '18px 12px' : '14px 10px', display:'flex', alignItems:'center', justifyContent:'center',

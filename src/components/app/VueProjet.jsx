@@ -485,7 +485,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   // garde son objet (donc son _id stable) → côté Supabase l'upsert met simplement à jour
   // item_id ; la purge de l'observation source ne la supprime pas (sa ligne pointe désormais
   // vers la destination). Les deux observations sont marquées _photosHydrated pour être sauvées.
-  const movePhoto = useCallback((fromLocId, fromItemId, photoIdx, toLocId, toItemId) => {
+  // toIdx (optionnel) : position d'insertion dans l'observation cible (défaut : à la fin).
+  const movePhoto = useCallback((fromLocId, fromItemId, photoIdx, toLocId, toItemId, toIdx) => {
     const fromLoc = visitProjet.localisations.find(l => l.id === fromLocId);
     const fromItem = fromLoc?.items?.find(i => i.id === fromItemId);
     const photo = fromItem?.photos?.[photoIdx];
@@ -500,7 +501,11 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       }
       if (l.id === toLocId) {
         items = items.map(i => i.id === toItemId
-          ? { ...i, _photosHydrated: true, photos: [...(i.photos || []), photo] } : i);
+          ? { ...i, _photosHydrated: true, photos: (() => {
+              const ph = [...(i.photos || [])];
+              ph.splice(Number.isInteger(toIdx) ? Math.max(0, Math.min(toIdx, ph.length)) : ph.length, 0, photo);
+              return ph;
+            })() } : i);
         changed = true;
       }
       return changed ? { ...l, items } : l;
