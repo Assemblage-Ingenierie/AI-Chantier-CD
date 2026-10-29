@@ -2978,6 +2978,62 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   };
 
   // Boutons « Avancer / Reculer » (ordre des calques) — PC uniquement (demande Thomas).
+  // PC : quand une forme est sélectionnée, la barre « Sélection » (calques, dupliquer, supprimer)
+  // se range DANS la ligne du panneau Formes au lieu d'ajouter une 2e ligne (retour Thomas 29/10 :
+  // « tout sur la même ligne »). Mobile : inchangé.
+  const selBarInline = !isMob && tool === 'select' && _selShape !== null;
+  const renderSingleSelBar = () => (
+    <>
+      <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
+        Sélection : {paths[selAnnot.idx].type === 'viewpoint'
+          ? 'Vue'
+          : paths[selAnnot.idx].type === 'shape'
+            ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone', polyline:'Polyligne' }[paths[selAnnot.idx].shape] || 'Forme')
+            : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
+        }
+      </span>
+      <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1,...(isMob ? {} : { minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }) }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}{isMob ? '' : ' · Ctrl+clic = en sélectionner plusieurs'}</span>
+      {paths[selAnnot.idx].type !== 'viewpoint' && renderLayerBtns()}
+      <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
+        style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
+        ⊕ Dupliquer
+      </button>
+      <button onClick={() => {
+          const wasVp = paths[selAnnot.idx]?.type === 'viewpoint';
+          setPaths(p => { const next = p.filter((_,i) => i !== selAnnot.idx); return wasVp ? resequenceVps(next) : next; });
+          setSelAnnot(null); annotDragRef.current = null;
+        }}
+        style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
+        <Ic n="del" s={13}/>
+      </button>
+      <button onClick={() => { setSelAnnot(null); annotDragRef.current = null; }}
+        style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
+        ✕
+      </button>
+    </>
+  );
+  const renderMultiSelBar = () => (
+    <>
+      <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
+        Sélection : {multiSel.length} élément{multiSel.length > 1 ? 's' : ''}
+      </span>
+      <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1,...(isMob ? {} : { minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }) }}>Glisser pour déplacer · flèches = au pixel · couleur = pour tous</span>
+      {renderLayerBtns()}
+      <button onClick={() => duplicateSelection()}
+        style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
+        ⊕ Dupliquer
+      </button>
+      <button onClick={() => deleteSelectionGroup()} title="Supprimer la sélection"
+        style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
+        <Ic n="del" s={13}/>
+      </button>
+      <button onClick={() => setMultiSel([])}
+        style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
+        ✕
+      </button>
+    </>
+  );
+
   const renderLayerBtns = () => (isTouchUI ? null : (
     <div style={{ display:'flex', gap:4, flexShrink:0 }}>
       {[
@@ -3052,7 +3108,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       {/* Bandeau titre SUPPRIMÉ (demande Thomas : « le nom en haut tu peux jarter ») —
           chaque pixel vertical va au plan. La prop title est conservée pour compat. */}
 
-      {/* ── Toolbar (2 rangées fixes) ── */}
+      {/* ── Toolbar (PC : une seule rangée ; mobile : outils + tiroirs) ── */}
       <div style={{ background:DA.black,padding:'7px 12px 6px',display:'flex',flexDirection:'column',gap:6,flexShrink:0 }}>
 
         {/* Rangée 1 : outils + undo + sauvegarder. Sur MOBILE, flex-wrap → les outils prennent une
@@ -3084,7 +3140,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               </div>
             );
           })() : (
-          <div style={{ flex:1,overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
+          <div style={{ flex:'0 1 auto',overflowX:'auto',scrollbarWidth:'none',minWidth:0 }}>
             <div style={{ display:'flex',gap:3,background:'#333',padding:3,borderRadius:10,width:'max-content' }}>
               {[
                 // « Sélect. » est le mode PAR DÉFAUT : pas de bouton sur desktop (on en sort en
@@ -3107,6 +3163,41 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             </div>
           </div>
           )}
+          {/* PC : couleurs + épaisseur + tailles sur la MÊME ligne que les outils (retour Thomas 29/10 :
+              « compresser le tout sur la même ligne »). Écran étroit : ce bloc passe sur 2 lignes
+              à l'intérieur de la rangée, sans rien masquer. Mobile : dans la palette. */}
+          {!isMob && <div style={{ flex:1,minWidth:0,display:'flex',alignItems:'center',justifyContent:'center',columnGap:12,rowGap:4,flexWrap:'wrap' }}>
+            <div style={{ display:'flex',gap:6,flexShrink:0 }}>
+              {ANNOT_COLORS.map(cl => (
+                <button key={cl} onClick={() => recolorSelection(cl)}
+                  style={{ width:30,height:30,borderRadius:'50%',background:cl,
+                    border:`3px solid ${color===cl?'white':'transparent'}`,
+                    boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',
+                    cursor:'pointer',flexShrink:0,transition:'all 0.1s' }}/>
+              ))}
+            </div>
+            <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
+              <span style={{ fontSize:11,color:'#aaa',fontWeight:700,letterSpacing:0.3 }}>ÉPAISSEUR</span>
+              {[1,3,6].map(sz => (
+                <button key={sz} onClick={() => resizeSelection(sz)}
+                  style={{ width:sz*3+14,height:sz*3+14,borderRadius:'50%',
+                    background:size===sz?'white':'#555',
+                    border:`2px solid ${size===sz?'white':'#444'}`,
+                    cursor:'pointer',flexShrink:0,transition:'background 0.1s',
+                    display:'flex',alignItems:'center',justifyContent:'center' }}/>
+              ))}
+            </div>
+            {/* Tailles Texte / Formes / Symboles — comme l'éditeur de rapport, au niveau des couleurs */}
+            {scaleCtls.map(s => (
+              <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
+                <span style={{ fontSize:12,color:'#bbb',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:s.lbl === 'Formes' ? 104 : 0,textAlign:'right' }}>{s.title || s.lbl}</span>
+                <input type="range" min="0.3" max="5" step="0.1" value={s.val}
+                  onChange={e => { const v = parseFloat(e.target.value); s.set(v); if (s.key) _lsSet(s.key, String(v)); }}
+                  style={{ width:84,accentColor:DA.red,cursor:'pointer' }}/>
+                <span style={{ color:'#eee',fontSize:12,fontWeight:800,minWidth:30,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
+              </div>
+            ))}
+          </div>}
           {/* Actions — même ligne que les outils (téléphone compris). */}
           <div style={{ display:'flex',gap:isMob?4:6,flexShrink:0,flex:'0 0 auto',justifyContent:'flex-end' }}>
             <button onClick={requestClose}
@@ -3143,39 +3234,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           </div>
         </div>
 
-        {/* Rangée 2 : couleurs + tailles — cachée sur mobile (palette) */}
-        {!isMob && <div style={{ display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' }}>
-          <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-            {ANNOT_COLORS.map(cl => (
-              <button key={cl} onClick={() => recolorSelection(cl)}
-                style={{ width:30,height:30,borderRadius:'50%',background:cl,
-                  border:`3px solid ${color===cl?'white':'transparent'}`,
-                  boxShadow:color===cl?`0 0 0 1.5px ${cl}`:'none',
-                  cursor:'pointer',flexShrink:0,transition:'all 0.1s' }}/>
-            ))}
-          </div>
-          <div style={{ display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-            <span style={{ fontSize:11,color:'#aaa',fontWeight:700,letterSpacing:0.3 }}>ÉPAISSEUR</span>
-            {[1,3,6].map(sz => (
-              <button key={sz} onClick={() => resizeSelection(sz)}
-                style={{ width:sz*3+14,height:sz*3+14,borderRadius:'50%',
-                  background:size===sz?'white':'#555',
-                  border:`2px solid ${size===sz?'white':'#444'}`,
-                  cursor:'pointer',flexShrink:0,transition:'background 0.1s',
-                  display:'flex',alignItems:'center',justifyContent:'center' }}/>
-            ))}
-          </div>
-          {/* Tailles Texte / Formes / Symboles — comme l'éditeur de rapport, au niveau des couleurs */}
-          {scaleCtls.map(s => (
-            <div key={s.lbl} style={{ display:'flex',alignItems:'center',gap:5,flexShrink:0 }}>
-              <span style={{ fontSize:12,color:'#bbb',fontWeight:700,letterSpacing:0.3,whiteSpace:'nowrap',minWidth:s.lbl === 'Formes' ? 104 : 0,textAlign:'right' }}>{s.title || s.lbl}</span>
-              <input type="range" min="0.3" max="5" step="0.1" value={s.val}
-                onChange={e => { const v = parseFloat(e.target.value); s.set(v); if (s.key) _lsSet(s.key, String(v)); }}
-                style={{ width:96,accentColor:DA.red,cursor:'pointer' }}/>
-              <span style={{ color:'#eee',fontSize:12,fontWeight:800,minWidth:30,textAlign:'right' }}>{s.val.toFixed(1)}×</span>
-            </div>
-          ))}
-        </div>}
       </div>
 
       {/* ── Tiroir des outils (téléphone) : on choisit, il se referme. ── */}
@@ -3390,6 +3448,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
             style={{ width:70,accentColor:DA.red,cursor:'pointer',flexShrink:0 }}/>
           <span style={{ fontSize:11,color:'#ccc',fontWeight:700,minWidth:28,flexShrink:0 }}>{Math.round(shapePanelOpVal*100)}%</span>
           {selAnnot?.fresh && _selShape && renderLayerBtns()}
+          {selBarInline && (
+            <>
+              <div style={{ width:1,height:18,background:'#333',flexShrink:0,margin:'0 2px' }}/>
+              {multiSel.length > 0 ? renderMultiSelBar()
+                : (selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx]) ? renderSingleSelBar() : null}
+            </>
+          )}
           {tool === 'shape' && (
             <span style={{ fontSize:isMob?10:12,color:isMob?'#555':'#999',marginLeft:4,flex:1,whiteSpace:'nowrap',overflow:'hidden' }}>
               {shapeTool === 'poly'
@@ -3561,57 +3626,16 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       )}
 
       {/* ── Panneau symbole/viewpoint sélectionné ── */}
-      {selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx] && (
+      {selAnnot !== null && !selAnnot.fresh && paths[selAnnot.idx] && !selBarInline && (
         <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-          <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
-            Sélection : {paths[selAnnot.idx].type === 'viewpoint'
-              ? 'Vue'
-              : paths[selAnnot.idx].type === 'shape'
-                ? ({ rect:'Rect.', ellipse:'Ellipse', arrow:'Flèche', line:'Ligne', poly:'Zone', polyline:'Polyligne' }[paths[selAnnot.idx].shape] || 'Forme')
-                : (getAllSymbols().find(s => s.id === paths[selAnnot.idx].symbolId)?.label || 'Symbole')
-            }
-          </span>
-          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer{paths[selAnnot.idx].type === 'viewpoint' ? ' · poignée bleue pour réorienter' : ''}{isMob ? '' : ' · Ctrl+clic = en sélectionner plusieurs'}</span>
-          {paths[selAnnot.idx].type !== 'viewpoint' && renderLayerBtns()}
-          <button onClick={() => { duplicateAnnot(paths[selAnnot.idx]); }}
-            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
-            ⊕ Dupliquer
-          </button>
-          <button onClick={() => {
-              const wasVp = paths[selAnnot.idx]?.type === 'viewpoint';
-              setPaths(p => { const next = p.filter((_,i) => i !== selAnnot.idx); return wasVp ? resequenceVps(next) : next; });
-              setSelAnnot(null); annotDragRef.current = null;
-            }}
-            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
-            <Ic n="del" s={13}/>
-          </button>
-          <button onClick={() => { setSelAnnot(null); annotDragRef.current = null; }}
-            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
-            ✕
-          </button>
+          {renderSingleSelBar()}
         </div>
       )}
 
       {/* ── Groupe sélectionné (cadre de sélection / Maj+clic) ── */}
-      {multiSel.length > 0 && (
+      {multiSel.length > 0 && !selBarInline && (
         <div style={{ background:'#1a1a1a',padding:'7px 12px',borderBottom:'1px solid #333',display:'flex',alignItems:'center',gap:8,flexShrink:0 }}>
-          <span style={{ fontSize:isMob?10:12.5,color:'#4A9EFF',fontWeight:700,flexShrink:0 }}>
-            Sélection : {multiSel.length} élément{multiSel.length > 1 ? 's' : ''}
-          </span>
-          <span style={{ fontSize:isMob?10:12,color:isMob?'#666':'#999',flex:1 }}>Glisser pour déplacer · flèches = au pixel · couleur = pour tous</span>
-          {renderLayerBtns()}
-          <button onClick={() => duplicateSelection()}
-            style={{ padding:'4px 8px',background:'#1d4ed8',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
-            ⊕ Dupliquer
-          </button>
-          <button onClick={() => deleteSelectionGroup()} title="Supprimer la sélection"
-            style={{ padding:'4px 8px',background:'#B91C1C',color:'white',border:'none',borderRadius:6,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,display:'flex',alignItems:'center' }}>
-            <Ic n="del" s={13}/>
-          </button>
-          <button onClick={() => setMultiSel([])}
-            style={{ padding:'4px 8px',background:'#333',color:'#aaa',border:'none',borderRadius:6,fontSize:11,cursor:'pointer',flexShrink:0 }}>
-            ✕
-          </button>
+          {renderMultiSelBar()}
         </div>
       )}
 
