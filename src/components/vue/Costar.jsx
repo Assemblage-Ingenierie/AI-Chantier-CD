@@ -39,7 +39,7 @@ function useCostarState() {
 // Animations : clignement des yeux au repos, « tortillement » au clic, mâchonnement pendant
 // la lecture (classes .costar-* dans styles.css).
 // Bottes vues DE FACE (comme le reste de Costar), dessinées autour de x = 0 : la gauche est
-// posée en x = 44, la droite en x = 72 (en miroir). kind = 'santiags' | 'securite' | 'claquettes' | 'skis'.
+// posée en x = 44, la droite en x = 72 (en miroir). kind = 'santiags' | 'securite' | 'claquettes'.
 function Boot({ kind }) {
   // Claquettes-chaussettes : chaussette blanche de sport à rayures + claquette noire.
   if (kind === 'claquettes') {
@@ -51,20 +51,6 @@ function Boot({ kind }) {
         <path d="M-9.4 127.4 Q-9.4 130.4 -6.4 130.4 L6.4 130.4 Q9.4 130.4 9.4 127.4 Z" fill="#111827"/>
         <path d="M-8.6 121.8 Q0 118.6 8.6 121.8 L8.8 126.6 Q0 123.8 -8.8 126.6 Z" fill="#1F2937" stroke="#0B0F1A" strokeWidth="0.6"/>
         <path d="M-4.4 123.4 L4.4 122.6" stroke="white" strokeWidth="1.1"/>
-      </g>
-    );
-  }
-  // Skis : chaussure de ski bleue à boucles + long ski, spatule relevée vers l'extérieur.
-  if (kind === 'skis') {
-    return (
-      <g strokeLinejoin="round" strokeLinecap="round">
-        <path d="M-6.6 110 L6.6 110 L7.2 120.6 Q7.4 124 3.6 124 L-3.6 124 Q-7.4 124 -7.2 120.6 Z" fill="#2563EB" stroke="#1E3A8A" strokeWidth="0.8"/>
-        <path d="M-7 113.6 L7 113.6 M-7.1 117.2 L7.1 117.2 M-7.2 120.8 L7.2 120.8" stroke="#E5E7EB" strokeWidth="1.2"/>
-        <rect x="-8.6" y="122.4" width="17.2" height="2.2" rx="1" fill="#374151"/>
-        <g transform="scale(-1 1)">{/* spatule vers l'EXTÉRIEUR */}
-        <path d="M-15.5 124.6 L13 124.6 Q16.4 124.6 17 121.6 L18.4 120.8 L18.2 124.8 Q17.8 128.2 13.4 128.2 L-15.5 128.2 Q-17 128.2 -17 126.4 Q-17 124.6 -15.5 124.6 Z" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.7"/>
-        <path d="M-14 126.4 L12.6 126.4" stroke="white" strokeWidth="0.8" opacity="0.8"/>
-        </g>
       </g>
     );
   }
@@ -106,19 +92,53 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
+      {/* Skis plantés DERRIÈRE Costar, même style que la planche (retour Thomas) : spatules relevées,
+          dégradé, bande déco, fixations. */}
+      {o.extra === 'skis' && (
+        <g strokeLinejoin="round" strokeLinecap="round">
+          <defs>
+            <linearGradient id="costar-ski" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#F43F5E"/><stop offset="0.55" stopColor="#FB923C"/><stop offset="1" stopColor="#FDE68A"/>
+            </linearGradient>
+          </defs>
+          {[[103, -6], [103, 7]].map(([x, a]) => ( // croisés en X, dans le cadre
+            <g key={a} transform={`rotate(${a} ${x} 116)`}>
+              <path d={`M${x - 3.4} 116 L${x - 3.4} 26 Q${x - 3.4} 17 ${x} 15 Q${x + 3.4} 17 ${x + 3.4} 26 L${x + 3.4} 116 Q${x} 118.6 ${x - 3.4} 116 Z`} fill="url(#costar-ski)" stroke="#9F1239" strokeWidth="0.9"/>
+              <path d={`M${x - 3.4} 46 L${x + 3.4} 43 M${x - 3.4} 49.4 L${x + 3.4} 46.4`} stroke="white" strokeWidth="1.1"/>
+              <circle cx={x} cy="34" r="1.6" fill="white"/>
+              <rect x={x - 4.2} y="82" width="8.4" height="5" rx="1.2" fill="#1F2937"/>
+              <rect x={x - 3} y="90" width="6" height="2.6" rx="1" fill="#6B7280"/>
+              <path d={`M${x - 1.6} 30 L${x - 1.6} 110`} stroke="white" strokeWidth="0.6" opacity="0.5"/>
+            </g>
+          ))}
+        </g>
+      )}
       {/* Queue (derrière) */}
       <g className="costar-tail">
         <ellipse cx="94" cy="108" rx="23" ry="11" transform="rotate(-28 94 108)" fill="#4A2E17"/>
         <path d="M80 104 L106 98 M82 111 L109 104 M86 117 L110 110 M88 98 L96 121 M97 95 L104 117" stroke="#36210F" strokeWidth="1.2" opacity="0.7"/>
       </g>
-      {/* Planche de surf, plantée DERRIÈRE Costar (accessoire) */}
+      {/* Planche de surf, plantée DERRIÈRE Costar (accessoire) : large, dégradé lagon, latte centrale,
+          soleil couchant + vague, liseré de rail, dérive. */}
       {o.extra === 'surf' && (
-        <g transform="rotate(-12 20 78)">
-          <ellipse cx="20" cy="78" rx="9.5" ry="42" fill="#F0F9FF" stroke="#0E7490" strokeWidth="1"/>
-          <path d="M20 37 L20 119" stroke="#0E7490" strokeWidth="0.7"/>
-          <path d="M11 72 Q20 66 29 72 L29 80 Q20 74 11 80 Z" fill="#06B6D4"/>
-          <path d="M11.4 86 Q20 80 28.6 86 L28.4 89.6 Q20 83.6 11.6 89.6 Z" fill="#F97316"/>
-          <path d="M18 112 L20 120 L22 112 Z" fill="#0E7490"/>
+        <g transform="rotate(-10 19 76)" strokeLinejoin="round" strokeLinecap="round">
+          <defs>
+            <linearGradient id="costar-surf" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#FDE68A"/><stop offset="0.45" stopColor="#5EEAD4"/><stop offset="1" stopColor="#0EA5E9"/>
+            </linearGradient>
+            <clipPath id="costar-surf-clip"><path d="M19 24 C35 40 36 98 19 124 C2 98 3 40 19 24 Z"/></clipPath>
+          </defs>
+          <path d="M19 24 C35 40 36 98 19 124 C2 98 3 40 19 24 Z" fill="url(#costar-surf)" stroke="#0E7490" strokeWidth="1.1"/>
+          <g clipPath="url(#costar-surf-clip)">
+            <circle cx="19" cy="60" r="7.5" fill="#FB923C"/>
+            <path d="M0 64 Q6 58 12 64 Q18 70 24 64 Q30 58 38 64 L38 72 L0 72 Z" fill="#0284C7"/>
+            <path d="M0 64 Q6 58 12 64 Q18 70 24 64 Q30 58 38 64" stroke="white" strokeWidth="1.2" fill="none"/>
+            <path d="M0 92 L38 86 L38 90 L0 96 Z" fill="#F43F5E" opacity="0.9"/>
+            <path d="M0 98 L38 92 L38 93.6 L0 99.6 Z" fill="white" opacity="0.9"/>
+          </g>
+          <path d="M19 26 L19 122" stroke="white" strokeWidth="0.7" opacity="0.7"/>
+          <path d="M11.6 42 C8.4 58 8 80 10.4 100" stroke="white" strokeWidth="1.3" fill="none" opacity="0.55"/>
+          <path d="M16.6 114 L19 123 L21.4 114 Z" fill="#0E7490"/>
         </g>
       )}
       {/* Bouée canard : arrière de l'anneau (derrière le corps) */}
@@ -311,16 +331,14 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           <ellipse cx="80" cy="93" rx="4.5" ry="5.5" fill="#6E4521"/>
         </g>
       )}
-      {/* Peace & love, version MIGNONNE (retour Thomas : « les mains comme maintenant, juste deux tout
-          petits doigts ») : pattes au repos, deux mini-doigts en V qui dépassent de chacune. */}
+      {/* Peace & love, version castor (retour Thomas : « des petites griffes de castor ») : pattes au
+          repos, deux petites griffes claires qui dépassent en V. */}
       {o.hand === 'peace' && (
-        <g strokeLinecap="round">
-          {(o.body === 'costard' ? [[36.4, 103.4, 1], [79.6, 103.4, -1]] : [[38.6, 91.4, 1], [77.4, 91.4, -1]]).map(([x, y, d]) => (
-            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`}>
-              <path d="M-1.6 0.6 L-2.8 -4.2" stroke="#6E4521" strokeWidth="2.9"/>
-              <path d="M1.4 0.6 L2.2 -4.3" stroke="#6E4521" strokeWidth="2.9"/>
-              <circle cx="-2.8" cy="-4.4" r="0.75" fill="#E8B48A"/>
-              <circle cx="2.2" cy="-4.5" r="0.75" fill="#E8B48A"/>
+        <g>
+          {(o.body === 'costard' ? [[36.4, 103.2, 1], [79.6, 103.2, -1]] : [[38.8, 91.6, 1], [77.2, 91.6, -1]]).map(([x, y, d]) => (
+            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`} fill="#F5E6D3" stroke="#A47148" strokeWidth="0.45" strokeLinejoin="round">
+              <path d="M-2.6 0.4 Q-3.6 -1.8 -3.4 -3.6 Q-1.8 -2.2 -1 0.2 Z"/>
+              <path d="M0.6 0.2 Q1.4 -2.2 2.8 -3.6 Q3.2 -1.6 2.2 0.4 Z"/>
             </g>
           ))}
         </g>

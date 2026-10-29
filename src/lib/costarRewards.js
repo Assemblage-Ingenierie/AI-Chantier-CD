@@ -61,7 +61,7 @@ export const COSMETICS = {
   claquettes:{ name: 'Claquettes-chaussettes', slot: 'feet', icon: '🩴' },
   rose:      { name: 'Rose entre les dents', slot: 'mouth', icon: '🌹' },
   surf:      { name: 'Planche de surf',    slot: 'extra', icon: '🏄' },
-  skis:      { name: 'Skis',               slot: 'feet',  icon: '🎿' },
+  skis:      { name: 'Skis',               slot: 'extra', icon: '🎿' },
   ninja:     { name: 'Bandeau de ninja',   slot: 'head',  icon: '🥷' },
 };
 
