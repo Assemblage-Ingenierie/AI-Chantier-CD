@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
@@ -613,6 +613,32 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     [projet.planLibrary]
   );
 
+  // Position de défilement de la page Visite : l'annotateur photo REMPLACE la page (return
+  // ci-dessous) → à la fermeture, la page est recréée et repartait tout en haut (retour Thomas
+  // 29/10). On mémorise la position à l'ouverture et on la rend à la fermeture (quelques images
+  // d'affilée, le temps que les vignettes reprennent leur hauteur).
+  const bodyScrollRef = useRef(null);
+  const savedScrollRef = useRef(null);
+  const inPhotoAnnot = modal?.t === 'photoAnnot';
+  useLayoutEffect(() => {
+    if (inPhotoAnnot || savedScrollRef.current == null) return;
+    const target = savedScrollRef.current;
+    savedScrollRef.current = null;
+    let tries = 0, raf = 0;
+    const apply = () => {
+      const el = bodyScrollRef.current;
+      if (!el) return;
+      el.scrollTop = target;
+      if (Math.abs(el.scrollTop - target) > 2 && ++tries < 30) raf = requestAnimationFrame(apply);
+    };
+    apply();
+    return () => cancelAnimationFrame(raf);
+  }, [inPhotoAnnot]);
+  const openPhotoAnnot = (item, locId, photoIdx) => {
+    savedScrollRef.current = bodyScrollRef.current?.scrollTop ?? null;
+    setModal({ t:'photoAnnot', item, locId, photoIdx });
+  };
+
   if (modal?.t === 'photoAnnot') {
     const { item, locId, photoIdx } = modal;
     const validPhotos = (item.photos || []).filter(p => p.data);
@@ -870,7 +896,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         )}
       </div>
 
-      <div style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto', background: tab === 'visite' ? '#E8E8E8' : undefined }}>
+      <div ref={bodyScrollRef} style={{ flex:1, overflow: tab === 'rapport' ? 'hidden' : 'auto', background: tab === 'visite' ? '#E8E8E8' : undefined }}>
         <div style={{ height: tab === 'rapport' ? '100%' : 'auto' }}>
 
           {tab === 'visite' && (
@@ -1047,7 +1073,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                 setModal({ t:'item', locId:loc.id, item });
                               }}
                               onDelete={itemId => deleteItem(loc.id, itemId)}
-                              onAnnotatePhoto={(item, photoIdx) => setModal({ t:'photoAnnot', item, locId:loc.id, photoIdx })}
+                              onAnnotatePhoto={(item, photoIdx) => openPhotoAnnot(item, loc.id, photoIdx)}
                               onDeletePhoto={(item, photoIdx) => {
                                 const updated = { ...item, photos: item.photos.filter((_,i) => i !== photoIdx), _photosHydrated: true };
                                 patchItem(loc.id, updated);
