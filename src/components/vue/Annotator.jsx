@@ -664,6 +664,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const touchHoldRef   = useRef(null); // long-press → mode select (mobile)
   const panRef         = useRef(null); // drag clic-droit/molette → pan
   const oneFingerPanRef = useRef(null); // zoomé + 1 doigt : glisser = déplacer la vue (tap = placer)
+  // Après un ZOOM à deux doigts, le doigt qui reste ne pose / ne trace RIEN tant que tous les doigts
+  // ne sont pas levés (retour Thomas 27/10 : « dès qu'on zoomait, ça posait le repère sous le doigt
+  // du bas »). Seul un toucher simple pose.
+  const pinchGuardRef = useRef(false);
   const hqScaleRef     = useRef(1);   // ratio HQ/LQ appliqué en session (reset à 1 sur changement de plan)
   const gvByVpIdRef    = useRef(new Map()); // _vpId → numéro Vxx global résolu au chargement (survit la migration)
 
@@ -1150,13 +1154,18 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // au-dessus (ou au-dessous) du PROCHAIN élément qui le chevauche → effet visible à chaque clic
   // (sinon tout en haut / tout en bas) ; un groupe passe d'un coup au premier / à l'arrière-plan.
   // Les vues (V1, V2…) ne bougent pas. Les objets ne sont que réordonnés : aucune donnée modifiée.
-  const reorderSelection = (dir) => {
+  // toEnd : TOUT derrière / TOUT devant en un clic (retour Thomas 27/10 : un trait le long d'une
+  // file passait au-dessus d'une vingtaine de repères → « Reculer » cran par cran inutilisable).
+  const reorderSelection = (dir, toEnd = false) => {
     const ps = pathsRef.current;
     const idxs = selectedIdxs().filter(i => ps[i] && ps[i].type !== 'viewpoint');
     if (!idxs.length) return false;
     const set = new Set(idxs);
     let order; // nouvel ordre = liste d'index d'origine
-    if (idxs.length === 1) {
+    if (toEnd) {
+      const rest = ps.map((_, k) => k).filter(k => !set.has(k));
+      order = dir > 0 ? [...rest, ...idxs] : [...idxs, ...rest];
+    } else if (idxs.length === 1) {
       const i = idxs[0], bi = boundsOf(ps[i]);
       const overlaps = (j) => { const b = boundsOf(ps[j]); return bi && b && b.x1 <= bi.x2 && b.x2 >= bi.x1 && b.y1 <= bi.y2 && b.y2 >= bi.y1; };
       let j = -1;
@@ -1627,8 +1636,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); ops.duplicateSelection(); return; }
       if (mod && (e.key === 'a' || e.key === 'A')) { if (ops.selectAll()) e.preventDefault(); return; }
       // Calques : Ctrl+] avancer, Ctrl+[ reculer (code physique → marche aussi en AZERTY).
-      if (mod && (e.code === 'BracketRight' || e.key === ']')) { if (ops.reorderSelection(1)) e.preventDefault(); return; }
-      if (mod && (e.code === 'BracketLeft' || e.key === '[')) { if (ops.reorderSelection(-1)) e.preventDefault(); return; }
+      if (mod && (e.code === 'BracketRight' || e.key === ']' || e.key === '}')) { if (ops.reorderSelection(1, e.shiftKey)) e.preventDefault(); return; }
+      if (mod && (e.code === 'BracketLeft' || e.key === '[' || e.key === '{')) { if (ops.reorderSelection(-1, e.shiftKey)) e.preventDefault(); return; }
       if (e.key === 'Enter' && finishPolyRef.current()) { e.preventDefault(); return; }
       // Échap = on QUITTE ce qu'on était en train de faire (retour Thomas) : tracé en cours
       // annulé, outil → Sélection, plus rien de sélectionné, focus rendu au plan.
@@ -1848,6 +1857,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     e.preventDefault();
     if (e.touches?.length >= 2) {
       if (drawing) { setCur([]); setDrawing(false); }
+      // Le 1er doigt avait commencé à poser un repère / déplacer un marqueur : on annule.
+      pinchGuardRef.current = true;
+      vpStart.current = null; setPendingVP(null);
+      annotDragRef.current = null; oneFingerPanRef.current = null;
       // Annule un symbole placé accidentellement par le premier doigt du pinch (<250ms)
       if (Date.now() - lastSymPlaceRef.current < 250) setPaths(prev => prev.slice(0, -1));
       const [t1, t2] = e.touches;
@@ -1864,6 +1877,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
       return;
     }
     if (gestureRef.current) return;
+    if (e.touches && pinchGuardRef.current) return; // doigt restant d'un zoom
 
     // Zoomé + UN doigt + outil SÉLECTION : on prépare un PAN (glisser = déplacer la vue). Dans les
     // outils de DESSIN, un doigt dessine toujours → pas de pan (on utilise l'outil Sélect. ou deux
@@ -2297,6 +2311,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const onMove = e => {
     e.preventDefault();
+    if (pinchGuardRef.current && e.touches?.length === 1) return; // doigt restant d'un zoom
     if (e.touches?.length >= 2 && gestureRef.current) {
       const [t1, t2] = e.touches;
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
@@ -2500,6 +2515,13 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
 
   const onEnd = e => {
     e.preventDefault();
+    if (pinchGuardRef.current && e.touches) {
+      // Fin d'un zoom : on ne finalise rien ; garde levée quand tous les doigts sont levés.
+      if (e.touches.length < 2) gestureRef.current = null;
+      if (e.touches.length === 0) pinchGuardRef.current = false;
+      vpStart.current = null; setPendingVP(null); setDrawing(false); setCur([]);
+      return;
+    }
     if (snapHint) setSnapHint(null);
     // Fin d'un pan à un doigt (plan zoomé) : si on a réellement glissé, on NE finalise PAS de
     // tracé/placement. Si c'était un simple tap (jamais passé en pan), on laisse onEnd continuer.
@@ -2773,6 +2795,29 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Hauteur de la bande des menus sur PC (tuiles symboles agrandies + curseur de taille, ou
   // panneau d'édition de texte). Constante → le plan ne change jamais de taille.
   const PANEL_SLOT_H = 160;
+  // PC : les menus s'affichent PAR-DESSUS le haut du plan. Si l'élément sélectionné (ou le texte en
+  // cours de saisie) est dans cette zone, ils passent EN BAS du plan (retour Thomas 29/10 : « le
+  // bandeau m'empêche d'accéder au haut de mon plan ») — le plan, lui, ne bouge jamais.
+  const panelDockBottom = (() => {
+    if (isMob) return false;
+    const wrap = canvasWrapRef.current;
+    if (!wrap || !cvRef.current) return false;
+    let y = null;
+    try {
+      if (inlineEditPos) y = inlineEditPos.top;
+      else {
+        let b = null;
+        if (selText) b = boundsOf(selText);
+        else if (selAnnot !== null && paths[selAnnot.idx]) b = boundsOf(paths[selAnnot.idx]);
+        else if (multiSel.length) {
+          const bs = multiSel.map(i => paths[i] && boundsOf(paths[i])).filter(Boolean);
+          if (bs.length) b = { y1: Math.min(...bs.map(x => x.y1)) };
+        }
+        if (b) y = toScreenPos(0, b.y1).top;
+      }
+    } catch { y = null; }
+    return y != null && y < PANEL_SLOT_H + 24;
+  })();
 
   // ── Enregistrer & fermer (bouton « Sauvegarder », et « Enregistrer » de la confirmation) ──
   const saveAndClose = () => {
@@ -2935,9 +2980,14 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   // Boutons « Avancer / Reculer » (ordre des calques) — PC uniquement (demande Thomas).
   const renderLayerBtns = () => (isTouchUI ? null : (
     <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-      {[{ d:1, g:'▲', lbl:'Avancer', k:']' }, { d:-1, g:'▼', lbl:'Reculer', k:'[' }].map(b => (
-        <button key={b.d} onClick={() => { if (inlineEditPos === null) reorderSelection(b.d); }}
-          title={`${b.lbl} : passer ${b.d > 0 ? 'devant' : 'derrière'} l'élément qui chevauche (Ctrl+${b.k})`}
+      {[
+        { d:1,  all:true,  g:'⤒', lbl:'Tout devant',  t:'Mettre tout devant (au-dessus de tous les éléments)', k:'Maj+]' },
+        { d:1,  all:false, g:'▲', lbl:'Avancer',      t:"Avancer : passer devant l'élément qui chevauche", k:']' },
+        { d:-1, all:false, g:'▼', lbl:'Reculer',      t:"Reculer : passer derrière l'élément qui chevauche", k:'[' },
+        { d:-1, all:true,  g:'⤓', lbl:'Tout derrière', t:'Mettre tout derrière (sous tous les éléments : repères, textes…)', k:'Maj+[' },
+      ].map(b => (
+        <button key={`${b.d}${b.all}`} onClick={() => { if (inlineEditPos === null) reorderSelection(b.d, b.all); }}
+          title={`${b.t} (Ctrl+${b.k})`}
           style={{ padding:'4px 8px', background:'#333', color:'#ddd', border:'none', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
           {b.g} {b.lbl}
         </button>
@@ -3190,7 +3240,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
              n'occupe plus de place : les menus s'affichent PAR-DESSUS le haut de l'image (calque
              de hauteur max constante) → aucune place perdue, et l'image ne bouge toujours pas. ── */}
       <div style={isMob ? { display:'contents' } : { position:'relative', height:0, flexShrink:0, zIndex:30 }}>
-      <div style={isMob ? { display:'contents' } : { position:'absolute', top:0, left:0, right:0, maxHeight:PANEL_SLOT_H, overflowY:'auto', background:'#1a1a1a', boxShadow:'0 6px 16px rgba(0,0,0,0.35)' }}>
+      <div style={isMob ? { display:'contents' } : { position:'absolute', left:0, right:0, maxHeight:PANEL_SLOT_H, overflowY:'auto', background:'#1a1a1a',
+        ...(panelDockBottom
+          ? { top: canvasWrapRef.current?.clientHeight || 0, transform:'translateY(-100%)', boxShadow:'0 -6px 16px rgba(0,0,0,0.35)' }
+          : { top:0, boxShadow:'0 6px 16px rgba(0,0,0,0.35)' }) }}>
       {/* ── Symbol picker — rangée UNIFIÉE (demande Thomas : plus d'onglets, une seule ligne
              défilante avec séparateurs de catégories, et le NOM COMPLET sous chaque picto —
              sur le plan les marqueurs gardent leurs codes courts FV/FO/L., rien ne change). ── */}
@@ -3381,8 +3434,60 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
         </div>
       )}
 
-      {/* ── Panneau édition texte sélectionné — REFONTE MOBILE : 2 rangées, grosses cibles ── */}
-      {selText && (
+      {/* ── Panneau édition texte sélectionné — PC : UNE seule ligne compacte (retour Thomas 29/10 :
+             « le bandeau est très gros ») ── */}
+      {selText && !isTouchUI && (
+        <div style={{ background:'#1a1a1a', padding:'5px 10px', borderBottom:'1px solid #333', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          <span title={`Recliquez sur le texte pour le réécrire${selText.textMode === 'arrow' ? ' · glissez le losange orange pour déplacer la base de la flèche' : ''}`}
+            style={{ fontSize:12, color:'#999', flexShrink:1, minWidth:0, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:230 }}>
+            Recliquez sur le texte pour le réécrire
+          </span>
+          <div style={{ display:'flex', gap:2, background:'#111', borderRadius:8, padding:2, flexShrink:0 }}>
+            {[{ k:'plain', g:'T', lbl:'Simple' },{ k:'boxed', g:'⬚', lbl:'Encadré' },{ k:'arrow', g:'↗', lbl:'Flèche' }].map(m => {
+              const active = (selText.textMode||'plain')===m.k;
+              return (
+                <button key={m.k} onClick={() => setPaths(prev => prev.map((p,i) => {
+                    if (i !== selTextIdx) return p;
+                    const np = { ...p, textMode: m.k };
+                    if (m.k === 'arrow' && np.arrowX == null) { np.arrowX = (np.x ?? 0) + 70; np.arrowY = (np.y ?? 0) + 70; }
+                    return np;
+                  }))}
+                  style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:6, border:'none', cursor:'pointer', fontSize:12, fontWeight:700,
+                    background: active?DA.red:'transparent', color: active?'white':'#bbb' }}>
+                  <span style={{ fontSize:13 }}>{m.g}</span>{m.lbl}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:6, flex:1, minWidth:120, maxWidth:320 }} title="Taille du texte">
+            <span style={{ fontSize:11, color:'#bbb', fontWeight:800 }}>A</span>
+            <input type="range" min="-3" max="14" step="0.5" value={selText.size ?? 3}
+              onChange={e => { const v = parseFloat(e.target.value);
+                setPaths(prev => prev.map((p,i) => {
+                  if (i !== selTextIdx) return p;
+                  const oldFs = 20 + (p.size ?? 3) * 4, newFs = 20 + v * 4;
+                  const np = { ...p, size: v };
+                  if (p.textW && oldFs > 0) np.textW = Math.max(20, p.textW * (newFs / oldFs));
+                  return np;
+                }));
+              }}
+              style={{ flex:1, accentColor:DA.red, cursor:'pointer' }}/>
+            <span style={{ fontSize:16, color:'#eee', fontWeight:800, lineHeight:1 }}>A</span>
+          </div>
+          {renderLayerBtns()}
+          <button onClick={() => { duplicateAnnot(selText); setSelTextIdx(paths.length); }} title="Dupliquer"
+            style={{ padding:'4px 8px', background:'#1d4ed8', color:'white', border:'none', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer', flexShrink:0 }}>⊕ Dupliquer</button>
+          <button onClick={() => { if (inlineEditIdx === selTextIdx) cancelInlineEdit(); setPaths(p => p.filter((_,i) => i !== selTextIdx)); setSelTextIdx(null); }} title="Supprimer"
+            style={{ padding:'4px 8px', background:'#B91C1C', color:'white', border:'none', borderRadius:6, cursor:'pointer', flexShrink:0, display:'flex', alignItems:'center' }}>
+            <Ic n="del" s={13}/>
+          </button>
+          <button onClick={() => setSelTextIdx(null)} title="Fermer"
+            style={{ padding:'4px 8px', background:'#333', color:'#aaa', border:'none', borderRadius:6, fontSize:11, cursor:'pointer', flexShrink:0 }}>✕</button>
+        </div>
+      )}
+
+      {/* ── Panneau édition texte sélectionné — MOBILE : 2 rangées, grosses cibles ── */}
+      {selText && isTouchUI && (
         <div style={{ background:'#1a1a1a', padding:'8px 10px', borderBottom:'1px solid #333', display:'flex', flexDirection:'column', gap:8, flexShrink:0 }}>
           {/* Rangée 1 : zone de texte multi-ligne (Entrée = nouvelle ligne, la boîte s'adapte) +
               fermer. fontSize 16 → pas de zoom iOS ; hauteur auto jusqu'à ~5 lignes. */}
@@ -3618,7 +3723,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                   ['Formes', [['R', 'Rectangle'], ['E', 'Ellipse'], ['A', 'Flèche'], ['L', 'Ligne'], ['Z', 'Zone libre'], ['P', 'Polyligne'], ['Entrée', 'Terminer la ligne / zone']]],
                   ['Tracé', [['Maj', 'Angles droits · carré / cercle'], ['Alt', 'Sans aimantation']]],
                   ['Édition', [['Glisser (vide)', 'Cadre de sélection'], ['Ctrl+clic', 'Ajouter / retirer de la sélection'], ['Ctrl+A', 'Tout sélectionner'], ['Ctrl+C / V', 'Copier / coller sous la souris'],
-                    ['Ctrl+D', 'Dupliquer'], ['Ctrl+] / [', 'Avancer / reculer (calques)'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Quitter le tracé / la sélection']]],
+                    ['Ctrl+D', 'Dupliquer'], ['Ctrl+] / [', 'Avancer / reculer (calques)'], ['Ctrl+Maj+] / [', 'Tout devant / tout derrière'], ['Flèches', 'Déplacer (Maj = ×10)'], ['Suppr', 'Supprimer'], ['Ctrl+Z / Y', 'Annuler / rétablir'], ['Échap', 'Quitter le tracé / la sélection']]],
                   ['Vue', [['Molette', 'Zoom'], ['Espace + glisser', 'Déplacer la vue'], ['Ctrl+0', 'Vue entière'], ['Ctrl+ + / −', 'Zoom avant / arrière']]],
                 ].map(([sec, rows]) => (
                   <div key={sec} style={{ marginBottom:8, breakInside:'avoid' }}>
