@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS } from './costarRewards.js';
 
-const day = new Date(2026, 10, 20, 15, 0); // vendredi de novembre, hors midi (pas de mission saisonnière)
-const night = new Date(2026, 10, 20, 22, 30);
+const day = new Date(2026, 3, 15, 15, 0); // mercredi d'avril, 15 h : aucune mission de jour / saison / heure
+const night = new Date(2026, 3, 15, 22, 30);
 
 describe('Vestiaire de Costar — missions et cosmétiques', () => {
   it('catalogue cohérent : chaque mission débloque un cosmétique existant, un seul par mission', () => {
@@ -13,10 +13,10 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
   });
 
   it('première relecture → lunettes de soleil, portées tout de suite', () => {
-    const { state, completed } = applyReview(emptyState(), { note: 6, observations: 5, projectId: 'p1' }, day);
-    expect(completed.map(m => m.id)).toEqual(['premiere']);
+    const { state, completed } = applyReview(emptyState(), { note: 6, observations: 4, projectId: 'p1' }, day);
+    expect(completed.map(m => m.id)).toEqual(['premiere', 'milieu']); // 6/10 → corne de licorne aussi
     expect(state.equipped.eyes).toBe('lunettes');
-    expect(state.unseen).toEqual(['lunettes']);
+    expect(state.unseen).toEqual(['lunettes', 'licorne']);
   });
 
   it('rapport vide ou note invalide : rien ne bouge', () => {
@@ -61,7 +61,9 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     st = applyReview(st, { note: 5, observations: 2, projectId: 'a' }, new Date(2026, 9, 5, 9)).state;  // lunettes
     st = applyReview(st, { note: 10, observations: 2, projectId: 'a' }, new Date(2026, 9, 5, 10)).state; // remontada (gilet) + casque or
     st = applyReview(st, { note: 6, observations: 2, projectId: 'b' }, new Date(2026, 9, 5, 11)).state;  // cowboy
-    expect(st.equipped).toMatchObject({ head: 'cowboy', body: 'gilet', eyes: 'lunettes' }); // porté dès le déblocage
+    // porté dès le déblocage : la 3e relecture débloque aussi la chemise de bûcheron (3 relectures)
+    expect(st.equipped).toMatchObject({ head: 'cowboy', body: 'bucheron', eyes: 'lunettes' });
+    st = toggleEquip(st, 'gilet');
     st = toggleEquip(st, 'casque_or'); // autre chapeau → remplace le cowboy, le reste ne bouge pas
     expect(st.equipped).toMatchObject({ head: 'casque_or', body: 'gilet', eyes: 'lunettes' });
   });
@@ -91,7 +93,7 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
   });
 
   it('porter / enlever : uniquement un cosmétique débloqué, un par emplacement', () => {
-    let st = applyReview(emptyState(), { note: 6, observations: 3 }, day).state;
+    let st = applyReview(emptyState(), { note: 8, observations: 3 }, day).state;
     expect(toggleEquip(st, 'couronne').equipped.head).toBeUndefined(); // verrouillé
     st = toggleEquip(st, 'lunettes');
     expect(st.equipped.eyes).toBeUndefined();
@@ -147,6 +149,20 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     r = applyReview(r.state, { note: 10, observations: 12, projectId: 'b' }, day);
     expect(r.completed.map(m => m.reward)).toContain('karate');
     expect(r.state.equipped).toMatchObject({ waist: 'karate', hand: 'gants', feet: 'securite' }); // tenue : le gilet (remontada) a remplacé le slip
+  });
+
+  it('fournée « facile » du 29/10 : vendredi, lundi, matin, afterwork, hiver, relire 2×, d\'affilée', () => {
+    const got = (reviews) => { let st = emptyState(); reviews.forEach(([note, obs, d, rep]) => { st = applyReview(st, { note, observations: obs, projectId: rep || 'x', reportId: rep || 'x' }, d).state; }); return unlockedIds(st.stats); };
+    expect(got([[8, 2, new Date(2026, 3, 17, 15)]])).toContain('peace');           // vendredi
+    expect(got([[8, 2, new Date(2026, 3, 13, 15)]])).toContain('claquettes');      // lundi
+    expect(got([[8, 2, new Date(2026, 3, 15, 8)]])).toContain('masque');           // avant 9 h
+    expect(got([[8, 2, new Date(2026, 3, 15, 18)]])).toContain('hawai');           // après 17 h
+    expect(got([[8, 2, new Date(2026, 10, 4, 15)]])).toContain('skis');            // novembre
+    expect(got([[8, 2, day]])).not.toEqual(expect.arrayContaining(['peace', 'claquettes', 'masque', 'hawai', 'skis', 'bouee']));
+    expect(got([[8, 2, day, 'r'], [8, 2, day, 'r']])).toEqual(expect.arrayContaining(['bouee', 'rose', 'guitare', 'chaine']));
+    expect(got([[8, 2, day, 'r'], [3, 2, day, 's'], [8, 2, day, 't']])).not.toContain('rose'); // pas d'affilée
+    expect(got([[8, 8, day]])).toContain('hautforme');
+    expect(got([[8, 2, day, 'a'], [8, 2, day, 'b']])).toContain('ninja');
   });
 
   it('état corrompu → progression vierge, sans plantage', () => {

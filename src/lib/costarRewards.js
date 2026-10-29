@@ -48,6 +48,21 @@ export const COSMETICS = {
   karate:    { name: 'Ceinture noire',     slot: 'waist', icon: '🥋' },
   gants:     { name: 'Gants de boxe',      slot: 'hand',  icon: '🥊' },
   securite:  { name: 'Chaussures de sécurité', slot: 'feet', icon: '🥾' },
+  // Fournée du 29/10/2026 (demande Thomas : « fun, loufoque ou classe, pas trop dur à faire »).
+  peace:     { name: 'Peace & love',       slot: 'hand',  icon: '✌️' },
+  hawai:     { name: 'Chemise hawaïenne',  slot: 'body',  icon: '🌺' },
+  hautforme: { name: 'Haut-de-forme',      slot: 'head',  icon: '🎩' },
+  masque:    { name: 'Masque de nuit',     slot: 'eyes',  icon: '😴' },
+  licorne:   { name: 'Corne de licorne',   slot: 'head',  icon: '🦄' },
+  guitare:   { name: 'Guitare électrique', slot: 'extra', icon: '🎸' },
+  bucheron:  { name: 'Chemise de bûcheron', slot: 'body', icon: '🪓' },
+  chaine:    { name: 'Chaîne en or',       slot: 'neck',  icon: '📿' },
+  bouee:     { name: 'Bouée canard',       slot: 'waist', icon: '🦆' },
+  claquettes:{ name: 'Claquettes-chaussettes', slot: 'feet', icon: '🩴' },
+  rose:      { name: 'Rose entre les dents', slot: 'mouth', icon: '🌹' },
+  surf:      { name: 'Planche de surf',    slot: 'extra', icon: '🏄' },
+  skis:      { name: 'Skis',               slot: 'feet',  icon: '🎿' },
+  ninja:     { name: 'Bandeau de ninja',   slot: 'head',  icon: '🥷' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -55,6 +70,21 @@ export const MISSIONS = [
   { id: 'premiere',  title: 'Première relecture',     desc: 'Faire relire un rapport à Costar',                     reward: 'lunettes',  progress: s => [s.reviews, 1] },
   { id: 'sept',      title: 'Bon élève',              desc: 'Obtenir 7/10 ou plus',                                  reward: 'noeud',     progress: s => [s.bestNote >= 7 ? 1 : 0, 1] },
   { id: 'dur',       title: 'Dur à cuire',            desc: 'Survivre à une note de 4/10 ou moins',                  reward: 'pansement', progress: s => [s.lowNote ? 1 : 0, 1] },
+  // Quêtes « faciles » (29/10/2026) : faisables en quelques relectures.
+  { id: 'peace',     title: 'Peace & love',           desc: 'Faire relire un rapport un vendredi. Bon week-end !',   reward: 'peace',     progress: s => [s.friday ? 1 : 0, 1] },
+  { id: 'lundi',     title: 'Lundi tranquille',       desc: 'Faire relire un rapport un lundi',                      reward: 'claquettes',progress: s => [s.monday ? 1 : 0, 1] },
+  { id: 'leve',      title: 'Lève-tôt',               desc: 'Faire relire un rapport avant 9 h (on n\'est pas bien réveillé)', reward: 'masque', progress: s => [s.early ? 1 : 0, 1] },
+  { id: 'afterwork', title: 'Afterwork',              desc: 'Faire relire un rapport après 17 h',                    reward: 'hawai',     progress: s => [s.afterwork ? 1 : 0, 1] },
+  { id: 'milieu',    title: 'Pile au milieu',         desc: 'Obtenir 5/10 ou 6/10. Ni bon ni mauvais : juste magique.', reward: 'licorne', progress: s => [s.midNote ? 1 : 0, 1] },
+  { id: 'bucheron',  title: 'Bûcheron des Laurentides', desc: 'Faire relire 3 rapports',                             reward: 'bucheron',  progress: s => [Math.min(s.reviews, 3), 3] },
+  { id: 'rock',      title: 'Rock\'n\'roll',          desc: 'Faire relire 2 rapports dans la même journée',          reward: 'guitare',   progress: s => [Math.min(s.bestDay, 2), 2] },
+  { id: 'replonge',  title: 'On replonge',            desc: 'Faire relire une 2e fois le même rapport',              reward: 'bouee',     progress: s => [s.reread ? 1 : 0, 1] },
+  { id: 'surf',      title: 'Sur la vague',           desc: 'Faire relire un rapport de 5 observations ou plus',     reward: 'surf',      progress: s => [Math.min(s.maxObs, 5), 5] },
+  { id: 'ninja',     title: 'Ninja des chantiers',    desc: 'Faire relire 2 affaires différentes',                   reward: 'ninja',     progress: s => [Math.min(Object.keys(s.affaires).length, 2), 2] },
+  { id: 'skis',      title: 'Tout schuss',            desc: 'Faire relire un rapport en hiver (novembre à mars)',    reward: 'skis',      progress: s => [s.winter ? 1 : 0, 1] },
+  { id: 'bling',     title: 'Bling-bling',            desc: 'Obtenir 8/10 ou plus, 2 fois',                          reward: 'chaine',    progress: s => [Math.min(s.count8, 2), 2] },
+  { id: 'coeur',     title: 'Coup de cœur',           desc: 'Obtenir 7/10 ou plus, deux relectures d\'affilée',      reward: 'rose',      progress: s => [Math.min(s.bestStreak7, 2), 2] },
+  { id: 'gentleman', title: 'Gentleman ingénieur',    desc: 'Obtenir 8/10 ou plus sur un rapport de 8 observations ou plus', reward: 'hautforme', progress: s => [s.bigGood ? 1 : 0, 1] },
   { id: 'remontada', title: 'Remontada',              desc: 'Gagner 2 points sur un même rapport en le corrigeant',  reward: 'gilet',     progress: s => [s.remontada ? 1 : 0, 1] },
   { id: 'gros',      title: 'Gros chantier',          desc: 'Faire relire un rapport de 20 observations ou plus',   reward: 'cafe',      progress: s => [Math.min(s.maxObs, 20), 20] },
   { id: 'nuit',      title: 'Oiseau de nuit',         desc: 'Faire relire un rapport après 20 h',                    reward: 'lampe',     progress: s => [s.night ? 1 : 0, 1] },
@@ -78,7 +108,8 @@ export const MISSIONS = [
 ];
 
 export function emptyStats() {
-  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {} };
+  return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {},
+    friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0 };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -99,6 +130,8 @@ export function normalizeState(raw) {
     days: num(s.days, 0), noon: !!s.noon, weekend: !!s.weekend, october: !!s.october, december: !!s.december,
     shortReport: !!s.shortReport, bigComeback: !!s.bigComeback, perfectBig: !!s.perfectBig,
     shrunk: !!s.shrunk, reportObs: s.reportObs && typeof s.reportObs === 'object' ? { ...s.reportObs } : {}, // rapport → nb d'observations à la dernière relecture
+    friday: !!s.friday, monday: !!s.monday, early: !!s.early, afterwork: !!s.afterwork, midNote: !!s.midNote,
+    reread: !!s.reread, winter: !!s.winter, bigGood: !!s.bigGood, streak7: num(s.streak7, 0), bestStreak7: num(s.bestStreak7, 0),
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -131,6 +164,10 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   s.maxObs = Math.max(s.maxObs, observations);
   if (observations <= 3) s.shortReport = true;
   if (note >= 10 && observations >= 10) s.perfectBig = true;
+  if (note >= 8 && observations >= 8) s.bigGood = true;
+  if (note >= 5 && note <= 6) s.midNote = true;
+  s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
+  s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
   if (s.day !== dayKey) s.days += 1; // jours différents avec au moins une relecture
   s.dayCount = s.day === dayKey ? s.dayCount + 1 : 1;
@@ -142,9 +179,15 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (now.getDay() === 0 || now.getDay() === 6) s.weekend = true;
   if (now.getMonth() === 9) s.october = true;
   if (now.getMonth() === 11) s.december = true;
+  if (now.getDay() === 5) s.friday = true;
+  if (now.getDay() === 1) s.monday = true;
+  if (h >= 5 && h < 9) s.early = true;
+  if (h >= 17) s.afterwork = true;
+  if ([10, 11, 0, 1, 2].includes(now.getMonth())) s.winter = true; // novembre → mars
   if (projectId) s.affaires[projectId] = 1;
   if (reportId) {
     const last = s.projects[reportId];
+    if (Number.isFinite(last)) s.reread = true; // même rapport relu une 2e fois
     if (Number.isFinite(last) && note - last >= 2) s.remontada = true;
     if (Number.isFinite(last) && note - last >= 3) s.bigComeback = true;
     s.projects[reportId] = note;

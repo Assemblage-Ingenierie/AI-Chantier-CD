@@ -261,6 +261,19 @@ export const COSTAR_LOADING = [
   'Je pèse chaque mot comme une charge permanente',
   'Ça avance, je suis rendu à la moitié du barrage',
   'Presque fini, je peaufine mon verdict',
+  // Fournée rigolote (demande Thomas 29/10)
+  'Je lis en diagonale… non je blague, je lis tout, je suis un castor sérieux',
+  'J\'ai renversé mon café sur la zone 3, je fais comme si de rien n\'était',
+  'Je cherche le mot « ragréage », je l\'adore ce mot-là',
+  'Je compte les « à prévoir », j\'en suis à trop',
+  'Je relis la phrase trois fois, je pense qu\'elle me relit aussi',
+  'Je surfe sur tes observations, la vague est bonne',
+  'Je mets mes skis, ça descend vite ce rapport-là',
+  'Je fais le ninja entre tes paragraphes, ni vu ni connu',
+  'Je joue un petit solo de guitare pour me concentrer',
+  'Je mâche un crayon de chantier, c\'est ma façon de réfléchir',
+  'Je demande l\'avis de mon cousin le rat musqué, il est pas d\'accord',
+  'Je vérifie que ta fissure est pas juste un poil de castor sur l\'écran',
 ];
 export const COSTAR_ERRORS = [
   'Oups, mon barrage a lâché',
@@ -287,6 +300,14 @@ export const COSTAR_HELLO = [
   'J\'ai mon casque, j\'ai mes lunettes, go !',
   'Je relis plus vite qu\'un castor abat un bouleau',
   'Tu veux une note ? Je suis sévère mais juste',
+  'Peace ! Montre-moi ce rapport ✌️',
+  'J\'ai fini ma sieste, je suis tout ouïe (et tout dents)',
+  'Un rapport ? Je laisse tomber ma guitare, j\'arrive',
+  'Tu me paies en sirop d\'érable ? Bon, OK, je relis gratis',
+  'J\'ai ciré mes skis, on peut y aller',
+  'Mode ninja activé : je vois tout, je dis tout',
+  'Je relis, mais je te préviens : je mords',
+  'Psst… on relit avant que le maître d\'ouvrage le voie ?',
 ];
 // Petite réaction selon la note, affichée sous le score.
 export const COSTAR_SCORE_QUIPS = {
@@ -295,11 +316,15 @@ export const COSTAR_SCORE_QUIPS = {
     'C\'est écœurant ! J\'en ai la queue qui frétille.',
     'Au boutte ! Je l\'encadre dans ma cabane.',
     'Même ma mère castor aurait rien à redire.',
+    'Peace & love, rien à redire ✌️',
+    'Je sors le haut-de-forme : chapeau bas, l\'ingénieur.',
   ],
   good: [
     'Tiguidou, quelques coups de dents et c\'est parfait.',
     'Solide comme un barrage en béton armé.',
     'Belle job, lâche pas, t\'es presque au sommet.',
+    'Je surfe dessus sans tomber, c\'est bon signe.',
+    'Ça glisse comme sur des skis fartés.',
     'Ça tient debout, il reste juste à poncer les échardes.',
   ],
   mid: [
@@ -307,12 +332,16 @@ export const COSTAR_SCORE_QUIPS = {
     'Ça se tient, mais faut resserrer les boulons.',
     'On est sur la bonne piste de ski, faut juste éviter les sapins.',
     'Pas pire, mais mon barrage fuit à deux trois places.',
+    'C\'est tiède comme un café oublié sur l\'échafaudage.',
+    'Moyen comme une licorne : on y croit, mais faut la voir pour y croire.',
   ],
   low: [
     'Attache ta tuque avec de la broche, on a du travail.',
     'C\'est une vraie job de bras, on recommence ensemble ?',
     'Ton rapport est maigre comme un castor en avril.',
     'Ouf, même un orignal y verrait pas clair.',
+    'Je vais m\'asseoir sur ma bouée canard deux minutes, ça m\'a secoué.',
+    'Respire. Moi aussi j\'ai déjà rongé le mauvais arbre.',
   ],
 };
 export const scoreQuip = (note) => pick(note >= 9 ? COSTAR_SCORE_QUIPS.top : note >= 7 ? COSTAR_SCORE_QUIPS.good : note >= 5 ? COSTAR_SCORE_QUIPS.mid : COSTAR_SCORE_QUIPS.low);
