@@ -6,6 +6,7 @@ import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
 import { addTombstone, liftTombstone } from '../../lib/tombstones.js';
 import { keepCollaboratorPhotos } from '../../lib/photoMerge.js';
 import { planTargetLoc, placementItems, placementPhotoIdx } from '../../lib/zonePlacement.js';
+import { syncViewpointsToPhotos } from '../../lib/vpPhotoSync.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -271,9 +272,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     if (Object.keys(visitUpd).length > 0) {
       onUpdate(prev => ({
         ...projectUpd,
-        visites: (prev.visites || []).map(v =>
-          v.id === selectedVisiteId ? { ...v, ...visitUpd } : v
-        ),
+        visites: (prev.visites || []).map(v => {
+          if (v.id !== selectedVisiteId) return v;
+          // Photo supprimée / déplacée / réordonnée → les repères Vxx des plans suivent (le
+          // repère d'une photo supprimée disparaît). Aucun changement de photo → no-op.
+          const upd = visitUpd.localisations
+            ? { ...visitUpd, localisations: syncViewpointsToPhotos(v.localisations, visitUpd.localisations) }
+            : visitUpd;
+          return { ...v, ...upd };
+        }),
       }));
     } else {
       onUpdate(projectUpd);
