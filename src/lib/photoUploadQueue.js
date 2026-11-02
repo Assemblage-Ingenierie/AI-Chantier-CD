@@ -21,6 +21,7 @@
 // tant que l'upload n'a pas réussi.
 
 import { getSupabase } from '../supabase.js';
+import { uploadThumbForPhoto } from './photoThumbs.js';
 
 const DB_NAME = 'chantierai_uploads';
 const Q_STORE = 'queue'; // photoUploadId → { id, path, dataUrl, contentType, tries, createdAt }
@@ -165,6 +166,9 @@ export async function drainPhotoQueue() {
             await idbReq(D_STORE, 'readwrite', s => s.put(entry.path, key));
             await idbReq(Q_STORE, 'readwrite', s => s.delete(key));
             progressed = true;
+            // Vignette rangée à côté (lib/photoThumbs.js) — best-effort, en arrière-plan : un échec
+            // ne change rien à la photo (le rattrapage au 1er affichage prendra le relais).
+            uploadThumbForPhoto(entry.path, blob).catch(() => {});
           } catch {
             // Échec (réseau…) : l'entrée reste en file, re-tentée au prochain drain.
             await idbReq(Q_STORE, 'readwrite', s => s.put({ ...entry, tries: (entry.tries || 0) + 1 }, key));

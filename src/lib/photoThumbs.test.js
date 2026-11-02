@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Faux client Supabase : createSignedUrl avec transform → URL /render/image/sign/.
+// Faux client Supabase : createSignedUrl (sans transformation) + upload (vignettes rangées).
 const calls = [];
-const sb = { fail: false };
+const uploads = [];
+const sb = { fail: false, missing: false };
 vi.mock('../supabase.js', () => ({
   getSupabase: async () => ({
     storage: {
       from: () => ({
         createSignedUrl: async (path, ttl, opts) => {
           calls.push({ path, ttl, opts });
-          if (sb.fail) return { data: null, error: { message: 'transformations disabled' } };
-          return { data: { signedUrl: `https://x.supabase.co/storage/v1/render/image/sign/photos/${path}?token=T${calls.length}` }, error: null };
+          if (sb.fail) return { data: null, error: { message: 'storage down' } };
+          if (sb.missing && path.startsWith('_thumbs/')) return { data: null, error: { message: 'Object not found' } };
+          return { data: { signedUrl: `https://x.supabase.co/storage/v1/object/sign/photos/${path}?token=T${calls.length}` }, error: null };
         },
+        upload: async (path, blob, opts) => { uploads.push({ path, blob, opts }); return { error: null }; },
       }),
     },
   }),
@@ -21,7 +24,7 @@ vi.mock('./logger.js', () => ({ logWarn: () => {}, logEvent: () => {}, logError:
 const T = await import('./photoThumbs.js');
 const SIGNED = 'https://x.supabase.co/storage/v1/object/sign/photos/proj_ab12/item1/ph%201.webp?token=abc';
 
-beforeEach(() => { calls.length = 0; sb.fail = false; T._resetThumbsForTests(); });
+beforeEach(() => { calls.length = 0; uploads.length = 0; sb.fail = false; sb.missing = false; T._resetThumbsForTests(); });
 
 describe('vignettes allégées des photos', () => {
   it('seules les URL signées du bucket photos sont éligibles', () => {
@@ -32,11 +35,11 @@ describe('vignettes allégées des photos', () => {
     expect(T.thumbKey(null, 640)).toBeNull();
   });
 
-  it('signe une vignette redimensionnée, puis la sert depuis le cache sans re-signer', async () => {
+  it('signe la vignette RANGÉE (_thumbs/…, aucune transformation facturée), puis la sert depuis le cache', async () => {
     const u = await T.getThumbUrl(SIGNED, 640);
-    expect(u).toContain('/render/image/sign/');
-    expect(calls[0].opts.transform.width).toBe(640);
-    expect(calls[0].path).toBe('proj_ab12/item1/ph 1.webp');
+    expect(u).toContain('/object/sign/photos/_thumbs/');
+    expect(calls[0].opts).toBeUndefined(); // plus jamais de « transform » (quota Supabase)
+    expect(calls[0].path).toBe('_thumbs/proj_ab12/item1/ph 1.webp.thumb');
     const again = await T.getThumbUrl(SIGNED, 640);
     expect(again).toBe(u);
     expect(calls).toHaveLength(1);
@@ -46,12 +49,12 @@ describe('vignettes allégées des photos', () => {
   it('couvertures (allowPath) : un simple chemin est signé directement, même clé que l\'URL signée', async () => {
     const path = 'proj_ab12/cover/c123.webp';
     expect(T.thumbKey(path, 640)).toBeNull(); // hors couvertures : inchangé
-    expect(T.thumbKey(path, 640, true)).toBe(`${path}@w640`);
+    expect(T.thumbKey(path, 640, true)).toBe(`${path}@t1`);
     expect(T.thumbKey('data:image/png;base64,AA', 640, true)).toBeNull();
     expect(T.thumbKey('/assets/x.png', 640, true)).toBeNull();
     const u = await T.getThumbUrl(path, 640, true);
-    expect(u).toContain('/render/image/sign/photos/proj_ab12/cover/c123.webp');
-    expect(calls[0].path).toBe(path);
+    expect(u).toContain('/object/sign/photos/_thumbs/proj_ab12/cover/c123.webp.thumb');
+    expect(calls[0].path).toBe(T.thumbPathOf(path));
     const signed = 'https://x.supabase.co/storage/v1/object/sign/photos/proj_ab12/cover/c123.webp?token=z';
     expect(T.thumbKey(signed, 640)).toBe(T.thumbKey(path, 640, true)); // pas de re-signature à l'arrivée de l'URL
   });
@@ -67,12 +70,24 @@ describe('vignettes allégées des photos', () => {
     expect(await T.getThumbUrl(SIGNED, 640)).toBeNull();
   });
 
-  it('transformations indisponibles : coupées pour la session après plusieurs échecs d\'affilée', async () => {
-    sb.fail = true;
-    for (let i = 0; i < 4; i++) await T.getThumbUrl(SIGNED.replace('ph%201', `p${i}`), 640);
+  it('photo SANS vignette (ancienne) → original, PAS de coupure des vignettes, rattrapage programmé', async () => {
+    sb.missing = true;
+    const fetchSpy = vi.fn(async () => ({ ok: false })); // pas de réseau en test
+    vi.stubGlobal('fetch', fetchSpy);
+    for (let i = 0; i < 6; i++) expect(await T.getThumbUrl(SIGNED.replace('ph%201', `p${i}`), 640)).toBeNull();
+    expect(T.thumbsDisabled()).toBe(false); // des photos sans vignette ne sont pas une panne
+    await new Promise(r => setTimeout(r, 0));
+    expect(fetchSpy).toHaveBeenCalled(); // l'app va chercher l'original pour fabriquer la vignette
+    expect(fetchSpy.mock.calls[0][0]).toContain('/object/sign/photos/proj_ab12/item1/p0.webp'); // même URL que l'original affiché
+    const before = calls.length;
+    expect(await T.getThumbUrl(SIGNED.replace('ph%201', 'p0'), 640)).toBeNull(); // mémorisé : pas de re-signature
+    expect(calls.length).toBe(before);
+    vi.unstubAllGlobals();
+  });
+
+  it('vignettes qui ne se CHARGENT pas (panne réelle) : coupées pour la session après plusieurs échecs', () => {
+    for (let i = 0; i < 4; i++) T.reportThumbError(`k${i}`);
     expect(T.thumbsDisabled()).toBe(true);
-    sb.fail = false;
-    expect(await T.getThumbUrl(SIGNED.replace('ph%201', 'autre'), 640)).toBeNull();
   });
 
   it('vignette qui ne se charge pas → oubliée, plus jamais proposée cette session', async () => {
@@ -97,11 +112,10 @@ describe('vignettes allégées des photos', () => {
     expect(await T.getSignedOriginal('data:image/png;base64,AA')).toBeNull();
   });
 
-  it('un succès remet le compteur d\'échecs à zéro', async () => {
-    sb.fail = true;
-    for (let i = 0; i < 3; i++) await T.getThumbUrl(SIGNED.replace('ph%201', `q${i}`), 640);
+  it('un succès remet le compteur d\'échecs à zéro', () => {
+    for (let i = 0; i < 3; i++) T.reportThumbError(`q${i}`);
     T.reportThumbOk();
-    await T.getThumbUrl(SIGNED.replace('ph%201', 'q9'), 640);
+    T.reportThumbError('q9');
     expect(T.thumbsDisabled()).toBe(false);
   });
 });
@@ -110,13 +124,13 @@ describe('auto-réparation d\'une image qui ne charge plus', () => {
   it('resignFresh jette les liens en cache du fichier et en redemande un neuf', async () => {
     const PATH = 'proj_ab12/cover/P/c1.webp';
     await T.getThumbUrl(PATH, 640, true);           // vignette mise en cache
-    T.reportThumbError(`${PATH}@w640`);             // vignette en échec cette session
+    T.reportThumbError(`${PATH}@t1`);               // vignette en échec cette session
     localStorage.setItem('_sb_url_cache_v1', JSON.stringify({ [PATH]: { url: 'https://old', expiresAt: Date.now() + 9e9 } }));
     const u = await T.resignFresh(PATH);
     expect(u).toMatch(/token=T\d+/);
     expect(calls.at(-1)).toMatchObject({ path: PATH }); expect(calls.at(-1).opts).toBeUndefined(); // original, sans transformation
     expect(JSON.parse(localStorage.getItem('_sb_url_cache_v1'))[PATH].url).toBe(u); // cache remplacé par le lien neuf
-    expect(T.peekThumb(`${PATH}@w640`)).toBeNull();
+    expect(T.peekThumb(`${PATH}@t1`)).toBeNull();
   });
   it('3 nouveaux essais espacés par fichier et par session, puis on s\'arrête', () => {
     expect([T.nextHealDelay('a'), T.nextHealDelay('a'), T.nextHealDelay('a'), T.nextHealDelay('a')]).toEqual([1000, 3000, 10000, null]);

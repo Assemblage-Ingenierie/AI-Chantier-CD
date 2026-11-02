@@ -9,6 +9,17 @@
 // Périmètre : AFFICHAGE uniquement. Rien n'est écrit dans les projets, la sauvegarde, ni le
 // bucket. Le visualiseur plein écran, l'annotateur et l'export PDF gardent l'original.
 //
+// 02/11/2026 — VIGNETTES FABRIQUÉES PAR L'APP (fin des « Image Transformations » Supabase) :
+// le plan Pro n'inclut que 100 images transformées / mois ; à 1 109, le plafond de dépenses
+// bloquait les transformations → vignettes et COUVERTURES vides (incident fin octobre).
+// Désormais chaque vignette est un petit fichier rangé à côté, dans `_thumbs/<chemin>.thumb`
+// (≈ 640 px, 30-60 Ko), fabriqué par l'appareil :
+//   - à l'envoi d'une nouvelle photo (photoUploadQueue → uploadThumbForPhoto) ;
+//   - sinon au PREMIER affichage d'une photo sans vignette : l'original s'affiche (repli, comme
+//     avant) et l'app fabrique + range sa vignette en arrière-plan → rattrapage automatique.
+// Zéro coût Supabase, aucune donnée de projet modifiée (fichiers ajoutés à côté seulement ;
+// dossier `_thumbs/` hors des dossiers chantier → ignoré par couvertures, purge et corbeille).
+//
 // Robustesse (zéro régression) :
 //   - seules les URL signées du bucket `photos` sont concernées ; data:/blob:/autres → inchangées ;
 //   - échec de signature ou de chargement de la vignette → repli sur l'ORIGINAL (comme avant) ;
@@ -23,7 +34,6 @@ import { logWarn } from './logger.js';
 
 const TTL_SEC = 2592000;                     // 30 jours, comme les photos (SIGNED_URL_TTL)
 const SAFETY_MS = 24 * 60 * 60 * 1000;       // re-signe 24 h avant expiration
-const QUALITY = 70;
 const MAX_CONCURRENT = 8;                    // signatures en parallèle
 const MAX_ENTRIES = 5000;
 const OFF_AFTER_FAILS = 4;                   // échecs d'affilée → transformations coupées (session)
@@ -51,9 +61,89 @@ function photoPathOf(src, allowPath = false) {
   return src.split('?')[0];
 }
 
+// Clé de cache : UNE vignette par photo (la largeur demandée n'importe plus). Préfixe « @t1 » :
+// les anciennes URL de transformation (clés « @w640 ») ne sont plus jamais resservies.
 export function thumbKey(src, width, allowPath = false) {
   const path = photoPathOf(src, allowPath);
-  return path && width ? `${path}@w${width}` : null;
+  return path && width ? `${path}@t1` : null;
+}
+
+export const THUMB_PREFIX = '_thumbs/';
+export const thumbPathOf = (path) => `${THUMB_PREFIX}${path}.thumb`;
+const THUMB_MAX = 640;      // plus grand côté de la vignette (px)
+
+// Fabrique la vignette (Blob) d'une image : ≤ THUMB_MAX px, WebP (JPEG si WebP indisponible,
+// ex. anciens Safari). null si l'image ne se décode pas.
+export async function makeThumbBlob(blob) {
+  if (!blob || typeof document === 'undefined') return null;
+  let src = null, url = null;
+  try {
+    if (typeof createImageBitmap === 'function') src = await createImageBitmap(blob);
+  } catch { src = null; }
+  if (!src) {
+    url = URL.createObjectURL(blob);
+    src = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+  }
+  try {
+    if (!src) return null;
+    const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+    if (!w0 || !h0) return null;
+    const k = Math.min(1, THUMB_MAX / Math.max(w0, h0));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w0 * k)); cv.height = Math.max(1, Math.round(h0 * k));
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, cv.width, cv.height);
+    const toBlob = (type, q) => new Promise((res) => cv.toBlob(b => res(b), type, q));
+    let out = await toBlob('image/webp', 0.72);
+    if (!out || out.type !== 'image/webp') out = await toBlob('image/jpeg', 0.75);
+    return out;
+  } catch { return null; }
+  finally { try { src?.close?.(); } catch { /* */ } if (url) URL.revokeObjectURL(url); }
+}
+
+// Range la vignette d'une photo du bucket (best-effort : false en cas d'échec, sans conséquence).
+export async function uploadThumbForPhoto(path, imageBlob) {
+  try {
+    if (!path) return false;
+    const thumb = await makeThumbBlob(imageBlob);
+    if (!thumb) return false;
+    const sb = await getSupabase();
+    const { error } = await sb.storage.from('photos').upload(thumbPathOf(path), thumb, {
+      contentType: thumb.type || 'image/jpeg', upsert: true, cacheControl: '31536000',
+    });
+    if (error) return false;
+    _missing.delete(path);
+    return true;
+  } catch { return false; }
+}
+
+// RATTRAPAGE : photo sans vignette → fabriquée à partir de l'original, une fois par session.
+const _missing = new Set();   // chemins sans vignette (cette session)
+const _backfilled = new Set(); // rattrapages déjà tentés
+let _bfActive = 0;
+const _bfQueue = [];
+const BF_CONCURRENT = 2;
+function scheduleBackfill(path, src) {
+  if (_backfilled.has(path) || typeof fetch !== 'function') return;
+  _backfilled.add(path);
+  const run = async () => {
+    _bfActive++;
+    try {
+      // Même URL que l'original affiché quand c'est une URL signée → servi par le cache navigateur.
+      let url = typeof src === 'string' && /^https?:/i.test(src) ? src : await getSignedOriginal(path);
+      if (!url) return;
+      const r = await fetch(url);
+      if (!r.ok) return;
+      await uploadThumbForPhoto(path, await r.blob());
+    } catch { /* best-effort */ }
+    finally {
+      _bfActive--;
+      const next = _bfQueue.shift();
+      if (next) next();
+    }
+  };
+  if (_bfActive < BF_CONCURRENT) run(); else _bfQueue.push(run);
 }
 
 // ── Cache mémoire + persistance IndexedDB ──
@@ -165,13 +255,20 @@ export async function getThumbUrl(src, width, allowPath = false) {
   if (hit) return hit;
   if (_pending.has(key)) return _pending.get(key);
   const path = photoPathOf(src, allowPath);
+  if (_missing.has(path)) return null; // pas (encore) de vignette → original
   const p = runQueued(async () => {
     if (_off) return null;
     try {
       const sb = await getSupabase();
-      const { data, error } = await sb.storage.from('photos')
-        .createSignedUrl(path, TTL_SEC, { transform: { width, quality: QUALITY } });
-      if (error || !data?.signedUrl) { noteFail(); return null; }
+      // Vignette RANGÉE (fichier normal, aucune transformation facturée).
+      const { data, error } = await sb.storage.from('photos').createSignedUrl(thumbPathOf(path), TTL_SEC);
+      if (error || !data?.signedUrl) {
+        // Pas encore de vignette (photo ancienne) : ce n'est PAS une panne → on n'éteint pas les
+        // vignettes ; l'original s'affiche et l'app fabrique la vignette en arrière-plan.
+        _missing.add(path);
+        scheduleBackfill(path, src);
+        return null;
+      }
       const entry = { url: data.signedUrl, exp: Date.now() + TTL_SEC * 1000 };
       _mem.set(key, entry);
       persist(key, entry);
@@ -278,7 +375,7 @@ export function reportThumbError(key) {
 
 // Tests uniquement.
 export function _resetThumbsForTests() {
-  _mem.clear(); _pending.clear(); _bad.clear(); _healCount.clear();
+  _mem.clear(); _pending.clear(); _bad.clear(); _healCount.clear(); _missing.clear(); _backfilled.clear();
   _fails = 0; _off = false;
   _loadPromise = null; _loaded = false; _dbPromise = null;
   _active = 0; _queue.length = 0;
