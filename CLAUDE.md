@@ -152,7 +152,8 @@ gh pr create --base main --head <feature-branch>
 - Icônes via `<Ic n="..." s={...}/>` dans `src/components/ui/Icons.jsx`
 - Proxy IA Vercel : `api/ai-proxy.js` (Anthropic/Claude, avec fallback modèle ; auth Bearer Supabase + rate limiting 20 req/min/IP)
 - Variables d'env Vercel requises : `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `GOOGLE_SERVICE_ACCOUNT` (Drive)
-- Tests : `npm test` (Vitest) ; lint : `npm run lint` (ESLint) ; CI dans `.github/workflows/ci.yml` (test + build bloquants)
+- Tests : `npm test` (Vitest) ; lint : `npm run lint` (ESLint, voit le JSX via eslint-plugin-react) ; CI dans `.github/workflows/ci.yml` (test + build + lint bloquants — le lint bloque sur les ERREURS, pas les avertissements)
+- Gros composants découpés (02/11/2026) : `src/components/vue/RapportPreview/` (layout.js = dimensions A4 + pagination, controls.jsx, blocks.jsx = observations/plans, pages.jsx = couverture/conclusion/récap/annexes) et `src/components/vue/Annotator/` (draw.js = dessin des annotations + symboles, geometry.js = sélection/édition). Le composant principal et `print()` (budget PDF) restent dans `RapportPreview.jsx` ; le corps de l'Annotator reste dans `Annotator.jsx`
 - Monitoring : `src/lib/logger.js` → `api/log.js` (console + Vercel Runtime Logs) ; Vercel Analytics dans `App.jsx`
 
 ---
@@ -196,7 +197,7 @@ La sauvegarde est le cœur de l'application. Toute régression ici = perte de do
 - **`mergeWithLocal`** — critique pour la cohérence local/remote
 - **Annotator / PlanLocModal / NiveauxModal** — fonctionnalités complètes, ne pas retirer de logique existante
 - **Gestion `planId` / `planBg` / `planData`** — les trois champs forment un triplet, toujours les traiter ensemble
-- **`drawAnnotationPaths`** — exportée et utilisée dans `RapportPreview.jsx`, tout nouveau type d'annotation doit aussi y être ajouté
+- **`drawAnnotationPaths`** — définie dans `src/components/vue/Annotator/draw.js` (ré-exportée par `Annotator.jsx`), utilisée par le rapport, la vue Visite et SortList : tout nouveau type d'annotation doit aussi y être ajouté
 
 ---
 
