@@ -768,7 +768,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = 1 }) {
+function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -793,7 +793,7 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
     // Badge Vxx : identité photo (_id) d'abord — robuste si l'ordre/index a changé ou si le
     // marqueur vient d'un plan d'observation — puis repli sur l'index aplati historique.
     const vxxNum = vxxPhotoMap?.get(photoVpKey(ph)) ?? vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`);
-    const arNum = ar === '4 / 3' ? 4 / 3 : 3 / 4;
+    const arNum = (() => { const [a, b] = String(ar || '4 / 3').split('/').map(Number); return a > 0 && b > 0 ? a / b : 4 / 3; })();
     // Source de la cellule photo — on privilégie le COMPOSITE CUIT (ph.annotated), EXACTEMENT
     // comme la grille de l'app (`ph.annotated || ph.data`) qui, elle, s'affiche toujours.
     // Historiquement le rapport préférait la photo BRUTE (ph.data) + un overlay live re-dessiné
@@ -936,9 +936,13 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
           de 2 paysages (4:3) ont la même hauteur — tailles quasi identiques aux rangées
           standards, zéro blanc. */}
       {showPhotos && (() => {
-        // Ajustement de page (photoFit < 1) : la rangée est un peu RÉDUITE et centrée pour que
-        // toutes les photos de la page tiennent sur l'A4 (voir pageFit dans RapportPreview).
-        const fitBox = photoFit < 1 ? { width:`${(photoFit * 100).toFixed(2)}%`, margin:'0 auto' } : {};
+        // Ajustement de page (voir pageFit dans RapportPreview) : ar < 1 → cadre un peu plus
+        // PANORAMIQUE (pleine largeur, quelques % rognés en haut/bas) ; w < 1 → rangée réduite et
+        // centrée (seulement si nécessaire, ex. photos annotées qu'on ne rogne jamais).
+        const fitAr = photoFit?.ar ?? 1, fitW = photoFit?.w ?? 1;
+        const fitBox = fitW < 1 ? { width:`${(fitW * 100).toFixed(2)}%`, margin:'0 auto' } : {};
+        const LAND = fitAr < 1 ? `${(4 / 3 / fitAr).toFixed(4)} / 1` : '4 / 3';
+        const PORT = fitAr < 1 ? `${(3 / 4 / fitAr).toFixed(4)} / 1` : '3 / 4';
         if (photoRow.kind === 'mosaic') {
           // Hauteur EXACTEMENT identique : la colonne paysages (2 cellules 4:3 + gap interne)
           // définit la hauteur de la rangée, et le portrait la remplit en absolu (inset:0) —
@@ -950,10 +954,10 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
                 {renderPhotoCell(photoRow.portraitIdx, null)}
               </div>
               <div style={{ flex:8, minWidth:0, display:'flex', flexDirection:'column', gap:3 }}>
-                {photoRow.stackIdxs.map(i => renderPhotoCell(i, '4 / 3'))}
+                {photoRow.stackIdxs.map(i => renderPhotoCell(i, LAND))}
                 {/* 1 seul paysage : slot vide au même format 4:3 → le bas reste vide (choix
                     utilisateur) SANS écraser la hauteur du portrait. */}
-                {photoRow.stackIdxs.length < 2 && <div style={{ aspectRatio:'4 / 3' }}/>}
+                {photoRow.stackIdxs.length < 2 && <div style={{ aspectRatio:LAND }}/>}
               </div>
             </div>
             </div>
@@ -964,7 +968,7 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
         return (
           <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
             <div style={{ display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3, ...fitBox }}>
-              {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? '3 / 4' : '4 / 3'))}
+              {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? PORT : LAND))}
             </div>
           </div>
         );
@@ -2487,41 +2491,37 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     [allBlocks, ppl, breaks, measuredH]
   );
 
-  // ── AJUSTEMENT DE PAGE (retour Thomas 02/11 : « 4 rangées de photos sans texte ne rentrent
-  //    pas sur une page ») : quand une page DÉBORDE de peu et contient des photos, on réduit
-  //    UNIQUEMENT ses rangées de photos, du strict nécessaire (centrées, jamais sous FIT_MIN),
-  //    pour que tout tienne sur l'A4. Pages qui tiennent déjà : rien ne change. Trop de
-  //    débordement : on ne réduit pas (photos gardées grandes, l'utilisateur coupe la page).
-  //    Calcul sans oscillation : O = hauteur réelle − photos affichées (indépendant de la
-  //    réduction) ; k = (place dispo − O) / hauteur naturelle des photos. L'impression PDF
-  //    imprime ce même aperçu → identique dans le PDF.
+  // ── AJUSTEMENT DE PAGE (retours Thomas 02/11 : « 4 rangées de photos sans texte ne rentrent
+  //    pas sur une page », puis « ça bouge » et « que ça prenne toute la page ») : quand une page
+  //    DÉBORDE de peu et contient des photos, seules ses rangées de photos sont ajustées :
+  //      1) d'abord un cadre un peu plus PANORAMIQUE (4:3 → au plus 3:2), PLEINE largeur : la page
+  //         est remplie, on rogne au plus ~11 % en haut/bas ;
+  //      2) si ça ne suffit pas, ou si une photo est annotée / « image entière » (jamais rognée),
+  //         la rangée est réduite et centrée — jamais sous FIT_MIN.
+  //    Débordement trop fort : rien n'est ajusté (photos gardées grandes, avertissement conservé).
+  //    Calcul PUR à partir de la couche de mesure (taille réelle, hors zoom) : aucune boucle de
+  //    mesure → plus de « saut » de l'aperçu. Le PDF imprime ce même aperçu → identique.
   const FIT_MIN = 0.8;
-  const [pageFit, setPageFit] = useState({}); // index de page → facteur (1 = taille normale)
-  const pageContentRefs = useRef({});
-  useLayoutEffect(() => {
-    const compute = () => {
-      const next = {};
-      pages.forEach((pageBlocks, pi) => {
-        const el = pageContentRefs.current[pi];
-        if (!el) return;
-        const shown = [...el.querySelectorAll('[data-photogrid]')].reduce((t, g) => t + Math.max(0, g.offsetHeight - 10), 0);
-        const natural = pageBlocks.reduce((t, b) => t + (gridH[b.id] || 0), 0);
-        if (!natural || !shown) return;
-        const other = el.offsetHeight - shown;
-        const k = (AVAIL_H - other) / natural;
-        if (k < 1 && k >= FIT_MIN) next[pi] = Math.floor(k * 1000) / 1000;
-      });
-      setPageFit(prev => {
-        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
-        for (const key of keys) if (Math.abs((prev[key] ?? 1) - (next[key] ?? 1)) > 0.004) return next;
-        return prev;
-      });
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    Object.values(pageContentRefs.current).forEach(el => el && ro.observe(el));
-    return () => ro.disconnect();
-  }, [pages, gridH]);
+  const FIT_AR_MIN = 8 / 9; // 4:3 → 3:2
+  const FIT_TARGET = PH - (HDR + 1) - (MT - HDR) - (MB + FTR) - 4; // hauteur utile d'une page A4
+  const pageFit = useMemo(() => pages.map(pageBlocks => {
+    let H = 0, P = 0, sensitive = false;
+    for (const b of pageBlocks) {
+      const h = measuredH[b.id];
+      if (!h) return null; // mesure pas encore prête
+      H += h;
+      if (gridH[b.id]) {
+        P += gridH[b.id];
+        if ((b.item?.photos || []).some(ph => ph?.annotations?.length || ph?.cropFit)) sensitive = true;
+      }
+    }
+    if (!P || H <= FIT_TARGET) return null;
+    const need = 1 - (H - FIT_TARGET) / P; // facteur de hauteur des photos nécessaire
+    const ar = sensitive ? 1 : Math.max(need, FIT_AR_MIN);
+    const w = Math.min(1, need / ar);
+    if (w < FIT_MIN) return null;
+    return { ar: Math.floor(ar * 1000) / 1000, w: Math.floor(w * 1000) / 1000 };
+  }), [pages, measuredH, gridH]); // eslint-disable-line react-hooks/exhaustive-deps
   // Pages « plan à part » dans l'ordre du rapport.
   const landscapePlans = useMemo(() => reportPlans.filter(p => fullPageMap[p.key])
     .map(p => ({ ...p, orient: fullPageMap[p.key] === 'portrait' ? 'portrait' : 'landscape' })), [reportPlans, fullPageMap]);
@@ -3057,7 +3057,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         <div style={{ position:'absolute', left:0, top:0, width:PW, height:0, overflow:'hidden', visibility:'hidden', pointerEvents:'none' }}>
           <div style={{ width:CW, visibility:'hidden', pointerEvents:'none' }}>
             {allBlocks.map(block => (
-              <div key={block.id} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
+              <div key={block.id} style={{ display:'flow-root' }} ref={el => { if (el) blockElsRef.current[block.id] = el; else delete blockElsRef.current[block.id]; }}>
                 {block.type === 'zone'
                   ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom} visitDate={projet.dateVisite}/>
                   : block.type === 'plan'
@@ -3115,13 +3115,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                       />
                     </div>
                   )}
-                  <div ref={el => { if (el) pageContentRefs.current[pi] = el; else delete pageContentRefs.current[pi]; }}>
                   {pageBlocks.map((block, bi) => {
                     const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
                     <React.Fragment key={block.id}>
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
-                      <div>
+                      {/* flow-root : même empilement (marges comprises) que la couche de mesure → la
+                          hauteur calculée d'une page = la hauteur réelle (ajustement de page fiable). */}
+                      <div style={{ display:'flow-root' }}>
                         {block.type === 'zone'
                           ? <ZoneHeader loc={block.loc} level={block.level} parentNom={block.parentNom} visitDate={projet.dateVisite}/>
                           : block.type === 'plan'
@@ -3142,7 +3143,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               onParaCut={handleCut}
                               annotScale={annotScale}
                               photoAnnotScales={photoAnnotScales}
-                              photoFit={pageFit[pi] ?? 1}
+                              photoFit={pageFit[pi] ?? null}
                               onAnnotatePhoto={onAnnotatePhoto}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient, fit = false) => {
                                 if (!photo) return;
@@ -3159,7 +3160,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     </React.Fragment>
                     );
                   })}
-                  </div>
                 </A4Card>
               </div>
             </React.Fragment>
