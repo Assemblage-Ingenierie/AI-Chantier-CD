@@ -21,31 +21,11 @@ import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
 import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive, getMyName } from '../../lib/presence.js';
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
+import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 
-// Strips leading words of txt that overlap with the tail of already-committed text.
-// Guards against SpeechRecognition resending previously-heard audio on auto-restart, ET contre
-// la DUPLICATION en dictée longue (Android renvoie souvent TOUTE la phrase accumulée comme un
-// nouveau résultat « final » → doublons qui s'empilent). Le plafond de 12 mots empêchait de
-// retirer un chevauchement plus long que 12 mots (ex. « la terre était emblée à 5 cm il est
-// nécessaire pour enfiler le ordi » ≈ 14 mots) → le doublon repassait. On retire le plafond :
-// on strip le PLUS LONG préfixe de `txt` identique au suffixe déjà committé (séquences EXACTES
-// uniquement → jamais de perte de texte réel, un vrai discours ne répète pas 13+ mots à l'identique).
-function stripLeadingOverlap(txt, committed) {
-  if (!committed || !txt) return txt;
-  const nw = txt.split(/\s+/).filter(Boolean);
-  const sw = committed.split(/\s+/).filter(Boolean);
-  const cap = Math.min(nw.length, sw.length);
-  for (let len = cap; len >= 1; len--) {
-    let ok = true;
-    for (let i = 0; i < len; i++) {
-      if (nw[i].toLowerCase() !== sw[sw.length - len + i].toLowerCase()) { ok = false; break; }
-    }
-    if (ok) return nw.slice(len).join(' ').trim();
-  }
-  return txt;
-}
+// Dictée : la fusion anti-doublons (ancien stripLeadingOverlap) vit dans lib/dictation.js (testée).
 
 // Remplace le passage `del` (extrait copié depuis le texte BRUT) par `add` dans un commentaire
 // HTML riche. L'ancienne version cherchait `del` DANS CHAQUE segment texte isolément → dès que
@@ -360,6 +340,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   }, [form.commentaire]);
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
+  const [micReady, setMicReady] = useState(false); // le moteur écoute vraiment (sinon « Préparation du micro… »)
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
@@ -383,6 +364,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const lastCommitted  = useRef('');
   const sessionText    = useRef('');
   const restartTimer   = useRef(null);
+  const interimRef     = useRef('');   // dernier texte provisoire (validé si le moteur s'arrête sans « final »)
+  const stopTimer      = useRef(null); // relâcher : on n'attend pas le « final » plus de STOP_WAIT_MS
 
   // ── TRAVAIL À PLUSIEURS dans la même observation (comme Google Docs — lib/liveText.js) ──────
   // Chaque frappe part comme une petite opération (insérer / supprimer) et se FUSIONNE avec celles
@@ -597,6 +580,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   useEffect(() => () => {
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
+    clearTimeout(stopTimer.current);
     recogRef.current?.abort();
   }, []);
 
@@ -637,6 +621,33 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     onClose();
   };
 
+  // MEGA BUFF dictée (demande Thomas 02/11 : « ça met du temps à reconnaître, des fois ça m'inscrit
+  // deux fois la même phrase ») :
+  //  • anti-doublons NORMALISÉ (lib/dictation.js, testé) : casse / ponctuation / apostrophes,
+  //    phrase cumulée d'Android, bout de phrase rejoué au redémarrage iOS, répétition collée ;
+  //  • rien ne se perd : si le moteur s'arrête (iOS toutes les ~5-10 s, ou au relâchement) sans
+  //    renvoyer de « final », le texte provisoire affiché est validé (puis dédoublonné) ;
+  //  • plus réactif : au relâchement, on n'attend pas le « final » plus de STOP_WAIT_MS ;
+  //  • on SAIT quand parler : « Préparation du micro… » → « Parlez » dès que le moteur écoute ;
+  //  • majuscule automatique en début de phrase.
+  // La mécanique d'origine est conservée : push-to-talk, redémarrage auto dans onend (iOS),
+  // setPointerCapture sous try/catch, sessions numérotées pour ignorer les événements périmés.
+  const STOP_WAIT_MS = 1000;
+
+  const commitDictation = useCallback((raw) => {
+    const txt0 = mergeDictation(sessionText.current, (raw || '').trim());
+    if (!txt0) return;
+    const first = sessionFirst.current;
+    const txt = capitalizeAfter(first ? '' : sessionText.current, txt0);
+    lastCommitted.current = txt;
+    sessionText.current = sessionText.current ? sessionText.current + ' ' + txt : txt;
+    sessionFirst.current = false;
+    setForm(f => ({
+      ...f,
+      commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
+    }));
+  }, []);
+
   const doRecognize = useCallback(() => {
     if (!recordingRef.current) return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -650,6 +661,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     // Each SR instance gets a unique ID so stale events from old sessions are ignored.
     const myId = ++recogSessionId.current;
     let localFinalIdx = 0; // local to this instance — never shared across sessions
+
+    // Le moteur écoute réellement → on peut parler (évite de perdre les premiers mots).
+    r.onaudiostart = () => { if (recogSessionId.current === myId) setMicReady(true); };
 
     r.onresult = (e) => {
       if (recogSessionId.current !== myId) return; // stale event, discard
@@ -667,29 +681,18 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           interim += e.results[i][0].transcript;
         }
       }
+      interimRef.current = interim.trim();
       setInterimText(interim);
-      if (finals.length) {
-        let txt = finals.filter(Boolean).join(' ');
-        if (!txt) return;
-        // Strip any leading overlap with already-committed text (iOS overlap safety net)
-        txt = stripLeadingOverlap(txt, sessionText.current);
-        if (!txt || txt === lastCommitted.current) return;
-        lastCommitted.current = txt;
-        sessionText.current = sessionText.current ? sessionText.current + ' ' + txt : txt;
-        const first = sessionFirst.current;
-        sessionFirst.current = false;
-        setForm(f => ({
-          ...f,
-          commentaire: f.commentaire ? f.commentaire + (first ? '\n' : ' ') + txt : txt,
-        }));
-      }
+      setMicReady(true);
+      if (finals.length) commitDictation(finals.filter(Boolean).join(' '));
     };
 
     r.onerror = (ev) => {
-      if (ev.error === 'not-allowed') {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
         recogRef.current = null;
+        interimRef.current = '';
         setInterimText('');
         setRecording(false);
       }
@@ -699,26 +702,40 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     r.onend = () => {
       if (recogSessionId.current !== myId) return; // stale session, ignore
       recogRef.current = null;
+      // Arrêt sans « final » pour la fin de phrase (iOS au redémarrage auto, Chrome au relâcher) :
+      // on valide le provisoire au lieu de le perdre ; un renvoi ultérieur sera dédoublonné.
+      if (interimRef.current) { commitDictation(interimRef.current); interimRef.current = ''; }
       setInterimText('');
       if (recordingRef.current) {
         restartTimer.current = setTimeout(doRecognize, 150);
         return;
       }
+      clearTimeout(stopTimer.current);
       setRecording(false);
     };
 
     try { r.start(); recogRef.current = r; }
     catch { recordingRef.current = false; setRecording(false); }
-  }, []);
+  }, [commitDictation]);
 
   const startDictaphone = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
+    clearTimeout(stopTimer.current);
+    // Relâché puis ré-appuyé vite : l'ancienne écoute (en train de finir) est close proprement.
+    if (recogRef.current) {
+      if (interimRef.current) commitDictation(interimRef.current);
+      recogSessionId.current++;
+      try { recogRef.current.abort(); } catch { /* déjà arrêtée */ }
+      recogRef.current = null;
+    }
     recordingRef.current = true;
     sessionFirst.current = true;
     lastCommitted.current = '';
     sessionText.current = '';
+    interimRef.current = '';
     setInterimText('');
+    setMicReady(false);
     setRecording(true);
     textareaRef.current?.resetTyping?.(); // évite que isTyping bloque la synchro DOM pendant la dictée
     doRecognize();
@@ -728,8 +745,22 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
     setRecording(false);   // feedback immédiat — pas d'attente de onend
-    setInterimText('');
-    recogRef.current?.stop(); // délivre quand même le dernier mot via onresult
+    setMicReady(false);
+    const r = recogRef.current;
+    if (!r) { setInterimText(''); return; }
+    r.stop(); // délivre normalement le dernier mot via onresult (« final »)
+    // Pas de « final » dans STOP_WAIT_MS → on valide le provisoire et on clôt (réactivité).
+    const sid = recogSessionId.current;
+    clearTimeout(stopTimer.current);
+    stopTimer.current = setTimeout(() => {
+      if (recogSessionId.current !== sid) return;
+      recogSessionId.current++; // les événements tardifs de cette écoute seront ignorés
+      if (interimRef.current) commitDictation(interimRef.current);
+      interimRef.current = '';
+      setInterimText('');
+      try { r.abort(); } catch { /* déjà arrêtée */ }
+      if (recogRef.current === r) recogRef.current = null;
+    }, STOP_WAIT_MS);
   };
 
   // Construit des segments diff avec corrections individuellement toggleables
@@ -1518,10 +1549,16 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               </button>
             </div>
 
-            {recording && (
-              <p style={{ fontSize:11,fontStyle:'italic',margin:'4px 0 0',lineHeight:1.4,color: interimText ? DA.black : DA.grayL }}>
-                {interimText ? interimText + '…' : 'En écoute — parlez maintenant…'}
-              </p>
+            {/* Retour en direct de la dictée : on voit quand parler, puis les mots qui arrivent. */}
+            {(recording || interimText) && (
+              <div style={{ display:'flex', alignItems:'flex-start', gap:8, margin:'6px 0 0', padding:'8px 12px', borderRadius:10,
+                background: DA.redL, border:`1px solid ${micReady || interimText ? DA.red : '#FCA5A5'}` }}>
+                <span style={{ width:9, height:9, borderRadius:'50%', marginTop:5, flexShrink:0, background: micReady ? DA.red : '#FCA5A5',
+                  boxShadow: micReady ? '0 0 0 4px rgba(227,5,19,0.18)' : 'none', transition:'all 0.2s' }}/>
+                <span style={{ fontSize:14, lineHeight:1.45, color: interimText ? DA.black : DA.gray, fontStyle: interimText ? 'normal' : 'italic' }}>
+                  {interimText ? interimText + '…' : micReady ? 'Parlez, je vous écoute…' : 'Préparation du micro…'}
+                </span>
+              </div>
             )}
 
             {/* IA — 2 boutons : le SUPER « Améliorer » (un seul geste, l'IA décide : champ vide →
