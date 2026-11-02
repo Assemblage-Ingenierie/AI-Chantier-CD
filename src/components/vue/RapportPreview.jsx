@@ -768,7 +768,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 } }) {
+function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = 1 }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -936,12 +936,16 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
           de 2 paysages (4:3) ont la même hauteur — tailles quasi identiques aux rangées
           standards, zéro blanc. */}
       {showPhotos && (() => {
+        // Ajustement de page (photoFit < 1) : la rangée est un peu RÉDUITE et centrée pour que
+        // toutes les photos de la page tiennent sur l'A4 (voir pageFit dans RapportPreview).
+        const fitBox = photoFit < 1 ? { width:`${(photoFit * 100).toFixed(2)}%`, margin:'0 auto' } : {};
         if (photoRow.kind === 'mosaic') {
           // Hauteur EXACTEMENT identique : la colonne paysages (2 cellules 4:3 + gap interne)
           // définit la hauteur de la rangée, et le portrait la remplit en absolu (inset:0) —
           // sans ça, le portrait à aspect figé restait plus court de la valeur du gap (3px).
           return (
-            <div style={{ padding:'4px 6px 6px', display:'flex', gap:3, alignItems:'stretch' }}>
+            <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+            <div style={{ display:'flex', gap:3, alignItems:'stretch', ...fitBox }}>
               <div style={{ flex:9, minWidth:0, position:'relative' }}>
                 {renderPhotoCell(photoRow.portraitIdx, null)}
               </div>
@@ -952,13 +956,16 @@ function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoO
                 {photoRow.stackIdxs.length < 2 && <div style={{ aspectRatio:'4 / 3' }}/>}
               </div>
             </div>
+            </div>
           );
         }
         const isPortraits = photoRow.kind === 'portraits';
         const colsN = isPortraits ? 2 : (photoCols ?? Math.min(ppl, 3));
         return (
-          <div style={{ padding:'4px 6px 6px', display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3 }}>
-            {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? '3 / 4' : '4 / 3'))}
+          <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3, ...fitBox }}>
+              {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? '3 / 4' : '4 / 3'))}
+            </div>
           </div>
         );
       })()}
@@ -2443,6 +2450,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // Plans en fin : déjà retirés de bodyLocs (pages à part) → le corps traite les plans restants normalement.
   const allBlocks   = useMemo(() => flattenBlocks(bodyLocs, false, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary || [], breaks), [bodyLocs, ppl, paraBreaks, vxxPhotoMap, plansNoBreak, projet.planLibrary, breaks]);
   const [measuredH, setMeasuredH] = useState({});
+  const [gridH, setGridH] = useState({}); // hauteur NATURELLE des rangées de photos (ajustement de page)
   const blockElsRef = useRef({});
 
   useLayoutEffect(() => {
@@ -2457,6 +2465,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         const changed = allBlocks.some(b => h[b.id] && h[b.id] !== prev[b.id]);
         return changed ? { ...prev, ...h } : prev;
       });
+      const g = {};
+      for (const block of allBlocks) {
+        const grid = blockElsRef.current[block.id]?.querySelector?.('[data-photogrid]');
+        if (grid && grid.offsetHeight > 10) g[block.id] = grid.offsetHeight - 10; // - padding vertical
+      }
+      setGridH(prev => (allBlocks.some(b => g[b.id] && g[b.id] !== prev[b.id]) ? { ...prev, ...g } : prev));
     };
     measure();
     // Observer chaque bloc individuellement pour détecter les chargements d'images
@@ -2472,6 +2486,42 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null),
     [allBlocks, ppl, breaks, measuredH]
   );
+
+  // ── AJUSTEMENT DE PAGE (retour Thomas 02/11 : « 4 rangées de photos sans texte ne rentrent
+  //    pas sur une page ») : quand une page DÉBORDE de peu et contient des photos, on réduit
+  //    UNIQUEMENT ses rangées de photos, du strict nécessaire (centrées, jamais sous FIT_MIN),
+  //    pour que tout tienne sur l'A4. Pages qui tiennent déjà : rien ne change. Trop de
+  //    débordement : on ne réduit pas (photos gardées grandes, l'utilisateur coupe la page).
+  //    Calcul sans oscillation : O = hauteur réelle − photos affichées (indépendant de la
+  //    réduction) ; k = (place dispo − O) / hauteur naturelle des photos. L'impression PDF
+  //    imprime ce même aperçu → identique dans le PDF.
+  const FIT_MIN = 0.8;
+  const [pageFit, setPageFit] = useState({}); // index de page → facteur (1 = taille normale)
+  const pageContentRefs = useRef({});
+  useLayoutEffect(() => {
+    const compute = () => {
+      const next = {};
+      pages.forEach((pageBlocks, pi) => {
+        const el = pageContentRefs.current[pi];
+        if (!el) return;
+        const shown = [...el.querySelectorAll('[data-photogrid]')].reduce((t, g) => t + Math.max(0, g.offsetHeight - 10), 0);
+        const natural = pageBlocks.reduce((t, b) => t + (gridH[b.id] || 0), 0);
+        if (!natural || !shown) return;
+        const other = el.offsetHeight - shown;
+        const k = (AVAIL_H - other) / natural;
+        if (k < 1 && k >= FIT_MIN) next[pi] = Math.floor(k * 1000) / 1000;
+      });
+      setPageFit(prev => {
+        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+        for (const key of keys) if (Math.abs((prev[key] ?? 1) - (next[key] ?? 1)) > 0.004) return next;
+        return prev;
+      });
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    Object.values(pageContentRefs.current).forEach(el => el && ro.observe(el));
+    return () => ro.disconnect();
+  }, [pages, gridH]);
   // Pages « plan à part » dans l'ordre du rapport.
   const landscapePlans = useMemo(() => reportPlans.filter(p => fullPageMap[p.key])
     .map(p => ({ ...p, orient: fullPageMap[p.key] === 'portrait' ? 'portrait' : 'landscape' })), [reportPlans, fullPageMap]);
@@ -3065,6 +3115,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                       />
                     </div>
                   )}
+                  <div ref={el => { if (el) pageContentRefs.current[pi] = el; else delete pageContentRefs.current[pi]; }}>
                   {pageBlocks.map((block, bi) => {
                     const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
@@ -3091,6 +3142,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               onParaCut={handleCut}
                               annotScale={annotScale}
                               photoAnnotScales={photoAnnotScales}
+                              photoFit={pageFit[pi] ?? 1}
                               onAnnotatePhoto={onAnnotatePhoto}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient, fit = false) => {
                                 if (!photo) return;
@@ -3107,6 +3159,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     </React.Fragment>
                     );
                   })}
+                  </div>
                 </A4Card>
               </div>
             </React.Fragment>
