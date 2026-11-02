@@ -96,6 +96,9 @@ function unescapeStrayTags(text) {
   return out;
 }
 
+// Un cran de retrait (touche Tab) : 4 espaces insécables ≈ largeur d'une puce.
+const TAB_INDENT = '\u00A0\u00A0\u00A0\u00A0';
+
 // Normalise les balises <b>/<i>/<strike> vers <strong>/<em>/<s>
 function normalizeHtmlOutput(html) {
   if (!html) return html;
@@ -692,6 +695,30 @@ const RichTextArea = forwardRef(function RichTextArea(
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (selImg) { e.preventDefault(); deleteImg(); return; }
       if (selGrid) { e.preventDefault(); deleteGrid(); return; }
+    }
+    // Tab = RETRAIT « comme une puce, sans puce » (demande Thomas 02/11 : la touche Tab faisait
+    // quitter la zone de texte). Espaces INSÉCABLES (pas de balise de retrait) : le décalage reste
+    // identique dans le rapport, le PDF et pour l'IA. Maj+Tab retire un cran.
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (!e.shiftKey) { document.execCommand('insertText', false, TAB_INDENT); return; }
+      const sel = window.getSelection();
+      if (!sel?.rangeCount) return;
+      const r = sel.getRangeAt(0);
+      const node = r.startContainer;
+      if (node.nodeType !== 3) return;
+      // Retire jusqu'à un cran d'insécables juste AVANT le curseur, sinon en DÉBUT de ligne.
+      const before = node.data.slice(0, r.startOffset);
+      const back = (before.match(/\u00A0+$/) || [''])[0].length;
+      const lead = (node.data.match(/^\u00A0+/) || [''])[0].length;
+      const n = Math.min(TAB_INDENT.length, back || lead);
+      if (!n) return;
+      const start = back ? r.startOffset - n : 0;
+      const del = document.createRange();
+      del.setStart(node, start); del.setEnd(node, start + n);
+      sel.removeAllRanges(); sel.addRange(del);
+      document.execCommand('delete'); // passe par l'historique (Ctrl+Z) et déclenche la saisie
+      return;
     }
     if (!e.ctrlKey && !e.metaKey) return;
     if (e.key === 'b' || e.key === 'B') { e.preventDefault(); document.execCommand('bold'); }
