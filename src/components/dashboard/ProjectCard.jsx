@@ -23,7 +23,7 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
-export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onUpd, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen, setPhotoTgt }) {
+export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   // Couverture : on garde le placeholder (icône bâtiment) TANT QUE la photo n'est pas chargée,

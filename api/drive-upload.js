@@ -289,7 +289,7 @@ export default async function handler(req, res) {
     const token = await getAccessToken(sa);
 
     // Navigate: Affaires root > project folder > 02_VISITES (or similar) > Visite_label
-    const { id: affairesId, driveId } = await findAffairesFolder(token);
+    const { driveId } = await findAffairesFolder(token);
     const projetFolderId = await findProjetFolder(token, driveId, projetNom, projetNum);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
     const datePrefix = visiteDate

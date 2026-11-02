@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { getSupabase } from '../../supabase.js';
 import { useBrandingLogo } from '../../lib/branding.js';
 

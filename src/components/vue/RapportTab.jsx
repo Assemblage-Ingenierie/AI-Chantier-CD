@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle } from 'react';
-import { DA, URGENCE, isBrouillon } from '../../lib/constants.js';
+import { DA, isBrouillon } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
@@ -85,7 +85,6 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 // exportRef (optionnel) : rendu HORS ÉCRAN pour l'export groupé en zip (VisitesScreen) → expose
 // toPdfBlob() de l'aperçu ; Costar masqué. onUpdate est alors un no-op (lecture seule).
 export default function RapportTab({ projet, onUpdate, exportRef = null }) {
-  const [exporting, setExporting] = useState(false);
   const [cutMode, setCutMode] = useState(false);
   const previewRef = useRef();
   useImperativeHandle(exportRef, () => ({ toPdfBlob: () => previewRef.current?.toPdfBlob?.() ?? null }), []);
@@ -98,9 +97,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
     const saved = parseInt(localStorage.getItem('chantierai_panel_w') || '0', 10);
     return saved >= 220 && saved <= 600 ? saved : 300;
   });
-  const dragRef = useRef(null);
   const localisations = projet.localisations || [];
-  const allItems      = localisations.flatMap(l => l.items || []);
 
   // Costar (castor relecteur) : version PC uniquement (écran large).
   const [isPc, setIsPc] = useState(() => window.innerWidth >= 900);

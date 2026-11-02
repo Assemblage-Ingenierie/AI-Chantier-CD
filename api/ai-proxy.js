@@ -132,7 +132,6 @@ async function callMistral(payload, apiKey, maxTokens, budget) {
 // des pannes récurrentes « génération de texte HS » : gemini-2.0-flash arrêté 06/2026,
 // gemini-3.x fantômes). Les versions numériques ne servent que de repli, et en DERNIER recours
 // une découverte dynamique (models.list) choisit un modèle réellement disponible.
-const GEMINI_MODEL = 'gemini-flash-latest';
 const GEMINI_FLASH_FALLBACKS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GEMINI_PRO_FALLBACKS   = ['gemini-pro-latest', 'gemini-2.5-pro'];
 const GEMINI_API = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;

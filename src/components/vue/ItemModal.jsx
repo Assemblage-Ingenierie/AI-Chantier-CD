@@ -2,7 +2,6 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { logEvent } from '../../lib/logger.js';
-import { renderMarkup } from '../../lib/markup.jsx';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
@@ -258,7 +257,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planId, extraPlans = [], planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -1472,7 +1471,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 texte est super long je ne vois plus les outils ») : reste en haut pendant le défilement. */}
             <div style={{ display:'flex',gap:3,marginBottom:0,alignItems:'center',flexWrap:'wrap',padding:'6px 8px',background:'#F8F8F8',border:`1px solid ${DA.border}`,borderRadius:'8px 8px 0 0',borderBottom:'none',
               position:'sticky',top: isDesktop ? -16 : -14,zIndex:6 }}>{/* = -padding du conteneur qui défile : collée tout en haut */}
-              {FMT_BTNS.map((btn, bi) => (
+              {FMT_BTNS.map((btn) => (
                 <button key={btn.cmd} type="button" title={btn.title}
                   onMouseDown={e => { e.preventDefault(); document.execCommand(btn.cmd); textareaRef.current?.getEditor()?.focus(); }}
                   style={{ width:30,height:28,borderRadius:5,border:`1px solid ${DA.border}`,background:'white',color:DA.black,fontSize:btn.fs??13,fontWeight:btn.fw??400,fontStyle:btn.fi??'normal',textDecoration:btn.td??'none',cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
