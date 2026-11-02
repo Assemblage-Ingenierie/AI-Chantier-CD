@@ -1,4 +1,4 @@
-const CACHE = 'aichantier-v221';
+const CACHE = 'aichantier-v222';
 const PLAN_PDF_CACHE = 'plan-pdfs'; // PDF de plans servis en local (mode hors ligne + lecteur natif)
 
 // Ressources connues à pré-cacher au premier install

@@ -6,8 +6,24 @@
 // dashboard « Runtime Logs »). Pas de stockage en base pour l'instant — zéro schéma, zéro coût.
 // Si un jour on veut de la rétention/agrégation, brancher ici un insert Supabase ou un service tiers.
 
+// Limite par IP (check-up 02/11/2026 : l'endpoint est public, sans connexion — sendBeacon ne peut
+// pas envoyer d'en-tête d'auth). 60 messages/min/IP suffisent largement à l'app ; au-delà, on
+// ignore silencieusement (204) pour qu'un tiers ne puisse pas noyer les journaux Vercel.
+// En mémoire, donc par instance — même principe que api/ai-proxy.js.
+const _rl = new Map();
+function allow(ip) {
+  const now = Date.now();
+  const e = _rl.get(ip);
+  if (!e || now > e.resetAt) { _rl.set(ip, { n: 1, resetAt: now + 60_000 }); return true; }
+  e.n += 1;
+  if (_rl.size > 5000) for (const [k, v] of _rl) if (now > v.resetAt) _rl.delete(k); // purge
+  return e.n <= 60;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';
+  if (!allow(ip)) return res.status(204).end();
   try {
     let body = req.body;
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = { raw: body }; } }

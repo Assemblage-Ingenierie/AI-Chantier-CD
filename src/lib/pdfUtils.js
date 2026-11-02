@@ -4,7 +4,6 @@ const PDFJS_CANDIDATES = [
   { main: 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js', id: 'lib-pdfjs-unpkg' },
   { main: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js', id: 'lib-pdfjs-cdnjs2' },
 ];
-const JSPDF_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 
 const _loaded = {};
 
@@ -47,10 +46,6 @@ export async function ensurePdfJs() {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = '';
   })();
   return _pdfjsReady;
-}
-
-export async function ensureJsPDF() {
-  return loadScript(JSPDF_CDN, 'lib-jspdf', 'jspdf');
 }
 
 // ─── Conversion base64/dataURL → Uint8Array ──────────────────────────────────

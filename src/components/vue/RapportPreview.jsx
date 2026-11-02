@@ -1799,7 +1799,7 @@ ${base}`;
   };
 
   // Ajoute un point d'amélioration À LA FIN de la conclusion (nouveau paragraphe), sans écraser.
-  const useProposal = (txt, i) => {
+  const applyProposal = (txt, i) => {
     const para = `<div>${txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>`;
     const cur = (conclusion || '').trim();
     const next = cur ? `${cur}<div><br></div>${para}` : para;
@@ -1881,7 +1881,7 @@ ${base}`;
             {proposals.map((p, i) => (
               <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, border:`1px solid ${applied.has(i) ? '#A7D7B0' : DA.border}`, borderRadius:6, padding:'7px 10px', background: applied.has(i) ? '#EAF7EE' : '#FAFAFA' }}>
                 <span style={{ flex:1, fontSize:9.5, lineHeight:1.5, color:'#222' }}>{p}</span>
-                <button onClick={() => useProposal(p, i)} disabled={applied.has(i)}
+                <button onClick={() => applyProposal(p, i)} disabled={applied.has(i)}
                   style={{ flexShrink:0, background: applied.has(i) ? '#2E7D32' : DA.red, color:'white', border:'none', borderRadius:5, padding:'4px 10px', fontSize:9, fontWeight:700, cursor: applied.has(i) ? 'default' : 'pointer', opacity: applied.has(i) ? 0.7 : 1 }}>
                   {applied.has(i) ? '✓ Ajouté' : '＋ Ajouter'}
                 </button>
