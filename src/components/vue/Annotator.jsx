@@ -727,7 +727,7 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const SCALE_KEY = (base) => isPhotoCtx ? `chantierai_scale_photo_${base}` : `chantierai_scale_${base}`;
   const [scaleText,   setScaleText]   = useState(() => _readScale(SCALE_KEY('text'),   isPhotoCtx ? 1 : _oldAnnot));
   const [scaleSymbol, setScaleSymbol] = useState(() => _readScale(SCALE_KEY('symbol'), isPhotoCtx ? 1 : _oldAnnot));
-  const [scaleShape,  setScaleShape]  = useState(() => _readScale(SCALE_KEY('shape'),  1));
+  const [scaleShape]                  = useState(() => _readScale(SCALE_KEY('shape'),  1));
   // Épaisseur des PROCHAINES formes (retour Thomas : « je change la taille de mon trait, ça change
   // tout »). Le curseur « Formes » de l'annotateur ne touche plus le réglage global (partagé avec
   // le rapport) : forme sélectionnée → SA taille ; rien de sélectionné → les formes à venir.
@@ -2417,7 +2417,6 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     }
     // Resize largeur du cadre texte (drag poignée droite)
     if ((tool === 'text' || tool === 'select') && drawing && selTextIdx !== null && textDragRef.current?.mode === 'resize') {
-      const cv = cvRef.current;
       const sT = textScaleNow();
       const { origTextW, tapX } = textDragRef.current;
       const newW = Math.max(60, origTextW + (pos.x - tapX) / sT);

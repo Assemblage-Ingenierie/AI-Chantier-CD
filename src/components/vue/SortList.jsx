@@ -566,7 +566,6 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                   const validPhotos = (item.photos || []).filter(ph => ph.data);
                   if (validPhotos.length) {
                     const shown = validPhotos;
-                    const extra = 0;
                     return (
                       // Grille responsive : tuiles UNIFORMES qui remplissent toute la ligne, quelle
                       // que soit l'orientation → plus de « blanc » à droite avec les photos paysage

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { DA, SUIVI, URGENCE } from '../../lib/constants.js';
+import { DA, URGENCE } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy } from '../../lib/aiProxy.js';
 import SyncBadge from '../ui/SyncBadge.jsx';

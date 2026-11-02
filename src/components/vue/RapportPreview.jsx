@@ -16,7 +16,7 @@ const VXX_DEBUG = typeof window !== 'undefined' && /[?&]vxxdebug=1\b/.test(windo
 import { fetchPlanData, fetchPlanHdDataUrl, fetchAnnexPdf } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
-import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
+import RichTextArea from '../ui/RichTextArea.jsx';
 import { childrenOf, effectiveParentId, zoneLabel } from '../../lib/zoneGroups.js';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { obsDatesInfo, zoneDatesInfo } from '../../lib/obsDates.js';
@@ -62,9 +62,6 @@ const CW  = PW - 2 * MX; // 522px largeur contenu
 const PLAN_PORTRAIT_MAXH = PH - HDR - (MT - HDR) - (MB + FTR) - 96; // ≈ 678px
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────────────────────
-const AVAIL_H     = PH - HDR - (MT - HDR) - MB - FTR - 10; // 764px (10px safety)
-const BREAK_CTL_H = 36; // hauteur d'un BreakControl entre deux blocs (uniquement aux frontières de zone)
-const ITEM_GAP    = 5;  // marginBottom entre blocs non-zone (pas de BreakControl)
 const CHUNK_CHARS = 2500; // max chars per text chunk — only split genuinely long texts
 
 // Découpe un long commentaire en morceaux aux limites de paragraphes
@@ -158,7 +155,7 @@ function itemHasReportContent(i) {
 // • Les commentaires longs sont découpés en blocs-paragraphes (mode:'text' / 'cont')
 // • Les photos sont découpées en rangées individuelles (mode:'photos', photoRow)
 //   pour qu'elles s'insèrent naturellement dans le flux sans créer de blanc en fin de page
-export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), plansNoBreak = false, planLibrary = [], breaks = new Set()) {
+export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(), vxxPhotoMap = new Map(), _plansNoBreak = false, planLibrary = [], breaks = new Set()) {
   const blocks = [];
   const planTail = []; // plans groupés en fin quand plansNoBreak=true
   const cols   = Math.min(ppl, 3);
@@ -309,7 +306,7 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
 
 // ── Pagination ───────────────────────────────────────────────────────────────────────
 // Ne coupe que sur les sauts forcés (scissors) — jamais automatiquement.
-function buildPages(allBlocks, ppl, breaks, heights) {
+function buildPages(allBlocks, ppl, breaks, _heights) {
   const pages  = [];
   let blocks   = [];
 
@@ -492,7 +489,7 @@ function PhotoAnnotCanvas({ photo, cropX = 50, cropY = 50, cropZoom = 1, contain
   const cvRef = useRef();
   const [inferredW, setInferredW] = React.useState(null);
   const [inferredH, setInferredH] = React.useState(null);
-  const [cssW, setCssW] = React.useState(null);
+  const [, setCssW] = React.useState(null);
 
   useEffect(() => {
     if (photo.annotW || !photo.data || !photo.annotations?.length) return;
@@ -768,7 +765,7 @@ function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ = 1, on
   );
 }
 
-function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, annotScale = 1, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
+function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -1216,7 +1213,7 @@ function ItemPlanBlock({ plan, planNom = null, annotScale = 1, vpNumByPath = nul
   );
 }
 
-function PlanBlock({ loc, annotScale = 1, onAnnotScaleChange, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null, onFullPage = null }) {
+function PlanBlock({ loc, annotScale = 1, planLibrary, cutMode = false, pageBreaks = [], onCut, plansSubset = null, topBreakId = null, vpNumByPath = null, hideLegend = false, onEditPlan = null, onOrient = null, onFullPage = null }) {
   // Build list of all plans: primary + extraPlans (or use plansSubset override).
   // Plans masqués (reportHidden) : leurs annotations sont fusionnées dans le plan visible
   // ayant le même planId pour ne pas perdre les légendes viewpoint associées.
@@ -1574,7 +1571,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
                 <div style={{ flex:'0 0 14%', fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textAlign:'right', paddingRight:6, letterSpacing:'0.06em' }}>PRÉSENCE</div>
               </div>
             </div>
-            {participants.map((pt, i) => {
+            {participants.map((pt) => {
               if (pt.type === 'separator') return <PartSepBand key={pt.id} label={pt.label} />;
               // 3 états : présent / absent / neutre ('na' = non précisé → pas de pastille).
               const presState = pt.presence === 'absent' ? 'absent' : pt.presence === 'na' ? 'na' : 'present';
@@ -1619,7 +1616,7 @@ function CoverPage({ projet, pageNum, totalPages, participantChunk }) {
 }
 
 // ── Page de garde (suite) — intervenants supplémentaires ──────────────────────────────────
-function CoverOverflowPage({ projet, pageNum, totalPages, participantChunk }) {
+function CoverOverflowPage({ pageNum, totalPages, participantChunk }) {
   const sigleUrl = useBrandingLogo('logo/sigle_Ai_rouge.svg');
   const participants = participantChunk || [];
   return (
@@ -2293,7 +2290,7 @@ function pdfSrcKey(src) {
   return src.split('?')[0];
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, onTogglePlansNoBreak, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;

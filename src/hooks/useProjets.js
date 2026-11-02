@@ -9,7 +9,7 @@ import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.
 import { applyAnnotRecovery, applyLostAnnots } from '../lib/annotRecovery.js';
 import { restoreItemInLocs, restoreZoneInLocs, restoreItemTextInLocs } from '../lib/trash.js';
 import { addDeletedItem } from '../lib/recoveryBin.js';
-import { getPhotoPref, setPhotoAnnotPref } from '../lib/photoPrefs.js';
+import { getPhotoPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
 import { publishPendingCount } from '../lib/pendingSync.js';

@@ -176,7 +176,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     try {
       for (const doc of result) {
         const rendered = await renderPdfPages(doc.pdf, doc.nums, {
-          onProgress: (d, t) => setRenderProgress(`Rendu ${done + d} / ${totalCount} page${totalCount > 1 ? 's' : ''}…`),
+          onProgress: (d) => setRenderProgress(`Rendu ${done + d} / ${totalCount} page${totalCount > 1 ? 's' : ''}…`),
         });
         const idByNum = new Map();
         for (const { num, img } of rendered) {

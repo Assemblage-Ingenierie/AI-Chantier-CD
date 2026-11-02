@@ -1013,7 +1013,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                             style={{ flexShrink:0, padding:'10px 8px', margin:'-4px', cursor:'grab', color:'#bbb', display:'flex', alignItems:'center', touchAction:'none' }}>
                             <Ic n="grp" s={18}/>
                           </div>
-                          <button onClick={e => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
+                          <button onClick={() => { if (zoneDragDidMove.current) return; toggleLoc(loc.id); }}
                             style={{ color:DA.grayL, background:'none', border:'none', cursor:'pointer', flexShrink:0, padding:4, display:'flex', alignItems:'center', transition:'transform 0.15s', transform:isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
                             <Ic n="chv" s={16}/>
                           </button>

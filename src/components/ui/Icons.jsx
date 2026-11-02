@@ -1,5 +1,5 @@
 import React from 'react';
-import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
+import { URGENCE, SUIVI } from '../../lib/constants.js';
 import {
   X, RefreshCw, Plus, Check, ChevronDown, Trash2, Camera, Image, Building2,
   FileText, Archive, MoreVertical, MapPin, Map, Pencil, Table2, Eye, Download,
