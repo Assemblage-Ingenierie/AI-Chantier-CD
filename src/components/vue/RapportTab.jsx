@@ -3,7 +3,6 @@ import { DA, URGENCE, isBrouillon } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import RapportPreview from './RapportPreview.jsx';
 import ParticipantsEditor from './ParticipantsEditor.jsx';
-import { exportPdf } from '../../lib/generateRapport.js';
 import Annotator from './Annotator.jsx';
 import AnnexesModal from './AnnexesModal.jsx';
 import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
