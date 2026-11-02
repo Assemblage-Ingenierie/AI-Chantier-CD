@@ -1734,6 +1734,15 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
     return () => el.removeEventListener('wheel', onWheel);
   }, [onWheel]);
 
+  // Pas d'image au bout de 12 s → message clair + Fermer (au lieu d'une roue sans fin).
+  const [bgWaitLong, setBgWaitLong] = useState(false);
+  useEffect(() => {
+    setBgWaitLong(false);
+    if (bgImage) return;
+    const t = setTimeout(() => setBgWaitLong(true), 12000);
+    return () => clearTimeout(t);
+  }, [bgImage]);
+
   useEffect(() => {
     if (!bgImage) return;
     setBgOk(false); // masque le canvas pendant le chargement → évite l'écran noir
@@ -3812,6 +3821,17 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 </div>
               </>
             )}
+          </div>
+        ) : bgWaitLong ? (
+          // Plus de roue infinie : au bout de quelques secondes sans image, on explique et on
+          // laisse fermer (bug Malo 16/10 : éditeur bloqué sur « Chargement du plan… »).
+          <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:10,color:'#ddd',padding:24,textAlign:'center' }}>
+            <p style={{ fontSize:15, fontWeight:800, margin:0 }}>Le plan ne se charge pas</p>
+            <p style={{ fontSize:13, color:DA.grayL, margin:0, maxWidth:420, lineHeight:1.5 }}>
+              Vérifiez la connexion puis rouvrez le plan. Si le problème continue, le plan a peut-être été retiré de la bibliothèque : réattribuez-le à la zone.
+              Vos annotations ne sont pas perdues.
+            </p>
+            <button onClick={onClose} style={{ marginTop:6, padding:'9px 18px', borderRadius:8, border:'none', background:DA.red, color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Fermer</button>
           </div>
         ) : (
           <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:12,color:DA.grayL }}>

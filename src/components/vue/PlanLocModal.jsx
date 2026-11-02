@@ -49,6 +49,21 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
   const importFileRef = useRef();
   const planAnnotatorRef = useRef(null); // ref Annotator → getAnnotation() pour la nav entre plans
   const [hqImageData, setHqImageData] = useState(null); // rendu HQ du plan ouvert, swappé en arrière-plan
+  // Image du plan récupérée en base quand ni la zone ni la bibliothèque en mémoire ne l'ont
+  // (bibliothèque pas encore chargée / plan absent du cache). Sans ça, l'éditeur restait bloqué
+  // sur « Chargement du plan… » (bug Malo 16/10 : il a dû supprimer et réattribuer le plan).
+  const [fetchedBg, setFetchedBg] = useState({}); // planId → bg
+
+  useEffect(() => {
+    if (annotatingIdx === null) return;
+    const p = plans[annotatingIdx];
+    const planId = p?.planId || null;
+    if (!planId || p?.planBg || fetchedBg[planId]) return;
+    if (planLibrary?.find(x => x.id === planId)?.bg) return;
+    let cancelled = false;
+    fetchPlanData(planId).then(r => { if (!cancelled && r?.bg) setFetchedBg(m => ({ ...m, [planId]: r.bg })); });
+    return () => { cancelled = true; };
+  }, [annotatingIdx, plans, planLibrary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Image HD du plan ouvert — swappée en arrière-plan sur la miniature LQ (affichée instantanément)
   useEffect(() => {
@@ -154,7 +169,7 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
     return (
       <Annotator
         ref={planAnnotatorRef}
-        bgImage={p?.planBg || libEntry?.bg || null}
+        bgImage={p?.planBg || libEntry?.bg || (p?.planId && fetchedBg[p.planId]) || hqImageData || null}
         hqImage={hqImageData}
         savedPaths={p?.planAnnotations?.paths || []}
         photos={zonePhotos}
