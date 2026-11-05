@@ -370,7 +370,13 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
   const datesInfo = obsDatesInfo(item, visitDate); // dates de suivi (bouton calendrier), sinon null
   const commentToShow = textContent ?? item.commentaire;
-  const showHeader   = mode !== 'photos' && mode !== 'cont';
+  // En-tête ADAPTATIF (retour Thomas 05/11) : une ligne n'apparaît que si elle a du contenu.
+  // Sans intitulé, sans niveau (« — ») ni suivi ni dates → plus de bandeau gris vide avec un « — ».
+  const hasTitle     = !!(item.titre && String(item.titre).trim());
+  const showUrg      = item.urgence !== 'rien';
+  const showTitleRow = hasTitle || !!datesInfo;
+  const showBadgeRow = showUrg || !!suivi;
+  const showHeader   = mode !== 'photos' && mode !== 'cont' && (showTitleRow || showBadgeRow);
 
   const showComment  = mode !== 'photos' && commentToShow;
   // Les photos ne se rendent que via les blocs-rangée (photoRow) construits par flattenBlocks.
@@ -473,12 +479,24 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
       </div>
     );
   };
+  // Bloc d'en-tête seul (photos sans texte) mais en-tête vide : rien à imprimer → pas de cadre vide.
+  if (mode === 'full' && !showHeader && !showComment) return null;
+  // Pas d'en-tête : le crayon « Modifier » flotte dans la marge à droite du cadre (ne masque pas le
+  // texte ; aperçu uniquement, jamais imprimé).
+  const floatingEdit = !showHeader && mode !== 'photos' && mode !== 'cont' && onEdit;
   return (
-    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, overflow:'hidden' }}>
+    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, ...(floatingEdit ? { position:'relative', overflow:'visible' } : { overflow:'hidden' }) }}>
+      {floatingEdit && (
+        <button data-print="hide" onClick={onEdit}
+          style={{ position:'absolute', top:2, right:-20, zIndex:1, background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3 }}
+          title="Modifier">
+          <Ic n="pen" s={10}/>
+        </button>
+      )}
       {/* En-tête normal (titre + badges) */}
       {showHeader && (
         <div style={{ background:'#F7F7F7', padding:'4px 9px 5px', display:'flex', flexDirection:'column', gap:3, borderBottom:`1px solid ${DA.border}` }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {showTitleRow && <div style={{ display:'flex', alignItems:'center', gap:6 }}>
             {/* Titre long + dates : le titre passe à la ligne au lieu d'être coupé (…). */}
             <span style={{ fontSize:10, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:'#000', flex:1, minWidth:0, ...(datesInfo ? {} : { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }) }}>{item.titre}</span>
             {datesInfo && <ObsDatesChip info={datesInfo} fontSize={10}/>}
@@ -489,17 +507,24 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
                 <Ic n="pen" s={10}/>
               </button>
             )}
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap', letterSpacing:'0.04em' }}>
+          </div>}
+          {showBadgeRow && <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            {showUrg && <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:urg.text, background:urg.bg, border:`1px solid ${urg.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap', letterSpacing:'0.04em' }}>
               {urg.label}
-            </span>
+            </span>}
             {suivi && (
               <span style={{ fontSize:7.5, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:suivi.text, background:suivi.bg, border:`1px solid ${suivi.border}`, borderRadius:3, padding:'1px 5px', whiteSpace:'nowrap' }}>
                 ↩ {suivi.label}
               </span>
             )}
-          </div>
+            {!showTitleRow && onEdit && (
+              <button data-print="hide" onClick={onEdit}
+                style={{ marginLeft:'auto', background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3, flexShrink:0 }}
+                title="Modifier">
+                <Ic n="pen" s={10}/>
+              </button>
+            )}
+          </div>}
         </div>
       )}
       {/* Commentaire */}
