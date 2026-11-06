@@ -1436,6 +1436,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             // repères des appartements sur le plan du R+4.
             items={planItems}
             planLibrary={projet.planLibrary || []}
+            planFolders={projet.planFolders || []}
             autoAnnot={!!modal.autoAnnot || !!pf}
             placePhotoIdx={placeIdx}
             annotIdx={modal.annotIdx ?? null}
@@ -1520,6 +1521,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             loc={pseudoLoc}
             items={[item]}
             planLibrary={projet.planLibrary || []}
+            planFolders={projet.planFolders || []}
             autoAnnot={!!modal.autoAnnot}
             annotIdx={modal.annotIdx ?? null}
             vpNumByPath={vpNumGlobal}
