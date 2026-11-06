@@ -7,7 +7,7 @@ import Annotator from './Annotator.jsx';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { freezeVpNumsForZone } from '../../lib/vpNumbering.js';
 
-export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0, onUploadHd = null, placePhotoIdx = null }) {
+export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDeletePlan, onRenamePlan, onAddToLibrary, items, autoAnnot, annotIdx, vpNumByPath = null, vpBase = 0, onUploadHd = null, placePhotoIdx = null, planFolders = [] }) {
   // Unified plans list — first = primary (planId/planBg/planAnnotations), rest = extra
   const [plans, setPlans] = useState(() => {
     const result = [];
@@ -114,6 +114,22 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
       setPlans(prev => prev.filter(p => p.planId !== pl.id));
     } else {
       setPlans(prev => [...prev, { id: crypto.randomUUID(), planId: pl.id, planBg: pl.bg || null, planData: pl.data || null, planAnnotations: null }]);
+    }
+  };
+
+  // FAMILLE entière (case de rangement « MAS », « BIOLAB »… — demande Thomas 06/11) : un clic
+  // sélectionne tous ses plans ; si tous le sont déjà, un clic les retire tous.
+  const toggleFamily = (pls) => {
+    const allIn = pls.every(pl => selectedIds.has(pl.id));
+    if (allIn) {
+      const ids = new Set(pls.map(pl => pl.id));
+      setPlans(prev => prev.filter(p => !ids.has(p.planId)));
+    } else {
+      setPlans(prev => {
+        const have = new Set(prev.map(p => p.planId));
+        return [...prev, ...pls.filter(pl => !have.has(pl.id))
+          .map(pl => ({ id: crypto.randomUUID(), planId: pl.id, planBg: pl.bg || null, planData: pl.data || null, planAnnotations: null }))];
+      });
     }
   };
 
@@ -343,6 +359,8 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                 {(() => {
                   // SÉPARÉ PAR PDF d'origine avec un TITRE par document (demande Thomas) :
                   // regroupement par nom de base (« NomDuPdf — Page N »), pages triées.
+                  // Puis PAR FAMILLE (cases de rangement de la bibliothèque) : chaque famille a son
+                  // en-tête « Tout sélectionner » ; les PDF non rangés suivent, comme avant.
                   const RE = /\s*—\s*Page\s*(\d+)\s*$/i;
                   const map = new Map();
                   for (const pl of planLibrary) {
@@ -351,13 +369,15 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                     if (!map.has(base)) map.set(base, []);
                     map.get(base).push({ pl, page: m ? parseInt(m[1], 10) : 0 });
                   }
-                  return [...map.entries()].map(([base, entries]) => (
+                  const renderDoc = ([base, entries]) => (
                     <div key={base}>
+                      {/* Titre du document : inutile quand il ne répète que le nom de l'unique plan. */}
+                      {(entries.length > 1 || entries[0]?.pl?.nom !== base) && (
                       <p style={{ fontSize:12, fontWeight:800, color:DA.black, margin:'0 2px 6px', display:'flex', alignItems:'center', gap:6 }}>
                         <span style={{ flexShrink:0 }}>📄</span>
                         <span style={{ flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{base}</span>
                         {entries.length > 1 && <span style={{ flexShrink:0, color:DA.grayL, fontWeight:600 }}>· {entries.length} pages</span>}
-                      </p>
+                      </p>)}
                       <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                         {entries.sort((a, b) => a.page - b.page).map(({ pl }) => {
                   const sel = selectedIds.has(pl.id);
@@ -429,7 +449,36 @@ export default function PlanLocModal({ loc, planLibrary, onClose, onSave, onDele
                 })}
                       </div>
                     </div>
-                  ));
+                  );
+                  const docs = [...map.entries()];
+                  const families = (planFolders || [])
+                    .map(f => ({ f, docs: (f.bases || []).map(b => docs.find(d => d[0] === b)).filter(Boolean) }))
+                    .filter(x => x.docs.length);
+                  const filed = new Set(families.flatMap(x => x.docs.map(d => d[0])));
+                  const loose = docs.filter(d => !filed.has(d[0]));
+                  return [
+                    ...families.map(({ f, docs: fd }) => {
+                      const pls = fd.flatMap(([, es]) => es.map(e => e.pl));
+                      const n = pls.filter(pl => selectedIds.has(pl.id)).length;
+                      const all = n === pls.length;
+                      return (
+                        <div key={`f|${f.id}`} style={{ border:`1.5px solid ${n ? DA.red : DA.border}`, borderRadius:14, padding:'10px 10px 12px', background: n ? '#FFFAFA' : DA.grayXL }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:8, margin:'0 2px 10px' }}>
+                            <span style={{ flex:1, minWidth:0, fontSize:13, fontWeight:800, color:DA.red, textTransform:'uppercase', letterSpacing:0.4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {f.nom || 'Famille'} <span style={{ color:DA.grayL, fontWeight:600, textTransform:'none', letterSpacing:0 }}>· {pls.length} plan{pls.length > 1 ? 's' : ''}{n && !all ? ` · ${n} choisi${n > 1 ? 's' : ''}` : ''}</span>
+                            </span>
+                            <button onClick={() => toggleFamily(pls)}
+                              style={{ flexShrink:0, padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap',
+                                border:`1.5px solid ${all ? DA.border : DA.red}`, background:'white', color: all ? DA.gray : DA.red, display:'flex', alignItems:'center', gap:5 }}>
+                              {all ? 'Tout retirer' : <><Ic n="chk" s={13}/> Tout sélectionner</>}
+                            </button>
+                          </div>
+                          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>{fd.map(renderDoc)}</div>
+                        </div>
+                      );
+                    }),
+                    ...loose.map(renderDoc),
+                  ];
                 })()}
               </div>
             </div>
