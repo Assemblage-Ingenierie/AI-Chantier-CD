@@ -260,7 +260,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null, baseItem = undefined }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -563,6 +563,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     );
   };
 
+  // Demande « Enregistrer ? » avant fermeture (cf. requestClose plus bas) — hooks déclarés ICI, avant
+  // tout return conditionnel du composant.
+  const [confirmClose, setConfirmClose] = useState(false);
+  const isDirtyRef = useRef(null);
   // Enregistre un handler de retour pour le bouton back Android — ferme d'abord les overlays internes
   useEffect(() => {
     if (!onBackRequest) return;
@@ -573,6 +577,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       if (showPlan) { setShowPlan(false); return true; }
       if (showPlanPicker) { setShowPlanPicker(false); return true; }
       if (confirmDelPhotoIdx !== null) { setConfirmDelPhotoIdx(null); return true; }
+      // Retour du téléphone sur la fenêtre elle-même : modifications → on demande avant de fermer.
+      if (isDirtyRef.current?.()) { setConfirmClose(true); return true; }
       return false;
     });
     return () => onBackRequest?.(null);
@@ -607,6 +613,29 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     if (!item?.id) { try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} }
     onClose();
   };
+
+  // ── JAMAIS DE FERMETURE SANS ENREGISTRER (retour Thomas + Gab 06/11) ──────────────────────
+  // Croix cliquée par erreur, bouton « retour » du téléphone… fermaient la fenêtre et le texte
+  // tapé était perdu. Désormais, s'il y a des modifications, on DEMANDE : Enregistrer / Ne pas
+  // enregistrer / Continuer. Comparaison avec l'observation d'ORIGINE (`baseItem` : après une
+  // annotation de photo, `item` est déjà le formulaire modifié) ; le texte est comparé sans la mise
+  // en forme HTML (une normalisation de l'éditeur ne déclenche pas la question).
+  const isDirty = () => {
+    const orig = baseItem !== undefined ? baseItem : item;
+    const txt = (h) => String(h || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+    const photoKey = (ps) => (ps || []).filter(ph => ph && ph.data)
+      .map(ph => `${ph._id || ph.id || ph.storage_url || String(ph.data || '').slice(-32)}:${ph.annotations?.length || 0}`).join('|');
+    if (!orig) return !!(txt(form.titre) || txt(form.commentaire) || (form.photos || []).length || (form.plans || []).length);
+    if (txt(form.titre) !== txt(orig.titre) || txt(form.commentaire) !== txt(orig.commentaire)) return true;
+    if ((form.urgence || 'rien') !== (orig.urgence || 'rien') || (form.suivi || 'rien') !== (orig.suivi || 'rien')) return true;
+    if ((form.statut || '') !== (orig.statut || '') || (form.dateOuverture || '') !== (orig.dateOuverture || '') || (form.dateCloture || '') !== (orig.dateCloture || '')) return true;
+    if (photoKey(form.photos) !== photoKey(orig.photos)) return true;
+    if (JSON.stringify((form.plans || []).map(p => [p.planId, p.planAnnotations?.paths?.length || 0])) !== JSON.stringify((orig.plans || []).map(p => [p.planId, p.planAnnotations?.paths?.length || 0]))) return true;
+    if (moveTo && zoneId && moveTo !== zoneId) return true;
+    return false;
+  };
+  const requestClose = () => { if (isDirty()) setConfirmClose(true); else handleClose(); };
+  isDirtyRef.current = isDirty;
 
   const handleSave = () => {
     try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
@@ -1349,6 +1378,33 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   return (
     <div className="modal-overlay" style={{ zIndex:40 }}>
+      {confirmClose && (
+        <div onClick={() => setConfirmClose(false)} style={{ position:'fixed', inset:0, zIndex:60, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e => e.stopPropagation()} role="alertdialog" aria-label="Enregistrer les modifications ?"
+            style={{ width:360, maxWidth:'100%', background:'white', borderRadius:14, padding:'18px 18px 14px', boxShadow:'0 12px 40px rgba(0,0,0,0.3)' }}>
+            <p style={{ margin:0, fontSize:16, fontWeight:800, color:DA.black }}>Enregistrer les modifications ?</p>
+            <p style={{ margin:'6px 0 14px', fontSize:13, color:DA.gray, lineHeight:1.45 }}>
+              Cette observation a été modifiée. Sans enregistrer, ces modifications seront perdues.
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button onClick={() => { setConfirmClose(false); handleSave(); }}
+                style={{ padding:'12px', borderRadius:10, border:'none', background:DA.black, color:'white', fontSize:14, fontWeight:800, cursor:'pointer' }}>
+                Enregistrer
+              </button>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={() => setConfirmClose(false)}
+                  style={{ flex:1, padding:'10px', borderRadius:10, border:`1.5px solid ${DA.border}`, background:'white', color:DA.black, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  Continuer à modifier
+                </button>
+                <button onClick={() => { setConfirmClose(false); handleClose(); }}
+                  style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background:'none', color:DA.red, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  Ne pas enregistrer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="modal-sheet-flex">
         {/* Sticky header */}
         <div style={{ padding: isDesktop ? '16px 24px 12px' : '14px 16px 12px', borderBottom:`1px solid ${DA.border}`, flexShrink:0 }}>
@@ -1356,7 +1412,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
-            <button onClick={handleClose} style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
+            <button onClick={requestClose} aria-label="Fermer" style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
           {draftRestored && (
             <div style={{ display:'flex',alignItems:'center',gap:6,padding:'6px 10px',background:'#FFF7ED',border:'1px solid #FCD34D',borderRadius:8,marginTop:8 }}>
