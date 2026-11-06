@@ -846,7 +846,7 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
 
   // Supprime le PDF ENTIER (toutes ses pages) + nettoie les références dans les cases.
   const deleteWholePdf = (g) => {
-    if (onDeletePlan) g.pages.forEach(pg => onDeletePlan(pg.id));
+    if (onDeletePlan) onDeletePlan(g.pages.map(pg => pg.id)); // une seule mise à jour pour tout le PDF
     if (folders.some(f => (f.bases || []).includes(g.nom))) {
       setFolders(folders.map(f => ({ ...f, bases: (f.bases || []).filter(b => b !== g.nom) })));
     }
@@ -1439,11 +1439,11 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                 <span style={{ fontSize:10,color:DA.grayL }}>{showImported ? '▴ masquer' : '▾ afficher'}</span>
               </button>
               <div style={{ display:'flex',gap:6,alignItems:'center' }}>
-                {showImported && onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
+                {onDeletePlan && planLibrary.length > 0 && (confirmDelAll ? (
                   <>
-                    <button onClick={() => { if (onDeleteAllPlans) onDeleteAllPlans(); else planLibrary.forEach(pl => onDeletePlan(pl.id)); setConfirmDelAll(false); }}
+                    <button onClick={() => { if (onDeleteAllPlans) onDeleteAllPlans(); else onDeletePlan(planLibrary.map(pl => pl.id)); setConfirmDelAll(false); }}
                       style={{ fontSize:11,fontWeight:700,padding:'4px 9px',background:'#B91C1C',color:'white',border:'none',borderRadius:7,cursor:'pointer' }}>
-                      Tout supprimer
+                      Supprimer les {planLibrary.length} plans
                     </button>
                     <button onClick={() => setConfirmDelAll(false)}
                       style={{ fontSize:11,padding:'4px 8px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:7,cursor:'pointer' }}>
@@ -1452,8 +1452,9 @@ export default function NiveauxModal({ localisations, planLibrary, onChange, onC
                   </>
                 ) : (
                   <button onClick={() => setConfirmDelAll(true)}
-                    style={{ fontSize:11,color:'#ccc',background:'none',border:`1px solid #E5E5E5`,borderRadius:7,padding:'4px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}
-                    onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>
+                    title="Retirer tous les plans de cette visite (les autres visites gardent les leurs)"
+                    style={{ fontSize:11,color:DA.gray,background:'none',border:`1px solid ${DA.border}`,borderRadius:7,padding:'4px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}
+                    onMouseEnter={e=>e.currentTarget.style.color=DA.red} onMouseLeave={e=>e.currentTarget.style.color=DA.gray}>
                     <Ic n="del" s={11}/> Tout supprimer
                   </button>
                 ))}

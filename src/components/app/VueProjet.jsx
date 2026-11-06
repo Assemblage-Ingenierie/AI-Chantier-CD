@@ -23,6 +23,7 @@ import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { addDeletedItem, addDeletedZone } from '../../lib/recoveryBin.js';
 import TrashPanel from '../vue/TrashPanel.jsx';
+import { visitPlanLibrary } from '../../lib/planRecovery.js';
 import { countNewTrash, markTrashSeen, TRASH_EVENT } from '../../lib/trashBadge.js';
 import { setPresenceLocation, subscribePresence, groupPresence, colorFor, subscribeDrafts, firstName } from '../../lib/presence.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
@@ -175,7 +176,7 @@ const VISIT_FIELDS = new Set([
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
   onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null,
-  onRestoreItemText = null, onRestoreStoragePhotos = null }) {
+  onRestoreItemText = null, onRestoreStoragePhotos = null, onRestoreDeletedPlans = null, onUnhidePlans = null }) {
   const [trashOpen, setTrashOpen] = useState(false); // corbeille du projet (PC)
   // Alerte corbeille : nombre d'éléments restaurables apparus depuis la dernière ouverture
   // (suppressions ici, ou observations / photos détachées ailleurs — historique serveur).
@@ -251,6 +252,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   );
 
   const visitProjet = useMemo(() => buildVisitProjet(projet, selectedVisite), [projet, selectedVisite]);
+  // Bibliothèque vue depuis CETTE visite : sans les plans qui en ont été retirés (ils restent dans
+  // les autres visites — incident 06/11/2026, lib/planRecovery.js).
+  const visitLibrary = useMemo(() => visitPlanLibrary(projet.planLibrary, selectedVisite), [projet.planLibrary, selectedVisite]);
 
   // Numérotation Vxx globale sur toute la visite — partagée par les miniatures de plan et
   // l'annotateur. Garantit un seul V1, un seul V2, etc. quel que soit le plan ou l'onglet.
@@ -1302,7 +1306,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         <TrashPanel projet={projet} onClose={() => setTrashOpen(false)}
           onRestoreZone={onRestoreZone} onRestoreObservation={onRestoreObservation}
           onRestoreLostAnnots={onRestoreLostAnnots} onRestoreZoneAnnotations={onRestoreZoneAnnotations}
-          onRestoreItemText={onRestoreItemText} onRestoreStoragePhotos={onRestoreStoragePhotos}/>
+          onRestoreItemText={onRestoreItemText} onRestoreStoragePhotos={onRestoreStoragePhotos}
+          currentVisiteId={selectedVisite?.id ?? null} onRestoreDeletedPlans={onRestoreDeletedPlans} onUnhidePlans={onUnhidePlans}/>
       )}
 
       {coEditors.length > 0 && (
@@ -1436,7 +1441,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             // Zone groupe (« R+4 ») : photos de la zone + de ses sous-zones → on peut placer les
             // repères des appartements sur le plan du R+4.
             items={planItems}
-            planLibrary={projet.planLibrary || []}
+            planLibrary={visitLibrary}
             planFolders={projet.planFolders || []}
             autoAnnot={!!modal.autoAnnot || !!pf}
             placePhotoIdx={placeIdx}
@@ -1485,7 +1490,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               onUpdate({ visites: updatedVisites });
               closePlan();
             }}
-            onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
@@ -1521,7 +1526,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           <PlanLocModal
             loc={pseudoLoc}
             items={[item]}
-            planLibrary={projet.planLibrary || []}
+            planLibrary={visitLibrary}
             planFolders={projet.planFolders || []}
             autoAnnot={!!modal.autoAnnot}
             annotIdx={modal.annotIdx ?? null}
@@ -1540,7 +1545,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               patchItem(modal.locId, { ...item, plans: newPlans });
               setModal(null);
             }}
-            onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
@@ -1563,13 +1568,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           projetId={projet.id}
           onAttachHd={(id, hd) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, hd } : p) }))}
           onUploadHd={(id, hd) => savePlanHdNow(projet.id, id, hd)}
-          planLibrary={projet.planLibrary || []}
+          planLibrary={visitLibrary}
           onAdd={plans => {
             const arr = Array.isArray(plans) ? plans : [plans];
             onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
             savePlanBgNow(projet.id, arr);
           }}
-          onDelete={id => onDeletePlan ? onDeletePlan(id) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDeleteAll={onDeletePlan ? () => onDeletePlan(visitLibrary.map(pl => pl.id), selectedVisite?.id ?? null) : null}
+          onDelete={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
           onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           onRepairBg={(id, newBg) => {
             const pl = (projet.planLibrary || []).find(p => p.id === id);
@@ -1587,13 +1593,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       {modal?.t === 'niveaux' && (
         <NiveauxModal
           localisations={visitProjet.localisations}
-          planLibrary={projet.planLibrary || []}
+          planLibrary={visitLibrary}
           onChange={newLocs => onUpdateVisit({ localisations: newLocs })}
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
           onPickPlan={(locId) => setModal({ t:'plan', locId, returnToNiveaux: true })}
-          onDeletePlan={id => onDeletePlan ? onDeletePlan(id) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => p.id !== id) }))}
-          onDeleteAllPlans={() => onUpdate({ planLibrary: [] })}
+          onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) }))}
+          onDeleteAllPlans={() => { if (onDeletePlan) onDeletePlan(visitLibrary.map(pl => pl.id), selectedVisite?.id ?? null); else onUpdate({ planLibrary: [] }); }}
           onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
           projetId={projet.id}
           planFolders={projet.planFolders || []}

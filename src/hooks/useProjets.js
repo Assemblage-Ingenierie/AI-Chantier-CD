@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, restorePlanRows, fetchStoredPlanHd, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject } from '../lib/storage.js';
+import { relinkDeletedPlans, visitUsesPlan, detachPlanFromVisit } from '../lib/planRecovery.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
 import { getPlanThumbs, setPlanThumbs } from '../lib/planThumbCache.js';
@@ -786,26 +787,100 @@ export function useProjets(onSyncStatus) {
     deleteRemoteProjet(id);
   };
 
-  // Suppression immédiate d'un plan — contourne le debounce et supprime directement en DB.
-  // Évite la résurrection du plan si l'app est fermée avant la sauvegarde différée.
-  const deletePlanFromLibrary = (projectId, planId) => {
+  // Suppression d'un plan de la bibliothèque.
+  // ⚠️ INCIDENT 06/11/2026 (Grasse) : la bibliothèque est COMMUNE à toutes les visites ; supprimer
+  // les anciens plans depuis la DET 6 les retirait aussi des DET précédentes. Désormais, depuis une
+  // visite (`visiteId`) : si une AUTRE visite utilise encore le plan, il est seulement retiré de
+  // CETTE visite (zones détachées + masqué de sa bibliothèque via `hiddenPlans`) et reste intact
+  // pour les autres. Il n'est réellement supprimé (base comprise) que si plus aucune autre visite
+  // ne s'en sert. Sans `visiteId` (appel historique) : suppression réelle, comme avant.
+  // `planIdOrIds` : un id ou une LISTE (« Tout supprimer », PDF entier) → une seule mise à jour
+  // d'état et une seule sauvegarde au lieu d'une par plan (retour Thomas 06/11 : « temps de
+  // réaction un peu long », suppression une par une).
+  const deletePlanFromLibrary = (projectId, planIdOrIds, visiteId = null) => {
+    const ids = [...new Set([].concat(planIdOrIds || []).filter(Boolean))];
+    if (!ids.length) return null;
+    const proj = projetsRef.current.find(p => p.id === projectId);
+    const usedElsewhere = (id) => !!visiteId && !!proj && (proj.visites || []).some(v => v.id !== visiteId && visitUsesPlan(v, id));
+    const hideIds = new Set(ids.filter(usedElsewhere));
+    const delIds = new Set(ids.filter(id => !hideIds.has(id)));
     pushHistory();
     dirtyIds.current.add(projectId);
     userModified.current = true;
     // Purge la référence dans toutes les zones (plan principal + extraPlans) pour éviter
     // des onglets « Plan » fantômes qui réapparaissent à chaque rechargement.
     const scrubLoc = (l) => {
-      const next = { ...l, extraPlans: (l.extraPlans || []).filter(ep => ep.planId !== planId) };
-      if (l.planId === planId) { next.planId = null; next.planBg = null; next.planData = null; next.planAnnotations = null; }
+      const next = { ...l, extraPlans: (l.extraPlans || []).filter(ep => !delIds.has(ep.planId)) };
+      if (delIds.has(l.planId)) { next.planId = null; next.planBg = null; next.planData = null; next.planAnnotations = null; }
       return next;
     };
     setProjets(ps => ps.map(p => p.id !== projectId ? p : {
       ...p,
       updatedAt: new Date().toISOString(),
-      planLibrary: (p.planLibrary || []).filter(pl => pl.id !== planId),
-      visites: (p.visites || []).map(v => ({ ...v, localisations: (v.localisations || []).map(scrubLoc) })),
+      planLibrary: delIds.size ? (p.planLibrary || []).filter(pl => !delIds.has(pl.id)) : p.planLibrary,
+      visites: (p.visites || []).map(v => {
+        let nv = delIds.size ? { ...v, localisations: (v.localisations || []).map(scrubLoc) } : v;
+        // Encore utilisés par une autre visite : seulement retirés de CELLE-CI.
+        if (v.id === visiteId && hideIds.size) {
+          for (const id of hideIds) nv = detachPlanFromVisit(nv, id);
+          nv = { ...nv, hiddenPlans: [...new Set([...(v.hiddenPlans || []), ...hideIds])] };
+        }
+        return nv;
+      }),
     }));
-    deleteRemotePlan(projectId, planId);
+    for (const id of delIds) deleteRemotePlan(projectId, id);
+    return delIds.size ? (hideIds.size ? 'mixed' : 'deleted') : 'hidden';
+  };
+
+  // Corbeille : remet dans une visite des plans qui en avaient été retirés (hiddenPlans).
+  const unhidePlansInVisit = (projectId, visiteId, planIds) => {
+    const ids = new Set(planIds || []);
+    if (!ids.size) return { ok: false };
+    updateProjet(projectId, (p) => ({
+      visites: (p.visites || []).map(v => v.id !== visiteId ? v : { ...v, hiddenPlans: (v.hiddenPlans || []).filter(id => !ids.has(id)) }),
+    }));
+    return { ok: true, added: ids.size };
+  };
+
+  // Corbeille : remet des plans SUPPRIMÉS de la bibliothèque (incident 06/11/2026, lib/planRecovery).
+  //   • image : vignette d'origine (cache de l'appareil, taille EXACTE → annotations au pixel près),
+  //     sinon reconstruite depuis l'image HD conservée dans le stockage ;
+  //   • ligne du plan recréée en base avec son id d'ORIGINE (les observations qui y pointent se
+  //     ré-affichent seules) ;
+  //   • zones des visites `visiteIds` re-reliées (additif, cf. relinkDeletedPlans) ;
+  //   • visites `hideInVisiteIds` (ex. la DET où les nouveaux plans ont remplacé les anciens) :
+  //     plans masqués de leur bibliothèque.
+  // → { ok, restored, relinked, missing: [noms sans image retrouvable] }
+  const restoreDeletedPlans = async (projectId, { plans, planIds, visiteIds = [], hideInVisiteIds = [] }) => {
+    const proj = projetsRef.current.find(p => p.id === projectId);
+    if (!proj) return { ok: false };
+    const want = (plans || []).filter(p => (planIds || []).includes(p.id) && !(proj.planLibrary || []).some(pl => pl.id === p.id));
+    if (!want.length) return { ok: true, restored: 0, relinked: 0, missing: [] };
+    const thumbs = await getPlanThumbs(want.map(p => p.id)).catch(() => ({}));
+    const rows = [], missing = [];
+    let n = (proj.planLibrary || []).length;
+    for (const p of want) {
+      const nom = p.nom || 'Plan restauré';
+      const hd = await fetchStoredPlanHd(projectId, p.id);
+      let bg = typeof thumbs[p.id] === 'string' && thumbs[p.id].startsWith('data:') ? thumbs[p.id] : null;
+      if (!bg && hd) bg = await downscaleDataUrl(hd, 2400);
+      if (!bg) { missing.push(nom); continue; }
+      rows.push({ id: p.id, nom, bg, data: hd ? `plans/${projectId}/${p.id}.webp` : null, sort_order: n++ });
+    }
+    if (!rows.length) return { ok: false, restored: 0, relinked: 0, missing };
+    if (!(await restorePlanRows(projectId, rows))) return { ok: false, restored: 0, relinked: 0, missing };
+    const ids = rows.map(r => r.id);
+    // Compte calculé sur l'état actuel (le patch fonctionnel ci-dessous s'applique plus tard).
+    const { relinked } = relinkDeletedPlans(proj.visites || [], plans, ids, visiteIds);
+    updateProjet(projectId, (prev) => {
+      const r = relinkDeletedPlans(prev.visites || [], plans, ids, visiteIds);
+      const hide = new Set(hideInVisiteIds);
+      return {
+        planLibrary: [...(prev.planLibrary || []), ...rows.filter(x => !(prev.planLibrary || []).some(pl => pl.id === x.id)).map(x => ({ id: x.id, nom: x.nom, bg: x.bg, data: null }))],
+        visites: r.visites.map(v => hide.has(v.id) ? { ...v, hiddenPlans: [...new Set([...(v.hiddenPlans || []), ...ids])] } : v),
+      };
+    });
+    return { ok: true, restored: rows.length, relinked, missing };
   };
 
   const addProjet = (data) => {
@@ -1477,5 +1552,29 @@ export function useProjets(onSyncStatus) {
   }, []);
 
   return { projets, setProjets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject };
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject, restoreDeletedPlans, unhidePlansInVisit };
+}
+
+// Réduit une image (data URL) à `maxW` px de large (proportions gardées) → data URL WebP.
+// Sert à refaire la vignette d'un plan restauré depuis son image HD (même largeur que les
+// vignettes d'import : 2400 px, cf. pdfUtils.renderPdfPage) → annotations au bon endroit.
+function downscaleDataUrl(src, maxW) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const k = Math.min(1, maxW / (img.naturalWidth || maxW));
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          resolve(cv.toDataURL('image/webp', 0.9));
+        } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    } catch { resolve(null); }
+  });
 }
