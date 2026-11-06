@@ -9,6 +9,7 @@ import { saveSnapshot, getLatestSnapshot, detectLoss } from '../lib/backupVault.
 import { applyAnnotRecovery, applyLostAnnots } from '../lib/annotRecovery.js';
 import { restoreItemInLocs, restoreZoneInLocs, restoreItemTextInLocs } from '../lib/trash.js';
 import { addDeletedItem } from '../lib/recoveryBin.js';
+import { applyBackup } from '../lib/backupDiff.js';
 import { getPhotoPref } from '../lib/photoPrefs.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
@@ -1258,11 +1259,19 @@ export function useProjets(onSyncStatus) {
   // Restaure le texte/structure des projets détectés comme perdus, remet les items en
   // "photos non hydratées" (les photos se rechargent depuis Storage via storage_url), et
   // marque les projets dirty pour qu'ils soient re-poussés vers Supabase.
-  const restoreFromBackup = useCallback(() => {
+  // Restauration depuis la boîte noire — ADDITIVE (retour Thomas 06/11 : « à chaque fois j'ai peur
+  // que ça m'écrase des trucs »). Avant, le projet entier était REMPLACÉ par la sauvegarde (tout ce
+  // qui avait été écrit depuis, ici ou ailleurs, était perdu). Désormais l'utilisateur voit la liste
+  // des différences (lib/backupDiff.js) et seuls les éléments COCHÉS sont ajoutés :
+  //   selection = [{ projectId, entries }] (entrées de diffBackup).
+  //   • projet disparu : remis tel que dans la sauvegarde (comme avant) ;
+  //   • visites / zones / observations absentes : remises avec leurs identifiants d'origine ;
+  //   • texte repris : remplace le texte actuel, qui part dans la corbeille de l'appareil.
+  const restoreFromBackup = useCallback((selection = []) => {
     const rec = backupRecovery;
-    if (!rec?.snapshot?.data?.length) { setBackupRecovery(null); return; }
-    const lostIds  = new Set(rec.lost.map(l => l.id));
+    if (!rec?.snapshot?.data?.length) { setBackupRecovery(null); return { ok: false }; }
     const snapById = new Map(rec.snapshot.data.filter(p => p?.id).map(p => [p.id, p]));
+    const tomb = { item: getDeletedIds('item') || new Set(), loc: getDeletedIds('loc') || new Set() };
     const resetPhotos = (p) => ({
       ...p,
       visites: (p.visites || []).map(v => ({
@@ -1273,28 +1282,34 @@ export function useProjets(onSyncStatus) {
         })),
       })),
     });
-    pushHistory();
-    userModified.current = true;
-    setProjets(curr => {
-      const currIds = new Set(curr.map(p => p.id));
-      const replaced = curr.map(p => {
-        if (!lostIds.has(p.id) || !snapById.has(p.id)) return p;
-        return { ...resetPhotos(snapById.get(p.id)), updatedAt: new Date().toISOString() };
-      });
-      const missing = rec.lost
-        .filter(l => l.kind === 'missing' && !currIds.has(l.id) && snapById.has(l.id))
-        .map(l => ({ ...resetPhotos(snapById.get(l.id)), updatedAt: new Date().toISOString() }));
-      const next = [...replaced, ...missing];
-      saveLocalCache(next);
-      return next;
-    });
-    lostIds.forEach(id => dirtyIds.current.add(id));
-    // Restauration explicite → lever le tombstone (local ET serveur) des projets restaurés.
-    lostIds.forEach(id => {
-      if (deletedIdsRef.current.has(id)) { deletedIdsRef.current.delete(id); removePersistedDeletedId(id); }
-      removeDeletedChantierTombstone(id);
-    });
+    let added = 0;
+    for (const { projectId, entries } of (selection || [])) {
+      const picked = (entries || []).filter(e => !e.info);
+      if (!picked.length) continue;
+      const cur = projetsRef.current.find(p => p.id === projectId);
+      if (!cur) {
+        // Projet entier absent : remis tel que dans la sauvegarde (choix explicite).
+        if (!picked.some(e => e.kind === 'project') || !snapById.has(projectId)) continue;
+        pushHistory();
+        userModified.current = true;
+        setProjets(curr => curr.some(p => p.id === projectId) ? curr
+          : [...curr, { ...resetPhotos(snapById.get(projectId)), updatedAt: new Date().toISOString() }]);
+        dirtyIds.current.add(projectId);
+        if (deletedIdsRef.current.has(projectId)) { deletedIdsRef.current.delete(projectId); removePersistedDeletedId(projectId); }
+        removeDeletedChantierTombstone(projectId);
+        added += 1;
+        continue;
+      }
+      const { previousTexts, liftIds } = applyBackup(cur, picked, tomb);
+      liftIds.forEach(id => liftTombstone(id));
+      updateProjet(projectId, (prev) => applyBackup(prev, picked, tomb).patch);
+      previousTexts.forEach(t => addDeletedItem({ ...t.item, id: crypto.randomUUID(), photos: [] }, {
+        projectId, projectNom: cur.nom ?? '', visiteId: t.visiteId, locId: t.locId, locNom: t.locNom,
+      }).catch(() => {}));
+      added += picked.length;
+    }
     setBackupRecovery(null);
+    return { ok: true, added };
   }, [backupRecovery]);
 
   const dismissBackupRecovery = useCallback(() => setBackupRecovery(null), []);
