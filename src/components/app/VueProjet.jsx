@@ -1489,7 +1489,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               onUpdate({ visites: updatedVisites });
               closePlan();
             }}
-            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
@@ -1544,7 +1544,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               patchItem(modal.locId, { ...item, plans: newPlans });
               setModal(null);
             }}
-            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+            onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
             onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
             onAddToLibrary={newPlans => {
               const arr = Array.isArray(newPlans) ? newPlans : [newPlans];
@@ -1573,7 +1573,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             onUpdate({ planLibrary: [...(projet.planLibrary || []), ...arr] });
             savePlanBgNow(projet.id, arr);
           }}
-          onDelete={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => p.id !== id) })}
+          onDeleteAll={onDeletePlan ? () => onDeletePlan(visitLibrary.map(pl => pl.id), selectedVisite?.id ?? null) : null}
+          onDelete={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate({ planLibrary: (projet.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) })}
           onRename={(id, nom) => onUpdate({ planLibrary: (projet.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) })}
           onRepairBg={(id, newBg) => {
             const pl = (projet.planLibrary || []).find(p => p.id === id);
@@ -1596,8 +1597,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onClose={() => setModal(null)}
           onOpenPlanLib={() => setModal({ t:'planLib' })}
           onPickPlan={(locId) => setModal({ t:'plan', locId, returnToNiveaux: true })}
-          onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => p.id !== id) }))}
-          onDeleteAllPlans={() => { if (onDeletePlan) visitLibrary.forEach(pl => onDeletePlan(pl.id, selectedVisite?.id ?? null)); else onUpdate({ planLibrary: [] }); }}
+          onDeletePlan={id => onDeletePlan ? onDeletePlan(id, selectedVisite?.id ?? null) : onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).filter(p => ![].concat(id).includes(p.id)) }))}
+          onDeleteAllPlans={() => { if (onDeletePlan) onDeletePlan(visitLibrary.map(pl => pl.id), selectedVisite?.id ?? null); else onUpdate({ planLibrary: [] }); }}
           onRenamePlan={(id, nom) => onUpdate(prev => ({ planLibrary: (prev.planLibrary || []).map(p => p.id === id ? { ...p, nom } : p) }))}
           projetId={projet.id}
           planFolders={projet.planFolders || []}

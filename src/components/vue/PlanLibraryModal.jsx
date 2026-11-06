@@ -26,7 +26,8 @@ async function renderHdInBackground(docs, attach, uploadNow) {
   }
 }
 
-export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', projetId = null, onAttachHd = null, onUploadHd = null }) {
+export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRename, onRepairBg, onClose, projetNom = '', projetId = null, onAttachHd = null, onUploadHd = null, onDeleteAll = null }) {
+  const [confirmAll, setConfirmAll] = useState(false); // « Tout supprimer » : confirmation en 2 temps
   const [rendering, setRendering] = useState(false);
   const [consultGroup, setConsultGroup] = useState(null); // plan ouvert en visionneuse (PDF natif vectoriel / loupe)
   const [renderProgress, setRenderProgress] = useState('');
@@ -473,6 +474,29 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
               <Ic n="map" s={40}/>
               <p style={{ fontSize:13,fontWeight:600,color:DA.gray,margin:'8px 0 4px' }}>Aucun plan dans la bibliothèque</p>
               <p style={{ fontSize:11,color:DA.grayL,margin:0 }}>Importez vos PDF ou images de plans</p>
+            </div>
+          )}
+          {/* « Tout supprimer » (demande Thomas 06/11) : un seul geste au lieu de plan par plan.
+              Depuis une visite : les plans encore utilisés par une AUTRE visite y restent. */}
+          {onDeleteAll && planLibrary.length > 1 && (
+            <div style={{ display:'flex',justifyContent:'flex-end',gap:6,marginBottom:8 }}>
+              {confirmAll ? (
+                <>
+                  <button onClick={() => { onDeleteAll(); setConfirmAll(false); }}
+                    style={{ fontSize:12,fontWeight:700,padding:'5px 10px',background:'#B91C1C',color:'white',border:'none',borderRadius:7,cursor:'pointer' }}>
+                    Supprimer les {planLibrary.length} plans
+                  </button>
+                  <button onClick={() => setConfirmAll(false)}
+                    style={{ fontSize:12,padding:'5px 9px',background:'white',color:'#555',border:`1px solid ${DA.border}`,borderRadius:7,cursor:'pointer' }}>
+                    Non
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setConfirmAll(true)} title="Retirer tous les plans de cette visite (les autres visites gardent les leurs)"
+                  style={{ fontSize:12,color:DA.gray,background:'none',border:`1px solid ${DA.border}`,borderRadius:7,padding:'5px 9px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                  <Ic n="del" s={12}/> Tout supprimer
+                </button>
+              )}
             </div>
           )}
           <div style={{ display:'flex',flexDirection:'column',gap:10 }}>

@@ -794,40 +794,42 @@ export function useProjets(onSyncStatus) {
   // CETTE visite (zones détachées + masqué de sa bibliothèque via `hiddenPlans`) et reste intact
   // pour les autres. Il n'est réellement supprimé (base comprise) que si plus aucune autre visite
   // ne s'en sert. Sans `visiteId` (appel historique) : suppression réelle, comme avant.
-  const deletePlanFromLibrary = (projectId, planId, visiteId = null) => {
+  // `planIdOrIds` : un id ou une LISTE (« Tout supprimer », PDF entier) → une seule mise à jour
+  // d'état et une seule sauvegarde au lieu d'une par plan (retour Thomas 06/11 : « temps de
+  // réaction un peu long », suppression une par une).
+  const deletePlanFromLibrary = (projectId, planIdOrIds, visiteId = null) => {
+    const ids = [...new Set([].concat(planIdOrIds || []).filter(Boolean))];
+    if (!ids.length) return null;
     const proj = projetsRef.current.find(p => p.id === projectId);
-    if (visiteId && proj && (proj.visites || []).some(v => v.id !== visiteId && visitUsesPlan(v, planId))) {
-      pushHistory();
-      dirtyIds.current.add(projectId);
-      userModified.current = true;
-      setProjets(ps => ps.map(p => p.id !== projectId ? p : {
-        ...p,
-        updatedAt: new Date().toISOString(),
-        visites: (p.visites || []).map(v => v.id !== visiteId ? v : {
-          ...detachPlanFromVisit(v, planId),
-          hiddenPlans: [...new Set([...(v.hiddenPlans || []), planId])],
-        }),
-      }));
-      return 'hidden';
-    }
+    const usedElsewhere = (id) => !!visiteId && !!proj && (proj.visites || []).some(v => v.id !== visiteId && visitUsesPlan(v, id));
+    const hideIds = new Set(ids.filter(usedElsewhere));
+    const delIds = new Set(ids.filter(id => !hideIds.has(id)));
     pushHistory();
     dirtyIds.current.add(projectId);
     userModified.current = true;
     // Purge la référence dans toutes les zones (plan principal + extraPlans) pour éviter
     // des onglets « Plan » fantômes qui réapparaissent à chaque rechargement.
     const scrubLoc = (l) => {
-      const next = { ...l, extraPlans: (l.extraPlans || []).filter(ep => ep.planId !== planId) };
-      if (l.planId === planId) { next.planId = null; next.planBg = null; next.planData = null; next.planAnnotations = null; }
+      const next = { ...l, extraPlans: (l.extraPlans || []).filter(ep => !delIds.has(ep.planId)) };
+      if (delIds.has(l.planId)) { next.planId = null; next.planBg = null; next.planData = null; next.planAnnotations = null; }
       return next;
     };
     setProjets(ps => ps.map(p => p.id !== projectId ? p : {
       ...p,
       updatedAt: new Date().toISOString(),
-      planLibrary: (p.planLibrary || []).filter(pl => pl.id !== planId),
-      visites: (p.visites || []).map(v => ({ ...v, localisations: (v.localisations || []).map(scrubLoc) })),
+      planLibrary: delIds.size ? (p.planLibrary || []).filter(pl => !delIds.has(pl.id)) : p.planLibrary,
+      visites: (p.visites || []).map(v => {
+        let nv = delIds.size ? { ...v, localisations: (v.localisations || []).map(scrubLoc) } : v;
+        // Encore utilisés par une autre visite : seulement retirés de CELLE-CI.
+        if (v.id === visiteId && hideIds.size) {
+          for (const id of hideIds) nv = detachPlanFromVisit(nv, id);
+          nv = { ...nv, hiddenPlans: [...new Set([...(v.hiddenPlans || []), ...hideIds])] };
+        }
+        return nv;
+      }),
     }));
-    deleteRemotePlan(projectId, planId);
-    return 'deleted';
+    for (const id of delIds) deleteRemotePlan(projectId, id);
+    return delIds.size ? (hideIds.size ? 'mixed' : 'deleted') : 'hidden';
   };
 
   // Corbeille : remet dans une visite des plans qui en avaient été retirés (hiddenPlans).
