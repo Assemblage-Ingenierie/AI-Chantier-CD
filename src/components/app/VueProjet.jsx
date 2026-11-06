@@ -1339,6 +1339,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           <ItemModal
             key={modal.savedForm ? 'annotated' : 'normal'}
             item={initItem}
+            baseItem={modal.item ?? null}
             zones={visitProjet.localisations.filter(l => !l._mergedInto).map(l => ({ id: l.id, nom: l.nom }))}
             zoneId={modal.item?.id ? modal.locId : null}
             planBg={loc?.planBg ?? null}
