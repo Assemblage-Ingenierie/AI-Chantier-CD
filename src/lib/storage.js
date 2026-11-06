@@ -2513,6 +2513,55 @@ export async function listItemHistory(chantierId, limit = 400) {
   } catch { return []; }
 }
 
+// Historique serveur des ZONES d'un projet (plan principal, plans additionnels, annotations — tout
+// est dans plan_annotations). Sert à retrouver les plans retirés de la bibliothèque (incident
+// 06/11/2026, lib/planRecovery.js). Lecture seule ; [] si la migration n'est pas appliquée.
+export async function listZoneHistory(chantierId, limit = 2000) {
+  if (!chantierId) return [];
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('aichantier_history')
+      .select('id,row_id,op,old_row,changed_at')
+      .eq('chantier_id', String(chantierId)).eq('table_name', 'aichantier_chantier_localisations')
+      .order('changed_at', { ascending: false }).limit(limit);
+    return error ? [] : (data || []);
+  } catch { return []; }
+}
+
+// Image HD d'un plan (même supprimé de la bibliothèque : le fichier Storage n'est jamais effacé)
+// → data URL, ou null si le plan n'a jamais eu d'image HD (import JPG/PNG, upload échoué).
+export async function fetchStoredPlanHd(chantierId, planId) {
+  if (!chantierId || !planId) return null;
+  try {
+    const cached = await getPlanHd(planId);
+    if (cached) return cached;
+    const sb = await getSupabase();
+    const { data: signed } = await sb.storage.from('photos').createSignedUrl(`plans/${chantierId}/${planId}.webp`, 600);
+    if (!signed?.signedUrl) return null;
+    const resp = await fetch(signed.signedUrl);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    if (!blob.type.startsWith('image/')) return null;
+    return await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(blob); });
+  } catch { return null; }
+}
+
+// Recrée les lignes de plans retirés de la bibliothèque, avec leur id d'ORIGINE (les zones et
+// observations qui y pointent se ré-affichent d'elles-mêmes). `data` = chemin Storage de l'image
+// HD existante (pas de ré-upload). Upsert : n'écrase rien d'autre que ces lignes.
+export async function restorePlanRows(chantierId, rows) {
+  if (!chantierId || !rows?.length) return false;
+  try {
+    const sb = await getSupabase();
+    const full = rows.map(r => ({ id: r.id, chantier_id: chantierId, nom: r.nom ?? '', bg: r.bg, data: r.data ?? null, sort_order: r.sort_order ?? 0 }));
+    const { error } = await sb.from('aichantier_chantier_plans').upsert(full, { onConflict: 'id' });
+    if (error) { console.warn('restorePlanRows:', error); return false; }
+    rows.forEach(r => { _missingPlans.delete(r.id); _planDataCache.delete(r.id); });
+    logEvent('plans.restored', { projet: chantierId, n: rows.length });
+    return true;
+  } catch (e) { console.warn('restorePlanRows:', e); return false; }
+}
+
 // Amincit les vieilles versions (fonction serveur) — au plus une fois par jour et par appareil.
 const HISTORY_PRUNE_KEY = '_chantierai_history_prune_at';
 export async function pruneHistoryDaily() {
