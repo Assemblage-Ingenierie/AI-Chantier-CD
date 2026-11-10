@@ -8,6 +8,7 @@ import { estimatePendingUploadBytes, subscribePendingUploads } from '../../lib/p
 import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOfflineEnabled, purgeProjectOffline } from '../../lib/offlineCache.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
+import { getDictationMode, setDictationMode, clearBrowserDictationBroken, hasBrowserSR } from '../../lib/aiDictation.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 import { subscribePendingChanges } from '../../lib/pendingSync.js';
 import { getPhotoQuality, setPhotoQuality } from '../../lib/uiPrefs.js';
@@ -54,6 +55,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
+  const [dictMode, setDictModeState] = useState(getDictationMode()); // dictée : 'auto' | 'ia'
   const [photoQual, setPhotoQualState] = useState(getPhotoQuality()); // qualité photo capture
   // « Télécharger l'application » (PWA) : plateforme dont les instructions sont dépliées,
   // dispo de l'installation native, état installé, message de résultat.
@@ -490,6 +492,29 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
             <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
               Moteur utilisé pour l'IA (rédaction, correction, Costar). <strong>Gemini Flash</strong> par défaut.
               Si un moteur est à court de quota ou en panne, l'app <strong>bascule seule</strong> sur un autre (Gemini ↔ Mistral) : rien à faire.
+            </p>
+          </div>
+
+          {/* ── Dictée vocale (lib/aiDictation.js) ── */}
+          <div style={{ marginBottom:22 }}>
+            <p style={sectionTitle}>Dictée vocale</p>
+            <div style={{ display:'flex', gap:6 }}>
+              {[{ k:'auto', l:'Téléphone', s:'texte en direct' }, { k:'ia', l:'IA', s:'plus précise' }].map(o => {
+                const active = dictMode === o.k;
+                return (
+                  <button key={o.k} onClick={() => { setDictationMode(o.k); setDictModeState(o.k); if (o.k === 'auto') clearBrowserDictationBroken(); }}
+                    style={{ flex:1, padding:'9px 6px', borderRadius:9, fontSize:12, fontWeight:700, cursor:'pointer', lineHeight:1.25,
+                      border:`1.5px solid ${active ? DA.red : DA.border}`,
+                      background: active ? DA.red : 'white', color: active ? 'white' : DA.gray, transition:'background 0.15s, border-color 0.15s' }}>
+                    {o.l}<br/><span style={{ fontSize:10, fontWeight:600, opacity:0.85 }}>{o.s}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p style={{ fontSize:11, color:DA.grayL, margin:'8px 2px 0' }}>
+              <strong>Téléphone</strong> : reconnaissance du téléphone, les mots s'affichent pendant qu'on parle.
+              {' '}<strong>IA</strong> : la voix est transcrite par l'IA au relâchement du micro — meilleure sur le vocabulaire technique et la ponctuation.
+              {hasBrowserSR() ? ' Si la dictée du téléphone ne répond pas, l\'IA prend le relais toute seule.' : ' Ce navigateur n\'a pas de dictée intégrée : l\'IA est utilisée.'}
             </p>
           </div>
 
