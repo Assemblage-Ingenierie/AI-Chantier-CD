@@ -9,6 +9,7 @@ import { estimateOfflineBytesByProject, isProjectOfflineEnabled, setProjectOffli
 import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 import { getDictationMode, setDictationMode, clearBrowserDictationBroken, hasBrowserSR } from '../../lib/aiDictation.js';
+import { platformOf } from '../../lib/deviceCamera.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 import { subscribePendingChanges } from '../../lib/pendingSync.js';
 import { getPhotoQuality, setPhotoQuality } from '../../lib/uiPrefs.js';
@@ -495,8 +496,9 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
             </p>
           </div>
 
-          {/* ── Dictée vocale (lib/aiDictation.js) ── */}
-          <div style={{ marginBottom:22 }}>
+          {/* ── Dictée vocale (lib/aiDictation.js) — masqué sur téléphone / tablette, où le bouton
+              micro de l'app est caché (dictée avec le micro du clavier, cf. ItemModal SHOW_MIC_ON_MOBILE). ── */}
+          {!(typeof window !== 'undefined' && (window.innerWidth < 900 || platformOf().isMobile)) && <div style={{ marginBottom:22 }}>
             <p style={sectionTitle}>Dictée vocale</p>
             <div style={{ display:'flex', gap:6 }}>
               {[{ k:'auto', l:'Téléphone', s:'texte en direct' }, { k:'ia', l:'IA', s:'plus précise' }].map(o => {
@@ -516,7 +518,7 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               {' '}<strong>IA</strong> : la voix est transcrite par l'IA au relâchement du micro — meilleure sur le vocabulaire technique et la ponctuation.
               {hasBrowserSR() ? ' Si la dictée du téléphone ne répond pas, l\'IA prend le relais toute seule.' : ' Ce navigateur n\'a pas de dictée intégrée : l\'IA est utilisée.'}
             </p>
-          </div>
+          </div>}
 
           {/* ── Télécharger l'application (PWA) ── */}
           <div style={{ marginBottom:22 }}>

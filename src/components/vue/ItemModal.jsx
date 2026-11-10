@@ -2,7 +2,13 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 // Bouton micro masqué sur PC (demande Thomas 05/11 : la dictée ne sert que sur mobile). « PC » =
 // grand écran SANS écran tactile : une tablette en paysage (iPad ≥ 900 px) ou un PC tactile le gardent.
-const hideMic = isDesktop && typeof window !== 'undefined' && !window.matchMedia?.('(any-pointer: coarse)')?.matches;
+// Bouton micro rouge (dictée de l'app) — retour Thomas 10/11 : CACHÉ sur téléphone / tablette
+// (on dicte avec le micro du CLAVIER, plus fiable) ; le code de la dictée est conservé.
+// Pour le réafficher sur mobile : SHOW_MIC_ON_MOBILE = true.
+const SHOW_MIC_ON_MOBILE = false;
+const _isMobileDevice = typeof window !== 'undefined' && (!isDesktop || platformOf().isMobile);
+const hideMic = (_isMobileDevice && !SHOW_MIC_ON_MOBILE)
+  || (isDesktop && typeof window !== 'undefined' && !window.matchMedia?.('(any-pointer: coarse)')?.matches);
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { logEvent } from '../../lib/logger.js';
 import { Ic } from '../ui/Icons.jsx';
