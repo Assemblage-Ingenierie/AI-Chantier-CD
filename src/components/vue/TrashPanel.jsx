@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { listDeletedItems } from '../../lib/recoveryBin.js';
+import { listDeletedItems, removeDeletedItem } from '../../lib/recoveryBin.js';
+import { getHiddenTrashKeys, hideTrashKeys } from '../../lib/trashHidden.js';
 import { listSnapshots, getSnapshot } from '../../lib/backupVault.js';
 import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner } from '../../lib/annotRecovery.js';
 import { getDeletedIds } from '../../lib/tombstones.js';
@@ -49,6 +50,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   const [visitPick, setVisitPick] = useState(null); // Set des visites où remettre (null = défaut)
   const [planBusy, setPlanBusy] = useState(false);
   const [planMsg, setPlanMsg] = useState(null);
+  // « Supprimer pour alléger » : éléments masqués (sources serveur / sauvegardes, jamais détruites).
+  const [hidden, setHidden] = useState(() => getHiddenTrashKeys(projet.id));
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -91,8 +95,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
     });
     return { locs, items, visitNom };
   }, [projet]);
-  const deletedPlans = useMemo(() => (onRestoreDeletedPlans && zoneHist && planSnaps)
-    ? findDeletedPlans(projet, { zoneHistory: zoneHist, snapshots: planSnaps }) : [], [projet, zoneHist, planSnaps, onRestoreDeletedPlans]);
+  const deletedPlans = useMemo(() => ((onRestoreDeletedPlans && zoneHist && planSnaps)
+    ? findDeletedPlans(projet, { zoneHistory: zoneHist, snapshots: planSnaps }) : []).filter(p => !hidden.has(`dp|${p.id}`)),
+  [projet, zoneHist, planSnaps, onRestoreDeletedPlans, hidden]);
   const curVisite = (projet.visites || []).find(v => v.id === currentVisiteId) || null;
   const hiddenHere = (curVisite?.hiddenPlans || []).map(id => (projet.planLibrary || []).find(p => p.id === id)).filter(Boolean);
   // Visites concernées par les plans supprimés ; par défaut on les remet partout SAUF dans la visite
@@ -124,7 +129,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   // Observations disparues hors suppression (archiver/réactiver…), retrouvées dans les sauvegardes
   // de l'appareil ; celles déjà proposées par la corbeille (suppression volontaire) n'y sont pas.
   const binItemIds = new Set(obs.map(e => e.item.id));
-  const lostObs = (lostItems || []).filter(e => !present.items.has(e.item.id) && !binItemIds.has(e.item.id));
+  const lostObs = (lostItems || []).filter(e => !present.items.has(e.item.id) && !binItemIds.has(e.item.id) && !hidden.has(`l|${e.item.id}`));
   // Versions précédentes du texte (historique serveur) : seulement celles qui diffèrent du texte
   // actuel, sans doublon, 5 au plus par observation, dans une zone qui existe encore.
   const versions = useMemo(() => {
@@ -144,13 +149,13 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
       const k = textKey(item);
       if (cur && k === textKey(cur)) continue;
       const s = seen.get(r.id) || new Set();
-      if (s.has(k) || s.size >= 5) continue;
+      if (s.has(k) || s.size >= 5 || hidden.has(`h|${h.id}`)) continue;
       s.add(k); seen.set(r.id, s);
       out.push({ key: `h|${h.id}`, op: h.op, ts: h.changed_at, projectId: projet.id, visiteId: locVisit.get(r.localisation_id),
         locId: r.localisation_id, locNom: locNom.get(r.localisation_id), item, curTitre: cur?.titre });
     }
     return out;
-  }, [hist, projet, obs]);
+  }, [hist, projet, obs, hidden]);
   const itemTitre = useMemo(() => {
     const m = new Map();
     for (const v of (projet.visites || [])) for (const l of (v.localisations || [])) for (const it of (l.items || [])) m.set(it.id, it.titre);
@@ -160,8 +165,8 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
     if (!Array.isArray(orphans)) return [];
     const g = new Map();
     for (const f of orphans) { if (!g.has(f.itemId)) g.set(f.itemId, []); g.get(f.itemId).push(f); }
-    return [...g.entries()].map(([itemId, files]) => ({ itemId, files }));
-  }, [orphans]);
+    return [...g.entries()].map(([itemId, files]) => ({ itemId, files })).filter(x => !hidden.has(`p|${x.itemId}`));
+  }, [orphans, hidden]);
   const scanOrphans = async () => { setOrphans('loading'); setOrphans(await findOrphanStoragePhotos(projet)); };
   const runAsync = async (key, fn) => {
     setDone(d => ({ ...d, [key]: '…' }));
@@ -169,9 +174,25 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
     setDone(d => ({ ...d, [key]: r?.ok ? `✓ ${r.added} remise${r.added > 1 ? 's' : ''}` : 'Impossible' }));
   };
 
-  const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])];
+  const annotKey = (e) => (e._merge ? `m|${e.srcLocId}` : `a|${e.visiteId}|${e.locId}|${e.planId}`);
+  const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])].filter(e => !hidden.has(annotKey(e)));
   const scanning = lost == null || mergeLost == null || lostItems == null;
-  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length && !deletedPlans.length && !hiddenHere.length;
+  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length && !deletedPlans.length && !hiddenHere.length && !orphanGroups.length;
+
+  // Retirer UN élément : copie de l'appareil (zone / observation supprimée) → effacée pour de bon ;
+  // sinon → masquée (l'historique serveur et les sauvegardes restent intacts).
+  const discardBin = (recId) => { removeDeletedItem(recId); setBin(b => (b || []).filter(x => x.recId !== recId)); };
+  const hideKeys = (keys) => setHidden(hideTrashKeys(projet.id, keys));
+  const emptyTrash = () => {
+    for (const e of [...zones, ...obs]) removeDeletedItem(e.recId);
+    const ids = new Set([...zones, ...obs].map(e => e.recId));
+    setBin(b => (b || []).filter(x => !ids.has(x.recId)));
+    hideKeys([
+      ...lostObs.map(e => `l|${e.item.id}`), ...versions.map(e => e.key), ...deletedPlans.map(p => `dp|${p.id}`),
+      ...orphanGroups.map(g => `p|${g.itemId}`), ...annots.map(annotKey),
+    ]);
+    setConfirmEmpty(false);
+  };
 
   const run = (key, fn, entry) => {
     const res = fn ? fn(entry) : { ok: false };
@@ -184,7 +205,13 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   const restoreAllLost = () => { for (const e of lostObs) if (!done[`l|${e.item.id}`]) run(`l|${e.item.id}`, onRestoreObservation, e); };
   const where = (e) => [multiVisits ? present.visitNom.get(e.visiteId) : null, e.locNom].filter(Boolean).join(' › ');
 
-  const Row = ({ k, icon, title, sub, onRestore, label = 'Restaurer' }) => (
+  const Dismiss = ({ onClick }) => (
+    <button onClick={onClick} aria-label="Retirer de la corbeille" title="Retirer de la corbeille"
+      style={{ flexShrink:0, width:28, height:28, borderRadius:8, border:'none', background:'none', color:DA.grayL, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <Ic n="x" s={14}/>
+    </button>
+  );
+  const Row = ({ k, icon, title, sub, onRestore, label = 'Restaurer', onDismiss }) => (
     <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${DA.grayXL}` }}>
       <span style={{ flexShrink:0, width:30, height:30, borderRadius:8, background:DA.grayXL, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>{icon}</span>
       <div style={{ minWidth:0, flex:1 }}>
@@ -197,6 +224,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
             style={{ flexShrink:0, padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:`1.5px solid ${DA.red}`, background:'white', color:DA.red, whiteSpace:'nowrap' }}>
             {label}
           </button>}
+      {onDismiss && !done[k]?.startsWith('✓') && <Dismiss onClick={onDismiss}/>}
     </div>
   );
 
@@ -244,6 +272,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
                       <div style={{ fontSize:13, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom || 'Plan sans nom'}</div>
                       <div style={{ fontSize:11, color:DA.grayL, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
                     </div>
+                    {!planMsg?.startsWith('✓') && <Dismiss onClick={(ev) => { ev.preventDefault(); hideKeys([`dp|${p.id}`]); }}/>}
                   </label>
                 );
               })}
@@ -289,7 +318,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               <Row key={e.recId} k={e.recId} icon="📍" title={e.locNom || 'Zone'}
                 sub={`${e.reason === 'fusion' ? `Regroupée sous « ${e.mergedInto?.nom || 'zone'} »` : 'Supprimée'} · ${(e.loc?.items || []).length} obs. · ${fmtDate(e.ts)}${multiVisits ? ` · ${present.visitNom.get(e.visiteId) || ''}` : ''}`}
                 label={e.reason === 'fusion' ? 'Défaire le regroupement' : 'Restaurer'}
-                onRestore={() => run(e.recId, onRestoreZone, e)}/>
+                onRestore={() => run(e.recId, onRestoreZone, e)} onDismiss={() => discardBin(e.recId)}/>
             ))}
           </Section>
 
@@ -299,7 +328,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               return (
                 <Row key={e.recId} k={e.recId} icon="📝" title={e.item?.titre || 'Observation sans titre'}
                   sub={`${where(e) || 'Zone'} · ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
-                  onRestore={() => run(e.recId, onRestoreObservation, e)}/>
+                  onRestore={() => run(e.recId, onRestoreObservation, e)} onDismiss={() => discardBin(e.recId)}/>
               );
             })}
           </Section>
@@ -320,7 +349,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               return (
                 <Row key={k} k={k} icon="🩹" title={e.item?.titre || 'Observation sans titre'}
                   sub={`${where(e) || 'Zone'} · sauvegarde du ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
-                  onRestore={() => run(k, onRestoreObservation, e)}/>
+                  onRestore={() => run(k, onRestoreObservation, e)} onDismiss={() => hideKeys([k])}/>
               );
             })}
           </Section>
@@ -334,7 +363,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
                 title={e.item.titre || e.curTitre || 'Observation sans titre'}
                 sub={`${where(e) || 'Zone'} · ${e.op === 'DELETE' ? 'supprimée' : 'version'} du ${fmtDate(e.ts)}${excerpt(e.item.commentaire) ? ` · « ${excerpt(e.item.commentaire)} »` : ''}`}
                 label="Rétablir"
-                onRestore={() => run(e.key, onRestoreItemText, e)}/>
+                onRestore={() => run(e.key, onRestoreItemText, e)} onDismiss={() => hideKeys([e.key])}/>
             ))}
           </Section>
 
@@ -365,6 +394,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
                             style={{ flexShrink:0, padding:'6px 11px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:`1.5px solid ${DA.red}`, background:'white', color:DA.red, whiteSpace:'nowrap' }}>
                             Remettre
                           </button>}
+                      {!done[k]?.startsWith('✓') && <Dismiss onClick={() => hideKeys([k])}/>}
                     </div>
                     <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginTop:6 }}>
                       {g.files.map(f => f.url
@@ -379,15 +409,15 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
 
           <Section title="Annotations de plan" n={annots.length}>
             {annots.map(e => {
-              const k = e._merge ? `m|${e.srcLocId}` : `a|${e.visiteId}|${e.locId}|${e.planId}`;
+              const k = annotKey(e);
               return e._merge ? (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} de « ${e.srcNom || 'zone'} »`}
                   sub={`Perdues au regroupement sous « ${e.dstNom || 'zone'} » · vues le ${fmtDate(e.ts)}`} label="Remettre"
-                  onRestore={() => run(k, onRestoreZoneAnnotations ? (x) => { const r = onRestoreZoneAnnotations([x]); return { ok: !!r?.added, added: r?.added }; } : null, e)}/>
+                  onRestore={() => run(k, onRestoreZoneAnnotations ? (x) => { const r = onRestoreZoneAnnotations([x]); return { ok: !!r?.added, added: r?.added }; } : null, e)} onDismiss={() => hideKeys([k])}/>
               ) : (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} effacée${e.count > 1 ? 's' : ''} · ${planNom(e.planId)}`}
                   sub={`${where(e) || 'Zone'} · présentes le ${fmtDate(e.ts)}`} label="Remettre"
-                  onRestore={() => run(k, onRestoreLostAnnots, e)}/>
+                  onRestore={() => run(k, onRestoreLostAnnots, e)} onDismiss={() => hideKeys([k])}/>
               );
             })}
           </Section>
@@ -410,6 +440,28 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               Restaurer ajoute l'élément au projet, sans rien retirer ni écraser{versions.length > 0 && ' (« Rétablir » remplace le texte, l\'ancien reste dans l\'historique)'}.
               {annots.length > 0 && ' Les annotations proviennent des sauvegardes de cet ordinateur.'}
             </p>
+          )}
+
+          {!empty && !scanning && (
+            confirmEmpty ? (
+              <div style={{ marginTop:10, padding:'10px 12px', borderRadius:10, background:DA.redL, border:`1px solid ${DA.red}` }}>
+                <div style={{ fontSize:12.5, color:DA.black, lineHeight:1.45 }}>
+                  Vider la corbeille de ce projet ? Ces éléments ne seront plus proposés.
+                  <span style={{ color:DA.gray }}> Les versions gardées par le serveur restent en sécurité (1 an).</span>
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:8, justifyContent:'flex-end' }}>
+                  <button onClick={() => setConfirmEmpty(false)}
+                    style={{ padding:'6px 12px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:`1.5px solid ${DA.border}`, background:'white', color:DA.gray }}>Annuler</button>
+                  <button onClick={emptyTrash}
+                    style={{ padding:'6px 12px', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', border:'none', background:DA.red, color:'white' }}>Vider</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmEmpty(true)}
+                style={{ marginTop:10, padding:'6px 0', background:'none', border:'none', fontSize:12, fontWeight:700, color:DA.gray, cursor:'pointer', textDecoration:'underline' }}>
+                Vider la corbeille de ce projet
+              </button>
+            )
           )}
         </div>
       </div>
