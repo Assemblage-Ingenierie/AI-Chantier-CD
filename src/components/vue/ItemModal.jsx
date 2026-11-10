@@ -2,6 +2,8 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 // Bouton micro masqué sur PC (demande Thomas 05/11 : la dictée ne sert que sur mobile). « PC » =
 // grand écran SANS écran tactile : une tablette en paysage (iPad ≥ 900 px) ou un PC tactile le gardent.
+const MIC_OPENS_KEYBOARD = true; // TEST 10/11 — false = ancien bouton (maintenir pour dicter)
+const MIC_LONG_PRESS_MS = 350;
 const hideMic = isDesktop && typeof window !== 'undefined' && !window.matchMedia?.('(any-pointer: coarse)')?.matches;
 import { DA, URGENCE, SUIVI } from '../../lib/constants.js';
 import { logEvent } from '../../lib/logger.js';
@@ -361,6 +363,18 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const [aiNote, setAiNote] = useState('');
   const aiCtlRef = useRef(null);
   const deadSrRef = useRef(0); // écoutes du téléphone terminées sans jamais avoir capté le micro
+  // TEST « micro du clavier » (Thomas 10/11 : « un dictaphone super bon comme ça marche depuis
+  // 10 ans ») : un appui COURT sur le bouton rouge ouvre le clavier dans le commentaire → on dicte
+  // avec le micro du clavier (Gboard / iPhone : le plus fiable, gratuit). Un appui LONG garde la
+  // dictée de l'app (inchangée). Pour revenir à l'ancien bouton : MIC_OPENS_KEYBOARD = false.
+  const pressTimer = useRef(null);
+  const [kbHint, setKbHint] = useState(false);
+  useEffect(() => {
+    if (!kbHint) return;
+    const t = setTimeout(() => setKbHint(false), 5000);
+    return () => clearTimeout(t);
+  }, [kbHint]);
+  useEffect(() => () => clearTimeout(pressTimer.current), []);
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
@@ -831,6 +845,19 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     if (recordingRef.current) beginAiRecording();
     else setRecording(false);
   }
+
+  // Appui court sur le micro : curseur en fin de commentaire + clavier ouvert (geste utilisateur → OK iOS).
+  const openKeyboardForDictation = () => {
+    const el = textareaRef.current?.getEditor?.();
+    if (!el) return;
+    el.focus();
+    try {
+      const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    } catch { /* curseur laissé où il est */ }
+    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* ignore */ }
+    setKbHint(true);
+  };
 
   const startDictaphone = () => {
     const engine = currentEngine();
@@ -1756,11 +1783,31 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                   (en bas de l'écran) au lieu de partir tout en bas du champ. Texte court : même place
                   qu'avant (bas-droite du champ). Masqué sur PC sans écran tactile (hideMic). */}
               {!hideMic && <div style={{ position:'sticky', bottom:12, height:0, display:'flex', justifyContent:'flex-end', pointerEvents:'none', zIndex:6 }}>
+              {kbHint && !recording && (
+                <div role="status" style={{ position:'absolute', right:12, bottom:78, pointerEvents:'none', background:DA.black, color:'white', borderRadius:10, padding:'8px 11px', fontSize:12.5, fontWeight:700, lineHeight:1.35, boxShadow:'0 4px 14px rgba(0,0,0,0.25)', maxWidth:230, textAlign:'right' }}>
+                  Touchez 🎤 sur le clavier pour dicter
+                  <div style={{ fontSize:11, fontWeight:500, opacity:0.75, marginTop:2 }}>Maintenir le bouton rouge = dictée de l'app</div>
+                </div>
+              )}
               <button
-                title={recording ? 'Relâcher pour terminer' : 'Maintenir pour dicter'}
-                onPointerDown={e => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {} if (!recordingRef.current) startDictaphone(); }}
-                onPointerUp={() => { if (recordingRef.current) stopDictaphone(); }}
-                onPointerCancel={() => { if (recordingRef.current) stopDictaphone(); }}
+                title={recording ? 'Relâcher pour terminer' : MIC_OPENS_KEYBOARD ? 'Toucher : dicter avec le clavier · Maintenir : dictée de l\'app' : 'Maintenir pour dicter'}
+                onMouseDown={e => e.preventDefault()}
+                onPointerDown={e => {
+                  e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                  if (recordingRef.current) return;
+                  if (!MIC_OPENS_KEYBOARD) { startDictaphone(); return; }
+                  setKbHint(false);
+                  clearTimeout(pressTimer.current);
+                  pressTimer.current = setTimeout(() => { pressTimer.current = null; startDictaphone(); }, MIC_LONG_PRESS_MS);
+                }}
+                onPointerUp={() => {
+                  if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; openKeyboardForDictation(); return; }
+                  if (recordingRef.current) stopDictaphone();
+                }}
+                onPointerCancel={() => {
+                  if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; return; }
+                  if (recordingRef.current) stopDictaphone();
+                }}
                 style={{ pointerEvents:'auto', marginTop:-68, marginRight:12, flexShrink:0, width:56, height:56, borderRadius:'50%', border:'none', background:recording ? '#991b1b' : DA.red, color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', userSelect:'none', WebkitUserSelect:'none', touchAction:'none', transition:'background 0.15s, transform 0.1s', transform:recording?'scale(1.08)':'scale(1)', boxShadow:recording?'0 0 0 6px rgba(185,28,28,0.25), inset 0 2px 6px rgba(0,0,0,0.25)':'0 3px 10px rgba(185,28,28,0.4)' }}>
                 <Ic n={recording ? 'spn' : 'mic'} s={24}/>
               </button>
