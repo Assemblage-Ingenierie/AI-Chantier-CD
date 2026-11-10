@@ -17,7 +17,8 @@ const CASCADE = {
   aichantier_localisation_items: [['aichantier_item_photos', 'item_id']],
 };
 
-export function createFakeSupabase() {
+// maxRows : plafond de lignes par réponse, comme PostgREST (`max-rows`, 1000 par défaut sur Supabase).
+export function createFakeSupabase({ maxRows = Infinity } = {}) {
   const T = {};
   const deleted = []; // { table, id }
   const table = (t) => (T[t] ??= []);
@@ -33,13 +34,15 @@ export function createFakeSupabase() {
   };
 
   const from = (t) => {
-    const st = { op: 'select', filters: [], rows: null, patch: null, single: false, maybe: false };
+    const st = { op: 'select', filters: [], rows: null, patch: null, single: false, maybe: false, range: null };
     const match = (r) => st.filters.every(f => f(r));
     const exec = () => {
       if (st.op === 'select') {
         const d = table(t).filter(match).map(r => ({ ...r }));
         if (st.single || st.maybe) return { data: d[0] ?? null, error: st.single && !d[0] ? { code: 'PGRST116', message: 'no rows' } : null };
-        return { data: d, error: null };
+        const from = st.range ? st.range[0] : 0;
+        const to = st.range ? st.range[1] + 1 : d.length;
+        return { data: d.slice(from, Math.min(to, from + maxRows)), error: null };
       }
       if (st.op === 'delete') return { data: delRows(t, match), error: null };
       if (st.op === 'update') { table(t).filter(match).forEach(r => Object.assign(r, st.patch)); return { data: null, error: null }; }
@@ -65,7 +68,7 @@ export function createFakeSupabase() {
       eq(c, v) { st.filters.push(r => r[c] === v); return api; },
       in(c, vs) { const s = new Set(vs); st.filters.push(r => s.has(r[c])); return api; },
       is(c, v) { st.filters.push(r => (r[c] ?? null) === v); return api; },
-      order() { return api; }, range() { return api; }, limit() { return api; },
+      order() { return api; }, range(a, b) { st.range = [a, b]; return api; }, limit() { return api; },
       single() { st.single = true; return api; },
       maybeSingle() { st.maybe = true; return api; },
       upsert(rows) { st.op = 'upsert'; st.rows = Array.isArray(rows) ? rows : [rows]; return api; },
