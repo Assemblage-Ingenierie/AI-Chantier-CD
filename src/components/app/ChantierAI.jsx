@@ -42,7 +42,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
-    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject } = useProjets(setSyncStatus);
+    dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject, restoreDeletedPlans, unhidePlansInVisit } = useProjets(setSyncStatus);
   // Différences sauvegarde ↔ projets (recalculées sur l'état ACTUEL) : seulement ce qui peut
   // vraiment être remis ; les projets / éléments supprimés volontairement ne sont pas proposés.
   const [backupDiffOpen, setBackupDiffOpen] = useState(false);
@@ -666,7 +666,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onRefresh={handleRefresh}
             refreshing={refreshing}
             onUpdate={upd => updateProjet(ouvert.id, upd)}
-            onDeletePlan={id => deletePlanFromLibrary(ouvert.id, id)}
+            onDeletePlan={(id, visiteId) => deletePlanFromLibrary(ouvert.id, id, visiteId)}
             setBackHandler={setBackHandler}
             syncStatus={syncStatus}
             onRestoreZone={restoreZone}
@@ -675,6 +675,8 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onRestoreZoneAnnotations={restoreZoneAnnotations}
             onRestoreItemText={restoreItemText}
             onRestoreStoragePhotos={restoreStoragePhotos}
+            onRestoreDeletedPlans={(opts) => restoreDeletedPlans(ouvert.id, opts)}
+            onUnhidePlans={(visiteId, ids) => unhidePlansInVisit(ouvert.id, visiteId, ids)}
           />
         ) : ouvert ? (
           <VisitesScreen

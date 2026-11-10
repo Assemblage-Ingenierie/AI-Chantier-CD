@@ -422,6 +422,8 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
       tableauRecap: [],
       photosParLigne: 2, plansEnFin: false, rapportPageBreaks: [],
       includeTableauRecap: true, includeConclusion: false, conclusion: '',
+      // Plans retirés de la visite précédente : restent retirés (chaque DET a ses plans).
+      hiddenPlans: [...(lastVisite?.hiddenPlans || [])],
       localisations,
     };
     onUpdateProjet({ visites: [...visites, newVisite] });
