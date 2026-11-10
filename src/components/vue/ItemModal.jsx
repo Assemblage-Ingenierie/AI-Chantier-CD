@@ -23,6 +23,7 @@ import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
 import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive, getMyName } from '../../lib/presence.js';
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
+import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
@@ -957,7 +958,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             }
             if (cards.length) {
               vigilanceAddedRef.current = true;
-              setImproveErr('');
+              // N'efface QUE « Rien à améliorer » : une vraie erreur de l'analyse du texte reste
+              // visible (avant, elle disparaissait → « ça ne reformule plus », sans explication).
+              setImproveErr(e => (e === 'Rien à améliorer ✓' ? '' : e));
               setImproveList(prev => {
                 const seen = new Set((prev || []).filter(x => x.kind === 'ajout').map(x => x.texte));
                 return [...(prev || []), ...cards.filter(c => !seen.has(c.texte))];
@@ -968,15 +971,19 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       }
 
       // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
-      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 3000, json: true, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
+      // Longueur max (plafond du proxy) + réflexion BORNÉE sur Gemini Pro (même réglage que le correcteur
+      // d'orthographe ; Flash garde sa réflexion coupée = rapide) : sur un texte long, la réponse était
+      // coupée à 3000 jetons (réflexion comprise) → JSON invalide → plus aucune reformulation.
+      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), json: true, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
       const raw = d.content?.[0]?.text?.trim() || '';
-      let obj;
-      // Extraction TOLÉRANTE : on isole le 1er objet { … } (Gemini enrobe parfois de texte/balises).
-      try { obj = JSON.parse((raw.match(/\{[\s\S]*\}/) || [''])[0]); }
-      catch {
+      // Lecture TOLÉRANTE (lib/aiJson.js) : JSON complet, sinon tout ce qui est déjà complet dans une
+      // réponse coupée (corrections, reformulations, ajouts) — rien n'est jeté pour une fin tronquée.
+      const { obj, partial } = parseLooseJson(raw, ['corrections', 'reformulations', 'ajouts']);
+      if (!obj) {
         console.warn('[AI illisible] réponse brute:', raw);
-        throw new Error('Illisible → ' + (raw ? raw.slice(0, 180) : '(réponse VIDE)'));
+        throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse de l\'IA trop longue, coupée : réessaie (ou découpe le texte)' : 'Illisible → ' + (raw ? raw.slice(0, 180) : '(réponse VIDE)'));
       }
+      if (partial) console.warn('[AI] réponse incomplète, éléments complets récupérés', { finish: d._finish });
       // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
       let correctedPlain = plain;
       for (const c of (obj?.corrections || [])) {
