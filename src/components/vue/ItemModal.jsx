@@ -23,6 +23,8 @@ import ThumbImg from '../ui/ThumbImg.jsx';
 import { todayIso, durationFr } from '../../lib/obsDates.js';
 import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName, sendLive, onLive, getMyName } from '../../lib/presence.js';
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
+import CameraCapture from './CameraCapture.jsx';
+import { autoCopyToPhone, requestOrientationAccess, platformOf } from '../../lib/deviceCamera.js';
 import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 
@@ -577,10 +579,15 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   // tout return conditionnel du composant.
   const [confirmClose, setConfirmClose] = useState(false);
   const isDirtyRef = useRef(null);
+  // Viseur photo intégré (CameraCapture) — déclaré ici pour la gestion du bouton retour.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const sessionShotsRef = useRef([]); // _id des photos prises dans la rafale en cours
+  const cameraCloseRef = useRef(null);
   // Enregistre un handler de retour pour le bouton back Android — ferme d'abord les overlays internes
   useEffect(() => {
     if (!onBackRequest) return;
     onBackRequest(() => {
+      if (cameraOpen) { cameraCloseRef.current?.(); return true; } // retour = fermer le viseur
       if (zoomPhotoIdx !== null) { setZoomPhotoIdx(null); return true; }
       if (annotatingPhotoIdx !== null) { setAnnotatingPhotoIdx(null); return true; }
       if (annotatingPlanIdx !== null) { setAnnotatingPlanIdx(null); return true; }
@@ -592,7 +599,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       return false;
     });
     return () => onBackRequest?.(null);
-  }, [onBackRequest, zoomPhotoIdx, annotatingPhotoIdx, annotatingPlanIdx, showPlan, showPlanPicker, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onBackRequest, cameraOpen, zoomPhotoIdx, annotatingPhotoIdx, annotatingPlanIdx, showPlan, showPlanPicker, confirmDelPhotoIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stop dictaphone si la modale se ferme
   useEffect(() => () => {
@@ -1094,8 +1101,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     setSavingPhone(true);
     try {
       const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/i.test(navigator.userAgent);
       const canShare = typeof navigator.share === 'function' && typeof navigator.canShare === 'function';
-      if (isIOS && canShare) {
+      if (isAndroid) {
+        // Android : noms UNIQUES (lib/deviceCamera.js) → plus de « Télécharger à nouveau ? ».
+        for (const ph of photos) {
+          try { const blob = await fetch(ph.annotated || ph.data).then(r => r.blob()); autoCopyToPhone(blob, projetNom); } catch { /* photo suivante */ }
+        }
+      } else if (isIOS && canShare) {
         const files = await Promise.all(photos.map(async (ph, i) => {
           const src = ph.annotated || ph.data;
           const blob = await fetch(src).then(r => r.blob());
@@ -1110,14 +1123,31 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     finally { setSavingPhone(false); }
   };
 
-  const readFiles = (files, fromCamera = false) => {
+  // Repérage de la photo qu'on vient de prendre (plan de l'observation, sinon de la zone).
+  const schedulePlacement = (next, idx, photoId) => {
+    if ((next.plans || []).length > 0) {
+      const counts = next.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
+      const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
+      setTimeout(() => { setPlacePhotoIdx(idx); setAnnotatingPlanIdx(Math.max(0, planIdx)); }, 0);
+    } else if (onPlaceOnZonePlan) {
+      // Pas de plan sur l'observation → plan de la ZONE (ou du groupe au-dessus), puis retour ici.
+      setTimeout(() => onPlaceOnZonePlan(next, photoId), 0);
+    }
+  };
+
+  // opts.noPlace : photo prise dans le viseur intégré (rafale) → le repérage attend « Terminé ».
+  // → Promise des photos ajoutées (avec leur _id).
+  const readFiles = (files, fromCamera = false, opts = {}) => {
     const filtered = Array.from(files).filter(f => {
       if (f.size > 25 * 1024 * 1024) { alert(`"${f.name}" est trop volumineux (max 25 Mo)`); return false; }
       return true;
     });
-    if (!filtered.length) return;
+    if (!filtered.length) return Promise.resolve([]);
     setCompressing(true);
-    Promise.all(filtered.map(compressPhoto))
+    // Copie dans le téléphone (Android : téléchargement automatique, nom unique, photo D'ORIGINE en
+    // JPG ; iPhone : impossible sans geste → bouton « Enreg. » ; PC : rien) — lib/deviceCamera.js.
+    if (fromCamera) filtered.forEach(f => autoCopyToPhone(f, projetNom));
+    return Promise.all(filtered.map(compressPhoto))
       .then(done => {
         // _id : identifiant STABLE de la ligne photo en DB, attribué dès la création.
         // INDISPENSABLE : processPhotosForItem (storage.js) fait `id: ph._id ?? ... ?? randomUUID()`.
@@ -1139,24 +1169,44 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           // REPÉRAGE EN DIRECT (retour Thomas 27/10) : photo prise à l'appareil + l'observation a
           // un plan → le plan s'ouvre pour poser le repère de la photo, puis on revient ici.
           const next = { ...prev, photos: [...prev.photos, ...valid] };
-          if (fromCamera && valid.length === 1 && (prev.plans || []).length > 0) {
-            const idx = prev.photos.length;
-            const counts = prev.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
-            const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
-            setTimeout(() => { setPlacePhotoIdx(idx); setAnnotatingPlanIdx(Math.max(0, planIdx)); }, 0);
-          } else if (fromCamera && valid.length === 1 && onPlaceOnZonePlan) {
-            // Pas de plan sur l'observation → plan de la ZONE (ou du groupe au-dessus), puis retour ici.
-            setTimeout(() => onPlaceOnZonePlan(next, valid[0]._id), 0);
-          }
+          if (fromCamera && valid.length === 1 && !opts.noPlace) schedulePlacement(next, prev.photos.length, valid[0]._id);
           return next;
         });
         if (fromCamera) {
-          const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-          if (!isIOS) valid.forEach(autoSaveToDevice); // download link ouvre un onglet sur iOS, skip
           valid.forEach(ph => uploadToDrive({ ...ph, projetNom, projetNum: getAffaireNum(projetId), visiteLabel, visiteDate, ingenieur }));
         }
+        return valid;
       })
       .finally(() => setCompressing(false));
+  };
+
+  // ── VISEUR PHOTO INTÉGRÉ (CameraCapture) — identique sur tous les téléphones ──
+  const openNativeCamera = () => { setCameraOpen(false); if (camRef.current) { camRef.current.value = ''; camRef.current.click(); } };
+  const onCameraShot = (file) => {
+    readFiles([file], true, { noPlace: true }).then(v => { if (v?.[0]?._id) sessionShotsRef.current.push(v[0]._id); }).catch(() => {});
+  };
+  const onCameraClose = () => {
+    setCameraOpen(false);
+    cameraCloseRef.current = null;
+    // Une seule photo prise → repérage sur le plan comme avant ; une rafale → pas de repérage auto.
+    const ids = sessionShotsRef.current;
+    sessionShotsRef.current = [];
+    if (ids.length !== 1) return;
+    const id = ids[0];
+    // La photo peut finir d'être traitée juste après la fermeture → petit délai.
+    setTimeout(() => setForm(prev => {
+      const idx = (prev.photos || []).findIndex(p => p._id === id);
+      if (idx >= 0) schedulePlacement(prev, idx, id);
+      return prev;
+    }), 300);
+  };
+  const openCamera = () => {
+    requestOrientationAccess(); // iPhone : redresser les photos prises à l'horizontale
+    // PC (pas de téléphone) ou navigateur sans caméra intégrable → comportement d'avant (sélecteur de fichier).
+    if (!platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
+    sessionShotsRef.current = [];
+    cameraCloseRef.current = onCameraClose;
+    setCameraOpen(true);
   };
 
 
@@ -1447,6 +1497,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             </div>
           )}
           {fileInputs}
+          {cameraOpen && <CameraCapture onShot={onCameraShot} onNative={openNativeCamera} onClose={onCameraClose}/>}
         </div>
         {/* Scrollable content */}
         <div style={{ flex:1, overflowY:'auto', padding: isDesktop ? '16px 24px' : '14px 16px' }}>
@@ -1816,7 +1867,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
                   <Ic n="img" s={14}/> Galerie
                 </button>
-                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
+                <button onClick={openCamera} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
                   <Ic n="cam" s={14}/> Photo
                 </button>
               </div>
@@ -1852,7 +1903,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <button onClick={() => gallRef.current.click()} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.border}`,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
                   <Ic n="img" s={15}/><span style={{ fontSize:9,color:DA.grayL }}>Galerie</span>
                 </button>
-                <button onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
+                <button onClick={openCamera} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
                   <Ic n="cam" s={15}/><span style={{ fontSize:9,color:DA.red,fontWeight:700 }}>Photo</span>
                 </button>
               </div>
@@ -1861,7 +1912,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <div onClick={() => gallRef.current.click()} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.border}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.grayXL }}>
                   <Ic n="img" s={20}/><span style={{ fontSize:11,color:DA.grayL }}>Galerie</span>
                 </div>
-                <div onClick={() => { camRef.current.value=''; camRef.current.click(); }} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
+                <div onClick={openCamera} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
                   <Ic n="cam" s={20}/><span style={{ fontSize:11,color:DA.red }}>Prendre photo</span>
                 </div>
               </div>

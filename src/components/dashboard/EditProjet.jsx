@@ -7,6 +7,7 @@ import { CoverSourcesHint } from './NewProjet.jsx';
 import { pdfFileToImageDataUrl } from '../../lib/pdfUtils.js';
 import { getCoverOriginal, setCoverOriginal, fileToCompressedDataUrl } from '../../lib/coverOriginals.js';
 import { getAffaireNum, setAffaireNum, uploadToDrive } from '../../lib/driveUpload.js';
+import { autoCopyToPhone } from '../../lib/deviceCamera.js';
 
 const FIELDS = [
   { k: 'nom',          l: 'Nom du projet *',  ph: 'Ex: Résidence Les Acacias'     },
@@ -43,16 +44,9 @@ export default function EditProjet({ projet, onClose, onSave }) {
   const backupCameraCover = (file, compressedDataUrl) => {
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
     const name = `page_de_garde_${String(projet.nom || 'projet').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40)}_${stamp}.jpg`;
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    if (!isIOS) {
-      try {
-        const url = URL.createObjectURL(file); // original pleine résolution
-        const a = document.createElement('a');
-        a.href = url; a.download = name;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      } catch { /* ignore */ }
-    }
+    // Copie dans le téléphone : Android seulement, nom unique (lib/deviceCamera.js — plus de
+    // « Télécharger à nouveau ? », plus de téléchargement surprise sur PC).
+    autoCopyToPhone(file, projet.nom);
     if (compressedDataUrl) {
       uploadToDrive({ data: compressedDataUrl, name, projetNom: projet.nom, projetNum: affNum || getAffaireNum(projet.id),
         visiteLabel: 'Page de garde', visiteDate: new Date().toISOString().slice(0, 10) });
