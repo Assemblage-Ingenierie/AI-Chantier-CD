@@ -1373,6 +1373,11 @@ async function saveRemote(ps, dirtyIds = null) {
   const { data: { user } } = await sb.auth.getUser();
   const uid = user?.id ?? null;
   const errors = [];
+  // Projets dont au moins une photo n'a pas pu être envoyée/reliée (réseau de chantier…) →
+  // signalés à saveData pour rester « à synchroniser » (retour Thomas 10/11, Grasse : 10-20 %
+  // des photos jamais arrivées sur le PC — le fichier finissait par partir via la file d'envoi,
+  // mais plus aucune sauvegarde ne venait écrire sa ligne : le projet était déjà « synchronisé »).
+  errors.incompletePhotoProjects = new Set();
 
   // Détecter les projets orphelins (sans id) — corruption cache locale.
   // On les ignore proprement plutôt que de planter avec 23502 ou de déclencher
@@ -1950,6 +1955,7 @@ async function saveRemote(ps, dirtyIds = null) {
       allPhotoRows.push(...rows);
       if (incomplete) incompleteItems.add(itemId);
     }
+    if (incompleteItems.size) errors.incompletePhotoProjects.add(p.id);
     const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
     let photoUpsertOk = false;
     if (allPhotoRows.length > 0) {
@@ -1958,7 +1964,18 @@ async function saveRemote(ps, dirtyIds = null) {
         const stripped = allPhotoRows.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
         const { error: e2 } = await sb.from('aichantier_item_photos').upsert(stripped, { onConflict: 'id' });
         if (e2) errors.push(e2); else photoUpsertOk = true;
-      } else if (error) { errors.push(error); }
+      } else if (error) {
+        // Une seule ligne en défaut (ex. doublon item + fichier) faisait échouer TOUT le lot →
+        // aucune photo du projet n'était plus reliée, à chaque sauvegarde. Repli observation par
+        // observation : les autres passent ; l'erreur reste remontée (pas de purge, re-tentative).
+        errors.push(error);
+        logWarn('saveRemote.photoBatchFailed', { projet: p.id, rows: allPhotoRows.length, code: error.code, msg: error.message });
+        const byItem = groupBy(allPhotoRows, 'item_id');
+        for (const rowsOfItem of Object.values(byItem)) {
+          const { error: e3 } = await sb.from('aichantier_item_photos').upsert(rowsOfItem, { onConflict: 'id' });
+          if (e3) incompleteItems.add(rowsOfItem[0].item_id);
+        }
+      }
       else { photoUpsertOk = true; }
     } else { photoUpsertOk = true; }
 
@@ -2345,9 +2362,13 @@ export async function saveData(ps, onStatus, dirtyIds = null) {
     // Sauvegarder localement en premier (résilience hors-ligne)
     await stor.set(SK, JSON.stringify(toSlim(ps)));
     const errors = await saveRemote(ps, dirtyIds);
-    const ok = errors.length === 0;
-    onStatus?.(ok ? 'ok' : _offline() ? 'offline' : 'error');
-    if (!ok && !_offline()) showSyncWarning(errors[0]);
+    // Photos pas encore envoyées / reliées : PAS une erreur (pas de bandeau rouge), mais la
+    // sauvegarde n'est pas complète → false = le projet reste « à synchroniser » et sera repris
+    // (re-tentative 15 s, fin de la file d'envoi des photos, retour réseau, redémarrage).
+    const photosPending = (errors.incompletePhotoProjects?.size || 0) > 0;
+    const ok = errors.length === 0 && !photosPending;
+    onStatus?.(ok ? 'ok' : _offline() ? 'offline' : errors.length ? 'error' : 'saving');
+    if (errors.length && !_offline()) showSyncWarning(errors[0]);
     return ok;
   } catch (e) {
     console.warn('Save error:', e);
