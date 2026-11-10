@@ -5,7 +5,8 @@ import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { listSnapshots, getSnapshot } from '../../lib/backupVault.js';
 import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner } from '../../lib/annotRecovery.js';
 import { getDeletedIds } from '../../lib/tombstones.js';
-import { listItemHistory, findOrphanStoragePhotos } from '../../lib/storage.js';
+import { listItemHistory, findOrphanStoragePhotos, listZoneHistory } from '../../lib/storage.js';
+import { findDeletedPlans } from '../../lib/planRecovery.js';
 import { itemMetaFromRow } from '../../lib/obsDates.js';
 import { ITEM_TEXT_FIELDS } from '../../lib/trash.js';
 
@@ -30,7 +31,8 @@ const excerpt = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&
 
 const fmtDate = (ts) => new Date(ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreObservation, onRestoreLostAnnots, onRestoreZoneAnnotations, onRestoreItemText, onRestoreStoragePhotos }) {
+export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreObservation, onRestoreLostAnnots, onRestoreZoneAnnotations, onRestoreItemText, onRestoreStoragePhotos,
+  currentVisiteId = null, onRestoreDeletedPlans = null, onUnhidePlans = null }) {
   const [bin, setBin] = useState(null);       // entrées zones + observations de CE projet
   const [lost, setLost] = useState(null);     // annotations disparues (zones existantes)
   const [mergeLost, setMergeLost] = useState(null); // annotations de zones fusionnées (ancienne fusion)
@@ -39,11 +41,20 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   const [hist, setHist] = useState(null);     // versions précédentes (historique serveur)
   const [orphans, setOrphans] = useState(null); // photos détachées : null | 'loading' | [...]
   const multiVisits = (projet.visites || []).length > 1;
+  // Plans supprimés de la bibliothèque (incident 06/11/2026) : historique serveur des zones +
+  // noms/zones des sauvegardes de l'appareil (allégées : seulement ce projet, sans les blobs).
+  const [zoneHist, setZoneHist] = useState(null);
+  const [planSnaps, setPlanSnaps] = useState(null);
+  const [planPick, setPlanPick] = useState(null);   // Set des plans cochés (null = tous)
+  const [visitPick, setVisitPick] = useState(null); // Set des visites où remettre (null = défaut)
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState(null);
 
   useEffect(() => {
     let alive = true;
     listDeletedItems().then(all => { if (alive) setBin(all.filter(e => e.projectId === projet.id)); }).catch(() => alive && setBin([]));
     listItemHistory(projet.id).then(h => { if (alive) setHist(h); }).catch(() => alive && setHist([]));
+    if (onRestoreDeletedPlans) listZoneHistory(projet.id).then(h => { if (alive) setZoneHist(h); }).catch(() => alive && setZoneHist([]));
     (async () => {
       try {
         const lostScan = createLostAnnotScanner(projet);
@@ -51,12 +62,18 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
         let tomb = new Set();
         try { tomb = getDeletedIds('item') || new Set(); } catch { /* sans pierres tombales : tout est proposé */ }
         const itemScan = createLostItemScanner(projet, tomb);
+        const snaps = [];
         for (const m of await listSnapshots()) {
           if (!alive) return;
           const s = await getSnapshot(m.ts);
           lostScan.add(s); mergeScan.add(s); itemScan.add(s);
+          const sp = (Array.isArray(s?.data) ? s.data : []).find(p => p?.id === projet.id);
+          if (sp) snaps.push({ ts: s.ts, data: [{ id: sp.id,
+            planLibrary: (sp.planLibrary || []).map(pl => ({ id: pl.id, nom: pl.nom })),
+            visites: (sp.visites || []).map(v => ({ id: v.id, localisations: (v.localisations || []).map(l => ({
+              id: l.id, planId: l.planId, planAnnotations: l.planAnnotations, planReportHidden: l.planReportHidden, extraPlans: l.extraPlans })) })) }] });
         }
-        if (alive) { setLost(lostScan.entries()); setMergeLost(mergeScan.entries([projet])); setLostItems(itemScan.entries()); }
+        if (alive) { setLost(lostScan.entries()); setMergeLost(mergeScan.entries([projet])); setLostItems(itemScan.entries()); setPlanSnaps(snaps); }
       } catch { if (alive) { setLost([]); setMergeLost([]); setLostItems([]); } }
     })();
     return () => { alive = false; };
@@ -74,6 +91,32 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
     });
     return { locs, items, visitNom };
   }, [projet]);
+  const deletedPlans = useMemo(() => (onRestoreDeletedPlans && zoneHist && planSnaps)
+    ? findDeletedPlans(projet, { zoneHistory: zoneHist, snapshots: planSnaps }) : [], [projet, zoneHist, planSnaps, onRestoreDeletedPlans]);
+  const curVisite = (projet.visites || []).find(v => v.id === currentVisiteId) || null;
+  const hiddenHere = (curVisite?.hiddenPlans || []).map(id => (projet.planLibrary || []).find(p => p.id === id)).filter(Boolean);
+  // Visites concernées par les plans supprimés ; par défaut on les remet partout SAUF dans la visite
+  // ouverte (celle où les nouveaux plans ont remplacé les anciens) — modifiable d'un clic.
+  const planVisits = useMemo(() => {
+    const ids = new Set(deletedPlans.flatMap(p => p.refs.map(r => r.visiteId)));
+    return (projet.visites || []).filter(v => ids.has(v.id));
+  }, [deletedPlans, projet.visites]);
+  const pickedPlans = planPick ?? new Set(deletedPlans.map(p => p.id));
+  const pickedVisits = visitPick ?? new Set(planVisits.filter(v => v.id !== currentVisiteId).map(v => v.id));
+  const toggle = (set, id) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
+  const restorePlans = async () => {
+    setPlanBusy(true); setPlanMsg(null);
+    try {
+      const r = await onRestoreDeletedPlans({
+        plans: deletedPlans, planIds: [...pickedPlans], visiteIds: [...pickedVisits],
+        hideInVisiteIds: (projet.visites || []).map(v => v.id).filter(id => !pickedVisits.has(id)),
+      });
+      setPlanMsg(r?.ok
+        ? `✓ ${r.restored} plan${r.restored > 1 ? 's' : ''} restauré${r.restored > 1 ? 's' : ''}, ${r.relinked} emplacement${r.relinked > 1 ? 's' : ''} de zone remis${r.missing?.length ? ` · image introuvable : ${r.missing.join(', ')}` : ''}`
+        : `Impossible de restaurer${r?.missing?.length ? ` (image introuvable : ${r.missing.join(', ')})` : ''}`);
+    } catch { setPlanMsg('Impossible de restaurer'); }
+    setPlanBusy(false);
+  };
   const planNom = (id) => (projet.planLibrary || []).find(p => p.id === id)?.nom || 'Plan';
 
   const zones = (bin || []).filter(e => e.kind === 'loc' && !present.locs.has(e.locId));
@@ -128,7 +171,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
 
   const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])];
   const scanning = lost == null || mergeLost == null || lostItems == null;
-  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length;
+  const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length && !deletedPlans.length && !hiddenHere.length;
 
   const run = (key, fn, entry) => {
     const res = fn ? fn(entry) : { ok: false };
@@ -182,6 +225,64 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
 
         <div style={{ overflowY:'auto', padding:'12px 16px 14px' }}>
           {bin == null && <p style={{ fontSize:12, color:DA.grayL, margin:0 }}>…</p>}
+
+          {deletedPlans.length > 0 && (
+            <div style={{ marginBottom:14 }}>
+              <p style={{ fontSize:11, fontWeight:800, color:DA.gray, textTransform:'uppercase', letterSpacing:0.6, margin:'0 0 2px' }}>Plans supprimés ({deletedPlans.length})</p>
+              <p style={{ fontSize:11.5, color:DA.gray, lineHeight:1.4, margin:'4px 0 6px' }}>
+                Retirés de la bibliothèque. Ils reviennent avec leurs annotations dans les visites cochées ; les autres visites ne les verront pas.
+              </p>
+              {deletedPlans.map(p => {
+                const perVisit = new Map();
+                p.refs.forEach(r => perVisit.set(r.visiteId, (perVisit.get(r.visiteId) || 0) + 1));
+                const sub = [...perVisit.entries()].map(([vid, n]) => `${present.visitNom.get(vid) || 'Visite'} : ${n} zone${n > 1 ? 's' : ''}`)
+                  .concat(p.itemCount ? [`${p.itemCount} observation${p.itemCount > 1 ? 's' : ''}`] : []).join(' · ') || 'Plus utilisé';
+                return (
+                  <label key={p.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 0', borderTop:`1px solid ${DA.grayXL}`, cursor:'pointer' }}>
+                    <input type="checkbox" checked={pickedPlans.has(p.id)} onChange={() => setPlanPick(toggle(pickedPlans, p.id))} style={{ accentColor:DA.red, flexShrink:0 }}/>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.nom || 'Plan sans nom'}</div>
+                      <div style={{ fontSize:11, color:DA.grayL, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+                    </div>
+                  </label>
+                );
+              })}
+              {planVisits.length > 0 && (
+                <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:6, padding:'8px 0 4px', borderTop:`1px solid ${DA.grayXL}` }}>
+                  <span style={{ fontSize:11.5, color:DA.gray, fontWeight:700 }}>Remettre dans :</span>
+                  {planVisits.map(v => {
+                    const on = pickedVisits.has(v.id);
+                    return (
+                      <button key={v.id} onClick={() => setVisitPick(toggle(pickedVisits, v.id))}
+                        style={{ padding:'4px 9px', borderRadius:999, fontSize:11.5, fontWeight:700, cursor:'pointer',
+                          border:`1.5px solid ${on ? DA.red : DA.border}`, background: on ? DA.redL : 'white', color: on ? DA.red : DA.gray }}>
+                        {on ? '✓ ' : ''}{present.visitNom.get(v.id) || 'Visite'}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{ display:'flex', alignItems:'center', gap:10, paddingTop:6 }}>
+                {planMsg
+                  ? <span style={{ flex:1, fontSize:12, fontWeight:700, color: planMsg.startsWith('✓') ? DA.urgGrn : DA.gray, lineHeight:1.4 }}>{planMsg}</span>
+                  : <span style={{ flex:1 }}/>}
+                {!planMsg?.startsWith('✓') && (
+                  <button onClick={restorePlans} disabled={planBusy || !pickedPlans.size}
+                    style={{ flexShrink:0, padding:'7px 12px', borderRadius:8, fontSize:12, fontWeight:800, cursor: planBusy ? 'default' : 'pointer', border:'none',
+                      background: !pickedPlans.size ? DA.grayL : DA.red, color:'white', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:6 }}>
+                    {planBusy && <Ic n="spn" s={12}/>} Restaurer {pickedPlans.size} plan{pickedPlans.size > 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <Section title="Plans retirés de cette visite" n={onUnhidePlans ? hiddenHere.length : 0}>
+            {hiddenHere.map(pl => (
+              <Row key={`h|${pl.id}`} k={`h|${pl.id}`} icon="🗺️" title={pl.nom || 'Plan'} sub="Toujours utilisé par les autres visites" label="Remettre ici"
+                onRestore={() => run(`h|${pl.id}`, () => onUnhidePlans(currentVisiteId, [pl.id]))}/>
+            ))}
+          </Section>
 
           <Section title="Zones" n={zones.length}>
             {zones.map(e => (

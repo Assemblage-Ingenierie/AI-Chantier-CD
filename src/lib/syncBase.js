@@ -159,6 +159,7 @@ export function visitMeta(v) {
     planPages: v.planPages ?? null, // plans sur page à part, PAR PLAN : { clé: 'landscape' | 'portrait' }
     obsDates: v.obsDates ?? false, // affichage des dates de suivi des observations (option du rapport)
     annexes: v.annexes ?? [], // métadonnées uniquement (octets PDF dans Storage) — cf. uploadAnnexPdf
+    hiddenPlans: v.hiddenPlans ?? [], // plans retirés de CETTE visite (gardés pour les autres) — incident 06/11/2026
   };
 }
 
