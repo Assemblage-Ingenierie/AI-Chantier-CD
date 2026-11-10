@@ -1367,6 +1367,17 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
   return { rows: result, incomplete };
 }
 
+// Upsert ligne par ligne (lignes lourdes : fonds de plans en base64). Toutes les lignes sont
+// tentées ; renvoie la PREMIÈRE erreur (ou null).
+async function upsertOneByOne(sb, tableName, rows) {
+  let firstErr = null;
+  for (const row of rows) {
+    const { error } = await sb.from(tableName).upsert([row], { onConflict: 'id' });
+    if (error && !firstErr) firstErr = error;
+  }
+  return firstErr;
+}
+
 async function saveRemote(ps, dirtyIds = null) {
   const sb = await getSupabase();
   const now = new Date().toISOString();
@@ -1738,9 +1749,15 @@ async function saveRemote(ps, dirtyIds = null) {
       await Promise.all([
         metaRows.length       ? sb.from('aichantier_chantier_plans').upsert(metaRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); }) : Promise.resolve(),
       ]);
-      // bg en second (les lignes méta existent désormais) — batch homogène, n'écrase aucun bg existant.
+      // bg en second (les lignes méta existent désormais) — n'écrase aucun bg existant.
+      // UN PLAN PAR REQUÊTE (incident 10/11 « Sync échoué (57014) statement timeout ») : chaque bg
+      // pèse ~0,5-1 Mo ; après une restauration de plans (Corbeille) ou un gros import, TOUS les
+      // fonds partaient dans une seule requête → délai de la base dépassé → échec, re-tenté à
+      // chaque sauvegarde (toast permanent, aucun fond enregistré). Un par un : chaque requête
+      // reste légère, et un plan en échec n'empêche plus les autres de passer.
       if (bgRows.length) {
-        await sb.from('aichantier_chantier_plans').upsert(bgRows, { onConflict: 'id' }).then(r => { if (r.error) errors.push(r.error); });
+        const bgErr = await upsertOneByOne(sb, 'aichantier_chantier_plans', bgRows);
+        if (bgErr) errors.push(bgErr);
       }
       // Image HD (colonne `data` = chemin Storage) : SECONDE CHANCE de persistance.
       // savePlanBgNow l'upload à l'import en fire-and-forget — s'il échoue (réseau, onglet fermé),
@@ -2554,7 +2571,8 @@ export async function restorePlanRows(chantierId, rows) {
   try {
     const sb = await getSupabase();
     const full = rows.map(r => ({ id: r.id, chantier_id: chantierId, nom: r.nom ?? '', bg: r.bg, data: r.data ?? null, sort_order: r.sort_order ?? 0 }));
-    const { error } = await sb.from('aichantier_chantier_plans').upsert(full, { onConflict: 'id' });
+    // Un plan par requête (fonds lourds → délai de la base dépassé en un seul envoi, cf. saveRemote).
+    const error = await upsertOneByOne(sb, 'aichantier_chantier_plans', full);
     if (error) { console.warn('restorePlanRows:', error); return false; }
     rows.forEach(r => { _missingPlans.delete(r.id); _planDataCache.delete(r.id); });
     logEvent('plans.restored', { projet: chantierId, n: rows.length });
