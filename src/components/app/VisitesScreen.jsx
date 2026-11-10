@@ -8,7 +8,10 @@ import IngenieursEditor, { splitInitials } from '../ui/IngenieursEditor.jsx';
 import { remapParentIds } from '../../lib/zoneGroups.js';
 import BulkReportExport from './BulkReportExport.jsx';
 import { scanVisitBackups, buildRestoredVisit, markVisitRecovery, loadRecoveryMemo, listVisitVersions, visitSignature } from '../../lib/visitRecovery.js';
-import { getDeletedIds } from '../../lib/tombstones.js';
+import { getDeletedIds, liftTombstone } from '../../lib/tombstones.js';
+import { diffBackup, applyBackup } from '../../lib/backupDiff.js';
+import { addDeletedItem } from '../../lib/recoveryBin.js';
+import BackupDiffPanel from '../ui/BackupDiffPanel.jsx';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -84,16 +87,25 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
     setVersions(null);
     if (droppedPhotos > 0) window.alert(`Visite restaurée. ${droppedPhotos} photo${droppedPhotos > 1 ? 's' : ''} sans lien connu : un administrateur peut les relier via Administration → « Récupérer les photos ».`);
   };
-  const restoreVisit = (c) => {
-    const when = new Date(c.ts).toLocaleString('fr-FR');
-    const msg = `Restaurer « ${c.label} » telle qu'enregistrée sur cet appareil le ${when} (${c.items} observation${c.items > 1 ? 's' : ''}) ?\n\n`
-      + (c.exists ? 'Elle sera ajoutée À CÔTÉ de la visite actuelle (« restaurée ») : rien n\'est écrasé.' : 'Elle sera remise dans le projet.');
-    if (!window.confirm(msg)) return;
-    const { visit, droppedPhotos } = buildRestoredVisit(c.visit, projet, undefined, { item: getDeletedIds('item'), loc: getDeletedIds('loc') });
-    onUpdateProjet({ visites: [...visites, visit] });
-    markVisitRecovery(c.visitId, c.ts);
-    setRecovery(r => r.filter(x => x.visitId !== c.visitId));
-    if (droppedPhotos > 0) window.alert(`Visite restaurée. ${droppedPhotos} photo${droppedPhotos > 1 ? 's' : ''} sans lien connu : un administrateur peut les relier via Administration → « Récupérer les photos ».`);
+  // « Voir ce qui change » (retour Thomas 06/11) : détail élément par élément, puis seuls les
+  // éléments cochés sont AJOUTÉS à la visite actuelle (lib/backupDiff.js) — rien n'est écrasé,
+  // plus de copie « (restaurée) » en double.
+  const [diffFor, setDiffFor] = useState(null); // candidat de restauration ouvert
+  const tombNow = () => ({ item: getDeletedIds('item') || new Set(), loc: getDeletedIds('loc') || new Set() });
+  const diffGroups = diffFor ? [{ projectId: projet.id, nom: projet.nom,
+    entries: diffBackup({ id: projet.id, nom: projet.nom, visites: [diffFor.visit] }, projet, tombNow()) }] : [];
+  const applyVisitDiff = (selection) => {
+    const entries = selection[0]?.entries || [];
+    if (!entries.length) return { ok: false };
+    const { patch, previousTexts, liftIds } = applyBackup(projet, entries, tombNow());
+    liftIds.forEach(id => liftTombstone(id));
+    onUpdateProjet(patch);
+    previousTexts.forEach(t => addDeletedItem({ ...t.item, id: crypto.randomUUID(), photos: [] }, {
+      projectId: projet.id, projectNom: projet.nom ?? '', visiteId: t.visiteId, locId: t.locId, locNom: t.locNom,
+    }).catch(() => {}));
+    markVisitRecovery(diffFor.visitId, diffFor.ts);
+    setRecovery(r => r.filter(x => x.visitId !== diffFor.visitId));
+    return { ok: true, added: entries.filter(e => !e.info).length };
   };
   // Toujours la version À JOUR de la visite (photos hydratées entre-temps), pas un instantané.
   const dupSource = dupSourceId ? (visites.find(v => v.id === dupSourceId) || null) : null;
@@ -509,9 +521,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
               </p>
             </div>
             <div style={{ display:'flex', gap:8, flexShrink:0 }}>
-              <button onClick={() => restoreVisit(c)}
+              <button onClick={() => setDiffFor(c)}
                 style={{ padding:'8px 14px', borderRadius:9, border:'none', background:'#EA580C', color:'white', fontSize:13, fontWeight:800, cursor:'pointer' }}>
-                Restaurer
+                Voir ce qui change
               </button>
               <button onClick={() => { markVisitRecovery(c.visitId, c.ts); setRecovery(r => r.filter(x => x.visitId !== c.visitId)); }}
                 style={{ padding:'8px 10px', borderRadius:9, border:'1px solid #FDBA74', background:'white', color:'#9A3412', fontSize:12, fontWeight:700, cursor:'pointer' }}>
@@ -520,6 +532,10 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
             </div>
           </div>
         ))}
+
+        {diffFor && (
+          <BackupDiffPanel groups={diffGroups} savedAt={diffFor.ts} onApply={applyVisitDiff} onClose={() => setDiffFor(null)}/>
+        )}
 
         {visites.length === 0 && (
           <div style={{ background:'white', borderRadius:14, padding:'56px 24px', textAlign:'center', border:`1px solid ${DA.border}`, boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}>

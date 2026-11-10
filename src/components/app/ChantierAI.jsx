@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { useProjets } from '../../hooks/useProjets.js';
 import { useBrandingLogo } from '../../lib/branding.js';
-import { fetchRemoteTimestamps } from '../../lib/storage.js';
+import { fetchRemoteTimestamps, getPersistedDeletedIds } from '../../lib/storage.js';
+import { diffBackup } from '../../lib/backupDiff.js';
+import { getDeletedIds } from '../../lib/tombstones.js';
+import BackupDiffPanel from '../ui/BackupDiffPanel.jsx';
 import { processDriveQueue } from '../../lib/driveUpload.js';
 import { initPhotoUploadQueue, subscribePendingUploads } from '../../lib/photoUploadQueue.js';
 import AdminPanel from '../auth/AdminPanel.jsx';
@@ -40,6 +43,24 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
     dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject, restoreDeletedPlans, unhidePlansInVisit } = useProjets(setSyncStatus);
+  // Différences sauvegarde ↔ projets (recalculées sur l'état ACTUEL) : seulement ce qui peut
+  // vraiment être remis ; les projets / éléments supprimés volontairement ne sont pas proposés.
+  const [backupDiffOpen, setBackupDiffOpen] = useState(false);
+  const backupGroups = useMemo(() => {
+    const data = backupRecovery?.snapshot?.data;
+    if (!Array.isArray(data)) return [];
+    let deletedProjects = new Set();
+    try { deletedProjects = new Set(getPersistedDeletedIds() || []); } catch { /* ignore */ }
+    const tomb = { item: getDeletedIds('item') || new Set(), loc: getDeletedIds('loc') || new Set() };
+    return (backupRecovery.lost || [])
+      .filter(l => !deletedProjects.has(l.id))
+      .map(l => {
+        const sp = data.find(p => p?.id === l.id);
+        const cp = projets.find(p => p.id === l.id) || null;
+        return { projectId: l.id, nom: l.nom || sp?.nom || '', entries: sp ? diffBackup(sp, cp, tomb) : [] };
+      })
+      .filter(g => g.entries.some(e => !e.info));
+  }, [backupRecovery, projets]);
   const [splashTimedOut, setSplashTimedOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = async () => {
@@ -597,26 +618,29 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
         </div>
       )}
 
-      {/* Bandeau restauration boîte noire — perte de données détectée au chargement */}
-      {backupRecovery && (
+      {/* Bandeau restauration boîte noire — perte de données détectée au chargement.
+          (Retour Thomas 06/11 : « à chaque fois j'ai peur que ça m'écrase des trucs ».) On montre
+          d'abord CE QUI CHANGE, élément par élément ; seuls les éléments cochés sont AJOUTÉS
+          (BackupDiffPanel / lib/backupDiff.js). Rien de concret à remettre → pas de bandeau. */}
+      {backupRecovery && backupGroups.length > 0 && (
         <div style={{ background:'#7c2d12', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexShrink:0, flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
             <Ic n="arc" s={16} color="#FED7AA"/>
             <div style={{ minWidth:0 }}>
               <span style={{ fontSize:12, color:'#FFEDD5', fontWeight:700 }}>
-                Une sauvegarde locale plus complète a été trouvée
+                La sauvegarde de cet appareil contient des éléments absents aujourd'hui
               </span>
               <span style={{ fontSize:10, color:'rgba(254,215,170,0.85)', marginLeft:8 }}>
-                {new Date(backupRecovery.snapshot.ts).toLocaleString('fr-FR')} — {backupRecovery.lost.map(l => l.nom || 'projet').join(', ')}
+                {new Date(backupRecovery.snapshot.ts).toLocaleString('fr-FR')} — {backupGroups.map(g => `${g.nom || 'projet'} (${g.entries.filter(e => !e.info).length})`).join(', ')}
               </span>
             </div>
           </div>
           <div style={{ display:'flex', gap:8, flexShrink:0 }}>
             <button
-              onClick={restoreFromBackup}
+              onClick={() => setBackupDiffOpen(true)}
               style={{ background:'#EA580C', border:'1px solid #F97316', color:'#fff', fontSize:11, fontWeight:700, padding:'5px 12px', borderRadius:6, cursor:'pointer' }}
             >
-              Restaurer
+              Voir ce qui change
             </button>
             <button
               onClick={dismissBackupRecovery}
@@ -626,6 +650,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             </button>
           </div>
         </div>
+      )}
+      {backupDiffOpen && backupRecovery && (
+        <BackupDiffPanel groups={backupGroups} savedAt={backupRecovery.snapshot.ts}
+          onApply={restoreFromBackup} onClose={() => setBackupDiffOpen(false)}/>
       )}
 
       {/* Corps */}
