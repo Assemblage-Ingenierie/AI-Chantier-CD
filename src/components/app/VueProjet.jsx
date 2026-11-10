@@ -222,10 +222,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       const m = modalRef.current;
       if (!m) return false;
       if (m.t === 'annotate') {
-        setModal({ t:'item', locId:m.locId, item:m.form, savedForm:m.form });
+        setModal({ t:'item', locId:m.locId, item: m.origItem !== undefined ? m.origItem : m.form, savedForm:m.form });
       } else if (m.t === 'plan' && m.placeFor) {
         // Repérage d'une photo : retour à l'observation en cours (jamais perdue)
-        setModal({ t:'item', locId: m.placeFor.itemLocId, item: m.placeFor.item ?? m.placeFor.form, savedForm: m.placeFor.form });
+        setModal({ t:'item', locId: m.placeFor.itemLocId, item: m.placeFor.item !== undefined ? m.placeFor.item : m.placeFor.form, savedForm: m.placeFor.form });
       } else if (m.t === 'item') {
         // Vérifie si ItemModal a un overlay interne à fermer d'abord
         if (itemModalBackRef.current?.()) return true;
@@ -769,9 +769,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         photos={(modal.form.photos || []).filter(ph => ph.data)}
         exportSizeMultiplier={2}
         onSave={(paths, exported) => {
-          setModal({ t:'item', locId:modal.locId, item:modal.form, savedForm:{ ...modal.form, planAnnotations:{ paths, exported } } });
+          setModal({ t:'item', locId:modal.locId, item: modal.origItem !== undefined ? modal.origItem : modal.form, savedForm:{ ...modal.form, planAnnotations:{ paths, exported } } });
         }}
-        onClose={() => setModal({ t:'item', locId:modal.locId, item:modal.form, savedForm:modal.form })}
+        onClose={() => setModal({ t:'item', locId:modal.locId, item: modal.origItem !== undefined ? modal.origItem : modal.form, savedForm:modal.form })}
       />
     );
   }
@@ -1380,12 +1380,12 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               }
               setModal(null);
             }}
-            onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form })}
+            onOpenAnnot={form => setModal({ t:'annotate', locId:modal.locId, form, origItem: modal.item ?? null })}
             // Photo prise sans plan sur l'observation → plan de sa zone (ou du groupe au-dessus)
             // pour la repérer, puis retour à l'observation telle quelle (lib/zonePlacement.js).
             onPlaceOnZonePlan={(() => {
               const target = planTargetLoc(visitProjet.localisations, modal.locId);
-              return target ? (form, key) => setModal({ t:'plan', locId: target.id, placeFor: { form, key, itemLocId: modal.locId, item: modal.item } }) : null;
+              return target ? (form, key) => setModal({ t:'plan', locId: target.id, placeFor: { form, key, itemLocId: modal.locId, item: modal.item ?? null } }) : null;
             })()}
             onBackRequest={fn => { itemModalBackRef.current = fn; }}
             projetNom={projet.nom ?? ''}
@@ -1405,7 +1405,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         const planItems = pf ? placementItems(visitProjet.localisations, loc, pf.itemLocId, pf.form) : zonePlanItems(visitProjet.localisations, loc);
         const placeIdx = pf ? placementPhotoIdx(planItems, pf.key) : null;
         const closePlan = () => {
-          if (pf) setModal({ t:'item', locId: pf.itemLocId, item: pf.item ?? pf.form, savedForm: pf.form });
+          if (pf) setModal({ t:'item', locId: pf.itemLocId, item: pf.item !== undefined ? pf.item : pf.form, savedForm: pf.form });
           else if (modal.returnToNiveaux) setModal({ t:'niveaux' });
           else setModal(null);
         };
