@@ -26,6 +26,26 @@ import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTex
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
+// Brouillon d'une NOUVELLE observation (clé partagée « new ») : repris seulement s'il est récent et
+// du même projet. Retour Thomas 10/11 : « quand je crée une observation, ça met automatiquement
+// Dorure » — un vieux brouillon jamais effacé ressortait dans chaque nouvelle observation.
+const NEW_DRAFT_MAX_AGE_MS = 24 * 3600 * 1000;
+function readDraft(id, projetId) {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY(id));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!id) {
+      // Ancien format (sans date) ou trop vieux / autre projet → abandonné et effacé.
+      const stale = !d?._ts || Date.now() - d._ts > NEW_DRAFT_MAX_AGE_MS || (d._projet && projetId && d._projet !== projetId);
+      if (stale) { localStorage.removeItem(DRAFT_KEY(id)); return null; }
+    }
+    if (!(d?.titre || d?.commentaire)) return null;
+    // eslint-disable-next-line no-unused-vars
+    const { _ts, _projet, ...fields } = d;
+    return fields;
+  } catch { return null; }
+}
 
 // Dictée : la fusion anti-doublons (ancien stripLeadingOverlap) vit dans lib/dictation.js (testée).
 
@@ -273,22 +293,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     const base = item
       ? { ...item, id: item.id || crypto.randomUUID(), photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
       : { id: crypto.randomUUID(), titre:'', commentaire:'', urgence:'rien', photos:[], plans:[], suivi:'rien', commentaireAlign:'left' };
-    try {
-      const saved = localStorage.getItem(DRAFT_KEY(item?.id));
-      if (saved) {
-        const draft = JSON.parse(saved);
-        if (draft.titre || draft.commentaire) return { ...base, ...draft, photos: base.photos };
-      }
-    } catch {}
+    const draft = readDraft(item?.id, projetId);
+    if (draft) return { ...base, ...draft, photos: base.photos };
     return base;
   });
-  const [draftRestored, setDraftRestored] = useState(() => {
-    try {
-      const saved = localStorage.getItem(DRAFT_KEY(item?.id));
-      if (saved) { const d = JSON.parse(saved); return !!(d.titre || d.commentaire); }
-    } catch {}
-    return false;
-  });
+  const [draftRestored, setDraftRestored] = useState(() => !!readDraft(item?.id, projetId));
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
@@ -600,7 +609,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   useEffect(() => {
     const t = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi, commentaireAlign: form.commentaireAlign })); } catch {}
+      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi, commentaireAlign: form.commentaireAlign, _ts: Date.now(), _projet: projetId || null })); } catch {}
     }, 600);
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
@@ -609,8 +618,15 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   // est partagée (`chantierai_draft_new`) → sans purge, un brouillon abandonné réapparaissait
   // dans la prochaine nouvelle observation d'une autre zone. On le purge donc à la fermeture
   // manuelle. La récupération après crash/fermeture app (pagehide, pas onClose) reste intacte.
+  // Nouvelle observation rouverte après une annotation de photo / un placement sur plan : `item` porte
+  // alors un id (formulaire en cours) → son brouillon change de clé. On efface donc AUSSI la clé
+  // partagée « new », sinon l'ancien brouillon ressortait dans la prochaine nouvelle observation.
+  const isNewObs = baseItem !== undefined ? !baseItem?.id : !item?.id;
+  const purgeDrafts = () => {
+    try { localStorage.removeItem(DRAFT_KEY(item?.id)); if (isNewObs) localStorage.removeItem(DRAFT_KEY(null)); } catch {}
+  };
   const handleClose = () => {
-    if (!item?.id) { try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {} }
+    if (isNewObs) purgeDrafts();
     onClose();
   };
 
@@ -638,7 +654,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   isDirtyRef.current = isDirty;
 
   const handleSave = () => {
-    try { localStorage.removeItem(DRAFT_KEY(item?.id)); } catch {}
+    purgeDrafts();
     // DIAGNOSTIC image collée absente (bug Thomas) : trace ce qui est réellement enregistré.
     try {
       const c = form.commentaire || '';
