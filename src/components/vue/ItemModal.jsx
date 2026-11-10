@@ -27,6 +27,7 @@ import CameraCapture from './CameraCapture.jsx';
 import { autoCopyToPhone, requestOrientationAccess, platformOf } from '../../lib/deviceCamera.js';
 import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
+import { currentEngine, startAiDictation, markBrowserDictationBroken, isEngineFailure, canRecordAudio } from '../../lib/aiDictation.js';
 
 const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 // Brouillon d'une NOUVELLE observation (clé partagée « new ») : repris seulement s'il est récent et
@@ -355,6 +356,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const [recording, setRecording] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [micReady, setMicReady] = useState(false); // le moteur écoute vraiment (sinon « Préparation du micro… »)
+  // Dictée par l'IA (lib/aiDictation.js) : null | 'recording' | 'transcribing' ; message d'info/erreur.
+  const [aiPhase, setAiPhase] = useState(null);
+  const [aiNote, setAiNote] = useState('');
+  const aiCtlRef = useRef(null);
+  const deadSrRef = useRef(0); // écoutes du téléphone terminées sans jamais avoir capté le micro
   const [correcting, setCorrecting] = useState(false);
   const [spellError, setSpellError] = useState('');
   const [spellDiff, setSpellDiff] = useState(null); // { original, corrected, tokens }
@@ -607,7 +613,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     clearTimeout(restartTimer.current);
     clearTimeout(stopTimer.current);
     recogRef.current?.abort();
+    aiCtlRef.current?.cancel(); // dictée IA : couper le micro
   }, []);
+  // Message de la dictée IA (bascule, erreur) : disparaît seul.
+  useEffect(() => {
+    if (!aiNote) return;
+    const t = setTimeout(() => setAiNote(''), 7000);
+    return () => clearTimeout(t);
+  }, [aiNote]);
 
   // Auto-dismiss draft banner when user modifies the form (skip first render)
   useEffect(() => {
@@ -716,9 +729,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     // Each SR instance gets a unique ID so stale events from old sessions are ignored.
     const myId = ++recogSessionId.current;
     let localFinalIdx = 0; // local to this instance — never shared across sessions
+    let heard = false;     // cette écoute a-t-elle réellement capté le micro ?
 
     // Le moteur écoute réellement → on peut parler (évite de perdre les premiers mots).
-    r.onaudiostart = () => { if (recogSessionId.current === myId) setMicReady(true); };
+    r.onaudiostart = () => { heard = true; deadSrRef.current = 0; if (recogSessionId.current === myId) setMicReady(true); };
 
     r.onresult = (e) => {
       if (recogSessionId.current !== myId) return; // stale event, discard
@@ -743,6 +757,13 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     };
 
     r.onerror = (ev) => {
+      // Moteur vocal du téléphone absent / en panne (ex. Samsung sans service vocal, Siri coupé) :
+      // on bascule sur la dictée par l'IA — tout de suite si le doigt est encore sur le micro.
+      if (isEngineFailure(ev.error) && canRecordAudio()) {
+        if (recogSessionId.current !== myId) return;
+        switchToAiDictation();
+        return;
+      }
       if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
         alert('Accès au microphone refusé. Vérifiez les permissions de votre navigateur.');
         recordingRef.current = false;
@@ -761,6 +782,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       // on valide le provisoire au lieu de le perdre ; un renvoi ultérieur sera dédoublonné.
       if (interimRef.current) { commitDictation(interimRef.current); interimRef.current = ''; }
       setInterimText('');
+      // Le moteur s'arrête en boucle sans jamais capter le micro → il ne marche pas sur ce téléphone.
+      if (recordingRef.current && !heard && ++deadSrRef.current >= 3 && canRecordAudio()) {
+        switchToAiDictation();
+        return;
+      }
       if (recordingRef.current) {
         restartTimer.current = setTimeout(doRecognize, 150);
         return;
@@ -771,11 +797,57 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
     try { r.start(); recogRef.current = r; }
     catch { recordingRef.current = false; setRecording(false); }
-  }, [commitDictation]);
+  }, [commitDictation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── DICTÉE PAR L'IA (Firefox, téléphones sans reconnaissance vocale qui marche) ──
+  // La voix est enregistrée pendant l'appui puis transcrite par l'IA au relâchement.
+  const beginAiRecording = async () => {
+    setAiPhase('recording');
+    setMicReady(false);
+    try {
+      const ctl = await startAiDictation({
+        onChunk: (txt) => { textareaRef.current?.resetTyping?.(); commitDictation(txt); },
+        onState: (st) => setAiPhase(st === 'idle' ? null : st),
+        onError: (msg) => setAiNote(`Dictée IA : ${msg}. Réessayez.`),
+      });
+      if (!recordingRef.current) { ctl.stop(); return; } // relâché avant que le micro soit prêt
+      aiCtlRef.current = ctl;
+      setMicReady(true);
+    } catch (e) {
+      recordingRef.current = false;
+      setRecording(false); setAiPhase(null); setMicReady(false);
+      alert(e?.name === 'NotAllowedError' ? 'Accès au microphone refusé. Vérifiez les permissions de votre navigateur.' : 'Micro indisponible sur cet appareil.');
+    }
+  };
+  function switchToAiDictation() {
+    markBrowserDictationBroken();
+    recogSessionId.current++;
+    clearTimeout(restartTimer.current);
+    try { recogRef.current?.abort(); } catch { /* déjà arrêtée */ }
+    recogRef.current = null;
+    if (interimRef.current) { commitDictation(interimRef.current); interimRef.current = ''; }
+    setInterimText('');
+    setAiNote('La dictée du téléphone ne répond pas : l\'IA prend le relais (le texte s\'écrit au relâchement).');
+    if (recordingRef.current) beginAiRecording();
+    else setRecording(false);
+  }
 
   const startDictaphone = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Dictaphone non supporté — utilisez Chrome ou Safari récent.'); return; }
+    const engine = currentEngine();
+    if (engine === 'none') { alert('Dictée non disponible sur ce navigateur.'); return; }
+    if (aiCtlRef.current) { aiCtlRef.current.stop(); aiCtlRef.current = null; }
+    if (engine === 'ai') {
+      recordingRef.current = true;
+      sessionFirst.current = true;
+      lastCommitted.current = '';
+      sessionText.current = '';
+      setInterimText('');
+      setRecording(true);
+      textareaRef.current?.resetTyping?.();
+      beginAiRecording();
+      return;
+    }
+    deadSrRef.current = 0;
     clearTimeout(stopTimer.current);
     // Relâché puis ré-appuyé vite : l'ancienne écoute (en train de finir) est close proprement.
     if (recogRef.current) {
@@ -797,6 +869,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   };
 
   const stopDictaphone = () => {
+    if (aiPhase || aiCtlRef.current) { // dictée par l'IA : on transcrit ce qui a été dit
+      recordingRef.current = false;
+      setRecording(false);
+      setMicReady(false);
+      const c = aiCtlRef.current; aiCtlRef.current = null;
+      c?.stop();
+      return;
+    }
     recordingRef.current = false;
     clearTimeout(restartTimer.current);
     setRecording(false);   // feedback immédiat — pas d'attente de onend
@@ -1688,14 +1768,22 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             </div>
 
             {/* Retour en direct de la dictée : on voit quand parler, puis les mots qui arrivent. */}
-            {(recording || interimText) && (
+            {(recording || interimText || aiPhase === 'transcribing') && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:8, margin:'6px 0 0', padding:'8px 12px', borderRadius:10,
                 background: DA.redL, border:`1px solid ${micReady || interimText ? DA.red : '#FCA5A5'}` }}>
                 <span style={{ width:9, height:9, borderRadius:'50%', marginTop:5, flexShrink:0, background: micReady ? DA.red : '#FCA5A5',
                   boxShadow: micReady ? '0 0 0 4px rgba(227,5,19,0.18)' : 'none', transition:'all 0.2s' }}/>
                 <span style={{ fontSize:14, lineHeight:1.45, color: interimText ? DA.black : DA.gray, fontStyle: interimText ? 'normal' : 'italic' }}>
-                  {interimText ? interimText + '…' : micReady ? 'Parlez, je vous écoute…' : 'Préparation du micro…'}
+                  {interimText ? interimText + '…'
+                    : aiPhase === 'transcribing' && !recording ? 'Transcription en cours…'
+                    : aiPhase ? (micReady ? 'Parlez… le texte s\'écrit quand vous relâchez' : 'Préparation du micro…')
+                    : micReady ? 'Parlez, je vous écoute…' : 'Préparation du micro…'}
                 </span>
+              </div>
+            )}
+            {aiNote && (
+              <div role="status" style={{ margin:'6px 0 0', padding:'7px 12px', borderRadius:10, background:'#F3F4F6', color:DA.gray, fontSize:12.5, lineHeight:1.4 }}>
+                {aiNote}
               </div>
             )}
 

@@ -173,6 +173,10 @@ function toGeminiParts(content) {
       if (c?.type === 'text') return { text: c.text || '' };
       if (c?.type === 'image' && c.source?.type === 'base64' && c.source?.data)
         return { inline_data: { mime_type: c.source.media_type || 'image/jpeg', data: c.source.data } };
+      // DICTÉE PAR L'IA (Firefox, téléphones sans reconnaissance vocale) : l'audio enregistré
+      // est transmis tel quel à Gemini, qui le transcrit.
+      if (c?.type === 'audio' && c.source?.type === 'base64' && c.source?.data)
+        return { inline_data: { mime_type: c.source.media_type || 'audio/wav', data: c.source.data } };
       if (c?.text) return { text: c.text };
       return null;
     }).filter(Boolean);
@@ -389,7 +393,12 @@ export default async function handler(req, res) {
   const runners = { gemini: runGemini, mistral: runMistral, claude: runClaude };
   let firstFail = null;
   const end = Date.now() + TOTAL_BUDGET_MS;
-  const available = order.filter(prov => keys[prov]);
+  // Audio (dictée par l'IA) : seul Gemini sait l'écouter → pas de bascule vers Claude / Mistral.
+  const hasAudio = (payload.messages || []).some(m => Array.isArray(m?.content) && m.content.some(c => c?.type === 'audio'));
+  if (hasAudio && !keys.gemini) {
+    return res.status(500).json({ error: 'Dictée par l\'IA indisponible : GEMINI_API_KEY absente dans Vercel.' });
+  }
+  const available = order.filter(prov => keys[prov] && (!hasAudio || prov === 'gemini'));
   // TRANSPARENCE (retour Thomas : « Costar me parle de Gemini alors que je suis sur Mistral ») :
   // si le moteur CHOISI n'a pas de clé sur le serveur, on le dit, et chaque réponse indique quel
   // moteur a réellement répondu (_provider) et, en cas de bascule, lequel a été remplacé et pourquoi.
