@@ -155,7 +155,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null, onMoveItemAcross = null }) {
+export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null, onMoveItemAcross = null, onTouchDragStart = null }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -540,7 +540,9 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
 
               {/* ── Poignée drag ── */}
               <div
-                onTouchStart={e => onGripTouchStart(e, i)}
+                // Téléphone : l'hôte ouvre le déplacement « zones repliées » (ObsTouchMover) qui
+                // permet de changer de zone ET de réordonner. Sinon : réordonnancement local.
+                onTouchStart={e => { if (onTouchDragStart && e.touches?.[0]) { onTouchDragStart(item, e.touches[0]); return; } onGripTouchStart(e, i); }}
                 onClick={e => e.stopPropagation()}
                 style={{
                   flexShrink:0, alignSelf:'center',
