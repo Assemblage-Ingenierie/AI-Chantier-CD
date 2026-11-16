@@ -3118,10 +3118,11 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 const move = (ev) => {
                   const nx = Math.max(0, Math.min(1 - r0.w, r0.x + (ev.clientX - sx) / W));
                   const ny = Math.max(0, Math.min(1 - r0.h, r0.y + (ev.clientY - sy) / H));
-                  setFrameMove({
+                  setFrameMove(prev => ({
+                    ...(prev || {}), // garde le format choisi (paysage / portrait)
                     cropX: r0.w < 0.999 ? Math.round((nx / (1 - r0.w)) * 1000) / 10 : 50,
                     cropY: r0.h < 0.999 ? Math.round((ny / (1 - r0.h)) * 1000) / 10 : 50,
-                  });
+                  }));
                 };
                 const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
                 window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
@@ -3140,6 +3141,21 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                         pointerEvents:'auto', cursor:'move', touchAction:'none', userSelect:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
                       <span style={{ fontSize:14, lineHeight:1 }}>✥</span>
                       Cadre du rapport — glisser pour déplacer · le grisé ne sera pas visible
+                      {/* Format du cadre (demande Thomas 16/11 : « photos prises en portrait, choisir
+                          la forme du cadre ici aussi ») : même réglage que dans le rapport. */}
+                      {[['landscape', 'Paysage', 16, 11], ['portrait', 'Portrait', 11, 16]].map(([key, label, w, h]) => {
+                        const on = (fr.orient === 'portrait' ? 'portrait' : 'landscape') === key;
+                        return (
+                          <button key={key} type="button" title={`Cadre ${label.toLowerCase()} dans le rapport`} aria-pressed={on}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); setFrameMove(prev => ({ ...(prev || {}), orient: key, cropX: 50, cropY: 50 })); }}
+                            style={{ display:'inline-flex', alignItems:'center', gap:5, marginLeft: key === 'landscape' ? 6 : 0, padding:'2px 8px', borderRadius:5, border:'none', cursor:'pointer',
+                              background: on ? DA.red : 'rgba(255,255,255,0.14)', color:'white', fontSize:11, fontWeight:700 }}>
+                            <span style={{ width:w * 0.75, height:h * 0.75, border:'1.5px solid currentColor', borderRadius:2, display:'inline-block' }}/>
+                            {label}
+                          </button>
+                        );
+                      })}
                     </span>
                   </div>
                 </div>
