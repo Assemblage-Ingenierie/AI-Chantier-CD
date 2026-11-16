@@ -88,44 +88,71 @@ function Boot({ kind }) {
   );
 }
 
-// AMBIANCE « Odeur de poubelle » (demande Thomas 16/11) : peau de banane usagée aux pieds,
-// effluves verdâtres qui montent, et trois mouches qui tournent autour de la tête.
-function TrashAura() {
-  const fly = (
+// AMBIANCE « Odeur de poubelle » (demande Thomas 16/11 ; retour : « on ne comprend pas qu'il
+// pue » → codes de BD bien lisibles même en petit) :
+//   • DERRIÈRE Costar : nuage verdâtre + grosses volutes vertes qui montent ;
+//   • DEVANT : trois mouches bien dessinées (ailes, traînée en pointillés) qui tournent autour
+//     de la tête, et une peau de banane « de dessin animé » posée à ses pieds.
+function TrashAuraBack() {
+  return (
     <g>
-      <ellipse cx="-1.3" cy="-1.6" rx="1.7" ry="1.1" fill="#E5E7EB" opacity="0.85" className="costar-wing"/>
-      <ellipse cx="1.3" cy="-1.6" rx="1.7" ry="1.1" fill="#E5E7EB" opacity="0.85" className="costar-wing"/>
-      <ellipse cx="0" cy="0" rx="1.5" ry="2" fill="#111827"/>
-      <circle cx="0" cy="-1.9" r="0.9" fill="#111827"/>
+      <defs>
+        <radialGradient id="costar-stink-cloud" cx="0.5" cy="0.55" r="0.5">
+          <stop offset="0" stopColor="#A3E635" stopOpacity="0.55"/>
+          <stop offset="0.7" stopColor="#84CC16" stopOpacity="0.25"/>
+          <stop offset="1" stopColor="#84CC16" stopOpacity="0"/>
+        </radialGradient>
+      </defs>
+      <ellipse cx="58" cy="78" rx="60" ry="56" fill="url(#costar-stink-cloud)"/>
+      {[[14, 70, 0], [26, 50, 1.1], [92, 48, 0.5], [104, 70, 1.6]].map(([x, y, d]) => (
+        <path key={x} className="costar-stink" style={{ animationDelay: `${d}s` }}
+          d={`M${x} ${y} q-4 -5 0 -10 q4 -5 0 -10 q-4 -5 0 -10`}
+          fill="none" stroke="#4D7C0F" strokeWidth="2.6" strokeLinecap="round"/>
+      ))}
+    </g>
+  );
+}
+function TrashAuraFront() {
+  const fly = (
+    <g strokeLinejoin="round" strokeLinecap="round">
+      <path d="M-5 3 q-3 -2 -6 0 q-3 2 -6 0" fill="none" stroke="#374151" strokeWidth="0.6" strokeDasharray="1 1.2" opacity="0.8"/>
+      <ellipse cx="-2.2" cy="-2.6" rx="2.8" ry="1.7" transform="rotate(-30 -2.2 -2.6)" fill="#DBEAFE" stroke="#475569" strokeWidth="0.45" opacity="0.95" className="costar-wing"/>
+      <ellipse cx="2.2" cy="-2.6" rx="2.8" ry="1.7" transform="rotate(30 2.2 -2.6)" fill="#DBEAFE" stroke="#475569" strokeWidth="0.45" opacity="0.95" className="costar-wing"/>
+      <ellipse cx="0" cy="0.6" rx="2.2" ry="2.8" fill="#111827"/>
+      <path d="M-2 0.4 L2 0.4 M-1.8 1.9 L1.8 1.9" stroke="#4B5563" strokeWidth="0.5"/>
+      <circle cx="0" cy="-2.6" r="1.5" fill="#111827"/>
+      <circle cx="-0.8" cy="-3" r="0.65" fill="#B91C1C"/>
+      <circle cx="0.8" cy="-3" r="0.65" fill="#B91C1C"/>
     </g>
   );
   return (
     <g>
-      {/* Peau de banane usagée, posée par terre à gauche des pieds : deux pétales retombés
-          (intérieur pâle), un pétale encore debout avec la queue, taches brunes. */}
-      <g strokeLinejoin="round" strokeLinecap="round">
-        <ellipse cx="24.5" cy="128.4" rx="12" ry="1.6" fill="#000" opacity="0.12"/>
-        <path d="M22.6 127.6 Q14 129.4 7.6 124.2 Q15.6 122 24 125.4 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.8"/>
-        <path d="M21.4 126.6 Q15 126.8 10.4 124.6 Q16.4 123.6 22.4 125.6 Z" fill="#FEF3C7"/>
-        <path d="M26.6 127.6 Q35.4 129.4 41.4 124 Q33.4 121.8 25.4 125.4 Z" fill="#EAB308" stroke="#A16207" strokeWidth="0.8"/>
-        <path d="M27.8 126.6 Q34.4 126.8 38.8 124.4 Q32.8 123.4 26.8 125.6 Z" fill="#FEF3C7"/>
-        <path d="M22.8 126.4 Q21.6 117.6 24.6 111.6 Q28 117.6 27 126.4 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.8"/>
-        <rect x="23.7" y="108.6" width="1.9" height="3.6" rx="0.6" fill="#78350F"/>
-        <path d="M21.6 128.2 Q24.8 125.2 28 128.2 Z" fill="#CA8A04" stroke="#854D0E" strokeWidth="0.7"/>
-        <circle cx="12.6" cy="124.6" r="0.9" fill="#78350F" opacity="0.85"/>
-        <circle cx="36.8" cy="124.8" r="1" fill="#78350F" opacity="0.85"/>
-        <circle cx="25.4" cy="118.6" r="0.9" fill="#78350F" opacity="0.8"/>
-        <circle cx="23.8" cy="122.4" r="0.6" fill="#78350F" opacity="0.7"/>
+      {/* Peau de banane de dessin animé : pétales jaunes étalés au sol (intérieur crème), un
+          pétale debout avec la queue, bouts noircis, taches brunes. */}
+      <g transform="translate(20 122.6)" strokeLinejoin="round" strokeLinecap="round">
+        <ellipse cx="0" cy="5.2" rx="15.5" ry="2.2" fill="#000" opacity="0.15"/>
+        {/* Pétales couchés : gauche, droite, avant */}
+        <path d="M-1 3 C-6 -1 -12 -1 -15.5 3.6 C-10.5 5.6 -5 5.4 -1 3.8 Z" fill="#FACC15" stroke="#854D0E" strokeWidth="1"/>
+        <path d="M-2.4 3.2 C-6.4 1.4 -10.4 1.6 -12.8 3.6 C-9 4.4 -5.4 4.2 -2.4 3.6 Z" fill="#FEF9C3"/>
+        <path d="M1 3 C6 -1 12 -1 15.5 3.6 C10.5 5.6 5 5.4 1 3.8 Z" fill="#FACC15" stroke="#854D0E" strokeWidth="1"/>
+        <path d="M2.4 3.2 C6.4 1.4 10.4 1.6 12.8 3.6 C9 4.4 5.4 4.2 2.4 3.6 Z" fill="#FEF9C3"/>
+        <circle cx="-15" cy="3.6" r="1.1" fill="#3F2A0A"/>
+        <circle cx="15" cy="3.6" r="1.1" fill="#3F2A0A"/>
+        {/* Pétale debout, légèrement penché, avec la queue */}
+        <path d="M-2.6 3.4 C-4.4 -3 -3 -9 0.6 -12.4 C2.6 -8.6 3.6 -3 2.8 3.4 Z" fill="#FDE047" stroke="#854D0E" strokeWidth="1"/>
+        <path d="M0.6 -12.4 L1.8 -15.4" stroke="#3F2A0A" strokeWidth="2"/>
+        {/* Base */}
+        <ellipse cx="0" cy="3.8" rx="3.6" ry="1.8" fill="#EAB308" stroke="#854D0E" strokeWidth="0.9"/>
+        {/* Taches brunes (bien usagée) */}
+        <circle cx="-8.4" cy="1.6" r="0.9" fill="#78350F"/>
+        <circle cx="9.6" cy="1.4" r="1" fill="#78350F"/>
+        <circle cx="0" cy="-4.6" r="1" fill="#78350F"/>
+        <circle cx="-0.6" cy="-0.6" r="0.7" fill="#78350F"/>
       </g>
-      {/* Effluves qui montent */}
-      {[[20, 0], [97, 0.9], [88, 1.8]].map(([x, d]) => (
-        <path key={x} className="costar-stink" style={{ animationDelay: `${d}s` }}
-          d={`M${x} 96 q-3 -5 0 -10 q3 -5 0 -10 q-3 -5 0 -10`} fill="none" stroke="#84CC16" strokeWidth="1.6" strokeLinecap="round" opacity="0.75"/>
-      ))}
       {/* Mouches en orbite autour de la tête */}
-      {[[0, 4.2, 40, 'normal'], [1.4, 5.6, 47, 'reverse'], [2.6, 3.4, 34, 'normal']].map(([d, dur, r, dir]) => (
+      {[[0, 4.6, 44, 'normal'], [1.5, 6, 50, 'reverse'], [3, 3.8, 38, 'normal']].map(([d, dur, r, dir]) => (
         <g key={d} className="costar-fly" style={{ animationDuration: `${dur}s`, animationDelay: `-${d}s`, animationDirection: dir }}>
-          <g transform={`translate(${58 + r} 52) scale(1.6)`}>{fly}</g>
+          <g transform={`translate(${58 + r} 50) scale(1.7)`}>{fly}</g>
         </g>
       ))}
     </g>
@@ -158,6 +185,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           ))}
         </g>
       )}
+      {o.aura === 'poubelle' && <TrashAuraBack/>}
       {/* Queue (derrière) */}
       <g className="costar-tail">
         <ellipse cx="94" cy="108" rx="23" ry="11" transform="rotate(-28 94 108)" fill="#4A2E17"/>
@@ -645,7 +673,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           </g>
         )}
       </g>
-      {o.aura === 'poubelle' && <TrashAura/>}
+      {o.aura === 'poubelle' && <TrashAuraFront/>}
     </svg>
   );
 }
