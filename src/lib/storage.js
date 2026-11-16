@@ -3,7 +3,7 @@ import { getCachedUrls, setCachedUrls } from './urlCache.js';
 import { clearSnapshots, getLatestSnapshot } from './backupVault.js';
 import { getQueuedUploadPath, removeQueuedUpload } from './photoUploadQueue.js';
 import { logEvent, logWarn } from './logger.js';
-import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf } from './planThumbCache.js';
+import { getPlanHd, setPlanHd, getPlanPdf, setPlanPdf, delPlanPdf, setPlanThumbs } from './planThumbCache.js';
 import { getDeletedIds, addTombstone, liftTombstone, TOMBSTONE_KEYS } from './tombstones.js';
 import { itemMetaToRow, itemMetaFromRow } from './obsDates.js';
 import { getBase, setBase, seedBase, pruneBase, flushBase, clearBase, itemRowSig, visitSig, syncDecision, mergeGroups, nextBase, ITEM_GROUPS, visitMeta } from './syncBase.js';
@@ -187,10 +187,34 @@ function extractPhotoPath(urlOrPath) {
 }
 
 // Version allégée pour le cache localStorage : sans les blobs volumineux ni flags runtime
+// CACHE LÉGER (retour Thomas 16/11 « ça rame ») : les fonds de plans (0,5-1 Mo de base64 chacun)
+// ne vont PLUS dans localStorage. Avec un PDF de 30 pages, le cache pesait des dizaines de Mo :
+// sérialisé toutes les 500 ms après chaque modification (lenteur) et au-delà du quota du
+// navigateur (~5-10 Mo) → l'écriture ÉCHOUAIT, le cache local n'était plus à jour. Les fonds
+// vivent dans IndexedDB (planThumbCache, quota en Go) — copiés AVANT d'être retirés du cache
+// (persistPlanBgsToIdb) — et sont remis au démarrage (useProjets : getPlanThumbs). Seuls les
+// fonds rattachés à un plan de bibliothèque (planId) sont retirés ; un ancien fond sans planId
+// reste dans le cache (rien ne permettrait de le retrouver ailleurs).
+const _idbBgSaved = new Map(); // planId → longueur du fond déjà copié dans IndexedDB (session)
+export function persistPlanBgsToIdb(ps) {
+  try {
+    const map = {};
+    for (const p of (ps || [])) for (const pl of (p?.planLibrary || [])) {
+      if (!pl?.id || typeof pl.bg !== 'string' || !pl.bg.startsWith('data:')) continue;
+      if (_idbBgSaved.get(pl.id) === pl.bg.length) continue;
+      map[pl.id] = pl.bg;
+      _idbBgSaved.set(pl.id, pl.bg.length);
+    }
+    if (Object.keys(map).length) Promise.resolve(setPlanThumbs(map)).catch(() => { for (const id of Object.keys(map)) _idbBgSaved.delete(id); });
+  } catch { /* best-effort */ }
+}
+
 function slimLoc(l, dropPhotoBytes = false) {
   return {
     ...l,
-    planData: null, // PDF brut trop lourd — planBg (miniature PNG) conservé pour affichage immédiat
+    planData: null, // PDF brut trop lourd
+    // Fond du plan de zone : retiré s'il vient de la bibliothèque (remis depuis IndexedDB).
+    planBg: l.planId ? null : (l.planBg ?? null),
     planAnnotations: slimAnnot(l.planAnnotations) ?? null,
     // extraPlans : planBg/planData non stockés (trop lourd) — reconstruits depuis planLibrary au chargement
     extraPlans: (l.extraPlans || []).map(ep => ({ id: ep.id, planId: ep.planId || null, planAnnotations: slimAnnot(ep.planAnnotations) ?? null, reportHidden: ep.reportHidden ?? false })),
@@ -198,6 +222,8 @@ function slimLoc(l, dropPhotoBytes = false) {
     items: (l.items || []).map(({ _photosHydrated, ...item }) => ({
       ...item,
       planAnnotations: slimAnnot(item.planAnnotations),
+      // Plans d'observation : fond retiré s'il vient de la bibliothèque (affiché via planLibrary).
+      ...(Array.isArray(item.plans) ? { plans: item.plans.map(pl => (pl?.planId ? { ...pl, planBg: null, planData: null } : pl)) } : {}),
       // eslint-disable-next-line no-unused-vars
       // _id (id de ligne DB) CONSERVÉ dans le cache : c'est lui qui rend l'upsert photo stable
       // à travers les rechargements de page. Sans lui, une sauvegarde avant ré-hydratation
@@ -222,7 +248,8 @@ function toSlim(ps, dropPhotoBytes = false) {
   return ps.map(p => ({
     ...p,
     photo: p.photo ?? null, // garder la signed URL en cache — affichage immédiat, rafraîchie en arrière-plan
-    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, data: null, hd: null })), // garder bg (miniature) pour affichage immédiat — data (PDF brut) et hd (image HD) trop lourds pour le cache
+    // Fonds (bg) NON gardés ici (cf. persistPlanBgsToIdb) ; data (PDF brut) et hd (image HD) non plus.
+    planLibrary: (p.planLibrary || []).map(pl => ({ ...pl, bg: pl.id ? null : (pl.bg ?? null), data: null, hd: null })),
     visites: (p.visites || []).map(v => ({
       ...v,
       localisations: (v.localisations || []).map(l => slimLoc(l, dropPhotoBytes)),
@@ -2381,6 +2408,7 @@ export async function loadData() {
 // Mise à jour du cache local UNIQUEMENT (sans écriture Supabase).
 // Utilisé quand on accepte des données fraîches de Supabase sans modification utilisateur.
 export function saveLocalCache(ps) {
+  persistPlanBgsToIdb(ps); // fonds de plans → IndexedDB AVANT de les retirer du cache
   const write = (obj) => {
     const s = JSON.stringify(obj);
     if (_hasLS) localStorage.setItem(SK, s);
@@ -2455,6 +2483,7 @@ const _offline = () => typeof navigator !== 'undefined' && navigator.onLine === 
 export async function saveData(ps, onStatus, dirtyIds = null) {
   try {
     // Sauvegarder localement en premier (résilience hors-ligne)
+    persistPlanBgsToIdb(ps);
     await stor.set(SK, JSON.stringify(toSlim(ps)));
     const errors = await saveRemote(ps, dirtyIds);
     // Photos pas encore envoyées / reliées : PAS une erreur (pas de bandeau rouge), mais la
