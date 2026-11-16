@@ -14,7 +14,7 @@ import { captureRotation } from '../../lib/deviceCamera.js';
 //   • « Appareil photo du téléphone » : ouvre l'appli photo native (flash, modes nuit…) ;
 //   • caméra refusée / indisponible → bascule directe sur l'appareil photo du téléphone.
 // onShot(file) reçoit chaque photo (JPEG pleine résolution du capteur vidéo).
-export default function CameraCapture({ onShot, onNative, onClose }) {
+export default function CameraCapture({ onShot, onNative, onClose, onPlace = null }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const orientRef = useRef({ beta: null, gamma: null });
@@ -35,6 +35,10 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1); zoomRef.current = zoom;
   const [wideId, setWideId] = useState(null);   // deviceId de l'objectif ultra grand angle (si connu)
+  // Android : l'ultra grand angle n'est souvent pas nommé (« camera2 2, facing back ») → si le
+  // téléphone expose PLUSIEURS caméras arrière, bouton « ⟲ Objectif » pour passer de l'une à l'autre.
+  const [backCams, setBackCams] = useState([]);
+  const [camIdx, setCamIdx] = useState(0);
   const [onWide, setOnWide] = useState(false);
   const mainIdRef = useRef(null);
   const pinchRef = useRef(null);
@@ -71,6 +75,11 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
         const devs = (await navigator.mediaDevices.enumerateDevices?.()) || [];
         const wide = devs.find(d => d.kind === 'videoinput' && d.deviceId && d.deviceId !== mainIdRef.current && /ultra|grand.?angle/i.test(d.label || ''));
         if (alive && wide) setWideId(wide.deviceId);
+        const backs = devs.filter(d => d.kind === 'videoinput' && d.deviceId && !/front|avant|user|facetime/i.test(d.label || ''));
+        if (alive && backs.length > 1) {
+          setBackCams(backs.map(d => d.deviceId));
+          setCamIdx(Math.max(0, backs.findIndex(d => d.deviceId === mainIdRef.current)));
+        }
       } catch { /* pas de liste d'objectifs */ }
       const v = videoRef.current;
       if (v) {
@@ -137,6 +146,23 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
   const onPinchEnd = () => { pinchRef.current = null; };
   const digital = !zoomCap && zoom > 1; // zoom numérique (recadrage)
 
+  // Caméra arrière suivante (Android sans nom d'objectif) : on relance le flux dessus.
+  const cycleCam = async () => {
+    if (backCams.length < 2) return;
+    const next = (camIdx + 1) % backCams.length;
+    try {
+      const s2 = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: backCams[next] }, width: { ideal: 4032 }, height: { ideal: 3024 } } });
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = s2;
+      if (videoRef.current) { videoRef.current.srcObject = s2; try { await videoRef.current.play(); } catch { /* ignore */ } }
+      setCamIdx(next); setTorchOn(false); setOnWide(false);
+      const t2 = s2.getVideoTracks()[0];
+      let zc = null; try { zc = t2?.getCapabilities?.().zoom || null; } catch { /* ignore */ }
+      setZoomCap(zc && zc.max > zc.min ? { min: zc.min, max: zc.max } : null);
+      setZoom(1);
+    } catch { /* caméra indisponible */ }
+  };
+
   const toggleTorch = async () => {
     const track = streamRef.current?.getVideoTracks()[0];
     if (!track) return;
@@ -195,6 +221,7 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
               { k: '1', l: '1×', on: !onWide && zoom >= 0.95 && zoom < 1.5, go: () => (onWide ? switchLens(false) : applyZoom(1)) },
               { k: '2', l: '2×', on: !onWide && zoom >= 1.5 && zoom < 3.5, go: () => { if (onWide) switchLens(false).then(() => applyZoom(2)); else applyZoom(2); } },
               ...((!zoomCap || zoomCap.max >= 4) ? [{ k: '5', l: '5×', on: !onWide && zoom >= 3.5, go: () => { if (onWide) switchLens(false).then(() => applyZoom(5)); else applyZoom(5); } }] : []),
+              ...((!wideId && backCams.length > 1) ? [{ k: 'cyc', l: `⟲ ${camIdx + 1}/${backCams.length}`, on: false, go: cycleCam }] : []),
             ].map(b => (
               <button key={b.k} onClick={b.go}
                 style={{ minWidth:38, height:32, borderRadius:16, border:'none', cursor:'pointer', fontSize:12, fontWeight:800,
@@ -230,10 +257,15 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
       </div>
 
       <div style={{ flexShrink:0, display:'grid', gridTemplateColumns:'1fr auto 1fr', alignItems:'center', padding:'14px 18px 18px', gap:12 }}>
-        <button onClick={() => { streamRef.current?.getTracks().forEach(t => t.stop()); onNative?.(); }}
-          style={{ justifySelf:'start', background:'none', border:'1px solid rgba(255,255,255,0.35)', color:'white', borderRadius:10, padding:'8px 10px', fontSize:11.5, fontWeight:600, lineHeight:1.25, textAlign:'left', cursor:'pointer', maxWidth:130 }}>
-          Appareil photo du téléphone
-        </button>
+        {/* « Placer » (retour Thomas 16/11) : la DERNIÈRE photo prise est posée sur le plan, puis on
+            revient ici, en rafale. Remplace l'ancien bouton « Appareil photo du téléphone »
+            (l'interrupteur « Rafale » de l'observation choisit l'appareil). */}
+        {onPlace ? (
+          <button onClick={() => { if (!count) return; streamRef.current?.getTracks().forEach(t => t.stop()); onPlace(); }} disabled={!count}
+            style={{ justifySelf:'start', background: count ? 'rgba(255,255,255,0.15)' : 'none', border:'1px solid rgba(255,255,255,0.35)', color:'white', opacity: count ? 1 : 0.45, borderRadius:10, padding:'10px 12px', fontSize:13, fontWeight:800, cursor: count ? 'pointer' : 'default' }}>
+            📍 Placer
+          </button>
+        ) : <span/>}
         <button onClick={shoot} disabled={!ready || busy} aria-label="Prendre la photo"
           style={{ width:74, height:74, borderRadius:'50%', border:'4px solid white', background: busy ? '#999' : DA.red, cursor: ready ? 'pointer' : 'default',
             display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 0 3px rgba(0,0,0,0.4)', transform:`rotate(${rot}deg)`, transition:'transform 0.2s' }}>
