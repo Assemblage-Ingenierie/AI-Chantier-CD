@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, restorePlanRows, fetchStoredPlanHd, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject, fetchPlanPdfByBase } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, restorePlanRows, fetchStoredPlanHd, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject, fetchPlanPdfByBase } from '../lib/storage.js';
 import { repairPlanBgs } from '../lib/planRepair.js';
 import { relinkDeletedPlans, visitUsesPlan, detachPlanFromVisit } from '../lib/planRecovery.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
@@ -501,20 +501,13 @@ export function useProjets(onSyncStatus) {
             return warmed;
           });
         };
+        // Démarrage : UNIQUEMENT le cache de l'appareil (IndexedDB, instantané, zéro réseau).
+        // Plus de téléchargement des fonds de TOUS les plans de TOUS les projets (retour Thomas
+        // 16/11 « ça rame ») : des dizaines de Mo à chaque ouverture de l'app. Les fonds d'un
+        // projet sont chargés quand on OUVRE ce projet (hydratePlanLibrary, par paquets), puis
+        // gardés dans IndexedDB pour les sessions suivantes.
         if (missingPlanIds.length) {
-          getPlanThumbs(missingPlanIds).then(cached => {
-            applyPlanBgs(cached);
-            const stillMissing = missingPlanIds.filter(id => !cached[id]);
-            if (!stillMissing.length) return;
-            loadAllPlanBgs(stillMissing).then(bgsByProject => {
-              const flat = {};
-              for (const byPlan of Object.values(bgsByProject || {})) Object.assign(flat, byPlan);
-              const fetched = {};
-              for (const id of stillMissing) if (flat[id]) fetched[id] = flat[id];
-              applyPlanBgs(fetched);
-              setPlanThumbs(fetched); // persistance durable pour les prochaines sessions
-            }).catch(() => {});
-          }).catch(() => {});
+          getPlanThumbs(missingPlanIds).then(applyPlanBgs).catch(() => {});
         }
       })
       .catch((e) => {
