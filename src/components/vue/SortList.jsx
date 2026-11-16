@@ -16,6 +16,9 @@ const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 // '' selon le navigateur), et le ref local est nul dans l'instance cible → le dépôt était ignoré
 // (« ça ne me la met pas », Thomas). Ce payload module-level survit à la traversée des zones.
 let _photoDragPayload = null;
+// Plan d'observation glissé vers une autre observation (demande Thomas 16/11 : « comme pour les
+// photos, déplacer les plans facilement à la main »). Même principe : charge partagée entre zones.
+let _planDragPayload = null;
 
 // ── AUTO-SCROLL pendant un glisser de photo (demande Thomas : « si ma photo est en haut/bas
 //    hors écran, ça scrolle tout seul »). Une SEULE boucle module-level quel que soit le nombre
@@ -35,7 +38,7 @@ if (typeof window !== 'undefined') {
   };
   const isRoot = (el) => el === document.scrollingElement || el === document.documentElement || el === document.body;
   const step = () => {
-    if (!_photoDragPayload || !scroller) { rafId = null; return; }
+    if (!(_photoDragPayload || _planDragPayload) || !scroller) { rafId = null; return; }
     const top = isRoot(scroller) ? 0 : scroller.getBoundingClientRect().top;
     const bottom = isRoot(scroller) ? window.innerHeight : scroller.getBoundingClientRect().bottom;
     let v = 0;
@@ -46,7 +49,7 @@ if (typeof window !== 'undefined') {
   };
   const stop = () => { if (rafId != null) cancelAnimationFrame(rafId); rafId = null; scroller = null; };
   window.addEventListener('dragover', (e) => {
-    if (!_photoDragPayload) return;
+    if (!_photoDragPayload && !_planDragPayload) return;
     e.preventDefault(); // autorise le survol partout (sinon certains navigateurs bloquent le drag hors cible)
     dragY = e.clientY; dragX = e.clientX;
     // Re-cherche la zone scrollable sous le curseur à chaque mouvement : on suit le curseur
@@ -153,7 +156,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan }) {
+export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, planNames = null, onMovePlanAcross = null }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -173,6 +176,15 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
   const [photoDrop, setPhotoDrop] = useState(null);
   const dropRef = useRef(null);
   const [dragSrc, setDragSrc] = useState(null); // { itemId, idx } photo en cours de glisser (atténuée)
+  // Glisser d'un PLAN d'observation : observation visée (liseré rouge) + plan source (atténué).
+  const [planDropId, setPlanDropId] = useState(null);
+  const [planDragSrc, setPlanDragSrc] = useState(null); // { itemId, entryId }
+  useEffect(() => {
+    const off = () => { setPlanDropId(null); setPlanDragSrc(null); };
+    window.addEventListener('ai-plan-drag-end', off);
+    return () => window.removeEventListener('ai-plan-drag-end', off);
+  }, []);
+  const endPlanDrag = () => { _planDragPayload = null; window.dispatchEvent(new Event('ai-plan-drag-end')); };
   const listMarkRef = useRef(Symbol('sortlist'));
   const setDrop = (itemId, idx) => {
     const cur = dropRef.current;
@@ -423,12 +435,14 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
             <div key={item.id}
               draggable
               onDragStart={() => onDragStart(i)}
-              onDragEnter={() => { if (!_photoDragPayload) onDragEnter(i); }}
+              onDragEnter={() => { if (!_photoDragPayload && !_planDragPayload) onDragEnter(i); }}
               onDragEnd={onDragEnd}
               // Filet : glisser annulé par le navigateur (pas de dragend) → la ligne ne reste pas grisée.
               onMouseUp={() => { if (dragIdx !== null) { setDragIdx(null); setOverIdx(null); } }}
               onDragOver={e => {
                 e.preventDefault();
+                // Plan glissé au-dessus de la carte → cette observation le recevra.
+                if (_planDragPayload && onMovePlanAcross) { if (planDropId !== item.id) setPlanDropId(item.id); return; }
                 // Photo glissée au-dessus de la carte (hors vignettes) → dépôt à la FIN.
                 if (_photoDragPayload && (onMovePhotoAcross || onReorderPhoto)) {
                   e.nativeEvent._aiPhotoList = listMarkRef.current;
@@ -436,6 +450,13 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                 }
               }}
               onDrop={e => {
+                if (_planDragPayload) {
+                  e.preventDefault(); e.stopPropagation();
+                  const d = _planDragPayload;
+                  endPlanDrag();
+                  if (onMovePlanAcross && d.fromItemId !== item.id) onMovePlanAcross(d.fromLocId, d.fromItemId, d.entryId, locId, item.id);
+                  return;
+                }
                 if (!_photoDragPayload && !e.dataTransfer.types.includes('text/photo')) return;
                 e.preventDefault(); e.stopPropagation();
                 const d = readPhotoPayload(e);
@@ -454,8 +475,8 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                 borderLeft:`4px solid ${draft ? '#D1D5DB' : (URGENCE[item.urgence]?.dot || DA.border)}`,
                 cursor:'pointer',
                 background: isDragging ? '#f0f0f0' : isOver ? DA.redL : draft ? '#F3F4F6' : 'white',
-                // Observation visée par une photo glissée : liseré intérieur rouge (où elle va atterrir).
-                boxShadow: photoDrop?.itemId === item.id ? `inset 0 0 0 2px ${DA.red}` : 'none',
+                // Observation visée par une photo / un plan glissé : liseré intérieur rouge (où il va atterrir).
+                boxShadow: (photoDrop?.itemId === item.id || planDropId === item.id) ? `inset 0 0 0 2px ${DA.red}` : 'none',
                 borderTop: isOver ? `2px solid ${DA.red}` : 'none',
                 opacity: isDragging ? 0.45 : 1,
                 transition: 'background 0.08s, opacity 0.08s',
@@ -668,6 +689,39 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                   }
                   return null;
                 })()}
+
+                {/* Plans de l'observation — PC : étiquettes à GLISSER vers une autre observation
+                    (comme les photos). Le plan part avec ses annotations (repères). */}
+                {isDesktop && onMovePlanAcross && (item.plans || []).length > 0 && (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop: 10, ...(draft ? { opacity:0.6 } : {}) }}>
+                    {item.plans.map((pl, pi) => {
+                      const nom = planNames?.get?.(pl.planId) || 'Plan';
+                      const nAnnot = pl.planAnnotations?.paths?.length || 0;
+                      const src = planDragSrc && planDragSrc.itemId === item.id && planDragSrc.entryId === (pl.id || pi);
+                      return (
+                        <span key={pl.id || pi}
+                          draggable
+                          onClick={e => { e.stopPropagation(); (onOpenItemPlan || onEdit)(item); }}
+                          onDragStart={e => {
+                            e.stopPropagation();
+                            _planDragPayload = { fromLocId: locId, fromItemId: item.id, entryId: pl.id || pi };
+                            setPlanDragSrc({ itemId: item.id, entryId: pl.id || pi });
+                            try { e.dataTransfer.setData('text/plan', String(pl.id || pi)); e.dataTransfer.effectAllowed = 'move'; } catch { /* ignore */ }
+                          }}
+                          onDragEnd={e => { e.stopPropagation(); endPlanDrag(); }}
+                          title="Glisser vers une autre observation pour y déplacer ce plan (avec ses repères) · Cliquer pour l'ouvrir"
+                          style={{ display:'inline-flex', alignItems:'center', gap:5, maxWidth:240, padding:'5px 9px', borderRadius:999,
+                            border:`1px solid ${DA.red}`, background: DA.redL, color: DA.red, fontSize:12, fontWeight:700,
+                            cursor:'grab', userSelect:'none', opacity: src ? 0.35 : 1 }}>
+                          <Ic n="map" s={12}/>
+                          <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nom}</span>
+                          {nAnnot > 0 && <span style={{ fontSize:10, fontWeight:600, opacity:0.75 }}>· {nAnnot} repère{nAnnot > 1 ? 's' : ''}</span>}
+                          <Ic n="srt" s={11}/>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
 
               </div>
             </div>

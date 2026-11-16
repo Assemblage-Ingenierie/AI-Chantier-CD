@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
+import { movePlanBetweenItems } from '../../lib/movePlan.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
@@ -529,6 +530,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     setUndoToast({ label, onUndo });
     undoTimerRef.current = setTimeout(() => setUndoToast(null), 4000);
   }, []);
+
+  // Déplace un PLAN d'observation (avec ses repères) vers une autre observation — glisser-déposer
+  // dans la liste, comme les photos (demande Thomas 16/11 : « tout mis sur une observation, pour
+  // changer c'est super galère »). Si la cible a déjà ce plan, ses repères y sont AJOUTÉS (pas de
+  // doublon de plan). « Annuler » remet tout comme avant.
+  const planNames = useMemo(() => new Map((projet.planLibrary || []).map(pl => [pl.id, pl.nom || 'Plan'])), [projet.planLibrary]);
+  const movePlan = useCallback((fromLocId, fromItemId, entryId, toLocId, toItemId) => {
+    const prevLocs = visitProjet.localisations;
+    const r = movePlanBetweenItems(prevLocs, fromLocId, fromItemId, entryId, toLocId, toItemId);
+    if (!r) return;
+    onUpdateVisit({ localisations: r.locs });
+    showUndo(`Plan « ${planNames.get(r.entry.planId) || 'Plan'} » déplacé`, () => onUpdateVisit({ localisations: prevLocs }));
+  }, [visitProjet.localisations, onUpdateVisit, showUndo, planNames]);
 
   const deleteItem = useCallback((locId, itemId) => {
     const prevLocs = visitProjet.localisations;
@@ -1078,6 +1092,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
+                              planNames={planNames}
+                              onMovePlanAcross={movePlan}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
                                 if (item?._quickSuivi) { saveItem(loc.id, item); return; }
