@@ -36,6 +36,7 @@ import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../l
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 import { rotatePhoto } from '../../lib/photoRotate.js';
 import { getObsDrag, markObsDropped } from '../../lib/obsDrag.js';
+import ObsTouchMover from './ObsTouchMover.jsx';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -650,6 +651,31 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
+  // Téléphone : observation déplacée au doigt (poignée ⠿) → ObsTouchMover. { fromLocId, itemId, titre, x, y }
+  const [mobDrag, setMobDrag] = useState(null);
+  const finishMobDrag = (t) => {
+    const d = mobDrag;
+    setMobDrag(null);
+    if (!d || !t) return;
+    const prev = visitProjet.localisations;
+    const toName = prev.find(l => l.id === t.locId)?.nom || 'la zone';
+    if (t.locId === d.fromLocId) {
+      // Même zone : simple réordonnancement (insérer avant la ligne visée, ou à la fin).
+      const items = prev.find(l => l.id === d.fromLocId)?.items || [];
+      const from = items.findIndex(i => i.id === d.itemId);
+      if (from < 0) return;
+      let to = t.idx == null ? items.length : t.idx;
+      if (to > from) to -= 1;
+      if (to === from) return;
+      const n = [...items];
+      const [m] = n.splice(from, 1);
+      n.splice(to, 0, m);
+      patchLoc(d.fromLocId, { items: n });
+      return;
+    }
+    moveObsToZone(d.fromLocId, d.itemId, t.locId, t.idx);
+    showUndo(`Observation déplacée dans « ${toName} »`, () => onUpdateVisit({ localisations: prev }));
+  };
   const annotatorRef = useRef(null);
   const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
@@ -1152,6 +1178,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               onMovePhotoAcross={movePhoto}
                               onDropPlan={isDesktop ? dropPlan : null}
                               onMoveItemAcross={isDesktop ? moveObsToZone : null}
+                              onTouchDragStart={(item, t) => setMobDrag({ fromLocId: loc.id, itemId: item.id, titre: item.titre, x: t.clientX, y: t.clientY })}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
                                 if (item?._quickSuivi) { saveItem(loc.id, item); return; }
@@ -1437,6 +1464,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         </div>
       )}
 
+      {mobDrag && <ObsTouchMover key={mobDrag.itemId + ':' + mobDrag.x + ':' + mobDrag.y} drag={mobDrag} locs={visitProjet.localisations} onDone={finishMobDrag}/>}
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
           <span>{undoToast.label}</span>

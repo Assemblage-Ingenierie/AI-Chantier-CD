@@ -1656,29 +1656,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               onFocus={e => { titleFocusRef.current = true; e.target.style.borderColor=DA.red; }} onBlur={e => { titleFocusRef.current = false; e.target.style.borderColor=DA.border; liveRef.current?.refresh(); liveRef.current?.cursor(null, null); }}/>
               <TitleCursors inputRef={titleInputRef} marks={liveMarks.titre} value={form.titre}/>
             </div>
-            {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
-                par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
-                seulement pour une observation existante. */}
-            {/* PC : retiré (demande Thomas 16/11) → on glisse l'observation vers sa zone dans la
-                page Visite. Gardé sur TÉLÉPHONE : pas de glisser entre zones au doigt. */}
-            {item?.id && zoneId && zones.length > 0 && _isMobileDevice && (
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, flexWrap:'wrap' }}>
-                <span style={{ fontSize:12, color:DA.grayL, display:'inline-flex', alignItems:'center', gap:4 }}><Ic n="pin" s={12}/> Zone</span>
-                <select value={moveTo || ''} onChange={e => setMoveTo(e.target.value)}
-                  style={{ flex:'1 1 160px', minWidth:0, fontSize:13, padding:'6px 8px', borderRadius:8, border:`1px solid ${moveTo !== zoneId ? DA.red : DA.border}`, background:'white', color:DA.black }}>
-                  {zones.map(z => <option key={z.id} value={z.id}>{z.nom || 'Zone sans nom'}</option>)}
-                  <option value="__new__">+ Nouvelle zone…</option>
-                </select>
-                {moveTo === '__new__' && (
-                  <input value={newZoneName} onChange={e => setNewZoneName(e.target.value)} placeholder="Nom de la nouvelle zone"
-                    draggable={false} onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
-                    style={{ flex:'1 1 100%', fontSize:14, padding:'8px 10px', borderRadius:8, border:`1px solid ${DA.red}`, outline:'none', boxSizing:'border-box' }}/>
-                )}
-                {moveTo !== zoneId && (
-                  <span style={{ flexBasis:'100%', fontSize:11, color:DA.red }}>L'observation sera déplacée à l'enregistrement.</span>
-                )}
-              </div>
-            )}
+            {/* Menu « Zone » retiré (demande Thomas 16/11) : on déplace l'observation par
+                glisser-déposer dans la page Visite (PC : souris ; téléphone : poignée ⠿ →
+                zones repliées, cf. ObsTouchMover). */}
           </div>
 
           {/* Niveau + Suivi — une seule ligne */}
