@@ -35,6 +35,7 @@ import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 import { rotatePhoto } from '../../lib/photoRotate.js';
+import { getObsDrag, markObsDropped } from '../../lib/obsDrag.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -626,6 +627,19 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     return applyObsDates(prev || null, item, visitProjet.dateVisite);
   };
 
+  // Glisser-déposer d'une observation vers une AUTRE zone (PC, demande Thomas 16/11), même
+  // vide. Même chemin que « Zone » dans l'observation : moveItemToZone garde l'id → photos,
+  // plans et dates intacts ; la sauvegarde la ré-enregistre sous sa nouvelle zone.
+  const moveObsToZone = (fromLocId, itemId, toLocId, index = null) => {
+    if (!fromLocId || !toLocId || fromLocId === toLocId) return;
+    const item = visitProjet.localisations.find(l => l.id === fromLocId)?.items?.find(i => i.id === itemId);
+    if (!item) return;
+    const next = moveItemToZone(visitProjet.localisations, fromLocId, item, toLocId, index);
+    if (next === visitProjet.localisations) return;
+    onUpdateVisit({ localisations: next });
+    setOpenLocIds(prev => new Set([...prev, toLocId]));
+  };
+
   const saveItem = (locId, form) => {
     // Le drapeau _quickSuivi ne doit pas rester sur l'item stocké : sinon le prochain clic sur la
     // ligne repasserait par ce chemin au lieu d'ouvrir l'éditeur.
@@ -1021,6 +1035,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                         onDragEnd={e => { e.stopPropagation(); applyZoneDrop(loc.id); resetZoneDrag(); setZoneDragArm(null); setTimeout(() => { zoneDragDidMove.current = false; }, 0); }}
                         onMouseUp={() => setZoneDragArm(null)}
                         onDrop={e => {
+                          // Observation d'une autre zone lâchée sur la zone (en-tête, zone repliée…) → à la fin.
+                          const od = isDesktop ? getObsDrag() : null;
+                          if (od && od.fromLocId !== loc.id) {
+                            e.preventDefault(); e.stopPropagation();
+                            markObsDropped();
+                            moveObsToZone(od.fromLocId, od.itemId, loc.id);
+                            return;
+                          }
                           const d = getPlanDrag();
                           if (!d) return;
                           e.preventDefault(); e.stopPropagation();
@@ -1129,6 +1151,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
                               onDropPlan={isDesktop ? dropPlan : null}
+                              onMoveItemAcross={isDesktop ? moveObsToZone : null}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
                                 if (item?._quickSuivi) { saveItem(loc.id, item); return; }

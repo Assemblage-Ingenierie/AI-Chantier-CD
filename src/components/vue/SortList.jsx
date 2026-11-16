@@ -9,6 +9,7 @@ import ObsDatesControl from '../ui/ObsDatesControl.jsx';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { obsDatesInfo } from '../../lib/obsDates.js';
 import { getPlanDrag, endPlanDrag } from '../../lib/planDrag.js';
+import { getObsDrag, startObsDrag, markObsDropped, endObsDrag } from '../../lib/obsDrag.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -154,7 +155,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null }) {
+export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null, onMoveItemAcross = null }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -264,13 +265,43 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
   const onDragStart = (i) => { setDragIdx(i); dragDidMoveRef.current = false; };
   const onDragEnter = (i) => { setOverIdx(i); dragDidMoveRef.current = true; };
   const onDragEnd   = ()  => {
-    if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+    const dropped = getObsDrag()?.dropped; // déposée dans une AUTRE zone → rien à réordonner ici
+    endObsDrag();
+    if (!dropped && dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
       const n = [...items];
       const [m] = n.splice(dragIdx, 1);
       n.splice(overIdx, 0, m);
       onReorder(n);
     }
     setDragIdx(null); setOverIdx(null);
+  };
+
+  // ── Observation venue d'une AUTRE zone (PC, demande Thomas 16/11) ───────────
+  // obsFrom = zone d'origine de l'observation glissée (révèle la zone de dépôt d'une zone VIDE).
+  // overIdx sert aussi de point d'insertion (items.length = à la fin).
+  const [obsFrom, setObsFrom] = useState(null);
+  const dragIdxRef = useRef(null);
+  dragIdxRef.current = dragIdx;
+  const obsListMark = useRef(Symbol('obslist'));
+  const isCrossObs = () => { const d = getObsDrag(); return !!(d && onMoveItemAcross && d.fromLocId !== locId); };
+  useEffect(() => {
+    const on = () => setObsFrom(getObsDrag()?.fromLocId ?? null);
+    const off = () => { setObsFrom(null); setOverIdx(prev => (dragIdxRef.current === null ? null : prev)); };
+    // Curseur sorti de CETTE liste → plus de point d'insertion affiché ici.
+    const over = (e) => { if (getObsDrag() && e._aiObsList !== obsListMark.current && dragIdxRef.current === null) setOverIdx(prev => (prev === null ? prev : null)); };
+    window.addEventListener('ai-obs-drag-start', on);
+    window.addEventListener('ai-obs-drag-end', off);
+    window.addEventListener('dragover', over);
+    return () => { window.removeEventListener('ai-obs-drag-start', on); window.removeEventListener('ai-obs-drag-end', off); window.removeEventListener('dragover', over); };
+  }, []);
+  const dropObsHere = (e, at) => {
+    const d = getObsDrag();
+    if (!d || !isCrossObs()) return false;
+    e.preventDefault(); e.stopPropagation();
+    markObsDropped();
+    setOverIdx(null);
+    onMoveItemAcross(d.fromLocId, d.itemId, locId, Math.max(0, Math.min(at ?? items.length, items.length)));
+    return true;
   };
 
   // ── Touch drag (mobile) ────────────────────────────────────────────────────
@@ -402,7 +433,16 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
       </div>
     )}
 
-    <div ref={wrapperRef}>
+    <div ref={wrapperRef}
+      // Observation d'une autre zone glissée sur la liste (hors cartes : vide, zone sans
+      // observation…) → déposée à la FIN de cette zone.
+      onDragOver={e => {
+        if (!isCrossObs()) return;
+        e.preventDefault();
+        e.nativeEvent._aiObsList = obsListMark.current;
+        if (!e.nativeEvent._aiObsCard && overIdx !== items.length) setOverIdx(items.length);
+      }}
+      onDrop={e => { if (isCrossObs()) dropObsHere(e, overIdx ?? items.length); }}>
       {/* Zone GROUPE (« R+4 ») sans observation propre : simple lien discret — ses sous-zones
           portent le contenu, pas de gros encart vide (Règle 5 : écran épuré). */}
       {items.length === 0 && compactEmpty && (
@@ -411,8 +451,11 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
         </button>
       )}
       {items.length === 0 && !compactEmpty && (
-        <div style={{ padding:'24px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}` }}>
-          <p style={{ fontSize:14,color:DA.grayL,margin:'0 0 14px' }}>Aucune observation dans cette zone</p>
+        <div style={{ padding:'24px 16px',textAlign:'center',borderBottom:`1px solid ${DA.border}`,
+          ...(obsFrom && obsFrom !== locId && onMoveItemAcross ? { background: overIdx === 0 ? DA.redL : '#FAFAFA', boxShadow:`inset 0 0 0 2px ${overIdx === 0 ? DA.red : DA.border}`, transition:'background 0.1s' } : {}) }}>
+          <p style={{ fontSize:14,color: obsFrom && obsFrom !== locId && onMoveItemAcross ? DA.red : DA.grayL,margin:'0 0 14px', fontWeight: obsFrom && obsFrom !== locId && onMoveItemAcross ? 700 : 400 }}>
+            {obsFrom && obsFrom !== locId && onMoveItemAcross ? 'Déposer l\'observation ici' : 'Aucune observation dans cette zone'}
+          </p>
           <button onClick={() => onEdit(null)} style={{ display:'inline-flex',alignItems:'center',gap:6,padding:'12px 22px',background:DA.red,color:'white',borderRadius:20,border:'none',fontSize:15,fontWeight:700,cursor:'pointer' }}>
             <Ic n="plus" s={15}/> Ajouter la 1ère observation
           </button>
@@ -430,13 +473,29 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
           return (
             <div key={item.id}
               draggable
-              onDragStart={() => onDragStart(i)}
-              onDragEnter={() => { if (!_photoDragPayload && !getPlanDrag()) onDragEnter(i); }}
+              onDragStart={e => {
+                // Glisser d'une PHOTO ou d'un PLAN de la carte : ce n'est pas l'observation qui bouge.
+                if (_photoDragPayload || getPlanDrag()) return;
+                onDragStart(i);
+                if (onMoveItemAcross) {
+                  startObsDrag({ fromLocId: locId, itemId: item.id });
+                  try { e.dataTransfer.setData('text/obs', item.id); e.dataTransfer.effectAllowed = 'move'; } catch { /* ignore */ }
+                }
+                // Image de glisser = l'EN-TÊTE seul (titre + badges), pas toute la carte avec ses
+                // photos, qui masquait les endroits où lâcher (comme pour les zones).
+                try { const head = e.currentTarget.querySelector('[data-obs-head]'); if (head) e.dataTransfer.setDragImage(head, 20, 20); } catch { /* ignore */ }
+              }}
+              onDragEnter={() => {
+                if (_photoDragPayload || getPlanDrag()) return;
+                if (isCrossObs()) { setOverIdx(i); return; } // observation d'une autre zone : insérée AVANT cette carte
+                onDragEnter(i);
+              }}
               onDragEnd={onDragEnd}
               // Filet : glisser annulé par le navigateur (pas de dragend) → la ligne ne reste pas grisée.
               onMouseUp={() => { if (dragIdx !== null) { setDragIdx(null); setOverIdx(null); } }}
               onDragOver={e => {
                 e.preventDefault();
+                if (isCrossObs()) { e.nativeEvent._aiObsCard = true; e.nativeEvent._aiObsList = obsListMark.current; if (overIdx !== i) setOverIdx(i); }
                 // Plan glissé au-dessus de la carte → cette observation le recevra.
                 if (getPlanDrag() && onDropPlan) { e.stopPropagation(); if (planDropId !== item.id) setPlanDropId(item.id); return; }
                 // Photo glissée au-dessus de la carte (hors vignettes) → dépôt à la FIN.
@@ -446,6 +505,7 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                 }
               }}
               onDrop={e => {
+                if (dropObsHere(e, overIdx ?? i)) return; // observation venue d'une autre zone
                 if (getPlanDrag()) {
                   e.preventDefault(); e.stopPropagation();
                   const d = getPlanDrag();
@@ -496,7 +556,7 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                     SUR la même ligne que le titre. Ainsi le commentaire et les photos prennent
                     TOUTE la largeur du contenu en dessous (avant, la colonne d'icônes à droite
                     rognait ~90px sur texte ET photos → écran mal optimisé, retour Thomas). */}
-                <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                <div data-obs-head="1" style={{ display:'flex', alignItems:'flex-start', gap:8, background:'inherit' }}>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, flexWrap:'wrap', rowGap:4 }}>
                       <p style={{ fontSize: isDesktop ? 16 : 15, fontWeight:700, color: draft ? DA.grayL : DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0, minWidth:0, maxWidth:'100%' }}>{liveDrafts?.[item.id] && typeof liveDrafts[item.id].titre === 'string' ? liveDrafts[item.id].titre : item.titre}</p>
@@ -692,6 +752,10 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
           );
         })}
       </div>
+      {/* Observation d'une autre zone : trait rouge = elle ira à la FIN de cette zone. */}
+      {items.length > 0 && obsFrom && obsFrom !== locId && overIdx === items.length && (
+        <div aria-hidden="true" style={{ height:3, background:DA.red }}/>
+      )}
 
       {items.length > 0 && (
         <div style={{ display:'flex',borderTop:`1px solid ${DA.border}` }}>

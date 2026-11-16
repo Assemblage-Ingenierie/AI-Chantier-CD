@@ -171,7 +171,8 @@ export function mergePrefix(titre) {
 
 // Déplace l'observation `item` de `fromId` vers `toId` (zone existante) ou vers une NOUVELLE
 // zone `{ nom }` insérée juste après la zone d'origine. Même id → photos et plans intacts.
-export function moveItemToZone(locs, fromId, item, to) {
+// `index` (optionnel, glisser-déposer) : position d'insertion dans la zone cible ; absent = à la fin.
+export function moveItemToZone(locs, fromId, item, to, index = null) {
   const from = locs.find(l => l.id === fromId);
   if (!from || !item?.id) return locs;
   let target = typeof to === 'string' ? locs.find(l => l.id === to) : null;
@@ -189,7 +190,9 @@ export function moveItemToZone(locs, fromId, item, to) {
       out.push({ ...l, items: (l.items || []).filter(i => i.id !== item.id) });
       if (created) out.push({ ...created, items: [moved] });
     } else if (l.id === target.id) {
-      out.push({ ...l, items: [...(l.items || []).filter(i => i.id !== item.id), moved] });
+      const rest = (l.items || []).filter(i => i.id !== item.id);
+      const at = Number.isInteger(index) ? Math.max(0, Math.min(index, rest.length)) : rest.length;
+      out.push({ ...l, items: [...rest.slice(0, at), moved, ...rest.slice(at)] });
     } else out.push(l);
   }
   return out;
