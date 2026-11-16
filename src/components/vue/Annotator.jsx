@@ -53,7 +53,7 @@ const DRAWER_TOOLS = [
   { k:'symbol', n:'sym', lbl:'Symbole' },
 ];
 
-const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null, placePhotoIdx = null }, ref) {
+const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, savedPaths, onSave, onClose, photos, exportSizeMultiplier = 7, title, vpNumByPath = null, vpBase = 0, onPrev = null, onNext = null, photoPosition = null, initialTool = 'select', locId = null, photoVpNums = null, reportFrame = null, placePhotoIdx = null, onRotate = null }, ref) {
   // Annotateur ouvert → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   const cvRef          = useRef();
@@ -105,6 +105,8 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
   const frameMoveRef = useRef(null);
   frameMoveRef.current = frameMove;
   useEffect(() => { setFrameMove(null); }, [bgImage]);
+  // Pivoter la photo (demande Thomas 16/11) : l'hôte fournit onRotate(deg) → nouvelle image.
+  const [rotating, setRotating] = useState(false);
   const [cur,        setCur]        = useState([]);
   const [drawing,    setDrawing]    = useState(false);
   const [bgOk,       setBgOk]       = useState(false);
@@ -1202,6 +1204,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
           setPaths(prev => scalePaths(prev, f, f));  // paths existants → espace canvas suréchantillonné
         }
         setBgOk(true);
+        // Recalcule la taille d'affichage : si l'image se charge avant que React ait vu
+        // bgOk=false, bgOk reste « true » et l'ajustement ne se relançait pas → une photo de
+        // forme différente (pivotée, ou suivante) restait affichée dans l'ancien format, étirée.
+        setBgVersion(v => v + 1);
       };
       img.onerror = () => { if (!cancelled) setBgOk(true); };
       img.src = src;
@@ -3138,15 +3144,20 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                       <path d={`M0 0H1V1H0Z${hole}`} fill="rgba(20,20,20,0.5)" fillRule="evenodd"/>
                       <path d={hole} fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="6 4" vectorEffect="non-scaling-stroke"/>
                     </svg>}
-                    <span onPointerDown={full ? undefined : startFrameDrag} title="Glisser pour déplacer le cadre du rapport (montrer le plafond, le sol…)"
-                      style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${(r.y * 100).toFixed(2)}%`, transform:`scale(${1 / vt.z})`, transformOrigin:'0 0',
+                    {/* PC : poignée en BAS à gauche du cadre (la barre « Forme du cadre » occupe le haut) ;
+                        photo entière → pas de poignée (la barre suffit). Téléphone : en haut, comme avant. */}
+                    {(isMob || !full) && <span onPointerDown={full ? undefined : startFrameDrag} title="Glisser pour déplacer le cadre du rapport (montrer le plafond, le sol…)"
+                      style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${((isMob ? r.y : r.y + r.h) * 100).toFixed(2)}%`,
+                        transform: isMob ? `scale(${1 / vt.z})` : `scale(${1 / vt.z}) translateY(calc(-100% - 8px))`, transformOrigin:'0 0',
                         background:'rgba(0,0,0,0.72)', color:'white', fontSize:11.5, fontWeight:700, padding:'4px 9px', borderRadius:6, whiteSpace:'nowrap', margin:'4px 0 0 4px',
                         pointerEvents:'auto', cursor: full ? 'default' : 'move', touchAction:'none', userSelect:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
-                      {full ? 'Cadre du rapport — photo entière' : <><span style={{ fontSize:14, lineHeight:1 }}>✥</span>
-                      Cadre du rapport — glisser pour déplacer · le grisé ne sera pas visible</>}
+                      {!isMob ? (full ? 'Photo entière dans le rapport' : <><span style={{ fontSize:14, lineHeight:1 }}>✥</span>Glisser pour déplacer le cadre</>)
+                        // Téléphone : libellé COURT, sinon les boutons Paysage / Portrait sortent de l'écran.
+                        : full ? 'Photo entière' : <><span style={{ fontSize:14, lineHeight:1 }}>✥</span>Glisser le cadre</>}
                       {/* Format du cadre (demande Thomas 16/11 : « photos prises en portrait, choisir
-                          la forme du cadre ici aussi ») : même réglage que dans le rapport. */}
-                      {[['landscape', 'Paysage', 16, 11], ['portrait', 'Portrait', 11, 16]].map(([key, label, w, h]) => {
+                          la forme du cadre ici aussi ») : même réglage que dans le rapport.
+                          Téléphone : dans l'étiquette ; PC : barre dédiée plus lisible (ci-dessous). */}
+                      {isMob && [['landscape', 'Paysage', 16, 11], ['portrait', 'Portrait', 11, 16]].map(([key, label, w, h]) => {
                         const on = (fr.orient === 'portrait' ? 'portrait' : 'landscape') === key;
                         return (
                           <button key={key} type="button" title={`Cadre ${label.toLowerCase()} dans le rapport`} aria-pressed={on}
@@ -3159,8 +3170,56 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                           </button>
                         );
                       })}
-                    </span>
+                    </span>}
                   </div>
+                  {/* PC : barre « Cadre dans le rapport » (format + pivoter), fixe en haut de l'image. */}
+                  {!isMob && (() => {
+                    const orientNow = fr.orient === 'portrait' ? 'portrait' : 'landscape';
+                    const canRot = !!onRotate && paths.length === 0 && !rotating;
+                    const rotTitle = !onRotate ? '' : paths.length ? 'Pivoter : seulement sur une photo sans annotation (efface ou annule les annotations d\'abord)' : '';
+                    const seg = (key, label, w, h) => {
+                      const on = orientNow === key;
+                      return (
+                        <button key={key} type="button" aria-pressed={on} title={`Cadre ${label.toLowerCase()} dans le rapport`}
+                          onClick={() => setFrameMove(prev => ({ ...(prev || {}), orient: key, cropX: 50, cropY: 50, cropFit: false }))}
+                          style={{ display:'inline-flex', alignItems:'center', gap:7, padding:'7px 13px', borderRadius:8, border:'none', cursor:'pointer',
+                            background: on ? DA.red : 'transparent', color: on ? 'white' : '#ddd', fontSize:12.5, fontWeight:700, transition:'background 0.15s' }}>
+                          <span style={{ width:w, height:h, border:'2px solid currentColor', borderRadius:3, display:'inline-block' }}/>
+                          {label}
+                        </button>
+                      );
+                    };
+                    const rotBtn = (deg, glyph, label) => (
+                      <button type="button" disabled={!canRot} title={rotTitle || label}
+                        onClick={async () => { if (!canRot) return; setRotating(true); try { await onRotate(deg); } finally { setRotating(false); } }}
+                        style={{ width:36, height:36, borderRadius:8, border:'1px solid rgba(255,255,255,0.18)', background:'rgba(255,255,255,0.08)', color:'white',
+                          fontSize:19, lineHeight:1, cursor: canRot ? 'pointer' : 'not-allowed', opacity: canRot ? 1 : 0.35, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        {glyph}
+                      </button>
+                    );
+                    return (
+                      <div style={{ position:'absolute', top:10, left:'50%', transform:'translateX(-50%)', pointerEvents:'auto', zIndex:3,
+                        display:'flex', alignItems:'center', gap:12, padding:'7px 10px 7px 14px', borderRadius:12, whiteSpace:'nowrap',
+                        background:'rgba(20,20,20,0.9)', border:'1px solid rgba(255,255,255,0.12)', boxShadow:'0 6px 22px rgba(0,0,0,0.45)', backdropFilter:'blur(6px)', color:'white' }}>
+                        <span style={{ display:'flex', flexDirection:'column', lineHeight:1.15 }}>
+                          <span style={{ fontSize:10.5, fontWeight:800, letterSpacing:0.7, textTransform:'uppercase', color:'#aaa' }}>Dans le rapport</span>
+                          <span style={{ fontSize:12.5, fontWeight:700 }}>Forme du cadre</span>
+                        </span>
+                        <span style={{ display:'inline-flex', gap:2, padding:3, borderRadius:10, background:'rgba(255,255,255,0.08)' }}>
+                          {seg('landscape', 'Paysage', 18, 12)}
+                          {seg('portrait', 'Portrait', 12, 18)}
+                        </span>
+                        {onRotate && (
+                          <>
+                            <span style={{ width:1, alignSelf:'stretch', background:'rgba(255,255,255,0.15)' }}/>
+                            <span style={{ fontSize:12.5, fontWeight:700, color:'#ddd' }}>{rotating ? 'Rotation…' : 'Pivoter la photo'}</span>
+                            {rotBtn(-90, '↺', 'Pivoter d\'un quart de tour vers la gauche')}
+                            {rotBtn(90, '↻', 'Pivoter d\'un quart de tour vers la droite')}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}

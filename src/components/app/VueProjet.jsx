@@ -34,6 +34,7 @@ import ObsDatesControl from '../ui/ObsDatesControl.jsx';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
+import { rotatePhoto } from '../../lib/photoRotate.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -719,6 +720,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           onPrev={prevRealIdx !== null ? () => switchToPhoto(prevRealIdx) : null}
           onNext={nextRealIdx !== null ? () => switchToPhoto(nextRealIdx) : null}
           photoPosition={validIdxs.length > 1 ? `${navPos + 1} / ${validIdxs.length}` : null}
+          onRotate={async (deg) => {
+            // Pivoter la photo (PC) : nouvelle version de la photo (lib/photoRotate.js), même ligne.
+            const np = await rotatePhoto(ph, deg, { projetNom: projet.nom, projetId: projet.id, itemId: item.id });
+            if (!np) { alert('Impossible de pivoter cette photo. Réessayez.'); return; }
+            const updatedItem = { ...item, _photosHydrated: true, photos: item.photos.map((p, i) => i === photoIdx ? np : p) };
+            patchItem(locId, updatedItem);
+            setModal({ t: 'photoAnnot', item: updatedItem, locId, photoIdx });
+          }}
           onSave={(paths, exported, dims) => {
             setPhotoAnnotPref(ph?._id, { annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale });
             if (dims?.reportCrop) setPhotoPref(ph?._id, dims.reportCrop); // cadre du rapport déplacé
