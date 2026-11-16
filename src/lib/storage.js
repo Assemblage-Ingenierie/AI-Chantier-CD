@@ -294,6 +294,32 @@ function buildLocFromRow(loc, itemsByLoc) {
   };
 }
 
+// LECTURE PAR PAGES (incident 10/11 « SAFETY_EMPTY : état local vide alors que la DB contient des
+// données ») : Supabase plafonne une réponse à un nombre de lignes (1000 par défaut). Le chargement
+// lisait TOUTES les zones / observations de TOUS les projets en une requête → au-delà du plafond,
+// des lignes manquaient SANS erreur (projets chargés sans zones). On lit donc page par page
+// (ordre stable : tri demandé puis id) jusqu'à la page vide. Une ligne déjà reçue n'est pas doublée.
+// mk() doit renvoyer une requête NEUVE à chaque appel.
+export async function fetchAllPages(mk, page = 1000) {
+  const out = [];
+  const seen = new Set();
+  for (let from = 0, guard = 0; guard < 500; guard++) {
+    const r = await mk().order('id').range(from, from + page - 1);
+    if (r.error) return { data: null, error: r.error };
+    const rows = r.data || [];
+    let added = 0;
+    for (const row of rows) {
+      const k = row?.id;
+      if (k != null && seen.has(k)) continue;
+      if (k != null) seen.add(k);
+      out.push(row); added++;
+    }
+    if (!rows.length || !added) break;
+    from += rows.length;
+  }
+  return { data: out, error: null };
+}
+
 // onlyId : ne charge QU'UN projet (mise à jour en direct quand un collègue enregistre — cf.
 // loadRemoteProject). Sans onlyId : tous les projets (comportement d'origine, inchangé).
 async function loadRemote(onlyId = null) {
@@ -310,14 +336,14 @@ async function loadRemote(onlyId = null) {
   const [r1, r2, r3, r4] = await Promise.all([
     // photo exclu du SELECT — peut être un gros base64 qui cause HTTP 500.
     // Récupéré depuis le cache local lors du merge, ou migré vers Storage à la prochaine save.
-    byProject(sb.from('aichantier_chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'), 'id'),
+    fetchAllPages(() => byProject(sb.from('aichantier_chantiers').select('id,nom,statut,adresse,maitre_ouvrage,date_visite,photos_par_ligne,participants,tableau_recap,visites,updated_at'), 'id')),
     // bg/data exclus — blobs volumineux (images de plans), chargés lazily à l'ouverture du projet
-    byProject(sb.from('aichantier_chantier_plans')
+    fetchAllPages(() => byProject(sb.from('aichantier_chantier_plans')
       .select('id,chantier_id,nom,sort_order'), 'chantier_id')
-      .order('sort_order'),
-    byProject(sb.from('aichantier_chantier_localisations')
+      .order('sort_order')),
+    fetchAllPages(() => byProject(sb.from('aichantier_chantier_localisations')
       .select('id,chantier_id,nom,plan_annotations,sort_order,visite_id'), 'chantier_id')
-      .order('sort_order'),
+      .order('sort_order')),
     // commentaire_align / statut : colonnes récentes → tentative avec, repli sans si migration pas
     // encore appliquée (sinon tout le chargement échouerait). Sans `statut`, les observations
     // sont lues comme 'rapport' (comportement d'avant).
@@ -325,23 +351,23 @@ async function loadRemote(onlyId = null) {
       const isColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || /commentaire_align|statut|meta|schema cache/i.test(e?.message || '');
       // `meta` (dates de suivi) : la plus récente → essayée en premier, repli sans si absente.
       if (!_noItemMetaCol) {
-        const withMeta = await byLocs(sb.from('aichantier_localisation_items')
+        const withMeta = await fetchAllPages(() => byLocs(sb.from('aichantier_localisation_items')
           .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,meta,plan_annotations,sort_order'))
-          .order('sort_order');
+          .order('sort_order'));
         if (!(withMeta.error && isColErr(withMeta.error))) return withMeta;
         _noItemMetaCol = true;
       }
-      const withStatut = await byLocs(sb.from('aichantier_localisation_items')
+      const withStatut = await fetchAllPages(() => byLocs(sb.from('aichantier_localisation_items')
         .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,statut,plan_annotations,sort_order'))
-        .order('sort_order');
+        .order('sort_order'));
       if (!(withStatut.error && isColErr(withStatut.error))) return withStatut;
-      const withAlign = await byLocs(sb.from('aichantier_localisation_items')
+      const withAlign = await fetchAllPages(() => byLocs(sb.from('aichantier_localisation_items')
         .select('id,localisation_id,titre,suivi,urgence,commentaire,commentaire_align,plan_annotations,sort_order'))
-        .order('sort_order');
+        .order('sort_order'));
       if (withAlign.error && isColErr(withAlign.error)) {
-        return byLocs(sb.from('aichantier_localisation_items')
+        return fetchAllPages(() => byLocs(sb.from('aichantier_localisation_items')
           .select('id,localisation_id,titre,suivi,urgence,commentaire,plan_annotations,sort_order'))
-          .order('sort_order');
+          .order('sort_order'));
       }
       return withAlign;
     })(),
@@ -1369,6 +1395,8 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
 
 // Upsert ligne par ligne (lignes lourdes : fonds de plans en base64). Toutes les lignes sont
 // tentées ; renvoie la PREMIÈRE erreur (ou null).
+const _bgFailAt = new Map(); // planId → horodatage du dernier envoi de fond refusé
+const BG_RETRY_MS = 10 * 60 * 1000;
 async function upsertOneByOne(sb, tableName, rows) {
   let firstErr = null;
   for (const row of rows) {
@@ -1722,6 +1750,17 @@ async function saveRemote(ps, dirtyIds = null) {
         sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('bg', null),
         sb.from('aichantier_chantier_plans').select('id').eq('chantier_id', p.id).is('data', null),
       ]);
+      // INCIDENT 10/11 (erreurs 500 / 57014 en rafale sur les plans) : si une de ces lectures
+      // échoue (base surchargée), on ne sait PAS quels plans existent déjà. Avant, une lecture en
+      // échec valait « aucun plan en base » → TOUS les fonds (base64 lourds) étaient renvoyés à
+      // chaque sauvegarde → base encore plus chargée → nouveaux échecs (cercle vicieux). Désormais
+      // on n'écrit rien sur les plans ce tour-ci ; le projet reste « à synchroniser » (sans bandeau
+      // d'erreur) et sera repris au prochain cycle.
+      if (dbPlansRes.error || dbPlansNoBgRes.error || dbPlansNoDataRes.error) {
+        logWarn('saveRemote.planReadFailed', { projet: p.id, code: (dbPlansRes.error || dbPlansNoBgRes.error || dbPlansNoDataRes.error)?.code });
+        errors.incompletePhotoProjects.add(p.id);
+        return;
+      }
       const dbPlanIds  = new Set((dbPlansRes.data || []).map(pl => pl.id));
       const dbPlansNoBg = new Set((dbPlansNoBgRes.data || []).map(pl => pl.id));
       const dbPlansNoData = new Set((dbPlansNoDataRes.data || []).map(pl => pl.id));
@@ -1760,9 +1799,19 @@ async function saveRemote(ps, dirtyIds = null) {
       // fonds partaient dans une seule requête → délai de la base dépassé → échec, re-tenté à
       // chaque sauvegarde (toast permanent, aucun fond enregistré). Un par un : chaque requête
       // reste légère, et un plan en échec n'empêche plus les autres de passer.
-      if (bgRows.length) {
-        const bgErr = await upsertOneByOne(sb, 'aichantier_chantier_plans', bgRows);
-        if (bgErr) errors.push(bgErr);
+      // Un fond refusé (500 / délai dépassé) n'est PAS renvoyé à chaque sauvegarde (toutes les
+      // ~5 s, plusieurs Mo) : pause de BG_RETRY_MS pour ce plan → la base n'est plus martelée.
+      // Le projet reste « à synchroniser » (sans bandeau) : le fond repartira après la pause.
+      const nowTs = Date.now();
+      const bgToSend = bgRows.filter(r => !(nowTs - (_bgFailAt.get(r.id) || 0) < BG_RETRY_MS));
+      if (bgToSend.length < bgRows.length) errors.incompletePhotoProjects.add(p.id);
+      for (const row of bgToSend) {
+        const { error } = await sb.from('aichantier_chantier_plans').upsert([row], { onConflict: 'id' });
+        if (error) {
+          _bgFailAt.set(row.id, Date.now());
+          errors.incompletePhotoProjects.add(p.id);
+          logWarn('saveRemote.planBgFailed', { projet: p.id, plan: row.id, code: error.code, kb: Math.round((row.bg?.length || 0) / 1024) });
+        } else _bgFailAt.delete(row.id);
       }
       // Image HD (colonne `data` = chemin Storage) : SECONDE CHANCE de persistance.
       // savePlanBgNow l'upload à l'import en fire-and-forget — s'il échoue (réseau, onglet fermé),
