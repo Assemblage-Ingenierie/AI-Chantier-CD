@@ -5,6 +5,12 @@ import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_R
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant } from '../../lib/costarRewards.js';
 import { subscribePresence } from '../../lib/presence.js';
+import twPeace from '../../assets/costar/270c-1f3fe.svg?raw';
+import twCroc from '../../assets/costar/1f40a.svg?raw';
+import twDuck from '../../assets/costar/1f986.svg?raw';
+import twIce from '../../assets/costar/1f368.svg?raw';
+import twWine from '../../assets/costar/1f377.svg?raw';
+import twUk from '../../assets/costar/1f1ec-1f1e7.svg?raw';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
 // MÉMOIRE DES AVIS (retour Thomas : « il met du temps et bouffe mon quota gratuit ») : un rapport
@@ -160,201 +166,39 @@ function TrashAuraFront() {
   );
 }
 
-// SOUVENIRS DE VOYAGE (demande Thomas 16/11 ; v2 après retour : « des mains mimi », pot de glace
-// DANS la main, gros croco balèze, gros colvert). Dessinés DEVANT Costar.
-//   • Londres : bonnet de garde (coiffe, cf. Bearskin) + Union Jack qui flotte, tenu en l'air ;
-//   • Dijon   : bouteille de rouge tenue fièrement ;
-//   • Nîmes   : gros crocodile musclé, debout bras croisés, à côté de Costar (création originale) ;
-//   • Bâle    : pot de glace dans la patte + gros canard colvert assis à ses pieds.
-export const VOYAGE_HOLDS = ['londres', 'dijon', 'bale']; // la patte gauche se lève pour tenir l'objet
-
-// Patte levée (côté gauche de l'image) : bras arrondi + main ronde, coussinets clairs ; `front`
-// = petits doigts dessinés PAR-DESSUS l'objet tenu (ils l'enserrent).
-function RaisedArm({ sleeve = null }) {
-  return (
-    <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M39 99 Q31 95 28 85" stroke={sleeve || '#6E4521'} strokeWidth="10" fill="none"/>
-      {sleeve
-        ? <path d="M31.4 88.6 Q27.6 89.6 25 87.4" stroke="white" strokeWidth="1.6" fill="none"/>
-        : <path d="M36.6 97.4 Q31.6 94 30 87" stroke="#7E5230" strokeWidth="3" fill="none" opacity="0.6"/>}
-      <circle cx="27" cy="81" r="6" fill="#6E4521"/>
-    </g>
-  );
-}
-// Patte « peace » (V de la victoire), version castor mimi : paume claire, deux doigts levés
-// avec coussinets, les deux autres repliés, pouce par-dessus. Retour Thomas 16/11 (« des mains
-// mimi »). Dessinée pour la patte levée gauche ; la droite = miroir (cf. ArmSide).
-function PeaceHand() {
-  // Patte façon « tahu » (inspiration envoyée par Thomas, adaptée à Costar) : silhouette ronde
-  // aux 4 doigts en bosses, cerné doux, gros coussinet rose arrondi + 4 petits coussinets.
-  // Écartée vers l'extérieur pour ne pas chevaucher les moustaches. Paume face à nous.
-  const F = '#8A5A2E', S = '#4A2E17', PAD = '#F7BFCB', PADS = '#E08FA2';
-  const toes = [[16.6, 75.4, -36], [20.8, 71.2, -12], [26, 71.2, 12], [30.2, 75.4, 36]];
-  return (
-    <g strokeLinejoin="round">
-      {/* Poignet qui prolonge le bras levé */}
-      <path d="M26 87 Q24 83 23.4 80" stroke="#6E4521" strokeWidth="8" strokeLinecap="round" fill="none"/>
-      {toes.map(([x, y]) => <circle key={x} cx={x} cy={y} r="3.1" fill={F} stroke={S} strokeWidth="0.7"/>)}
-      <ellipse cx="23.4" cy="80" rx="7.8" ry="6.9" fill={F} stroke={S} strokeWidth="0.7"/>
-      {toes.map(([x, y]) => <circle key={'c' + x} cx={x} cy={y} r="2.55" fill={F}/>)}
-      <path d="M23.4 77.4 C26.4 77.4 28.8 80.8 28.5 83 C28.2 84.9 25.9 84.7 23.4 84 C20.9 84.7 18.6 84.9 18.3 83 C18 80.8 20.4 77.4 23.4 77.4 Z" fill={PAD} stroke={PADS} strokeWidth="0.45"/>
-      {toes.map(([x, y, r]) => <ellipse key={'p' + x} cx={x} cy={y + 0.2} rx="1.25" ry="1.65" transform={`rotate(${r} ${x} ${y + 0.2})`} fill={PAD} stroke={PADS} strokeWidth="0.4"/>)}
-      <ellipse cx="21.9" cy="79.6" rx="1.1" ry="0.6" fill="white" opacity="0.65"/>
-    </g>
-  );
-}
-// Côté du bras levé : 'L' tel quel, 'R' = miroir autour de l'axe de Costar (x = 58).
-function ArmSide({ side, children }) {
-  return side === 'R' ? <g transform="translate(116 0) scale(-1 1)">{children}</g> : <g>{children}</g>;
-}
-function PawFingers() {
-  return (
-    <g>
-      {[[22.4, 80.6], [25.6, 79.2], [28.8, 79.2], [31.6, 80.8]].map(([x, y]) => (
-        <g key={x}>
-          <ellipse cx={x} cy={y} rx="1.9" ry="2.3" fill="#7A4D27" stroke="#4E3016" strokeWidth="0.45"/>
-          <ellipse cx={x} cy={y - 0.6} rx="0.9" ry="0.8" fill="#F2C9A0"/>
-        </g>
-      ))}
-    </g>
-  );
-}
+// SOUVENIRS DE VOYAGE + PEACE : illustrations Twemoji (retour Thomas 16/11 : mes dessins faits
+// main n'étaient pas au niveau → illustrations pro, même style plat que Costar).
+// Twemoji © Twitter, Inc. et contributeurs — graphismes sous licence CC-BY 4.0
+// (https://creativecommons.org/licenses/by/4.0/), mention dans le vestiaire. Fichiers :
+// src/assets/costar/. Embarqués en data URI : rien à charger, marche hors ligne.
+const tw = (raw) => `data:image/svg+xml;utf8,${encodeURIComponent(raw)}`;
+const TW = { peace: tw(twPeace), croc: tw(twCroc), duck: tw(twDuck), ice: tw(twIce), wine: tw(twWine), uk: tw(twUk) };
+const TwImg = ({ src, x, y, size, flip = false, rotate = 0 }) => (
+  <image href={src} x={x} y={y} width={size} height={size}
+    transform={`${rotate ? `rotate(${rotate} ${x + size / 2} ${y + size / 2}) ` : ''}${flip ? `translate(${2 * x + size} 0) scale(-1 1)` : ''}`}/>
+);
+// Souvenir tenu contre la patte gauche au repos (côté gauche de l'image) ; Nîmes et le colvert
+// de Bâle sont posés DEVANT, aux pieds.
 function VoyageFront({ kind }) {
-  if (kind === 'londres') {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <RaisedArm/>
-        <path d="M27 84 L23 40" stroke="#8B5A2B" strokeWidth="1.6"/>
-        <circle cx="22.9" cy="39" r="1.6" fill="#EAB308"/>
-        <defs>
-          <clipPath id="costar-ukflag"><path d="M23 42 Q16 39 9 42 Q4 44 2 42 L2 57 Q4 59 9 57 Q16 54 23 57 Z"/></clipPath>
-        </defs>
-        <g clipPath="url(#costar-ukflag)">
-          <rect x="0" y="36" width="26" height="26" fill="#1E3A8A"/>
-          <path d="M2 41 L23 58 M23 41 L2 58" stroke="white" strokeWidth="3"/>
-          <path d="M2 41 L23 58 M23 41 L2 58" stroke="#DC2626" strokeWidth="1.1"/>
-          <path d="M12.5 36 L12.5 62 M0 49.5 L26 49.5" stroke="white" strokeWidth="4.6"/>
-          <path d="M12.5 36 L12.5 62 M0 49.5 L26 49.5" stroke="#DC2626" strokeWidth="2.4"/>
-          <path d="M2 46 Q9 43 16 46 Q20 48 23 46" stroke="white" strokeWidth="2.4" fill="none" opacity="0.2"/>
-        </g>
-        <path d="M23 42 Q16 39 9 42 Q4 44 2 42 L2 57 Q4 59 9 57 Q16 54 23 57 Z" fill="none" stroke="#1E293B" strokeWidth="0.6"/>
-        <PawFingers/>
-      </g>
-    );
-  }
-  if (kind === 'dijon') {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <RaisedArm/>
-        <g transform="rotate(-8 27 80)">
-          <rect x="24.6" y="50" width="5" height="4" rx="1" fill="#991B1B"/>
-          <path d="M24.6 53.6 L29.6 53.6 L29.6 63 Q34 66 34 71 L34 96 Q34 98.6 31.4 98.6 L22.8 98.6 Q20.2 98.6 20.2 96 L20.2 71 Q20.2 66 24.6 63 Z" fill="#1F4D2B" stroke="#0B2614" strokeWidth="0.8"/>
-          <rect x="20.8" y="74" width="12.6" height="12" rx="1.2" fill="#FFF7E6" stroke="#B45309" strokeWidth="0.5"/>
-          <path d="M23 77.6 Q27.1 75.6 31.2 77.6" stroke="#991B1B" strokeWidth="1" fill="none"/>
-          <path d="M23.6 81 L30.6 81 M24.6 83.4 L29.6 83.4" stroke="#78350F" strokeWidth="0.7"/>
-          <circle cx="27.1" cy="79.2" r="0.9" fill="#B45309"/>
-          <path d="M22.4 67 Q22 80 22.4 94" stroke="white" strokeWidth="1.4" fill="none" opacity="0.3"/>
-        </g>
-        <PawFingers/>
-      </g>
-    );
-  }
+  if (kind === 'londres') return <TwImg src={TW.uk} x={14} y={80} size={26} rotate={-10}/>;
+  if (kind === 'dijon') return <TwImg src={TW.wine} x={16} y={80} size={28} rotate={-8}/>;
   if (kind === 'bale') {
     return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <Mallard/>
-        <RaisedArm/>
-        {/* Pot de glace tenu dans la patte : 3 boules, cuillère en bois */}
-        <circle cx="23.6" cy="68" r="4.6" fill="#FEF3C7" stroke="#D6B36A" strokeWidth="0.6"/>
-        <circle cx="31" cy="68.4" r="4.6" fill="#FBCFE8" stroke="#E879A8" strokeWidth="0.6"/>
-        <circle cx="27.4" cy="63.4" r="4.8" fill="#BBF7D0" stroke="#4ADE80" strokeWidth="0.6"/>
-        <circle cx="25.8" cy="61.6" r="1.2" fill="white" opacity="0.7"/>
-        <path d="M31.6 64.4 L36.8 56.6" stroke="#B7791F" strokeWidth="1.6"/>
-        <ellipse cx="37.2" cy="56" rx="1.4" ry="2" fill="#B7791F" transform="rotate(34 37.2 56)"/>
-        <path d="M19.4 71 L35 71 L32.6 87 L21.8 87 Z" fill="#F9A8D4" stroke="#DB2777" strokeWidth="0.8"/>
-        <path d="M19.4 71 L35 71" stroke="#DB2777" strokeWidth="1.6"/>
-        <path d="M21 76 L33.6 76 M21.6 81 L33 81" stroke="white" strokeWidth="1.3" opacity="0.85"/>
-        <PawFingers/>
+      <g>
+        <TwImg src={TW.duck} x={85} y={92} size={33} flip/>
+        <TwImg src={TW.ice} x={15} y={80} size={28}/>
       </g>
     );
   }
-  if (kind === 'nimes') return <CrocFront/>;
+  if (kind === 'nimes') return <TwImg src={TW.croc} x={28} y={72} size={56} flip/>;
   return null;
 }
-// CROCO DE NÎMES (retours Thomas : « du style du blason », « vert », « costaud », « on doit
-// sentir qu'il est AUTOUR de nous ») — création originale. Il s'enroule autour de Costar :
-// la tête sort à gauche, le corps passe DEVANT son ventre et ses pieds puis file DERRIÈRE lui à
-// droite (CrocBack, dessiné avant le corps), la queue remonte en S dans son dos.
-const CROC = { g: '#3FA34D', gd: '#1F6B2B', gl: '#5CC46A', belly: '#D4EA9A',
-  front: "M24.5 113.9 L25.9 115.8 L27.5 117.7 L29.2 119.5 L31.0 121.2 L32.9 122.8 L34.9 124.2 L36.9 125.5 L39.1 126.7 L41.3 127.8 L43.6 128.7 L45.9 129.5 L48.2 130.2 L50.6 130.7 L53.0 131.2 L55.5 131.5 L58.0 131.7 L60.5 131.8 L63.0 131.8 L65.5 131.6 L68.0 131.3 L70.5 130.9 L73.0 130.4 L75.5 129.8 L77.9 129.0 L80.3 128.2 L82.7 127.2 L84.6 126.3 L79.0 114.0 L77.3 114.8 L75.5 115.6 L73.7 116.2 L71.8 116.8 L70.0 117.3 L68.1 117.6 L66.2 117.9 L64.3 118.1 L62.5 118.3 L60.6 118.3 L58.8 118.2 L56.9 118.1 L55.1 117.8 L53.4 117.5 L51.7 117.1 L50.0 116.6 L48.3 116.1 L46.8 115.4 L45.3 114.7 L43.8 113.9 L42.4 113.0 L41.1 112.1 L39.8 111.0 L38.7 110.0 L37.6 108.8 L36.6 107.6 L35.5 106.1 Z",
-  back: "M80.3 128.2 L82.7 127.2 L84.6 126.3 L86.6 125.4 L88.5 124.5 L90.4 123.5 L92.2 122.5 L94.1 121.4 L95.8 120.2 L97.6 118.9 L99.3 117.7 L100.9 116.3 L102.5 114.9 L104.0 113.5 L105.5 112.0 L107.0 110.4 L108.3 108.8 L109.6 107.1 L110.8 105.3 L111.9 103.5 L112.9 101.6 L113.8 99.6 L114.6 97.6 L115.4 95.5 L115.9 93.4 L116.4 91.2 L116.8 88.9 L117.0 86.6 L117.1 84.5 L117.2 82.5 L117.1 80.5 L116.8 78.5 L116.5 76.6 L116.1 74.8 L115.6 73.0 L115.0 71.3 L114.4 69.7 L113.6 68.2 L112.8 66.8 L111.9 65.4 L111.0 64.2 L110.0 63.0 L108.9 61.9 L107.8 61.0 L106.6 60.1 L105.4 59.4 L104.1 58.8 L102.8 58.4 L101.4 58.1 L100.0 58.0 L98.6 58.0 L97.3 58.3 L95.9 58.7 L94.6 59.4 L93.6 60.2 L92.9 60.9 L92.3 61.6 L91.8 62.3 L91.3 63.1 L91.0 63.9 L90.7 64.6 L90.6 65.4 L90.5 66.2 L90.5 66.9 L90.6 67.7 L90.8 68.3 L91.1 69.0 L91.4 69.6 L91.8 70.1 L92.2 70.6 L92.7 71.0 L93.2 71.4 L93.8 71.7 L94.4 71.9 L95.0 72.1 L95.6 72.1 L96.2 72.2 L96.9 72.1 L97.5 72.0 L98.1 71.8 L97.9 70.2 L97.3 70.2 L96.9 70.1 L96.5 70.0 L96.1 69.9 L95.8 69.7 L95.5 69.5 L95.3 69.3 L95.1 69.0 L94.9 68.8 L94.8 68.5 L94.7 68.3 L94.7 68.0 L94.7 67.8 L94.7 67.5 L94.7 67.3 L94.8 67.1 L94.9 66.8 L95.0 66.6 L95.2 66.3 L95.4 66.1 L95.6 65.8 L95.9 65.6 L96.3 65.3 L96.7 65.0 L97.1 64.7 L97.4 64.6 L97.9 64.5 L98.5 64.4 L99.0 64.4 L99.5 64.5 L100.1 64.7 L100.6 64.9 L101.1 65.2 L101.7 65.6 L102.3 66.1 L102.8 66.6 L103.4 67.3 L104.0 68.0 L104.5 68.8 L105.0 69.7 L105.5 70.7 L105.9 71.8 L106.3 72.9 L106.6 74.1 L106.9 75.3 L107.2 76.6 L107.3 78.0 L107.4 79.4 L107.4 80.8 L107.4 82.3 L107.2 83.8 L107.0 85.4 L106.6 87.2 L106.2 88.9 L105.7 90.5 L105.2 92.0 L104.5 93.4 L103.8 94.8 L103.0 96.2 L102.2 97.5 L101.3 98.7 L100.3 99.9 L99.2 101.1 L98.1 102.2 L97.0 103.3 L95.7 104.3 L94.5 105.3 L93.1 106.3 L91.7 107.2 L90.3 108.1 L88.8 109.0 L87.2 109.9 L85.6 110.7 L84.0 111.6 L82.4 112.4 L80.7 113.2 L79.0 114.0 L77.3 114.8 L75.5 115.6 Z",
-  belly2: "M29.2 119.5 L31.0 121.2 L32.9 122.8 L34.9 124.2 L36.9 125.5 L39.1 126.7 L41.3 127.8 L43.6 128.7 L45.9 129.5 L48.2 130.2 L50.6 130.7 L53.0 131.2 L55.5 131.5 L58.0 131.7 L60.5 131.8 L63.0 131.8 L65.5 131.6 L68.0 131.3 L70.5 130.9 L73.0 130.4 L75.5 129.8 L77.9 129.0 L80.3 128.2 L82.7 127.2 L84.6 126.3 L83.1 122.9 L81.2 123.8 L79.0 124.7 L76.7 125.5 L74.5 126.2 L72.1 126.8 L69.8 127.3 L67.5 127.6 L65.2 127.9 L62.8 128.0 L60.5 128.1 L58.2 128.0 L55.9 127.8 L53.6 127.5 L51.4 127.1 L49.2 126.6 L47.0 125.9 L44.9 125.2 L42.8 124.4 L40.8 123.4 L38.8 122.3 L36.9 121.1 L35.1 119.8 L33.4 118.4 L31.8 116.9 Z",
-  lines: "M32.9 122.8 L35.1 119.8 M39.1 126.7 L40.8 123.4 M45.9 129.5 L47.0 125.9 M53.0 131.2 L53.6 127.5 M60.5 131.8 L60.5 128.1 M68.0 131.3 L67.5 127.6 M75.5 129.8 L74.5 126.2 M82.7 127.2 L81.2 123.8" };
-function CrocBack() {
+// Peace & love : deux mains ✌ (Twemoji, teinte foncée = pelage), à la place des pattes de Costar.
+function PeaceHands() {
   return (
-    <g strokeLinejoin="round">
-      <g fill={CROC.gd}><circle cx="90.4" cy="123.5" r="2.92"/><circle cx="95.8" cy="120.2" r="2.88"/><circle cx="100.9" cy="116.3" r="2.81"/><circle cx="105.5" cy="112.0" r="2.74"/><circle cx="109.6" cy="107.1" r="2.66"/><circle cx="112.9" cy="101.6" r="2.59"/><circle cx="115.4" cy="95.5" r="2.52"/><circle cx="116.8" cy="88.9" r="2.44"/><circle cx="117.2" cy="82.5" r="2.37"/><circle cx="116.5" cy="76.6" r="2.3"/><circle cx="115.0" cy="71.3" r="2.22"/><circle cx="112.8" cy="66.8" r="2.15"/><circle cx="110.0" cy="63.0" r="2.08"/><circle cx="106.6" cy="60.1" r="2.01"/><circle cx="102.8" cy="58.4" r="1.93"/><circle cx="98.6" cy="58.0" r="1.86"/><circle cx="94.6" cy="59.4" r="1.79"/><circle cx="96.3" cy="65.3" r="1.71"/><circle cx="95.4" cy="66.1" r="1.64"/><circle cx="94.9" cy="66.8" r="1.57"/><circle cx="94.7" cy="67.5" r="1.5"/><circle cx="94.7" cy="68.3" r="1.42"/><circle cx="95.1" cy="69.0" r="1.35"/><circle cx="95.8" cy="69.7" r="1.28"/></g>
-      <path d={CROC.back} fill={CROC.g} stroke={CROC.gd} strokeWidth="1"/>
-    </g>
-  );
-}
-function CrocFront() {
-  const { g, gd, gl, belly } = CROC;
-  return (
-    <g strokeLinejoin="round" strokeLinecap="round">
-      {/* Écailles du dos (côté Costar) + corps qui passe devant lui */}
-      <g fill={gd}><circle cx="42.4" cy="113.0" r="1.7"/><circle cx="46.8" cy="115.4" r="1.7"/><circle cx="51.7" cy="117.1" r="1.7"/><circle cx="56.9" cy="118.1" r="1.7"/><circle cx="62.5" cy="118.3" r="1.7"/><circle cx="68.1" cy="117.6" r="1.7"/><circle cx="73.7" cy="116.2" r="1.7"/></g>
-      <path d={CROC.front} fill={g} stroke={gd} strokeWidth="1"/>
-      <path d={CROC.belly2} fill={belly}/>
-      <path d={CROC.lines} stroke="#9DBF5A" strokeWidth="0.7"/>
-      <path d="M44 118.4 Q58 121.4 72 117.4" stroke={gl} strokeWidth="1.6" fill="none" opacity="0.8"/>
-      {/* Pattes avant et arrière, griffues */}
-      <path d="M36 122 Q33 128 28.6 128.8 L37.4 128.8 Q41 126 40.6 121.4 Z" fill={g} stroke={gd} strokeWidth="0.9"/>
-      <path d="M70 124.6 Q69 128.4 65 129 L73.6 129 Q76.4 127 75.6 123 Z" fill={g} stroke={gd} strokeWidth="0.9"/>
-      <path d="M29 128.6 l-1.4 -1.4 M31.8 128.8 l-1 -1.8 M65.4 128.8 l-1.4 -1.4 M68.2 129 l-1 -1.8" stroke="white" strokeWidth="0.9"/>
-      {/* Tête (relevée, à gauche), gueule ouverte */}
-      <g transform="translate(-1 0)">
-      <path d="M32 113 L5 112.6 Q1 113.4 2 117 Q4 120.6 12 120.8 L33 119.4 Z" fill={belly} stroke={gd} strokeWidth="1"/>
-      <path d="M32 109.6 L6 106.8 L5.4 112.8 L32 113.4 Z" fill="#7F1D1D"/>
-      <path d="M12 111.6 Q18 108.8 26 111.4 Q19 113.2 12 111.6 Z" fill="#F472B6"/>
-      <path d="M38 101 Q30 94.6 20 96.4 L7 99.4 Q1.4 100.8 1.8 104.6 Q2.4 107.6 6 107.4 L34 110.4 Q40 107 38 101 Z" fill={g} stroke={gd} strokeWidth="1"/>
-      <path d="M8 101 Q14 99.2 20 99.4" stroke={gl} strokeWidth="1.4" fill="none" opacity="0.8"/>
-      <circle cx="5.2" cy="100.6" r="1.6" fill={g} stroke={gd} strokeWidth="0.8"/><circle cx="5.2" cy="100.6" r="0.5" fill={gd}/>
-      <path d="M7.6 107 l1.2 2.4 l1.4 -2.3 l1.3 2.4 l1.4 -2.2 l1.3 2.4 l1.4 -2.2 l1.3 2.4 l1.4 -2.1 l1.3 2.3 l1.4 -2" fill="white" stroke="#E5E7EB" strokeWidth="0.4"/>
-      <path d="M8 113.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.1 l1.3 2.1" fill="white" stroke="#E5E7EB" strokeWidth="0.4"/>
-      <circle cx="25" cy="96.6" r="5" fill={g} stroke={gd} strokeWidth="1"/>
-      <circle cx="32.4" cy="96" r="4.6" fill={g} stroke={gd} strokeWidth="1"/>
-      <circle cx="25" cy="96.4" r="3.3" fill="white"/><circle cx="32.4" cy="95.8" r="3" fill="white"/>
-      <circle cx="24.4" cy="96.8" r="1.6" fill="#111827"/><circle cx="31.8" cy="96.2" r="1.5" fill="#111827"/>
-      <circle cx="24" cy="96.2" r="0.5" fill="white"/><circle cx="31.4" cy="95.6" r="0.5" fill="white"/>
-      <path d="M20.6 92 L28 94 M36.4 91.4 L30.2 93.4" stroke={gd} strokeWidth="1.8"/>
-      </g>
-    </g>
-  );
-}
-// Gros canard colvert assis aux pieds de Costar (Bâle).
-function Mallard() {
-  return (
-    <g transform="translate(94.5 114.6) scale(1.2)" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="0" cy="12" rx="16" ry="1.8" fill="#000" opacity="0.14"/>
-      {/* Pattes orange */}
-      <path d="M-4 9.6 l-2.6 2.6 l2.6 -0.6 l2.4 0.6 Z M4 9.6 l-2.4 2.6 l2.6 -0.6 l2.4 0.6 Z" fill="#F97316" stroke="#C2410C" strokeWidth="0.5"/>
-      {/* Corps gris-blanc, queue noire recourbée */}
-      <path d="M-15 2 Q-18 -2 -14 -4 L-10 -3 Q0 -6 10 -2 Q16 2 13 8 Q6 12 -6 11 Q-14 9 -15 2 Z" fill="#E5E7EB" stroke="#6B7280" strokeWidth="0.7"/>
-      <path d="M-14 -4 Q-17 -8 -13.6 -9 Q-12.6 -6.4 -12 -4.6" stroke="#111827" strokeWidth="1.4" fill="none"/>
-      <path d="M-15 1.6 Q-18 -1.4 -15.6 -3.6 L-12 -3 Z" fill="#111827"/>
-      {/* Aile brune + miroir bleu bordé de blanc */}
-      <path d="M-11 -1 Q0 -4 8 0 Q4 5 -6 5 Q-11 3.6 -11 -1 Z" fill="#A8A29E" stroke="#78716C" strokeWidth="0.6"/>
-      <path d="M-9 1.6 L-2 0.4 L-1.4 2.8 L-8.6 4 Z" fill="#2563EB" stroke="white" strokeWidth="0.6"/>
-      {/* Poitrail châtaigne */}
-      <path d="M6 -4 Q14 -4 14 3 Q12 7 8 6 Q6 1 6 -4 Z" fill="#7C2D12" stroke="#5B1E0A" strokeWidth="0.6"/>
-      {/* Collier blanc + tête verte irisée + bec jaune */}
-      <path d="M6.4 -5 Q10.6 -3.6 13.6 -5.6" stroke="white" strokeWidth="1.6" fill="none"/>
-      <path d="M7 -5.6 Q6 -10 8 -14 Q11 -18 15 -15.6 Q17 -13 15.6 -9.6 Q14.6 -6.6 13.4 -5.6 Q10 -4.6 7 -5.6 Z" fill="#166534" stroke="#052E16" strokeWidth="0.7"/>
-      <path d="M9 -14 Q11.6 -16.4 14 -15" stroke="#4ADE80" strokeWidth="1" fill="none" opacity="0.8"/>
-      <path d="M15.4 -12.4 Q20.6 -12.6 21.4 -11 Q20.6 -9.4 15.6 -10 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.6"/>
-      <circle cx="20.4" cy="-11.3" r="0.45" fill="#111827"/>
-      <circle cx="12.4" cy="-12.6" r="1.4" fill="white"/><circle cx="12.7" cy="-12.6" r="0.75" fill="#111827"/>
+    <g>
+      <TwImg src={TW.peace} x={8} y={70} size={30} rotate={-14}/>
+      <TwImg src={TW.peace} x={78} y={70} size={30} rotate={14} flip/>
     </g>
   );
 }
@@ -406,7 +250,8 @@ function FanFrame() {
 // outfit = { head, eyes, face, mouth, neck, body, waist, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
-  const leftUp = VOYAGE_HOLDS.includes(o.voyage) || o.hand === 'peace';
+  // Peace & love : les mains ✌ remplacent les pattes de Costar (retour Thomas).
+  const leftUp = o.hand === 'peace';
   const rightUp = o.hand === 'peace';
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
@@ -437,7 +282,6 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         <ellipse cx="94" cy="108" rx="23" ry="11" transform="rotate(-28 94 108)" fill="#4A2E17"/>
         <path d="M80 104 L106 98 M82 111 L109 104 M86 117 L110 110 M88 98 L96 121 M97 95 L104 117" stroke="#36210F" strokeWidth="1.2" opacity="0.7"/>
       </g>
-      {o.voyage === 'nimes' && <CrocBack/>}
       {/* Planche de surf, plantée DERRIÈRE Costar (accessoire) : large, dégradé lagon, latte centrale,
           soleil couchant + vague, liseré de rail, dérive. */}
       {o.extra === 'surf' && (
@@ -914,17 +758,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         )}
       </g>
       {o.voyage && <VoyageFront kind={o.voyage}/>}
-      {/* Peace & love : pattes levées en V (la gauche tient le souvenir de voyage s'il y en a un). */}
-      {o.hand === 'peace' && (
-        <g>
-          {(VOYAGE_HOLDS.includes(o.voyage) ? ['R'] : ['L', 'R']).map(side => (
-            <ArmSide key={side} side={side}>
-              <RaisedArm sleeve={o.body === 'costard' ? '#2B3445' : null}/>
-              <PeaceHand/>
-            </ArmSide>
-          ))}
-        </g>
-      )}
+      {o.hand === 'peace' && <PeaceHands/>}
       {o.cadre === 'fan' && <FanFrame/>}
       {o.aura === 'poubelle' && <TrashAuraFront/>}
     </svg>
@@ -1323,6 +1157,10 @@ export default function Costar({ projet, fixed = false }) {
                   </div>
                 );
               })}
+            </div>
+            {/* Licence CC-BY 4.0 des illustrations Twemoji : mention obligatoire, discrète. */}
+            <div style={{ marginTop: 10, fontSize: 10, color: DA.grayL, textAlign: 'right' }}>
+              Illustrations : <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener noreferrer" style={{ color: DA.grayL }}>Twemoji</a> (CC-BY 4.0)
             </div>
           </div>
         </div>
