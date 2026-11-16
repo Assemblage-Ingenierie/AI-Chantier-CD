@@ -4,9 +4,7 @@
 //     la TUILE de la visite — vaut pour toutes ses observations. Défaut : oui.
 //   • useAppCamera : interrupteur « Rafale » de l'observation. Oui (défaut) = viseur de l'app
 //     (rafale sans validation, zoom, bouton « Placer ») ; non = appareil photo du téléphone.
-//   • galleryCopy : copie de chaque photo dans la galerie du téléphone (Android). Défaut : OUI —
-//     « les photos doivent forcément aller dans la galerie ». Une app web ne peut pas écrire dans la
-//     galerie sans que Chrome affiche son message de téléchargement (impossible à masquer).
+//   • galleryCopy : copie automatique dans la galerie — COUPÉE (voir getGalleryCopy).
 
 const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const set = (k, v) => { try { localStorage.setItem(k, v); } catch { /* mode privé */ } };
@@ -21,7 +19,11 @@ export const getPlaceAfterPhoto = (visiteId = null) => {
 export const setPlaceAfterPhoto = (visiteId, on) => set(placeKey(visiteId), on ? '1' : '0');
 export const getUseAppCamera = () => get('chantierai_app_camera') !== '0';
 export const setUseAppCamera = (on) => set('chantierai_app_camera', on ? '1' : '0');
-export const getGalleryCopy = () => get('chantierai_gallery_copy') !== '0';
+// Retour Thomas 16/11 (définitif) : « le pop-up de téléchargement ne doit ABSOLUMENT pas apparaître à
+// l'écran ; le mieux est de ne rien avoir ». Une app web ne peut ni écrire dans la galerie sans ce
+// message, ni le reléguer dans la barre de notifications → copie automatique COUPÉE (aucun message).
+// Les photos restent sur le serveur + le Drive.
+export const getGalleryCopy = () => false;
 
 // « Placer » depuis le viseur : après le repérage sur le plan, on ROUVRE le viseur (rafale).
 // Drapeau de session (le repérage sur le plan de ZONE quitte puis rouvre l'observation).
