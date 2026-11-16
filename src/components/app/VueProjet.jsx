@@ -1147,7 +1147,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                   const pl  = it.plans[pi];
                                   const lib = planById.get(pl.planId);
                                   const bg  = pl.planBg || lib?.bg || null;
-                                  if (!bg && !pl.planAnnotations?.exported) continue; // orphelin → ignoré
+                                  // Orphelin (plan retiré de la bibliothèque, sans image) → ignoré. Un plan qui
+                                  // existe mais dont l'image n'est pas (encore) chargée reste AFFICHÉ avec un
+                                  // cadre gris : avant, il disparaissait (« ça a supprimé le premier », 16/11).
+                                  if (!bg && !lib && !pl.planAnnotations?.exported) continue;
                                   obsPlans.push({ it, pl, pi, bg, nom: lib?.nom || null });
                                 }
                               }
@@ -1177,7 +1180,14 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                         </span>
                                       </div>
                                       <div style={{ height: isDesktop ? 300 : 220, background:'#f4f4f4' }}>
-                                        <PlanAnnotThumb bg={bg} annotations={pl.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                        {bg ? (
+                                          <PlanAnnotThumb bg={bg} annotations={pl.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
+                                        ) : (
+                                          <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, color:DA.grayL, background:DA.grayXL }}>
+                                            <Ic n="map" s={24}/>
+                                            <span style={{ fontSize:10, fontWeight:700, color:DA.gray, textAlign:'center', padding:'0 6px' }}>{nom || 'Plan'}</span>
+                                          </div>
+                                        )}
                                       </div>
                                     </button>
                                     </div>
