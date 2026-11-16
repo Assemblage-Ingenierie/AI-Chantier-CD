@@ -185,23 +185,21 @@ function RaisedArm({ sleeve = null }) {
 // avec coussinets, les deux autres repliés, pouce par-dessus. Retour Thomas 16/11 (« des mains
 // mimi »). Dessinée pour la patte levée gauche ; la droite = miroir (cf. ArmSide).
 function PeaceHand() {
-  const F = '#6E4521', FS = '#4E3016', PAD = '#F2C9A0';
+  // Patte façon « tahu » (inspiration envoyée par Thomas, adaptée à Costar) : silhouette ronde
+  // aux 4 doigts en bosses, cerné doux, gros coussinet rose arrondi + 4 petits coussinets.
+  // Écartée vers l'extérieur pour ne pas chevaucher les moustaches. Paume face à nous.
+  const F = '#8A5A2E', S = '#4A2E17', PAD = '#F7BFCB', PADS = '#E08FA2';
+  const toes = [[16.6, 75.4, -36], [20.8, 71.2, -12], [26, 71.2, 12], [30.2, 75.4, 36]];
   return (
-    <g strokeLinecap="round" strokeLinejoin="round">
-      <g transform="rotate(-17 25.6 78)">
-        <rect x="23.2" y="66" width="5" height="13" rx="2.5" fill={F} stroke={FS} strokeWidth="0.55"/>
-        <ellipse cx="25.7" cy="68.4" rx="1.6" ry="1.7" fill={PAD}/>
-      </g>
-      <g transform="rotate(13 28.6 78)">
-        <rect x="26.2" y="65.4" width="5" height="13.6" rx="2.5" fill={F} stroke={FS} strokeWidth="0.55"/>
-        <ellipse cx="28.7" cy="67.8" rx="1.6" ry="1.7" fill={PAD}/>
-      </g>
-      <circle cx="27" cy="81.6" r="6.6" fill={F} stroke={FS} strokeWidth="0.55"/>
-      <ellipse cx="27" cy="82.4" rx="3.4" ry="2.6" fill={PAD}/>
-      <ellipse cx="25.2" cy="85.6" rx="1.9" ry="1.6" fill="#7A4D27" stroke={FS} strokeWidth="0.45"/>
-      <ellipse cx="28.8" cy="85.8" rx="1.9" ry="1.6" fill="#7A4D27" stroke={FS} strokeWidth="0.45"/>
-      <path d="M21.6 83 Q24 86.4 28 84.4" stroke={FS} strokeWidth="2.6" fill="none"/>
-      <path d="M21.6 83 Q24 86.4 28 84.4" stroke="#7A4D27" strokeWidth="1.6" fill="none"/>
+    <g strokeLinejoin="round">
+      {/* Poignet qui prolonge le bras levé */}
+      <path d="M26 87 Q24 83 23.4 80" stroke="#6E4521" strokeWidth="8" strokeLinecap="round" fill="none"/>
+      {toes.map(([x, y]) => <circle key={x} cx={x} cy={y} r="3.1" fill={F} stroke={S} strokeWidth="0.7"/>)}
+      <ellipse cx="23.4" cy="80" rx="7.8" ry="6.9" fill={F} stroke={S} strokeWidth="0.7"/>
+      {toes.map(([x, y]) => <circle key={'c' + x} cx={x} cy={y} r="2.55" fill={F}/>)}
+      <path d="M23.4 77.4 C26.4 77.4 28.8 80.8 28.5 83 C28.2 84.9 25.9 84.7 23.4 84 C20.9 84.7 18.6 84.9 18.3 83 C18 80.8 20.4 77.4 23.4 77.4 Z" fill={PAD} stroke={PADS} strokeWidth="0.45"/>
+      {toes.map(([x, y, r]) => <ellipse key={'p' + x} cx={x} cy={y + 0.2} rx="1.25" ry="1.65" transform={`rotate(${r} ${x} ${y + 0.2})`} fill={PAD} stroke={PADS} strokeWidth="0.4"/>)}
+      <ellipse cx="21.9" cy="79.6" rx="1.1" ry="0.6" fill="white" opacity="0.65"/>
     </g>
   );
 }
@@ -280,47 +278,51 @@ function VoyageFront({ kind }) {
       </g>
     );
   }
-  if (kind === 'nimes') return <BigCroc/>;
+  if (kind === 'nimes') return <CrocFront/>;
   return null;
 }
-// Gros crocodile musclé, debout bras croisés (création originale, clin d'œil à Nîmes).
-function BigCroc() {
-  const G = '#15803D', GL = '#22C55E', GD = '#14532D', BELLY = '#FDE68A';
+// CROCO DE NÎMES (retours Thomas : « un croco du style du blason, autour de Costar », « vert »,
+// « costaud ») — création originale. DERRIÈRE Costar (CrocBack, avant le corps) : le gros corps
+// et la queue épaisse qui remonte en S sur sa droite, écailles sur le dos. DEVANT (CrocFront) :
+// grosse tête trapue gueule ouverte à gauche + patte griffue.
+const CROC = { g: '#3FA34D', gd: '#1F6B2B', gl: '#5CC46A', belly: '#D4EA9A', tail: "M26.9 120.4 L28.9 121.2 L31.1 122.0 L33.3 122.8 L35.6 123.5 L38.0 124.2 L40.3 124.8 L42.7 125.3 L45.2 125.8 L47.6 126.2 L50.1 126.6 L52.7 126.9 L55.2 127.2 L57.8 127.4 L60.3 127.5 L62.9 127.5 L65.5 127.5 L68.1 127.5 L70.6 127.3 L73.2 127.1 L75.7 126.9 L78.3 126.5 L80.8 126.1 L83.3 125.6 L85.7 125.0 L88.1 124.3 L90.9 123.5 L93.3 122.4 L95.4 121.3 L97.3 120.2 L99.3 119.0 L101.1 117.7 L102.8 116.3 L104.4 114.9 L106.0 113.4 L107.5 111.8 L108.8 110.1 L110.1 108.5 L111.3 106.8 L112.4 105.0 L113.4 103.2 L114.4 101.3 L115.2 99.5 L115.9 97.6 L116.5 95.6 L117.1 93.7 L117.5 91.7 L117.8 89.7 L118.1 87.7 L118.2 85.7 L118.2 83.7 L118.1 81.6 L118.0 79.6 L117.7 77.8 L117.3 76.1 L116.9 74.5 L116.5 73.0 L115.9 71.5 L115.3 70.0 L114.7 68.6 L114.0 67.3 L113.2 66.1 L112.4 64.9 L111.5 63.8 L110.6 62.8 L109.6 61.9 L108.6 61.0 L107.6 60.3 L106.4 59.6 L105.3 59.0 L104.1 58.6 L102.8 58.3 L101.6 58.1 L100.3 58.1 L99.0 58.2 L97.8 58.4 L96.6 58.8 L95.4 59.4 L94.3 60.0 L93.5 60.6 L92.9 61.3 L92.3 62.0 L91.8 62.7 L91.4 63.4 L91.1 64.1 L90.8 64.9 L90.7 65.6 L90.6 66.4 L90.7 67.1 L90.8 67.8 L90.9 68.5 L91.2 69.1 L91.5 69.7 L91.8 70.2 L92.3 70.7 L92.7 71.1 L93.3 71.5 L93.8 71.8 L94.4 72.0 L95.0 72.2 L95.6 72.3 L96.3 72.3 L96.9 72.2 L97.5 72.1 L98.1 71.9 L97.9 70.1 L97.3 70.1 L96.9 70.0 L96.5 69.9 L96.2 69.7 L95.9 69.6 L95.7 69.4 L95.6 69.2 L95.4 68.9 L95.4 68.7 L95.3 68.5 L95.3 68.3 L95.3 68.1 L95.3 67.9 L95.4 67.7 L95.5 67.5 L95.6 67.4 L95.7 67.2 L95.8 67.0 L96.0 66.9 L96.1 66.7 L96.3 66.6 L96.6 66.5 L96.8 66.3 L97.1 66.2 L97.4 66.1 L97.7 66.0 L98.2 65.8 L98.7 65.8 L99.1 65.7 L99.5 65.8 L99.9 65.9 L100.3 66.0 L100.6 66.2 L101.0 66.4 L101.3 66.7 L101.7 67.0 L102.1 67.4 L102.5 67.9 L102.9 68.4 L103.2 69.0 L103.6 69.6 L104.0 70.3 L104.3 71.1 L104.7 71.9 L105.0 72.8 L105.2 73.7 L105.5 74.7 L105.7 75.8 L105.8 76.9 L106.0 78.0 L106.0 79.2 L106.0 80.4 L106.0 81.8 L105.9 83.2 L105.7 84.6 L105.5 86.0 L105.1 87.3 L104.8 88.6 L104.3 89.9 L103.8 91.1 L103.2 92.4 L102.6 93.6 L101.9 94.8 L101.1 95.9 L100.3 97.0 L99.5 98.1 L98.5 99.1 L97.5 100.2 L96.5 101.2 L95.4 102.1 L94.2 103.0 L93.0 103.9 L91.8 104.7 L90.5 105.6 L89.2 106.4 L87.8 107.2 L86.3 108.0 L85.1 108.5 L83.7 109.0 L81.8 109.5 L79.8 109.9 L77.9 110.3 L75.8 110.7 L73.8 111.0 L71.7 111.2 L69.6 111.4 L67.4 111.5 L65.3 111.5 L63.1 111.5 L60.9 111.5 L58.7 111.4 L56.6 111.2 L54.4 111.0 L52.3 110.8 L50.2 110.4 L48.1 110.1 L46.0 109.7 L44.0 109.2 L42.1 108.7 L40.2 108.2 L38.3 107.6 L36.6 107.0 L34.8 106.4 L33.1 105.6 Z" };
+function CrocBack() {
   return (
-    <g transform="translate(95.5 96)" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="0" cy="33" rx="16" ry="1.8" fill="#000" opacity="0.15"/>
-      {/* Queue qui s'enroule au sol */}
-      <path d="M6 22 Q20 24 18 32 Q14 35 8 32" stroke={G} strokeWidth="6" fill="none"/>
-      <path d="M9 21.6 l2 -2 l1 2.4 M14 22.6 l2 -2 l1 2.6" stroke={GD} strokeWidth="0.8" fill="none"/>
-      {/* Jambes */}
-      <path d="M-7 20 L-8 31 M5 20 L6 31" stroke={G} strokeWidth="6.4"/>
-      <path d="M-12 32 Q-8 29.6 -4 32 M2 32 Q6 29.6 10 32" stroke={GD} strokeWidth="2.6"/>
-      {/* Tronc musclé + ventre à écailles */}
-      <path d="M-13 -6 Q-15 10 -10 21 Q0 26 10 21 Q15 10 13 -6 Q0 -11 -13 -6 Z" fill={G} stroke={GD} strokeWidth="0.9"/>
-      <path d="M-8 -3 Q-9 10 -5 20 Q0 22 5 20 Q9 10 8 -3 Q0 -6 -8 -3 Z" fill={BELLY} stroke="#CA8A04" strokeWidth="0.5"/>
-      <path d="M-7.6 2 L7.6 2 M-8 6.6 L8 6.6 M-7.6 11.2 L7.6 11.2 M-6.4 15.6 L6.4 15.6 M0 -4.6 L0 20.6" stroke="#CA8A04" strokeWidth="0.55" opacity="0.8"/>
-      {/* Bras croisés, gros biceps */}
-      <path d="M-13 -3 Q-17 4 -10 7 L8 7" stroke={G} strokeWidth="6.6" fill="none"/>
-      <path d="M13 -3 Q17 4 10 9 L-8 9" stroke={GL} strokeWidth="6" fill="none"/>
-      <path d="M-15 0 Q-17 3 -14.6 5" stroke={GD} strokeWidth="0.8" fill="none"/>
-      <path d="M15 0 Q17 3 14.6 5" stroke={GD} strokeWidth="0.8" fill="none"/>
-      <circle cx="-9" cy="9.6" r="2" fill={GL} stroke={GD} strokeWidth="0.6"/>
-      <circle cx="9" cy="6.6" r="2" fill={G} stroke={GD} strokeWidth="0.6"/>
-      {/* Tête : grosse mâchoire, sourcils froncés, dents */}
-      <path d="M-11 -10 Q-12 -22 0 -24 Q11 -23 12 -16 L22 -15 Q25 -13 23 -10 Q12 -7 0 -6 Q-9 -6 -11 -10 Z" fill={G} stroke={GD} strokeWidth="0.9"/>
-      <path d="M0 -10.6 Q11 -11 23 -11" stroke={GD} strokeWidth="0.9" fill="none"/>
-      <path d="M4 -10.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8" stroke="white" strokeWidth="0.7" fill="white"/>
-      <circle cx="21" cy="-15.4" r="0.7" fill={GD}/><circle cx="18.6" cy="-15.8" r="0.7" fill={GD}/>
-      <circle cx="-3" cy="-21" r="3.6" fill="white" stroke={GD} strokeWidth="0.8"/>
-      <circle cx="4.2" cy="-21" r="3.6" fill="white" stroke={GD} strokeWidth="0.8"/>
-      <circle cx="-2.2" cy="-20.4" r="1.5" fill="#111827"/><circle cx="5" cy="-20.4" r="1.5" fill="#111827"/>
-      <path d="M-7 -25.4 L-0.6 -23 M8.6 -25.4 L2 -23" stroke={GD} strokeWidth="1.6"/>
-      <path d="M-9 -18 l-1.6 -1.4 M-9.6 -14 l-1.8 -0.6" stroke={GD} strokeWidth="0.7"/>
-      {/* Écailles du dos */}
-      <path d="M-13 -8 l-2 -1.4 l1.6 -1.4 M-14 -2 l-2.2 -1 l2 -1.6 M-14.6 4 l-2.2 -0.6 l2.2 -1.8" fill={GD} stroke={GD} strokeWidth="0.6"/>
-      {/* Collier doré (le croco enchaîné du blason de Nîmes) */}
-      <path d="M-10 -7 Q0 -3 11 -7.6" stroke="#EAB308" strokeWidth="1.6" fill="none"/>
-      <circle cx="0.6" cy="-4.8" r="1.3" fill="none" stroke="#CA8A04" strokeWidth="0.8"/>
+    <g strokeLinejoin="round">
+      <g fill={CROC.gd}><circle cx="104.4" cy="114.9" r="3.4"/><circle cx="108.8" cy="110.1" r="3.31"/><circle cx="112.4" cy="105.0" r="3.22"/><circle cx="115.2" cy="99.5" r="3.12"/><circle cx="117.1" cy="93.7" r="3.03"/><circle cx="118.1" cy="87.7" r="2.94"/><circle cx="118.1" cy="81.6" r="2.84"/><circle cx="117.3" cy="76.1" r="2.75"/><circle cx="115.9" cy="71.5" r="2.65"/><circle cx="114.0" cy="67.3" r="2.56"/><circle cx="111.5" cy="63.8" r="2.47"/><circle cx="108.6" cy="61.0" r="2.37"/><circle cx="105.3" cy="59.0" r="2.28"/><circle cx="101.6" cy="58.1" r="2.19"/><circle cx="97.8" cy="58.4" r="2.09"/><circle cx="94.3" cy="60.0" r="2.0"/><circle cx="96.8" cy="66.3" r="1.91"/><circle cx="96.1" cy="66.7" r="1.81"/><circle cx="95.7" cy="67.2" r="1.72"/><circle cx="95.4" cy="67.7" r="1.62"/><circle cx="95.3" cy="68.3" r="1.53"/><circle cx="95.4" cy="68.9" r="1.44"/></g>
+      <path d={CROC.tail} fill={CROC.g} stroke={CROC.gd} strokeWidth="1"/>
+    </g>
+  );
+}
+function CrocFront() {
+  const { g, gd, gl, belly } = CROC;
+  return (
+    <g strokeLinejoin="round" strokeLinecap="round">
+      {/* Cou (relie la tête au corps qui passe derrière Costar) */}
+      <path d="M22 101 Q34 98 40 106 L40 124 Q30 128 22 124 Z" fill={g} stroke={gd} strokeWidth="1"/>
+      {/* Patte avant griffue */}
+      <path d="M30 120 Q28 127 23 128.4 L33 128.4 Q37 125 36.4 119 Z" fill={g} stroke={gd} strokeWidth="1"/>
+      <path d="M23.4 128.2 l-1.6 -1.4 M26.4 128.4 l-1.2 -1.8 M29.4 128.4 l-0.8 -1.9" stroke="white" strokeWidth="1"/>
+      {/* Mâchoire du bas + intérieur de la gueule + langue */}
+      <path d="M32 113 L5 112.6 Q1 113.4 2 117 Q4 120.6 12 120.8 L33 119.4 Z" fill={belly} stroke={gd} strokeWidth="1"/>
+      <path d="M32 109.6 L6 106.8 L5.4 112.8 L32 113.4 Z" fill="#7F1D1D"/>
+      <path d="M12 111.6 Q18 108.8 26 111.4 Q19 113.2 12 111.6 Z" fill="#F472B6"/>
+      {/* Mâchoire du haut : museau long et arrondi, narines */}
+      <path d="M36 100 Q30 94.6 20 96.4 L7 99.4 Q1.4 100.8 1.8 104.6 Q2.4 107.6 6 107.4 L33 110.2 Q38 106 36 100 Z" fill={g} stroke={gd} strokeWidth="1"/>
+      <path d="M8 101 Q14 99.2 20 99.4" stroke={gl} strokeWidth="1.4" fill="none" opacity="0.8"/>
+      <circle cx="5.2" cy="100.6" r="1.6" fill={g} stroke={gd} strokeWidth="0.8"/><circle cx="5.2" cy="100.6" r="0.5" fill={gd}/>
+      {/* Dents */}
+      <path d="M7.6 107 l1.2 2.4 l1.4 -2.3 l1.3 2.4 l1.4 -2.2 l1.3 2.4 l1.4 -2.2 l1.3 2.4 l1.4 -2.1 l1.3 2.3 l1.4 -2" fill="white" stroke="#E5E7EB" strokeWidth="0.4"/>
+      <path d="M8 113.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.2 l1.3 2.2 l1.3 -2.1 l1.3 2.1" fill="white" stroke="#E5E7EB" strokeWidth="0.4"/>
+      {/* Yeux globuleux, sourcils froncés */}
+      <circle cx="25" cy="96.6" r="5" fill={g} stroke={gd} strokeWidth="1"/>
+      <circle cx="32.4" cy="96" r="4.6" fill={g} stroke={gd} strokeWidth="1"/>
+      <circle cx="25" cy="96.4" r="3.3" fill="white"/><circle cx="32.4" cy="95.8" r="3" fill="white"/>
+      <circle cx="24.4" cy="96.8" r="1.6" fill="#111827"/><circle cx="31.8" cy="96.2" r="1.5" fill="#111827"/>
+      <circle cx="24" cy="96.2" r="0.5" fill="white"/><circle cx="31.4" cy="95.6" r="0.5" fill="white"/>
+      <path d="M20.6 92 L28 94 M36.4 91.4 L30.2 93.4" stroke={gd} strokeWidth="1.8"/>
+      {/* Écailles sur le cou */}
+      <path d="M38 106 l3 -1 l-1 3 M39 112 l3 -0.6 l-1.4 2.8" fill={gd} stroke={gd} strokeWidth="0.6"/>
     </g>
   );
 }
@@ -381,9 +383,9 @@ function FanFrame() {
   const avatar = getFanAvatar();
   return (
     <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M98.4 15 L105 3.6 L111.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
-      <circle cx="105" cy="3.4" r="1.1" fill="#57534E"/>
-      <g transform="translate(105 31)">
+      <path d="M95.4 15 L102 3.6 L108.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
+      <circle cx="102" cy="3.4" r="1.1" fill="#57534E"/>
+      <g transform="translate(102 31)">
         <defs><clipPath id="costar-fan-heart"><path d={HEART}/></clipPath></defs>
         <path d={HEART} transform="scale(1.22)" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.8"/>
         <path d={HEART} fill="#FCE7F3"/>
@@ -429,6 +431,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         <ellipse cx="94" cy="108" rx="23" ry="11" transform="rotate(-28 94 108)" fill="#4A2E17"/>
         <path d="M80 104 L106 98 M82 111 L109 104 M86 117 L110 110 M88 98 L96 121 M97 95 L104 117" stroke="#36210F" strokeWidth="1.2" opacity="0.7"/>
       </g>
+      {o.voyage === 'nimes' && <CrocBack/>}
       {/* Planche de surf, plantée DERRIÈRE Costar (accessoire) : large, dégradé lagon, latte centrale,
           soleil couchant + vague, liseré de rail, dérive. */}
       {o.extra === 'surf' && (
