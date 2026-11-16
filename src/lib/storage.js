@@ -741,37 +741,66 @@ export async function hydrateChantierPhotos(chantierIds, onRecovered = null) {
   }
 }
 
+// FONDS DE PLANS PAR PETITS PAQUETS (retour Thomas 16/11, projet Voltaire : « les plans ne
+// s'affichent plus en miniature »). Chaque fond pèse ~0,5-1 Mo de base64 : lire TOUS les fonds
+// d'un projet (ou de tous les projets) en UNE requête (des dizaines de Mo avec un PDF de 30 pages)
+// dépassait le délai de la base → erreur → AUCUNE miniature. On lit d'abord les ids (léger), puis
+// les fonds par paquets de BG_CHUNK, BG_PARALLEL paquets à la fois ; un paquet en échec n'empêche
+// pas les autres d'arriver.
+const BG_CHUNK = 3;
+const BG_PARALLEL = 3;
+async function fetchPlanBgsByIds(sb, ids) {
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += BG_CHUNK) chunks.push(ids.slice(i, i + BG_CHUNK));
+  const rows = [];
+  let failed = 0, next = 0;
+  const worker = async () => {
+    while (next < chunks.length) {
+      const c = chunks[next++];
+      try {
+        const { data, error } = await sb.from('aichantier_chantier_plans').select('id,chantier_id,bg').in('id', c);
+        if (error) { failed++; continue; }
+        for (const r of (data || [])) if (r.bg) rows.push(r);
+      } catch { failed++; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BG_PARALLEL, chunks.length) }, worker));
+  return { rows, failed, total: chunks.length };
+}
+
 export async function hydratePlanLibrary(projectId) {
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('aichantier_chantier_plans')
-      .select('id,bg').eq('chantier_id', projectId);
+    const { data: idRows, error } = await sb.from('aichantier_chantier_plans')
+      .select('id').eq('chantier_id', projectId).not('bg', 'is', null);
     if (error) { console.warn('hydratePlanLibrary error:', error); return null; }
+    const ids = (idRows || []).map(r => r.id);
+    if (!ids.length) return {};
+    const { rows, failed, total } = await fetchPlanBgsByIds(sb, ids);
+    if (failed && failed === total) return null; // tout a échoué → même signal qu'avant
+    if (failed) logWarn('hydratePlanLibrary.partial', { projet: projectId, failed, total });
     const map = {};
-    for (const row of (data ?? [])) {
-      if (row.bg) map[row.id] = { bg: row.bg, data: null };
-    }
+    for (const row of rows) map[row.id] = { bg: row.bg, data: null };
     return map; // { planId: { bg, data } }
   } catch (e) { console.warn('hydratePlanLibrary error:', e); return null; }
 }
 
-// Récupère les bg de plans en une seule requête — utilisé pour préchauffer le cache
-// au démarrage. { projectId: { planId: bg } }
-// `ids` (optionnel) : limite la requête aux seuls plans manquants — sans ce filtre, une seule
-// vignette absente du cache déclenchait le téléchargement de TOUS les bg de TOUS les projets
-// (des dizaines de Mo d'egress Supabase à chaque nouvel appareil ou cache vidé).
+// Récupère les bg de plans (par paquets) — utilisé pour préchauffer le cache au démarrage.
+// { projectId: { planId: bg } }
+// `ids` (optionnel) : limite aux seuls plans manquants — sans ce filtre, une seule vignette
+// absente du cache déclenchait le téléchargement de TOUS les bg de TOUS les projets.
 export async function loadAllPlanBgs(ids = null) {
   try {
     const sb = await getSupabase();
-    let q = sb.from('aichantier_chantier_plans')
-      .select('id,chantier_id,bg')
-      .not('bg', 'is', null);
-    if (ids?.length) q = q.in('id', ids);
-    const { data, error } = await q;
-    if (error || !data) return {};
+    let want = ids;
+    if (!want?.length) {
+      const { data, error } = await sb.from('aichantier_chantier_plans').select('id').not('bg', 'is', null);
+      if (error || !data) return {};
+      want = data.map(r => r.id);
+    }
+    const { rows } = await fetchPlanBgsByIds(sb, want);
     const byProject = {};
-    for (const row of data) {
-      if (!row.bg) continue;
+    for (const row of rows) {
       if (!byProject[row.chantier_id]) byProject[row.chantier_id] = {};
       byProject[row.chantier_id][row.id] = row.bg;
     }
