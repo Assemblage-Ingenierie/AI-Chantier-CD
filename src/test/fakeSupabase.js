@@ -68,6 +68,7 @@ export function createFakeSupabase({ maxRows = Infinity } = {}) {
       eq(c, v) { st.filters.push(r => r[c] === v); return api; },
       in(c, vs) { const s = new Set(vs); st.filters.push(r => s.has(r[c])); return api; },
       is(c, v) { st.filters.push(r => (r[c] ?? null) === v); return api; },
+      not(c, op, v) { st.filters.push(r => (op === 'is' ? (r[c] ?? null) !== v : r[c] !== v)); return api; },
       order() { return api; }, range(a, b) { st.range = [a, b]; return api; }, limit() { return api; },
       single() { st.single = true; return api; },
       maybeSingle() { st.maybe = true; return api; },

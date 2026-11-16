@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
-import { movePlanBetweenItems } from '../../lib/movePlan.js';
+import { movePlanAny } from '../../lib/movePlan.js';
+import { getPlanDrag, startPlanDrag, endPlanDrag } from '../../lib/planDrag.js';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
@@ -15,7 +16,6 @@ import RapportTab from '../vue/RapportTab.jsx';
 import Costar from '../vue/Costar.jsx';
 import PlanLibraryModal from '../vue/PlanLibraryModal.jsx';
 import PlanLocModal from '../vue/PlanLocModal.jsx';
-import PlanDragBar from '../vue/PlanDragBar.jsx';
 import NiveauxModal from '../vue/NiveauxModal.jsx';
 import Annotator, { drawAnnotationPaths, planAnnotScales } from '../vue/Annotator.jsx';
 import { computeVpNumbering, relabelViewpoints } from '../../lib/vpNumbering.js';
@@ -174,6 +174,27 @@ const VISIT_FIELDS = new Set([
   'photosParLigne','plansEnFin','plansNoBreak','rapportPageBreaks','includeTableauRecap',
   'includeConclusion','conclusion','conclusionAlign','ingenieur','annexes','planPagesPaysage','planPages','obsDates',
 ]);
+
+// Poignée de glisser d'un plan (PC) — en haut à droite de la miniature, comme sur les photos
+// (retour Thomas 16/11). Élément FRÈRE du bouton de la miniature (pas enfant) : Firefox ne laisse
+// pas glisser un élément placé dans un <button>.
+function PlanGrip({ payload }) {
+  return (
+    <div draggable
+      onClick={e => e.stopPropagation()}
+      onDragStart={e => {
+        e.stopPropagation();
+        startPlanDrag(payload);
+        try { e.dataTransfer.setData('text/plan', '1'); e.dataTransfer.effectAllowed = 'move'; } catch { /* ignore */ }
+      }}
+      onDragEnd={e => { e.stopPropagation(); endPlanDrag(); }}
+      title="Glisser ce plan vers une observation, une autre zone ou une autre place"
+      aria-label="Déplacer le plan"
+      style={{ position:'absolute', top:6, right:6, zIndex:4, width:34, height:34, borderRadius:6, background:'rgba(0,0,0,0.55)', color:'white', display:'flex', alignItems:'center', justifyContent:'center', cursor:'grab' }}>
+      <Ic n="srt" s={15}/>
+    </div>
+  );
+}
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
   onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null,
@@ -377,23 +398,6 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     onUpdateVisit({ localisations: locs });
   }, [visitProjet.localisations, onUpdateVisit]);
 
-  const reorderZonePlan = useCallback((locId, fromIdx, toIdx) => {
-    const loc = visitProjet.localisations.find(l => l.id === locId);
-    if (!loc || toIdx < 0) return;
-    // Normalise le plan principal + extraPlans en tableau plat
-    const all = [];
-    if (loc.planId || loc.planBg) all.push({ planId: loc.planId||null, planBg: loc.planBg||null, planData: loc.planData||null, planAnnotations: loc.planAnnotations||null, reportHidden: !!loc.planReportHidden });
-    for (const ep of (loc.extraPlans || [])) all.push({ planId: ep.planId||null, planBg: ep.planBg||null, planData: null, planAnnotations: ep.planAnnotations||null, reportHidden: !!ep.reportHidden });
-    if (toIdx >= all.length) return;
-    const [moved] = all.splice(fromIdx, 1);
-    all.splice(toIdx, 0, moved);
-    const [p, ...extras] = all;
-    patchLoc(locId, {
-      planId: p?.planId||null, planBg: p?.planBg||null, planData: p?.planData||null, planAnnotations: p?.planAnnotations||null,
-      planReportHidden: !!p?.reportHidden,
-      extraPlans: extras.map(e => ({ planId: e.planId, planBg: e.planBg, planAnnotations: e.planAnnotations, reportHidden: !!e.reportHidden })),
-    });
-  }, [visitProjet.localisations, patchLoc]);
 
   // ── FUSION de zones (maintien sur le titre d'une autre zone) ──
   // Les observations partent tout de suite dans la zone cible (lib/zoneMerge.js). La zone
@@ -531,17 +535,23 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     undoTimerRef.current = setTimeout(() => setUndoToast(null), 4000);
   }, []);
 
-  // Déplace un PLAN d'observation (avec ses repères) vers une autre observation — glisser-déposer
-  // dans la liste, comme les photos (demande Thomas 16/11 : « tout mis sur une observation, pour
-  // changer c'est super galère »). Si la cible a déjà ce plan, ses repères y sont AJOUTÉS (pas de
-  // doublon de plan). « Annuler » remet tout comme avant.
+  // GLISSER-DÉPOSER DES PLANS (PC, poignée en haut à droite de chaque miniature, comme les photos —
+  // retour Thomas 16/11) : réordonner les plans d'une zone, mettre un plan de zone sur une
+  // observation (ou l'inverse), ou l'envoyer dans une autre zone. Le plan part avec ses repères ;
+  // si la destination a déjà ce plan, les repères y sont ajoutés. « Annuler » remet tout.
   const planNames = useMemo(() => new Map((projet.planLibrary || []).map(pl => [pl.id, pl.nom || 'Plan'])), [projet.planLibrary]);
-  const movePlan = useCallback((fromLocId, fromItemId, entryId, toLocId, toItemId) => {
+  const [planOver, setPlanOver] = useState(null); // { locId, idx? } cible survolée pendant un glisser de plan
+  useEffect(() => {
+    const off = () => setPlanOver(null);
+    window.addEventListener('ai-plan-drag-end', off);
+    return () => window.removeEventListener('ai-plan-drag-end', off);
+  }, []);
+  const dropPlan = useCallback((src, dst) => {
     const prevLocs = visitProjet.localisations;
-    const r = movePlanBetweenItems(prevLocs, fromLocId, fromItemId, entryId, toLocId, toItemId);
+    const r = movePlanAny(prevLocs, src, dst);
     if (!r) return;
     onUpdateVisit({ localisations: r.locs });
-    showUndo(`Plan « ${planNames.get(r.entry.planId) || 'Plan'} » déplacé`, () => onUpdateVisit({ localisations: prevLocs }));
+    showUndo(`Plan « ${planNames.get(r.planId) || 'Plan'} » déplacé`, () => onUpdateVisit({ localisations: prevLocs }));
   }, [visitProjet.localisations, onUpdateVisit, showUndo, planNames]);
 
   const deleteItem = useCallback((locId, itemId) => {
@@ -962,14 +972,17 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                     const assignedPlan = loc.planId ? planById.get(loc.planId) : null;
                     const allPlanThumbs = [];
                     // Ignore les références orphelines (plan supprimé) → pas de tuile « Plan » vide fantôme.
+                    // fi = position du plan dans la liste COMPLÈTE de la zone (lib/movePlan.js zonePlansOf),
+                    // pour le glisser-déposer — les orphelins masqués ne décalent pas les positions.
+                    const hasPrimaryPlan = !!(loc.planId || loc.planBg);
                     if (loc.planBg || (loc.planId && assignedPlan)) {
-                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden, planId: loc.planId });
+                      allPlanThumbs.push({ bg: loc.planBg || assignedPlan?.bg || null, planAnnotations: loc.planAnnotations, nom: assignedPlan?.nom || 'Plan de zone', reportHidden: !!loc.planReportHidden, planId: loc.planId, fi: 0 });
                     }
-                    for (const ep of (loc.extraPlans || [])) {
+                    (loc.extraPlans || []).forEach((ep, j) => {
                       const epLib = planById.get(ep.planId);
-                      if (!ep.planBg && !epLib) continue; // orphelin
-                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden, planId: ep.planId });
-                    }
+                      if (!ep.planBg && !epLib) return; // orphelin
+                      allPlanThumbs.push({ bg: ep.planBg || epLib?.bg || null, planAnnotations: ep.planAnnotations, nom: epLib?.nom || 'Plan', reportHidden: !!ep.reportHidden, planId: ep.planId, fi: (hasPrimaryPlan ? 1 : 0) + j });
+                    });
                     const hasAnyPlan = allPlanThumbs.length > 0;
                     return (
                       <div key={loc.id}
@@ -998,8 +1011,21 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                         }}
                         onDragEnd={e => { e.stopPropagation(); applyZoneDrop(loc.id); resetZoneDrag(); setZoneDragArm(null); setTimeout(() => { zoneDragDidMove.current = false; }, 0); }}
                         onMouseUp={() => setZoneDragArm(null)}
+                        onDrop={e => {
+                          const d = getPlanDrag();
+                          if (!d) return;
+                          e.preventDefault(); e.stopPropagation();
+                          endPlanDrag();
+                          dropPlan(d, { kind: 'zone', locId: loc.id });
+                        }}
                         onDragOver={e => {
                           e.preventDefault();
+                          // Plan glissé sur la zone (en-tête, fond…) → il ira à la FIN des plans de la zone.
+                          if (getPlanDrag()) {
+                            e.stopPropagation();
+                            if (!(planOver && planOver.locId === loc.id && planOver.idx == null)) setPlanOver({ locId: loc.id });
+                            return;
+                          }
                           if (!zoneDragId) return; // seulement pendant un VRAI glisser de zone
                           e.stopPropagation();
                           updateZoneOver(zoneTargetAt(e.clientX, e.clientY, zoneDragId), zoneDragId);
@@ -1010,6 +1036,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                           border: `1px solid ${DA.border}`,
                           // Trait rouge AU-DESSUS ou EN DESSOUS de la cible = là où la zone va se placer.
                           boxShadow: isDragged ? 'none'
+                            : planOver && planOver.locId === loc.id && planOver.idx == null ? `inset 0 0 0 2px ${DA.red}`
                             : isOver && !isInto ? `0 ${dropAfter ? 5 : -5}px 0 -1px ${DA.red}, 0 1px 4px rgba(0,0,0,0.07)`
                             : '0 1px 4px rgba(0,0,0,0.07)',
                           overflow: 'hidden',
@@ -1092,8 +1119,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
-                              planNames={planNames}
-                              onMovePlanAcross={movePlan}
+                              onDropPlan={isDesktop ? dropPlan : null}
                               onReorder={ordered => patchLoc(loc.id, { items: ordered })}
                               onEdit={item => {
                                 if (item?._quickSuivi) { saveItem(loc.id, item); return; }
@@ -1129,7 +1155,20 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               return (
                                 <div style={{ borderTop:`1px solid ${DA.border}` }}>
                                   {obsPlans.map(({ it, pl, pi, bg, nom }) => (
-                                    <button key={it.id + '_' + pi} onClick={() => setModal({ t:'itemPlan', locId: loc.id, itemId: it.id, annotIdx: pi })}
+                                    <div key={it.id + '_' + pi} style={{ position:'relative',
+                                        boxShadow: planOver && planOver.locId === loc.id && planOver.itemId === it.id ? `inset 0 0 0 3px ${DA.red}` : 'none' }}
+                                      onDragOver={isDesktop ? (e => {
+                                        if (!getPlanDrag()) return;
+                                        e.preventDefault(); e.stopPropagation();
+                                        if (!(planOver && planOver.itemId === it.id)) setPlanOver({ locId: loc.id, itemId: it.id });
+                                      }) : undefined}
+                                      onDrop={isDesktop ? (e => {
+                                        const d = getPlanDrag(); if (!d) return;
+                                        e.preventDefault(); e.stopPropagation(); endPlanDrag();
+                                        dropPlan(d, { kind: 'item', locId: loc.id, itemId: it.id });
+                                      }) : undefined}>
+                                    {isDesktop && <div style={{ position:'absolute', top:31, right:0, left:0 }}><PlanGrip payload={{ kind: 'item', locId: loc.id, itemId: it.id, entryId: pl.id ?? pi }}/></div>}
+                                    <button onClick={() => setModal({ t:'itemPlan', locId: loc.id, itemId: it.id, annotIdx: pi })}
                                       style={{ width:'100%', display:'block', border:'none', borderTop:`1px solid ${DA.border}`, background:'#f4f4f4', cursor:'pointer', padding:0 }}>
                                       <div style={{ padding:'7px 12px', textAlign:'left', background:'white', borderBottom:`1px solid ${DA.border}`, display:'flex', alignItems:'center', gap:6 }}>
                                         <Ic n="map" s={12}/>
@@ -1141,15 +1180,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                         <PlanAnnotThumb bg={bg} annotations={pl.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                       </div>
                                     </button>
+                                    </div>
                                   ))}
                                 </div>
                               );
                             })()}
                             {hasAnyPlan ? (
                               <div style={{ borderTop:`1px solid ${DA.border}`, overflow:'hidden' }}>
-                                {allPlanThumbs.length > 1 && (
-                                  <PlanDragBar plans={allPlanThumbs} locId={loc.id} onReorder={reorderZonePlan}/>
-                                )}
                                 {Array.from({ length: Math.ceil(allPlanThumbs.length / 2) }, (_, rowIdx) => {
                                   const rowThumbs = allPlanThumbs.slice(rowIdx * 2, rowIdx * 2 + 2);
                                   const thumbH = allPlanThumbs.length > 2 ? (isDesktop ? 260 : 190) : (isDesktop ? 380 : 260);
@@ -1171,10 +1208,27 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                             patchLoc(loc.id, { extraPlans: newEPs });
                                           }
                                         };
+                                        const thumbOver = planOver && planOver.locId === loc.id && planOver.idx === pt.fi;
                                         return (
-                                          <button key={colIdx}
+                                          <div key={colIdx}
+                                            style={{ flex:1, minWidth:0, position:'relative', borderLeft: colIdx > 0 ? `1px solid ${DA.border}` : 'none' }}
+                                            // Plan glissé sur cette miniature → il se place ICI (avant elle) ;
+                                            // sur le reste de la zone → à la fin.
+                                            onDragOver={isDesktop ? (e => {
+                                              if (!getPlanDrag()) return;
+                                              e.preventDefault(); e.stopPropagation();
+                                              if (!thumbOver) setPlanOver({ locId: loc.id, idx: pt.fi });
+                                            }) : undefined}
+                                            onDrop={isDesktop ? (e => {
+                                              const d = getPlanDrag(); if (!d) return;
+                                              e.preventDefault(); e.stopPropagation(); endPlanDrag();
+                                              dropPlan(d, { kind: 'zone', locId: loc.id, idx: pt.fi });
+                                            }) : undefined}>
+                                          {thumbOver && <span aria-hidden="true" style={{ position:'absolute', left:0, top:0, bottom:0, width:5, background:DA.red, zIndex:5, pointerEvents:'none' }}/>}
+                                          {isDesktop && <PlanGrip payload={{ kind: 'zone', locId: loc.id, idx: pt.fi }}/>}
+                                          <button
                                             onClick={() => setModal({ t:'plan', locId:loc.id, annotIdx: rowIdx * 2 + colIdx })}
-                                            style={{ flex:1, position:'relative', height: thumbH, border:'none', borderLeft: colIdx > 0 ? `1px solid ${DA.border}` : 'none', cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: pt.bg ? '#f4f4f4' : DA.grayXL }}>
+                                            style={{ width:'100%', position:'relative', height: thumbH, border:'none', cursor:'pointer', overflow:'hidden', display:'block', padding:0, background: pt.bg ? '#f4f4f4' : DA.grayXL }}>
                                             {pt.bg ? (
                                               <PlanAnnotThumb bg={pt.bg} annotations={pt.planAnnotations} vpNumByPath={vpNumGlobal} vpBase={vpMaxGlobal} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}/>
                                             ) : (
@@ -1190,7 +1244,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                             )}
                                             {pt.bg && <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.05) 40%, transparent 100%)' }}/>}
                                             {annotCount > 0 && (
-                                              <div style={{ position:'absolute', top:6, right:6, zIndex:2, background:DA.red, color:'white', borderRadius:8, fontSize:10, fontWeight:800, padding:'2px 6px', lineHeight:1.6, display:'flex', alignItems:'center', gap:3 }}>
+                                              <div style={{ position:'absolute', top:6, right: isDesktop ? 46 : 6, zIndex:2, background:DA.red, color:'white', borderRadius:8, fontSize:10, fontWeight:800, padding:'2px 6px', lineHeight:1.6, display:'flex', alignItems:'center', gap:3 }}>
                                                 <Ic n="pen" s={9}/> {annotCount}
                                               </div>
                                             )}
@@ -1238,6 +1292,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                                               </div>
                                             </div>
                                           </button>
+                                          </div>
                                         );
                                       })}
                                     </div>
