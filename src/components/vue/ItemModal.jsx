@@ -31,7 +31,7 @@ import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
 import CameraCapture from './CameraCapture.jsx';
 import { autoCopyToPhone, requestOrientationAccess, platformOf } from '../../lib/deviceCamera.js';
-import { getPlaceAfterPhoto, getGalleryCopy } from '../../lib/cameraPrefs.js';
+import { getPlaceAfterPhoto, getGalleryCopy, getUseAppCamera, setUseAppCamera, markReopenCamera, consumeReopenCamera } from '../../lib/cameraPrefs.js';
 import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 import { currentEngine, startAiDictation, markBrowserDictationBroken, isEngineFailure, canRecordAudio } from '../../lib/aiDictation.js';
@@ -598,6 +598,25 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   // la VISITE (tuile de la page des visites) ; bouton « 📷 » à côté d'Enregistrer après la 1re
   // photo prise, pour rouvrir l'appareil d'un seul geste.
   const placeOnRef = useRef(true); placeOnRef.current = getPlaceAfterPhoto(visiteId);
+  const [appCam, setAppCam] = useState(getUseAppCamera); // interrupteur « Rafale » (section Photos)
+  const lastShotRef = useRef(null);      // Promise de la dernière photo du viseur (traitement en cours)
+  const reopenAfterPlaceRef = useRef(false); // « Placer » depuis le viseur → le rouvrir après le repérage
+  const openCameraRef = useRef(null);        // openCamera (déclarée plus bas) — appel différé sûr
+  // Repérage sur le plan de l'OBSERVATION terminé (annotateur refermé) → retour dans le viseur.
+  const prevAnnotIdxRef = useRef(null);
+  useEffect(() => {
+    const was = prevAnnotIdxRef.current;
+    prevAnnotIdxRef.current = annotatingPlanIdx;
+    if (was !== null && annotatingPlanIdx === null && reopenAfterPlaceRef.current) {
+      reopenAfterPlaceRef.current = false;
+      consumeReopenCamera();
+      setTimeout(() => openCameraRef.current?.(), 150);
+    }
+  }, [annotatingPlanIdx]);
+  // Repérage sur le plan de la ZONE : l'observation a été fermée puis rouverte → retour au viseur.
+  useEffect(() => {
+    if (consumeReopenCamera()) setTimeout(() => openCameraRef.current?.(), 300);
+  }, []);
   const [shotTaken, setShotTaken] = useState(false);
   const sessionShotsRef = useRef([]); // _id des photos prises dans la rafale en cours
   const cameraCloseRef = useRef(null);
@@ -1216,8 +1235,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   };
 
   // Repérage de la photo qu'on vient de prendre (plan de l'observation, sinon de la zone).
-  const schedulePlacement = (next, idx, photoId) => {
-    if (!placeOnRef.current) return; // interrupteur « Plan » coupé : la photo est simplement ajoutée
+  const schedulePlacement = (next, idx, photoId, force = false) => {
+    if (!force && !placeOnRef.current) return; // repérage coupé (tuile de la visite) : photo simplement ajoutée
     if ((next.plans || []).length > 0) {
       const counts = next.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
       const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
@@ -1277,7 +1296,25 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   // ── VISEUR PHOTO INTÉGRÉ (CameraCapture) — identique sur tous les téléphones ──
   const openNativeCamera = () => { setCameraOpen(false); if (camRef.current) { camRef.current.value = ''; camRef.current.click(); } };
   const onCameraShot = (file) => {
-    readFiles([file], true, { noPlace: true }).then(v => { if (v?.[0]?._id) sessionShotsRef.current.push(v[0]._id); }).catch(() => {});
+    lastShotRef.current = readFiles([file], true, { noPlace: true })
+      .then(v => { const id = v?.[0]?._id || null; if (id) sessionShotsRef.current.push(id); return id; })
+      .catch(() => null);
+  };
+  // « 📍 Placer » dans le viseur : la DERNIÈRE photo est posée sur le plan (même si le repérage auto
+  // est coupé : c'est une demande explicite), puis le viseur se rouvre → on reste en rafale.
+  const onCameraPlace = async () => {
+    const id = await (lastShotRef.current || Promise.resolve(null));
+    setCameraOpen(false);
+    cameraCloseRef.current = null;
+    sessionShotsRef.current = [];
+    if (!id) return;
+    reopenAfterPlaceRef.current = true;
+    markReopenCamera(); // repérage sur le plan de ZONE : l'observation est fermée puis rouverte
+    setTimeout(() => setForm(prev => {
+      const idx = (prev.photos || []).findIndex(p => p._id === id);
+      if (idx >= 0) schedulePlacement(prev, idx, id, true);
+      return prev;
+    }), 0);
   };
   const onCameraClose = () => {
     setCameraOpen(false);
@@ -1300,11 +1337,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     // l'appareil reste ouvert, un bouton pour fermer » — impossible avec l'appareil du téléphone,
     // qui fait valider puis se ferme). Zoom / grand angle dans le viseur ; bouton « Appareil photo
     // du téléphone » dedans pour une photo native. PC / sans caméra → sélecteur de fichier.
-    if (!platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
+    if (!getUseAppCamera() || !platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
     sessionShotsRef.current = [];
     cameraCloseRef.current = onCameraClose;
     setCameraOpen(true);
   };
+  openCameraRef.current = openCamera;
 
 
   // Annotateur d'une image COLLÉE du commentaire : on cuit le composite annoté, on l'upload,
@@ -1594,7 +1632,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             </div>
           )}
           {fileInputs}
-          {cameraOpen && <CameraCapture onShot={onCameraShot} onNative={openNativeCamera} onClose={onCameraClose}/>}
+          {cameraOpen && <CameraCapture onShot={onCameraShot} onNative={openNativeCamera} onClose={onCameraClose}
+            onPlace={((form.plans || []).length > 0 || onPlaceOnZonePlan) ? onCameraPlace : null}/>}
         </div>
         {/* Scrollable content */}
         <div style={{ flex:1, overflowY:'auto', padding: isDesktop ? '16px 24px' : '14px 16px' }}>
@@ -1962,20 +2001,19 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                   </span>
                 )}
               </label>
-              <div style={{ display:'flex',gap:6,flexShrink:0 }}>
-                {form.photos.length > 0 && (
-                  <button onClick={saveAllPhotosToDevice} disabled={savingPhone} title="Enregistrer les photos dans le téléphone (galerie / Photos)"
-                    style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:savingPhone?'default':'pointer',opacity:savingPhone?0.6:1 }}>
-                    <Ic n="dl" s={14}/> {savingPhone ? '…' : 'Enreg.'}
-                  </button>
-                )}
-                <button onClick={() => gallRef.current.click()} style={{ fontSize:13,border:`1px solid ${DA.border}`,padding:'8px 12px',borderRadius:8,background:'white',color:DA.gray,display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                  <Ic n="img" s={14}/> Galerie
+              {/* Retour Thomas 16/11 : les petits boutons Enreg. / Galerie / Photo (doublons des grandes
+                  tuiles juste en dessous) sont retirés. Téléphone : interrupteur « Rafale » = viseur de
+                  l'app (rafale sans validation, zoom, « Placer ») ou appareil photo du téléphone. */}
+              {!isDesktop && (
+                <button role="switch" aria-checked={appCam} onClick={() => { const v = !appCam; setAppCam(v); setUseAppCamera(v); }}
+                  title={appCam ? 'Viseur de l\'app : rafale sans validation' : 'Appareil photo du téléphone'}
+                  style={{ display:'flex', alignItems:'center', gap:7, background:'none', border:'none', cursor:'pointer', padding:'4px 0', color: appCam ? DA.black : DA.grayL, fontSize:12.5, fontWeight:700 }}>
+                  Rafale
+                  <span aria-hidden="true" style={{ width:34, height:20, borderRadius:10, background: appCam ? DA.red : '#D1D5DB', position:'relative', flexShrink:0, transition:'background 0.15s' }}>
+                    <span style={{ position:'absolute', top:2, left: appCam ? 16 : 2, width:16, height:16, borderRadius:'50%', background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.25)', transition:'left 0.15s' }}/>
+                  </span>
                 </button>
-                <button onClick={openCamera} style={{ fontSize:13,border:`1px solid ${DA.red}`,padding:'8px 12px',borderRadius:8,background:DA.red,color:'white',display:'flex',alignItems:'center',gap:4,cursor:'pointer' }}>
-                  <Ic n="cam" s={14}/> Photo
-                </button>
-              </div>
+              )}
             </div>
             {form.photos.length > 0 ? (
               <div style={{ display:'grid',gridTemplateColumns: isDesktop ? 'repeat(5,1fr)' : 'repeat(3,1fr)',gap:8 }}>
@@ -2008,7 +2046,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <button onClick={() => gallRef.current.click()} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.border}`,background:'white',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
                   <Ic n="img" s={15}/><span style={{ fontSize:9,color:DA.grayL }}>Galerie</span>
                 </button>
-                <button onClick={openCamera} style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
+                <button onClick={openCamera} aria-label="Prendre des photos" style={{ aspectRatio:'1',borderRadius:8,border:`2px dashed ${DA.red}`,background:DA.redL,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer' }}>
                   <Ic n="cam" s={15}/><span style={{ fontSize:9,color:DA.red,fontWeight:700 }}>Photo</span>
                 </button>
               </div>
@@ -2017,7 +2055,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <div onClick={() => gallRef.current.click()} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.border}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.grayXL }}>
                   <Ic n="img" s={20}/><span style={{ fontSize:11,color:DA.grayL }}>Galerie</span>
                 </div>
-                <div onClick={openCamera} style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
+                <div onClick={openCamera} role="button" aria-label="Prendre des photos" style={{ height:80,borderRadius:10,border:`2px dashed ${DA.red}`,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,cursor:'pointer',background:DA.redL }}>
                   <Ic n="cam" s={20}/><span style={{ fontSize:11,color:DA.red }}>Prendre photo</span>
                 </div>
               </div>
