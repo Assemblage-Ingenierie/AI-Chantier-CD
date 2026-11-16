@@ -3,7 +3,8 @@ import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
-import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode } from '../../lib/costarRewards.js';
+import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant } from '../../lib/costarRewards.js';
+import { subscribePresence } from '../../lib/presence.js';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
 // MÉMOIRE DES AVIS (retour Thomas : « il met du temps et bouffe mon quota gratuit ») : un rapport
@@ -155,6 +156,109 @@ function TrashAuraFront() {
           <g transform={`translate(${58 + r} 50) scale(1.7)`}>{fly}</g>
         </g>
       ))}
+    </g>
+  );
+}
+
+// SOUVENIRS DE VOYAGE (demande Thomas 16/11) — dessinés DEVANT Costar. Londres : drapeau dans la
+// main gauche (le bonnet de garde est dans la coiffe) ; Dijon : bouteille de rouge ; Nîmes :
+// crocodile couché aux pieds ; Bâle : glace en pot + canard en plastique aux pieds.
+function VoyageFront({ kind }) {
+  if (kind === 'londres') {
+    return (
+      <g strokeLinecap="round" strokeLinejoin="round">
+        <path d="M23 64 L38 96" stroke="#8B5A2B" strokeWidth="1.4"/>
+        <g transform="translate(5 64)">
+          <rect x="0" y="0" width="18" height="11" fill="#1E3A8A"/>
+          <path d="M0 0 L18 11 M18 0 L0 11" stroke="white" strokeWidth="2.4"/>
+          <path d="M0 0 L18 11 M18 0 L0 11" stroke="#DC2626" strokeWidth="0.8"/>
+          <rect x="7" y="0" width="4" height="11" fill="white"/><rect x="0" y="3.5" width="18" height="4" fill="white"/>
+          <rect x="8" y="0" width="2" height="11" fill="#DC2626"/><rect x="0" y="4.5" width="18" height="2" fill="#DC2626"/>
+          <rect x="0" y="0" width="18" height="11" fill="none" stroke="#1E293B" strokeWidth="0.5"/>
+        </g>
+      </g>
+    );
+  }
+  if (kind === 'dijon') {
+    return (
+      <g transform="rotate(-14 34 92)" strokeLinejoin="round">
+        <rect x="32.6" y="68" width="4.4" height="3.2" rx="0.8" fill="#7F1D1D"/>
+        <rect x="32.8" y="70.6" width="4" height="10" fill="#14532D"/>
+        <path d="M32.8 80 Q29.6 81.4 29.6 85 L29.6 101 Q29.6 103 31.6 103 L38 103 Q40 103 40 101 L40 85 Q40 81.4 36.8 80 Z" fill="#14532D" stroke="#052E16" strokeWidth="0.7"/>
+        <rect x="30.6" y="88" width="8.4" height="8" rx="0.8" fill="#FEF3C7" stroke="#A16207" strokeWidth="0.4"/>
+        <path d="M32 90.6 L37.6 90.6 M32.4 93.2 L37.2 93.2" stroke="#991B1B" strokeWidth="0.9"/>
+        <rect x="31" y="82.6" width="1.3" height="17" rx="0.6" fill="white" opacity="0.28"/>
+        <ellipse cx="39" cy="94" rx="4.2" ry="3.4" fill="#6E4521"/>
+      </g>
+    );
+  }
+  if (kind === 'nimes') {
+    return (
+      <g transform="translate(94 123.4) scale(1.3)" strokeLinejoin="round" strokeLinecap="round">
+        <ellipse cx="0" cy="5" rx="18" ry="1.6" fill="#000" opacity="0.13"/>
+        <path d="M-18 2.4 Q-11 -0.6 -4 0 L-4 4.4 Q-11 5 -18 2.4 Z" fill="#16A34A" stroke="#14532D" strokeWidth="0.7"/>
+        <ellipse cx="2" cy="1.8" rx="9" ry="3.8" fill="#22C55E" stroke="#14532D" strokeWidth="0.7"/>
+        <path d="M-6 -1 l1.4 -2 l1.4 2 M-2 -1.8 l1.4 -2 l1.4 2 M2 -1.8 l1.4 -2 l1.4 2 M6 -1 l1.4 -2 l1.4 2" fill="#15803D" stroke="#14532D" strokeWidth="0.5"/>
+        <path d="M9 -0.8 Q17.4 -1.4 19.6 1.2 Q17.6 4 9 4.2 Z" fill="#22C55E" stroke="#14532D" strokeWidth="0.7"/>
+        <path d="M11 2.2 l0.9 1 l0.9 -1 l0.9 1 l0.9 -1 l0.9 1 l0.9 -1" stroke="white" strokeWidth="0.6" fill="none"/>
+        <circle cx="10.6" cy="-1.4" r="1.5" fill="white" stroke="#14532D" strokeWidth="0.5"/>
+        <circle cx="11" cy="-1.4" r="0.7" fill="#111827"/>
+        <ellipse cx="-2" cy="5" rx="1.8" ry="1" fill="#15803D"/><ellipse cx="6" cy="5" rx="1.8" ry="1" fill="#15803D"/>
+        <circle cx="8" cy="1.4" r="1.3" fill="none" stroke="#EAB308" strokeWidth="0.8"/>
+      </g>
+    );
+  }
+  if (kind === 'bale') {
+    return (
+      <g strokeLinejoin="round" strokeLinecap="round" transform="translate(101 129) scale(1.18) translate(-101 -129)">
+        <ellipse cx="101" cy="129" rx="16" ry="1.4" fill="#000" opacity="0.12"/>
+        {/* Glace en pot */}
+        <circle cx="88.6" cy="117.4" r="3" fill="#FDE68A" stroke="#CA8A04" strokeWidth="0.5"/>
+        <circle cx="93.4" cy="117.4" r="3" fill="#FBCFE8" stroke="#DB2777" strokeWidth="0.5"/>
+        <circle cx="91" cy="114.2" r="3" fill="#A7F3D0" stroke="#059669" strokeWidth="0.5"/>
+        <path d="M95 112 L98.4 107.4" stroke="#9CA3AF" strokeWidth="1"/>
+        <path d="M85.6 118.4 L96.4 118.4 L95 128.6 L87 128.6 Z" fill="#F472B6" stroke="#BE185D" strokeWidth="0.6"/>
+        <path d="M86.4 122 L95.6 122 M86.8 125.4 L95.2 125.4" stroke="white" strokeWidth="0.9" opacity="0.8"/>
+        {/* Canard en plastique */}
+        <ellipse cx="108" cy="124.4" rx="7" ry="4.6" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.7"/>
+        <path d="M102.6 123.4 Q105.4 120.6 108.4 123.6" stroke="#CA8A04" strokeWidth="0.7" fill="none"/>
+        <circle cx="112.4" cy="117.6" r="3.8" fill="#FACC15" stroke="#CA8A04" strokeWidth="0.7"/>
+        <path d="M115.6 117.2 Q119 117.2 118.6 118.8 Q116.6 119.8 115.2 119" fill="#F97316" stroke="#C2410C" strokeWidth="0.5"/>
+        <circle cx="113.4" cy="116.6" r="0.7" fill="#111827"/>
+      </g>
+    );
+  }
+  return null;
+}
+// Bonnet à poil de garde royal (Londres) — remplace la coiffe portée.
+function Bearskin() {
+  return (
+    <g strokeLinecap="round" strokeLinejoin="round">
+      <path d="M33 51 Q27 22 38 7 Q58 -6 78 7 Q89 22 83 51 Z" fill="#111827"/>
+      <path d="M40 16 Q47 8 56 6 M38 26 Q42 22 46 21 M70 15 Q74 18 76 23 M64 30 Q68 29 71 32 M46 36 Q49 33 53 34" stroke="#374151" strokeWidth="1.6" fill="none" opacity="0.8"/>
+      <path d="M34 34 Q29 25 32 15 Q37 24 36.6 34 Z" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.6"/>
+      <path d="M36 49 Q37 64 45 71 M80 49 Q79 64 71 71" stroke="#EAB308" strokeWidth="1.8" fill="none"/>
+    </g>
+  );
+}
+// PORTRAIT DE THOMAS dans un cadre en cœur, accroché au mur en haut à droite (mission « Fan-club
+// officiel », mégalo assumé). Photo = celle de son compte Google (cf. getFanAvatar) ; inconnue
+// sur cet appareil → ses initiales.
+const HEART = 'M0 10 C-10 3 -13 -3 -13 -6.5 C-13 -11 -9 -13.5 -6 -13.5 C-3 -13.5 -1 -11.5 0 -9.5 C1 -11.5 3 -13.5 6 -13.5 C9 -13.5 13 -11 13 -6.5 C13 -3 10 3 0 10 Z';
+function FanFrame() {
+  const avatar = getFanAvatar();
+  return (
+    <g strokeLinecap="round" strokeLinejoin="round">
+      <path d="M98.4 15 L105 3.6 L111.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
+      <circle cx="105" cy="3.4" r="1.1" fill="#57534E"/>
+      <g transform="translate(105 31)">
+        <defs><clipPath id="costar-fan-heart"><path d={HEART}/></clipPath></defs>
+        <path d={HEART} transform="scale(1.22)" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.8"/>
+        <path d={HEART} fill="#FCE7F3"/>
+        <text x="0" y="1" textAnchor="middle" fontSize="8" fontWeight="800" fill="#BE185D" fontFamily="sans-serif">TC</text>
+        {avatar && <image href={avatar} x="-13" y="-14" width="26" height="26" preserveAspectRatio="xMidYMid slice" clipPath="url(#costar-fan-heart)"/>}
+        <path d="M-6 -11 Q-9 -9 -9.6 -6" stroke="white" strokeWidth="1.2" fill="none" opacity="0.7"/>
+      </g>
     </g>
   );
 }
@@ -556,7 +660,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         )}
         {/* Coiffe : casque de chantier (défaut), cowboy, Noël, tuque, couronne, citrouille, haut-de-forme,
             licorne, ninja (vestiaire) */}
-        {o.head === 'citrouille' ? null : o.head === 'hautforme' ? (
+        {o.voyage === 'londres' && o.head !== 'citrouille' ? <Bearskin/> : o.head === 'citrouille' ? null : o.head === 'hautforme' ? (
           <g>
             <ellipse cx="58" cy="47" rx="30" ry="5.4" fill="#111827"/>
             <rect x="40" y="13" width="36" height="34" rx="2.5" fill="#1F2937"/>
@@ -673,6 +777,8 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           </g>
         )}
       </g>
+      {o.voyage && <VoyageFront kind={o.voyage}/>}
+      {o.cadre === 'fan' && <FanFrame/>}
       {o.aura === 'poubelle' && <TrashAuraFront/>}
     </svg>
   );
@@ -703,6 +809,12 @@ const LABEL_HALF = 49;
 // (onglet Rapport). Costar est réservé au PC : masqué sous 900 px de large.
 export default function Costar({ projet, fixed = false }) {
   const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 900);
+  // Portrait de Thomas (« Fan-club officiel ») : sa photo arrive avec la présence en direct quand
+  // il est connecté → gardée sur cet appareil pour la suite.
+  useEffect(() => subscribePresence(list => {
+    const t = (list || []).find(m => isFanName(m?.name) && m?.avatar);
+    if (t) setFanAvatar(t.avatar);
+  }), []);
   useEffect(() => {
     const onResize = () => setIsPc(window.innerWidth >= 900);
     window.addEventListener('resize', onResize);
@@ -812,7 +924,8 @@ export default function Costar({ projet, fixed = false }) {
         // Éléments de l'affaire dans la corbeille de l'appareil (mission « Ça sent le vécu »).
         let trashed = 0;
         try { if (pj.id) trashed = (await listDeletedItems()).filter(e => e.projectId === pj.id).length; } catch { /* corbeille illisible */ }
-        const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null, trashed });
+        const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null, trashed,
+          withFan: (pj.participants || []).some(isFanParticipant) });
         saveCostarState(r.state);
         setUnlocks(r.completed);
       } catch { /* vestiaire indisponible : sans effet sur la relecture */ }

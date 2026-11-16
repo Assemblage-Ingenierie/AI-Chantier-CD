@@ -22,6 +22,8 @@ export const CATEGORIES = [
   { slot: 'feet',  label: 'Pieds' },
   { slot: 'extra', label: 'Accessoire' },
   { slot: 'aura',  label: 'Ambiance' },
+  { slot: 'voyage', label: 'Voyage' },
+  { slot: 'cadre', label: 'Portrait' },
 ];
 export const SLOTS = CATEGORIES.map(c => c.slot);
 
@@ -66,6 +68,13 @@ export const COSMETICS = {
   ninja:     { name: 'Bandeau de ninja',   slot: 'head',  icon: '🥷' },
   // Demande Thomas 16/11 : mouches qui tournent, odeurs, peau de banane usagée aux pieds.
   poubelle:  { name: 'Odeur de poubelle',  slot: 'aura',  icon: '🪰' },
+  // Souvenirs de voyage (demande Thomas 16/11) — un seul porté à la fois.
+  londres:   { name: 'Garde royal (Londres)', slot: 'voyage', icon: '💂' },
+  dijon:     { name: 'Bouteille de rouge (Dijon)', slot: 'voyage', icon: '🍷' },
+  nimes:     { name: 'Croco de Nîmes',     slot: 'voyage', icon: '🐊' },
+  bale:      { name: 'Glace & canard (Bâle)', slot: 'voyage', icon: '🦆' },
+  // Mégalo assumé (demande Thomas) : le portrait de Thomas dans un cadre en cœur.
+  fan:       { name: 'Portrait de Thomas',  slot: 'cadre', icon: '💘' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -108,12 +117,18 @@ export const MISSIONS = [
   { id: 'dix',       title: 'Perfection',             desc: 'Obtenir 10/10',                                         reward: 'casque_or', progress: s => [Math.min(s.count10, 1), 1] },
   { id: 'veteran',   title: 'Vétéran du chantier',    desc: 'Faire relire 25 rapports',                              reward: 'cicatrices',progress: s => [Math.min(s.reviews, 25), 25] },
   { id: 'poubelle',  title: 'Ça sent le vécu',        desc: 'Faire relire un rapport dont la corbeille déborde (5 éléments supprimés ou plus). Costar garde un petit souvenir de la benne.', reward: 'poubelle', progress: s => [s.trashy ? 1 : 0, 1] },
+  { id: 'londres',   title: 'Tea time',               desc: 'Faire relire un rapport entre 16 h et 17 h. God save the rapport !', reward: 'londres', progress: s => [s.teaTime ? 1 : 0, 1] },
+  { id: 'dijon',     title: 'Grand cru classé',       desc: 'Obtenir 9/10 ou plus sur un rapport de 5 observations ou plus. À déguster avec modération.', reward: 'dijon', progress: s => [s.grandCru ? 1 : 0, 1] },
+  { id: 'nimes',     title: 'Larmes de crocodile',    desc: 'Survivre à deux notes de 4/10 ou moins. Le croco de Nîmes compatit (un peu).', reward: 'nimes', progress: s => [Math.min(s.lowCount, 2), 2] },
+  { id: 'bale',      title: 'Baignade dans le Rhin',  desc: 'Faire relire un rapport en été (juin à août). Glace en pot et canard gonflable fournis, comme à Bâle.', reward: 'bale', progress: s => [s.summer ? 1 : 0, 1] },
+  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Faire relire le rapport d\'une visite avec Thomas. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [s.withFan ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
   return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {},
-    friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0, trashy: false };
+    friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0, trashy: false,
+    teaTime: false, grandCru: false, lowCount: 0, summer: false, withFan: false };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -137,6 +152,7 @@ export function normalizeState(raw) {
     friday: !!s.friday, monday: !!s.monday, early: !!s.early, afterwork: !!s.afterwork, midNote: !!s.midNote,
     reread: !!s.reread, winter: !!s.winter, bigGood: !!s.bigGood, streak7: num(s.streak7, 0), bestStreak7: num(s.bestStreak7, 0),
     trashy: !!s.trashy,
+    teaTime: !!s.teaTime, grandCru: !!s.grandCru, lowCount: num(s.lowCount, 0), summer: !!s.summer, withFan: !!s.withFan,
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -157,7 +173,7 @@ export const unlockedIds = (stats) => MISSIONS.filter(m => missionDone(m, stats)
 // Les cosmétiques nouvellement débloqués sont portés tout de suite (effet « waouh » en direct).
 // projectId = l'affaire ; reportId = le rapport relu (affaire + visite), pour la « remontada ».
 // trashed = éléments de l'affaire dans la corbeille de l'appareil (mission « Ça sent le vécu »).
-export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId, trashed = 0 }, now = new Date()) {
+export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId, trashed = 0, withFan = false }, now = new Date()) {
   const prev = normalizeState(state);
   if (!Number.isFinite(note) || observations <= 0) return { state: prev, completed: [] };
   const s = { ...prev.stats, projects: { ...prev.stats.projects }, affaires: { ...prev.stats.affaires }, reportObs: { ...prev.stats.reportObs } };
@@ -173,6 +189,9 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (note >= 8 && observations >= 8) s.bigGood = true;
   if (note >= 5 && note <= 6) s.midNote = true;
   if (Number(trashed) >= 5) s.trashy = true;
+  if (note <= 4) s.lowCount += 1;
+  if (note >= 9 && observations >= 5) s.grandCru = true;
+  if (withFan) s.withFan = true;
   s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
   s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
@@ -191,6 +210,8 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (h >= 5 && h < 9) s.early = true;
   if (h >= 17) s.afterwork = true;
   if ([10, 11, 0, 1, 2].includes(now.getMonth())) s.winter = true; // novembre → mars
+  if ([5, 6, 7].includes(now.getMonth())) s.summer = true;          // juin → août
+  if (h === 16) s.teaTime = true;                                   // 16 h – 17 h
   if (projectId) s.affaires[projectId] = 1;
   if (reportId) {
     const last = s.projects[reportId];
@@ -259,3 +280,16 @@ export function setGameMode(on) {
 
 // Tests uniquement.
 export function _resetCostarMem() { _mem = null; }
+
+// ── Portrait de Thomas (mission « Fan-club officiel ») ─────────────────────────────────────────
+// Sa photo = celle de son compte Google. L'app ne la connaît que sur SA session : on la garde
+// donc sur son appareil, et chez les collègues dès qu'ils le voient connecté (présence en direct,
+// qui transmet la photo de chacun). Jamais vue sur cet appareil → initiales dans le cœur.
+export const FAN_AVATAR_KEY = 'chantierai_costar_fan_avatar';
+export const isFanName = (name) => /cassetari/i.test(String(name || ''));
+export const isFanParticipant = (p) => /^thomas@assemblage\.net$/i.test(String(p?.email || '').trim()) || isFanName(p?.nom);
+export function getFanAvatar() { try { return localStorage.getItem(FAN_AVATAR_KEY) || null; } catch { return null; } }
+export function setFanAvatar(url) {
+  if (typeof url !== 'string' || !/^https:\/\//.test(url)) return;
+  try { if (localStorage.getItem(FAN_AVATAR_KEY) !== url) localStorage.setItem(FAN_AVATAR_KEY, url); } catch { /* mode privé */ }
+}
