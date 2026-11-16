@@ -52,4 +52,16 @@ describe('viseur intégré : photo à l\'endroit', () => {
   it('tête en bas → 180°', () => {
     expect(captureRotation({ uiAngle: 0, beta: -80, gamma: 5 })).toBe(180);
   });
+  it('paysage en visant vers le haut ou le bas (poutre, plancher) → reste paysage', () => {
+    // Retour Thomas 16/11 : ces cas donnaient 0 (portrait) ou 180 avec l'ancien calcul.
+    expect(captureRotation({ uiAngle: 0, beta: 3, gamma: 45 })).toBe(90);     // vise vers le haut
+    expect(captureRotation({ uiAngle: 0, beta: -4, gamma: -40 })).toBe(-90);
+    expect(captureRotation({ uiAngle: 0, beta: 178, gamma: 50 })).toBe(-90);  // angles basculés (au-delà de la verticale)
+    expect(captureRotation({ uiAngle: 0, beta: -177, gamma: -55 })).toBe(90);
+  });
+  it('à plat ou en diagonale → on garde la dernière orientation', () => {
+    expect(captureRotation({ uiAngle: 0, beta: 2, gamma: 4, prev: 90 })).toBe(90);   // plafond, tenu en paysage
+    expect(captureRotation({ uiAngle: 0, beta: 40, gamma: 45, prev: -90 })).toBe(-90);
+    expect(captureRotation({ uiAngle: 0, prev: 90 })).toBe(90);
+  });
 });

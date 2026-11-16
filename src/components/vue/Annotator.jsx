@@ -3106,8 +3106,10 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
               if (!reportFrame || !dispSize || !cv?.width || !cv?.height) return null;
               const fr = { ...reportFrame, ...(frameMove || {}) };
               const [cx, cy, cz] = reportCrop({ cropX: fr.cropX, cropY: fr.cropY, cropZoom: fr.cropZoom }, paths, cv.width, cv.height);
-              const r = reportVisibleRect(cv.width, cv.height, { orient: fr.orient, cx, cy, cz, fit: fr.fit });
-              if (!r) return null;
+              const fit = frameMove?.cropFit !== undefined ? frameMove.cropFit : fr.fit;
+              // Photo ENTIÈRE dans le cadre (ex. photo portrait en cadre portrait) : rien de grisé,
+              // mais l'étiquette reste pour pouvoir rechanger de format.
+              const r = reportVisibleRect(cv.width, cv.height, { orient: fr.orient, cx, cy, cz, fit }) || { x: 0, y: 0, w: 1, h: 1, full: true };
               // Déplacer le cadre (demande Thomas : « montrer le plafond ou le sol ») : on glisse la
               // poignée ; la position devient le recadrage de la photo dans le rapport.
               const startFrameDrag = (e) => {
@@ -3118,28 +3120,45 @@ const Annotator = forwardRef(function Annotator({ bgImage, hqImage = null, saved
                 const move = (ev) => {
                   const nx = Math.max(0, Math.min(1 - r0.w, r0.x + (ev.clientX - sx) / W));
                   const ny = Math.max(0, Math.min(1 - r0.h, r0.y + (ev.clientY - sy) / H));
-                  setFrameMove({
+                  setFrameMove(prev => ({
+                    ...(prev || {}), // garde le format choisi (paysage / portrait)
                     cropX: r0.w < 0.999 ? Math.round((nx / (1 - r0.w)) * 1000) / 10 : 50,
                     cropY: r0.h < 0.999 ? Math.round((ny / (1 - r0.h)) * 1000) / 10 : 50,
-                  });
+                  }));
                 };
                 const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
                 window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
               };
               const hole = `M${r.x} ${r.y}h${r.w}v${r.h}h${-r.w}Z`;
+              const full = !!r.full;
               return (
                 <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', zIndex:2 }}>
                   <div style={{ position:'relative', width:dispSize.w, height:dispSize.h, maxWidth:'100%', maxHeight:'100%', transform:`translate(${vt.px}px,${vt.py}px) scale(${vt.z})`, transformOrigin:'50% 50%' }}>
-                    <svg viewBox="0 0 1 1" preserveAspectRatio="none" width="100%" height="100%" style={{ position:'absolute', inset:0, display:'block' }}>
+                    {!full && <svg viewBox="0 0 1 1" preserveAspectRatio="none" width="100%" height="100%" style={{ position:'absolute', inset:0, display:'block' }}>
                       <path d={`M0 0H1V1H0Z${hole}`} fill="rgba(20,20,20,0.5)" fillRule="evenodd"/>
                       <path d={hole} fill="none" stroke="white" strokeWidth="1.5" strokeDasharray="6 4" vectorEffect="non-scaling-stroke"/>
-                    </svg>
-                    <span onPointerDown={startFrameDrag} title="Glisser pour déplacer le cadre du rapport (montrer le plafond, le sol…)"
+                    </svg>}
+                    <span onPointerDown={full ? undefined : startFrameDrag} title="Glisser pour déplacer le cadre du rapport (montrer le plafond, le sol…)"
                       style={{ position:'absolute', left:`${(r.x * 100).toFixed(2)}%`, top:`${(r.y * 100).toFixed(2)}%`, transform:`scale(${1 / vt.z})`, transformOrigin:'0 0',
                         background:'rgba(0,0,0,0.72)', color:'white', fontSize:11.5, fontWeight:700, padding:'4px 9px', borderRadius:6, whiteSpace:'nowrap', margin:'4px 0 0 4px',
-                        pointerEvents:'auto', cursor:'move', touchAction:'none', userSelect:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
-                      <span style={{ fontSize:14, lineHeight:1 }}>✥</span>
-                      Cadre du rapport — glisser pour déplacer · le grisé ne sera pas visible
+                        pointerEvents:'auto', cursor: full ? 'default' : 'move', touchAction:'none', userSelect:'none', display:'inline-flex', alignItems:'center', gap:6 }}>
+                      {full ? 'Cadre du rapport — photo entière' : <><span style={{ fontSize:14, lineHeight:1 }}>✥</span>
+                      Cadre du rapport — glisser pour déplacer · le grisé ne sera pas visible</>}
+                      {/* Format du cadre (demande Thomas 16/11 : « photos prises en portrait, choisir
+                          la forme du cadre ici aussi ») : même réglage que dans le rapport. */}
+                      {[['landscape', 'Paysage', 16, 11], ['portrait', 'Portrait', 11, 16]].map(([key, label, w, h]) => {
+                        const on = (fr.orient === 'portrait' ? 'portrait' : 'landscape') === key;
+                        return (
+                          <button key={key} type="button" title={`Cadre ${label.toLowerCase()} dans le rapport`} aria-pressed={on}
+                            onPointerDown={e => e.stopPropagation()}
+                            onClick={e => { e.stopPropagation(); setFrameMove(prev => ({ ...(prev || {}), orient: key, cropX: 50, cropY: 50, cropFit: false })); }}
+                            style={{ display:'inline-flex', alignItems:'center', gap:5, marginLeft: key === 'landscape' ? 6 : 0, padding:'2px 8px', borderRadius:5, border:'none', cursor:'pointer',
+                              background: on ? DA.red : 'rgba(255,255,255,0.14)', color:'white', fontSize:11, fontWeight:700 }}>
+                            <span style={{ width:w * 0.75, height:h * 0.75, border:'1.5px solid currentColor', borderRadius:2, display:'inline-block' }}/>
+                            {label}
+                          </button>
+                        );
+                      })}
                     </span>
                   </div>
                 </div>

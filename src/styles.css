@@ -206,6 +206,12 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .costar-bubble { transform-origin: 90% 100%; animation: costar-pop 0.22s ease-out; }
 .costar-unlock { animation: costar-tada 0.7s ease-out 0.15s both; }
 .costar-dots span { animation: costar-dot 1.2s infinite; opacity: 0.2; }
+.costar-fly { transform-box: view-box; transform-origin: 58px 50px; animation: costar-fly 4s linear infinite; }
+.costar-wing { transform-box: fill-box; transform-origin: center bottom; animation: costar-flutter 0.12s linear infinite; }
+.costar-stink { animation: costar-stink 2.7s ease-in-out infinite; }
+@keyframes costar-fly { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes costar-flutter { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(0.3); } }
+@keyframes costar-stink { 0% { opacity: 0; transform: translateY(6px); } 35% { opacity: 0.9; } 100% { opacity: 0; transform: translateY(-9px); } }
 .costar-dots span:nth-child(2) { animation-delay: 0.2s; }
 .costar-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes costar-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
@@ -218,7 +224,7 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 @keyframes costar-pop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 @keyframes costar-dot { 0%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-unlock, .costar-dots span { animation: none; }
+  .costar .costar-eyes, .costar .costar-tail, .costar-wiggle, .costar-busy .costar-head, .costar-busy .costar-teeth, .costar-label, .costar-bubble, .costar-unlock, .costar-dots span, .costar-fly, .costar-wing, .costar-stink { animation: none; }
 }
 
 /* Alerte corbeille (VueProjet) : du nouveau à restaurer → secousse + halo rouge pulsé. */

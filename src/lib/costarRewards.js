@@ -21,6 +21,7 @@ export const CATEGORIES = [
   { slot: 'hand',  label: 'Main' },
   { slot: 'feet',  label: 'Pieds' },
   { slot: 'extra', label: 'Accessoire' },
+  { slot: 'aura',  label: 'Ambiance' },
 ];
 export const SLOTS = CATEGORIES.map(c => c.slot);
 
@@ -63,6 +64,8 @@ export const COSMETICS = {
   surf:      { name: 'Planche de surf',    slot: 'extra', icon: '🏄' },
   skis:      { name: 'Skis',               slot: 'extra', icon: '🎿' },
   ninja:     { name: 'Bandeau de ninja',   slot: 'head',  icon: '🥷' },
+  // Demande Thomas 16/11 : mouches qui tournent, odeurs, peau de banane usagée aux pieds.
+  poubelle:  { name: 'Odeur de poubelle',  slot: 'aura',  icon: '🪰' },
 };
 
 // progress(stats) → [actuel, objectif]. Mission accomplie quand actuel >= objectif.
@@ -104,12 +107,13 @@ export const MISSIONS = [
   { id: 'costard',   title: 'Costar en costard',      desc: 'Obtenir 9/10 ou plus, 5 fois. Un ingénieur senior, ça se respecte : costard trois pièces de rigueur.', reward: 'costard', progress: s => [Math.min(s.count9, 5), 5] },
   { id: 'dix',       title: 'Perfection',             desc: 'Obtenir 10/10',                                         reward: 'casque_or', progress: s => [Math.min(s.count10, 1), 1] },
   { id: 'veteran',   title: 'Vétéran du chantier',    desc: 'Faire relire 25 rapports',                              reward: 'cicatrices',progress: s => [Math.min(s.reviews, 25), 25] },
+  { id: 'poubelle',  title: 'Ça sent le vécu',        desc: 'Faire relire un rapport dont la corbeille déborde (5 éléments supprimés ou plus). Costar garde un petit souvenir de la benne.', reward: 'poubelle', progress: s => [s.trashy ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
   return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {},
-    friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0 };
+    friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0, trashy: false };
 }
 export function emptyState() {
   return { stats: emptyStats(), equipped: {}, unseen: [], sandbox: {} };
@@ -132,6 +136,7 @@ export function normalizeState(raw) {
     shrunk: !!s.shrunk, reportObs: s.reportObs && typeof s.reportObs === 'object' ? { ...s.reportObs } : {}, // rapport → nb d'observations à la dernière relecture
     friday: !!s.friday, monday: !!s.monday, early: !!s.early, afterwork: !!s.afterwork, midNote: !!s.midNote,
     reread: !!s.reread, winter: !!s.winter, bigGood: !!s.bigGood, streak7: num(s.streak7, 0), bestStreak7: num(s.bestStreak7, 0),
+    trashy: !!s.trashy,
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
     // Rangé dans la catégorie ACTUELLE de l'objet (une catégorie peut avoir changé d'une version à l'autre).
@@ -151,7 +156,8 @@ export const unlockedIds = (stats) => MISSIONS.filter(m => missionDone(m, stats)
 // Applique une relecture : renvoie le nouvel état + les missions accomplies À CETTE relecture.
 // Les cosmétiques nouvellement débloqués sont portés tout de suite (effet « waouh » en direct).
 // projectId = l'affaire ; reportId = le rapport relu (affaire + visite), pour la « remontada ».
-export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId }, now = new Date()) {
+// trashed = éléments de l'affaire dans la corbeille de l'appareil (mission « Ça sent le vécu »).
+export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId, trashed = 0 }, now = new Date()) {
   const prev = normalizeState(state);
   if (!Number.isFinite(note) || observations <= 0) return { state: prev, completed: [] };
   const s = { ...prev.stats, projects: { ...prev.stats.projects }, affaires: { ...prev.stats.affaires }, reportObs: { ...prev.stats.reportObs } };
@@ -166,6 +172,7 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (note >= 10 && observations >= 10) s.perfectBig = true;
   if (note >= 8 && observations >= 8) s.bigGood = true;
   if (note >= 5 && note <= 6) s.midNote = true;
+  if (Number(trashed) >= 5) s.trashy = true;
   s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
   s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
