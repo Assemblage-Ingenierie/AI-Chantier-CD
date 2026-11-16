@@ -49,18 +49,31 @@ export function autoCopyToPhone(fileOrBlob, projetNom, plat = platformOf()) {
 
 // Viseur intégré : de combien tourner l'image capturée (degrés, sens horaire) pour qu'elle soit
 // à l'endroit. uiAngle = rotation actuelle de l'ÉCRAN (screen.orientation.angle) ; beta / gamma =
-// inclinaison physique (DeviceOrientationEvent : beta avant/arrière, gamma gauche/droite).
+// inclinaison physique (DeviceOrientationEvent) ; prev = dernière orientation décidée.
 //   • écran déjà tourné (paysage affiché) → les images de la caméra suivent l'écran → 0 ;
-//   • écran verrouillé en portrait, téléphone tenu à l'horizontale :
-//       côté droit vers le bas (gamma > 0) → +90 ; côté gauche vers le bas (gamma < 0) → -90 ;
-//   • à plat ou inconnu → 0 (on ne devine pas).
-export function captureRotation({ uiAngle = 0, beta = null, gamma = null } = {}) {
+//   • sinon on calcule la PESANTEUR dans le repère du téléphone (gx = vers le bord droit,
+//     gy = vers le haut) et on regarde quel bord pointe vers le sol :
+//       bord droit → +90 ; bord gauche → -90 ; bord du haut → 180 ; bord du bas → 0.
+//   • téléphone presque à plat (photo du plafond / du sol) ou entre deux → on GARDE prev,
+//     comme l'appareil photo du téléphone.
+// Retour Thomas 16/11 : « photo prise en paysage, mise en portrait dans l'app ». L'ancien calcul
+// testait beta/gamma bruts : en paysage, viser un peu vers le haut ou le bas (poutre, plancher)
+// faisait chuter |gamma| sous le seuil (ou basculer beta à ±180) → 0 ou 180 au lieu de ±90.
+// La pesanteur, elle, ne dépend pas de ces bascules d'angles.
+export function gravityXY(beta, gamma) {
+  const b = (beta * Math.PI) / 180, g = (gamma * Math.PI) / 180;
+  return { gx: Math.sin(g) * Math.cos(b), gy: -Math.sin(b) };
+}
+export function captureRotation({ uiAngle = 0, beta = null, gamma = null, prev = 0 } = {}) {
   const ui = ((Number(uiAngle) || 0) % 360 + 360) % 360;
   if (ui !== 0) return 0;
-  if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return 0;
-  if (Math.abs(gamma) >= 55 && Math.abs(beta) <= 50) return gamma > 0 ? 90 : -90;
-  if (beta <= -55) return 180; // tête en bas
-  return 0;
+  if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return prev;
+  const { gx, gy } = gravityXY(beta, gamma);
+  if (Math.hypot(gx, gy) < 0.35) return prev;            // à plat (< ~20°) : on ne devine pas
+  const ax = Math.abs(gx), ay = Math.abs(gy);
+  if (ax > ay * 1.3) return gx > 0 ? 90 : -90;           // paysage
+  if (ay > ax * 1.3) return gy < 0 ? 0 : 180;            // portrait (ou tête en bas)
+  return prev;                                            // pile en diagonale : on garde
 }
 
 // iPhone : la lecture de l'orientation (pour redresser les photos prises à l'horizontale) exige

@@ -4,6 +4,10 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { captureRotation } from '../../lib/deviceCamera.js';
 
+// Dernière orientation décidée (gardée d'une ouverture du viseur à l'autre) : téléphone à plat
+// (plafond, sol), on ne devine pas, on garde celle-ci, comme l'appareil photo du téléphone.
+let _lastRot = 0;
+
 // VISEUR PHOTO INTÉGRÉ (retour Thomas 10/11 : sur Samsung / vieux Pixel, « Photo » demandait
 // « galerie ou appareil photo ? », et le comportement variait d'un téléphone à l'autre).
 // Le viseur s'ouvre DANS l'app → identique sur iPhone et Android, aucun menu de choix, et le
@@ -25,7 +29,7 @@ export default function CameraCapture({ onShot, onNative, onClose, onPlace = nul
   const [torchCap, setTorchCap] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [rot, setRot] = useState(0); // rotation détectée → icône de l'obturateur tournée (on voit que c'est compris)
+  const [rot, setRot] = useState(_lastRot); // rotation détectée → icône de l'obturateur tournée (on voit que c'est compris)
   // ZOOM + GRAND ANGLE (retour Thomas 16/11 : « je perds le grand angle, je ne peux pas zoomer »).
   //  • zoom MATÉRIEL si le téléphone le propose (capabilities.zoom ; min < 1 = grand angle) ;
   //  • sinon zoom NUMÉRIQUE (recadrage au centre, appliqué aussi à la photo) ;
@@ -91,7 +95,9 @@ export default function CameraCapture({ onShot, onNative, onClose, onPlace = nul
     start();
     const onOrient = (e) => {
       orientRef.current = { beta: e.beta, gamma: e.gamma };
-      const r = captureRotation({ uiAngle: screen?.orientation?.angle ?? window.orientation ?? 0, beta: e.beta, gamma: e.gamma });
+      // prev : à plat (plafond, sol), on garde la dernière orientation décidée.
+      const r = captureRotation({ uiAngle: screen?.orientation?.angle ?? window.orientation ?? 0, beta: e.beta, gamma: e.gamma, prev: _lastRot });
+      _lastRot = r;
       setRot(prev => (prev === r ? prev : r));
     };
     window.addEventListener('deviceorientation', onOrient);
@@ -176,7 +182,7 @@ export default function CameraCapture({ onShot, onNative, onClose, onPlace = nul
     setFlash(true); setTimeout(() => setFlash(false), 120);
     try {
       const { beta, gamma } = orientRef.current;
-      const r = captureRotation({ uiAngle: screen?.orientation?.angle ?? window.orientation ?? 0, beta, gamma });
+      const r = captureRotation({ uiAngle: screen?.orientation?.angle ?? window.orientation ?? 0, beta, gamma, prev: _lastRot });
       // Zoom numérique : on garde le CENTRE de l'image (ce qu'on voit à l'écran).
       const dz = !zoomCap && zoomRef.current > 1 ? zoomRef.current : 1;
       const w = Math.round(v.videoWidth / dz), h = Math.round(v.videoHeight / dz);

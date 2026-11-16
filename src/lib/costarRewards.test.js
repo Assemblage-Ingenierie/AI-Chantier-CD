@@ -19,6 +19,13 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(state.unseen).toEqual(['lunettes', 'licorne']);
   });
 
+  it('corbeille qui déborde (5 éléments supprimés ou plus) → odeur de poubelle', () => {
+    expect(applyReview(emptyState(), { note: 6, observations: 4, projectId: 'p1', trashed: 4 }, day).completed.map(m => m.reward)).not.toContain('poubelle');
+    const r = applyReview(emptyState(), { note: 6, observations: 4, projectId: 'p1', trashed: 5 }, day);
+    expect(r.completed.map(m => m.reward)).toContain('poubelle');
+    expect(r.state.equipped.aura).toBe('poubelle');
+    expect(normalizeState(JSON.parse(JSON.stringify(r.state))).stats.trashy).toBe(true);
+  });
   it('rapport vide ou note invalide : rien ne bouge', () => {
     expect(applyReview(emptyState(), { note: 0, observations: 0 }, day).completed).toEqual([]);
     expect(applyReview(emptyState(), { note: NaN, observations: 4 }, day).state.stats.reviews).toBe(0);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
+import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode } from '../../lib/costarRewards.js';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
@@ -83,6 +84,50 @@ function Boot({ kind }) {
       <ellipse cx="-3.4" cy="124.4" rx="2" ry="0.8" fill="white" opacity="0.3"/>
       <path d="M-10 126.2 Q-10 129.8 -6.4 129.8 L6.4 129.8 Q10 129.8 10 126.2 Z" fill="#1F2937"/>
       <path d="M-6 129.8 L-6 128.8 M-2 129.8 L-2 128.8 M2 129.8 L2 128.8 M6 129.8 L6 128.8" stroke="#4B5563" strokeWidth="0.7"/>
+    </g>
+  );
+}
+
+// AMBIANCE « Odeur de poubelle » (demande Thomas 16/11) : peau de banane usagée aux pieds,
+// effluves verdâtres qui montent, et trois mouches qui tournent autour de la tête.
+function TrashAura() {
+  const fly = (
+    <g>
+      <ellipse cx="-1.3" cy="-1.6" rx="1.7" ry="1.1" fill="#E5E7EB" opacity="0.85" className="costar-wing"/>
+      <ellipse cx="1.3" cy="-1.6" rx="1.7" ry="1.1" fill="#E5E7EB" opacity="0.85" className="costar-wing"/>
+      <ellipse cx="0" cy="0" rx="1.5" ry="2" fill="#111827"/>
+      <circle cx="0" cy="-1.9" r="0.9" fill="#111827"/>
+    </g>
+  );
+  return (
+    <g>
+      {/* Peau de banane usagée, posée par terre à gauche des pieds : deux pétales retombés
+          (intérieur pâle), un pétale encore debout avec la queue, taches brunes. */}
+      <g strokeLinejoin="round" strokeLinecap="round">
+        <ellipse cx="24.5" cy="128.4" rx="12" ry="1.6" fill="#000" opacity="0.12"/>
+        <path d="M22.6 127.6 Q14 129.4 7.6 124.2 Q15.6 122 24 125.4 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.8"/>
+        <path d="M21.4 126.6 Q15 126.8 10.4 124.6 Q16.4 123.6 22.4 125.6 Z" fill="#FEF3C7"/>
+        <path d="M26.6 127.6 Q35.4 129.4 41.4 124 Q33.4 121.8 25.4 125.4 Z" fill="#EAB308" stroke="#A16207" strokeWidth="0.8"/>
+        <path d="M27.8 126.6 Q34.4 126.8 38.8 124.4 Q32.8 123.4 26.8 125.6 Z" fill="#FEF3C7"/>
+        <path d="M22.8 126.4 Q21.6 117.6 24.6 111.6 Q28 117.6 27 126.4 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.8"/>
+        <rect x="23.7" y="108.6" width="1.9" height="3.6" rx="0.6" fill="#78350F"/>
+        <path d="M21.6 128.2 Q24.8 125.2 28 128.2 Z" fill="#CA8A04" stroke="#854D0E" strokeWidth="0.7"/>
+        <circle cx="12.6" cy="124.6" r="0.9" fill="#78350F" opacity="0.85"/>
+        <circle cx="36.8" cy="124.8" r="1" fill="#78350F" opacity="0.85"/>
+        <circle cx="25.4" cy="118.6" r="0.9" fill="#78350F" opacity="0.8"/>
+        <circle cx="23.8" cy="122.4" r="0.6" fill="#78350F" opacity="0.7"/>
+      </g>
+      {/* Effluves qui montent */}
+      {[[20, 0], [97, 0.9], [88, 1.8]].map(([x, d]) => (
+        <path key={x} className="costar-stink" style={{ animationDelay: `${d}s` }}
+          d={`M${x} 96 q-3 -5 0 -10 q3 -5 0 -10 q-3 -5 0 -10`} fill="none" stroke="#84CC16" strokeWidth="1.6" strokeLinecap="round" opacity="0.75"/>
+      ))}
+      {/* Mouches en orbite autour de la tête */}
+      {[[0, 4.2, 40, 'normal'], [1.4, 5.6, 47, 'reverse'], [2.6, 3.4, 34, 'normal']].map(([d, dur, r, dir]) => (
+        <g key={d} className="costar-fly" style={{ animationDuration: `${dur}s`, animationDelay: `-${d}s`, animationDirection: dir }}>
+          <g transform={`translate(${58 + r} 52) scale(1.6)`}>{fly}</g>
+        </g>
+      ))}
     </g>
   );
 }
@@ -600,6 +645,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
           </g>
         )}
       </g>
+      {o.aura === 'poubelle' && <TrashAura/>}
     </svg>
   );
 }
@@ -735,7 +781,10 @@ export default function Costar({ projet, fixed = false }) {
       // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
       try {
         const pj = projetRef.current || {};
-        const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null });
+        // Éléments de l'affaire dans la corbeille de l'appareil (mission « Ça sent le vécu »).
+        let trashed = 0;
+        try { if (pj.id) trashed = (await listDeletedItems()).filter(e => e.projectId === pj.id).length; } catch { /* corbeille illisible */ }
+        const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null, trashed });
         saveCostarState(r.state);
         setUnlocks(r.completed);
       } catch { /* vestiaire indisponible : sans effet sur la relecture */ }
