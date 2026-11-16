@@ -73,6 +73,16 @@ describe('sortir une observation fusionnée', () => {
     expect(out[0].items).toEqual([]);
     expect(out[1].items.map(i => `${i.id}:${i.titre ?? ''}`)).toEqual(['z:', 'a:Humidité']);
   });
+
+  it('glisser-déposer : insérée à la position visée, ou dans une zone vide', () => {
+    const locs = [{ id: 'f', nom: 'Fond', items: [{ id: 'a' }, { id: 'b' }] }, { id: 'c', nom: 'Cour', items: [{ id: 'x' }, { id: 'y' }] }, { id: 'v', nom: 'Vide', items: [] }];
+    expect(moveItemToZone(locs, 'f', locs[0].items[0], 'c', 1)[1].items.map(i => i.id)).toEqual(['x', 'a', 'y']);
+    expect(moveItemToZone(locs, 'f', locs[0].items[0], 'c', 0)[1].items.map(i => i.id)).toEqual(['a', 'x', 'y']);
+    expect(moveItemToZone(locs, 'f', locs[0].items[0], 'c', 99)[1].items.map(i => i.id)).toEqual(['x', 'y', 'a']);
+    const out = moveItemToZone(locs, 'f', locs[0].items[1], 'v', 0);
+    expect(out[0].items.map(i => i.id)).toEqual(['a']);
+    expect(out[2].items.map(i => i.id)).toEqual(['b']);
+  });
 });
 
 describe('fusion : annotations du plan partagé (incident R+4)', () => {

@@ -1659,7 +1659,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             {/* Zone de l'observation : la déplacer ailleurs (ou la ressortir d'une fusion faite
                 par erreur dans une nouvelle zone). Discret : une seule ligne sous l'intitulé,
                 seulement pour une observation existante. */}
-            {item?.id && zoneId && zones.length > 0 && (
+            {/* PC : retiré (demande Thomas 16/11) → on glisse l'observation vers sa zone dans la
+                page Visite. Gardé sur TÉLÉPHONE : pas de glisser entre zones au doigt. */}
+            {item?.id && zoneId && zones.length > 0 && _isMobileDevice && (
               <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:8, flexWrap:'wrap' }}>
                 <span style={{ fontSize:12, color:DA.grayL, display:'inline-flex', alignItems:'center', gap:4 }}><Ic n="pin" s={12}/> Zone</span>
                 <select value={moveTo || ''} onChange={e => setMoveTo(e.target.value)}
