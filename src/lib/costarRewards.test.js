@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS } from './costarRewards.js';
+import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS, isFanParticipant } from './costarRewards.js';
 
 const day = new Date(2026, 3, 15, 15, 0); // mercredi d'avril, 15 h : aucune mission de jour / saison / heure
 const night = new Date(2026, 3, 15, 22, 30);
@@ -25,6 +25,23 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(r.completed.map(m => m.reward)).toContain('poubelle');
     expect(r.state.equipped.aura).toBe('poubelle');
     expect(normalizeState(JSON.parse(JSON.stringify(r.state))).stats.trashy).toBe(true);
+  });
+  it('voyages + fan-club : tea time, grand cru, larmes de crocodile, été, visite avec Thomas', () => {
+    const at = (m, h) => new Date(2026, m, 10, h, 30);
+    expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(2, 16)).completed.map(m => m.reward)).toContain('londres');
+    expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(2, 17)).completed.map(m => m.reward)).not.toContain('londres');
+    expect(applyReview(emptyState(), { note: 9, observations: 5 }, at(2, 10)).completed.map(m => m.reward)).toContain('dijon');
+    expect(applyReview(emptyState(), { note: 9, observations: 4 }, at(2, 10)).completed.map(m => m.reward)).not.toContain('dijon');
+    let st = applyReview(emptyState(), { note: 3, observations: 2 }, at(2, 10)).state;
+    expect(unlockedIds(st.stats)).not.toContain('nimes');
+    expect(applyReview(st, { note: 4, observations: 2 }, at(2, 11)).completed.map(m => m.reward)).toContain('nimes');
+    expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(6, 10)).completed.map(m => m.reward)).toContain('bale');
+    const r = applyReview(emptyState(), { note: 6, observations: 2, withFan: true }, at(2, 10));
+    expect(r.completed.map(m => m.reward)).toContain('fan');
+    expect(r.state.equipped.cadre).toBe('fan');
+    expect(isFanParticipant({ email: 'Thomas@assemblage.net' })).toBe(true);
+    expect(isFanParticipant({ nom: 'Thomas Cassetari-Moureaux' })).toBe(true);
+    expect(isFanParticipant({ nom: 'Thibaud Cravatte', email: 'thibaud@assemblage.net' })).toBe(false);
   });
   it('rapport vide ou note invalide : rien ne bouge', () => {
     expect(applyReview(emptyState(), { note: 0, observations: 0 }, day).completed).toEqual([]);

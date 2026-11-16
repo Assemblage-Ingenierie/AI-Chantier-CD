@@ -22,7 +22,7 @@ import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 import VisitesScreen from './VisitesScreen.jsx';
-import { isGameMode, setGameMode as setCostarGame, canUseGameMode } from '../../lib/costarRewards.js';
+import { isGameMode, setGameMode as setCostarGame, canUseGameMode, setFanAvatar } from '../../lib/costarRewards.js';
 
 export default function ChantierAI({ profile, session, onLogout, onProfileSaved }) {
   // Logo wordmark complet — utiliser le PNG HD local pour éviter qu'un fichier
@@ -83,6 +83,8 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
     if (!presenceUserId) return undefined;
     const meta = session?.user?.user_metadata || {};
     startPresence(profile, presenceUserId, meta.avatar_url || meta.picture || null); // photo du compte Google
+    // Costar « Fan-club officiel » : la photo de Thomas, gardée sur son propre appareil.
+    if (canUseGameMode(session?.user?.email)) setFanAvatar(meta.avatar_url || meta.picture || null);
     return () => { stopPresence(); };
   }, [presenceUserId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
