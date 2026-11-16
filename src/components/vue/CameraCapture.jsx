@@ -26,6 +26,18 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
   const [torchOn, setTorchOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rot, setRot] = useState(0); // rotation détectée → icône de l'obturateur tournée (on voit que c'est compris)
+  // ZOOM + GRAND ANGLE (retour Thomas 16/11 : « je perds le grand angle, je ne peux pas zoomer »).
+  //  • zoom MATÉRIEL si le téléphone le propose (capabilities.zoom ; min < 1 = grand angle) ;
+  //  • sinon zoom NUMÉRIQUE (recadrage au centre, appliqué aussi à la photo) ;
+  //  • objectif ultra grand angle séparé (iPhone, certains Android) : bouton « 0.5× ».
+  //  Pincer l'image à deux doigts = zoom ; pastilles 0.5× / 1× / 2× / 5× au-dessus du déclencheur.
+  const [zoomCap, setZoomCap] = useState(null); // { min, max } si zoom matériel
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1); zoomRef.current = zoom;
+  const [wideId, setWideId] = useState(null);   // deviceId de l'objectif ultra grand angle (si connu)
+  const [onWide, setOnWide] = useState(false);
+  const mainIdRef = useRef(null);
+  const pinchRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
@@ -46,6 +58,20 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
       streamRef.current = stream;
       const track = stream.getVideoTracks()[0];
       try { setTorchCap(!!track?.getCapabilities?.().torch); } catch { /* pas de lampe */ }
+      try {
+        const zc = track?.getCapabilities?.().zoom;
+        if (zc && Number.isFinite(zc.min) && Number.isFinite(zc.max) && zc.max > zc.min) {
+          setZoomCap({ min: zc.min, max: zc.max });
+          const cur = track.getSettings?.().zoom;
+          setZoom(Number.isFinite(cur) ? cur : Math.max(1, zc.min));
+        }
+      } catch { /* pas de zoom matériel → zoom numérique */ }
+      try {
+        mainIdRef.current = track?.getSettings?.().deviceId || null;
+        const devs = (await navigator.mediaDevices.enumerateDevices?.()) || [];
+        const wide = devs.find(d => d.kind === 'videoinput' && d.deviceId && d.deviceId !== mainIdRef.current && /ultra|grand.?angle/i.test(d.label || ''));
+        if (alive && wide) setWideId(wide.deviceId);
+      } catch { /* pas de liste d'objectifs */ }
       const v = videoRef.current;
       if (v) {
         v.srcObject = stream;
@@ -69,6 +95,48 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
   }, []);
 
 
+  // Applique un niveau de zoom (matériel si possible, sinon numérique).
+  const applyZoom = (z) => {
+    const lo = zoomCap ? zoomCap.min : 1, hi = zoomCap ? zoomCap.max : 5;
+    const v = Math.max(lo, Math.min(hi, z));
+    setZoom(v);
+    if (zoomCap) {
+      const track = streamRef.current?.getVideoTracks()[0];
+      try { track?.applyConstraints({ advanced: [{ zoom: v }] }).catch(() => {}); } catch { /* ignore */ }
+    }
+  };
+  // Bascule d'objectif (ultra grand angle ↔ principal) : on relance le flux sur l'autre caméra.
+  const switchLens = async (toWide) => {
+    const id = toWide ? wideId : mainIdRef.current;
+    if (!id || toWide === onWide) return;
+    try {
+      const s2 = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: id }, width: { ideal: 4032 }, height: { ideal: 3024 } } });
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = s2;
+      if (videoRef.current) { videoRef.current.srcObject = s2; try { await videoRef.current.play(); } catch { /* ignore */ } }
+      setOnWide(toWide);
+      setTorchOn(false);
+      const t2 = s2.getVideoTracks()[0];
+      let zc = null; try { zc = t2?.getCapabilities?.().zoom || null; } catch { /* ignore */ }
+      setZoomCap(zc && zc.max > zc.min ? { min: zc.min, max: zc.max } : null);
+      setZoom(1);
+    } catch { /* objectif indisponible : on reste sur l'actuel */ }
+  };
+  const onPinchStart = (e) => {
+    if (e.touches?.length === 2) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      pinchRef.current = { d, z: zoomRef.current };
+    }
+  };
+  const onPinchMove = (e) => {
+    const p = pinchRef.current;
+    if (!p || e.touches?.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    applyZoom(p.z * (d / (p.d || 1)));
+  };
+  const onPinchEnd = () => { pinchRef.current = null; };
+  const digital = !zoomCap && zoom > 1; // zoom numérique (recadrage)
+
   const toggleTorch = async () => {
     const track = streamRef.current?.getVideoTracks()[0];
     if (!track) return;
@@ -83,14 +151,17 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
     try {
       const { beta, gamma } = orientRef.current;
       const r = captureRotation({ uiAngle: screen?.orientation?.angle ?? window.orientation ?? 0, beta, gamma });
-      const w = v.videoWidth, h = v.videoHeight;
+      // Zoom numérique : on garde le CENTRE de l'image (ce qu'on voit à l'écran).
+      const dz = !zoomCap && zoomRef.current > 1 ? zoomRef.current : 1;
+      const w = Math.round(v.videoWidth / dz), h = Math.round(v.videoHeight / dz);
+      const sx = Math.round((v.videoWidth - w) / 2), sy = Math.round((v.videoHeight - h) / 2);
       const turn = r === 90 || r === -90;
       const cv = document.createElement('canvas');
       cv.width = turn ? h : w; cv.height = turn ? w : h;
       const ctx = cv.getContext('2d');
       ctx.translate(cv.width / 2, cv.height / 2);
       ctx.rotate((r * Math.PI) / 180);
-      ctx.drawImage(v, -w / 2, -h / 2, w, h);
+      ctx.drawImage(v, sx, sy, w, h, -w / 2, -h / 2, w, h);
       const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
       if (blob) {
         const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
@@ -111,9 +182,28 @@ export default function CameraCapture({ onShot, onNative, onClose }) {
   return createPortal(
     <div role="dialog" aria-label="Prendre des photos"
       style={{ position:'fixed', inset:0, zIndex:80, background:'#000', display:'flex', flexDirection:'column', color:'white', paddingTop:'env(safe-area-inset-top)', paddingBottom:'env(safe-area-inset-bottom)' }}>
-      <div style={{ position:'relative', flex:1, minHeight:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div onTouchStart={onPinchStart} onTouchMove={onPinchMove} onTouchEnd={onPinchEnd} onTouchCancel={onPinchEnd}
+        style={{ position:'relative', flex:1, minHeight:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', touchAction:'none' }}>
         <video ref={videoRef} playsInline muted autoPlay
-          style={{ width:'100%', height:'100%', objectFit:'contain', background:'#000' }}/>
+          style={{ width:'100%', height:'100%', objectFit:'contain', background:'#000', transform: digital ? `scale(${zoom})` : 'none', transformOrigin:'center' }}/>
+        {/* Niveaux de zoom (comme l'appareil photo du téléphone) */}
+        {ready && !msg && (
+          <div style={{ position:'absolute', bottom:12, left:'50%', transform:'translateX(-50%)', display:'flex', gap:6, background:'rgba(0,0,0,0.35)', borderRadius:20, padding:4 }}>
+            {[
+              ...((wideId || (zoomCap && zoomCap.min < 0.95)) ? [{ k: 'w', l: zoomCap && zoomCap.min < 0.95 && !wideId ? `${Math.round(zoomCap.min * 10) / 10}×` : '0.5×', on: onWide || (zoomCap && !wideId && zoom < 0.95),
+                go: () => (wideId ? switchLens(true) : applyZoom(zoomCap.min)) }] : []),
+              { k: '1', l: '1×', on: !onWide && zoom >= 0.95 && zoom < 1.5, go: () => (onWide ? switchLens(false) : applyZoom(1)) },
+              { k: '2', l: '2×', on: !onWide && zoom >= 1.5 && zoom < 3.5, go: () => { if (onWide) switchLens(false).then(() => applyZoom(2)); else applyZoom(2); } },
+              ...((!zoomCap || zoomCap.max >= 4) ? [{ k: '5', l: '5×', on: !onWide && zoom >= 3.5, go: () => { if (onWide) switchLens(false).then(() => applyZoom(5)); else applyZoom(5); } }] : []),
+            ].map(b => (
+              <button key={b.k} onClick={b.go}
+                style={{ minWidth:38, height:32, borderRadius:16, border:'none', cursor:'pointer', fontSize:12, fontWeight:800,
+                  background: b.on ? 'rgba(255,255,255,0.92)' : 'transparent', color: b.on ? '#111' : 'white' }}>
+                {b.l}
+              </button>
+            ))}
+          </div>
+        )}
         {flash && <div style={{ position:'absolute', inset:0, background:'white', opacity:0.7, pointerEvents:'none' }}/>}
         {(!ready || msg) && (
           <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, padding:24, textAlign:'center' }}>

@@ -31,6 +31,7 @@ import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
 import CameraCapture from './CameraCapture.jsx';
 import { autoCopyToPhone, requestOrientationAccess, platformOf } from '../../lib/deviceCamera.js';
+import { getCameraMode, getPlaceAfterPhoto, setPlaceAfterPhoto, getGalleryCopy } from '../../lib/cameraPrefs.js';
 import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 import { currentEngine, startAiDictation, markBrowserDictationBroken, isEngineFailure, canRecordAudio } from '../../lib/aiDictation.js';
@@ -593,6 +594,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const isDirtyRef = useRef(null);
   // Viseur photo intégré (CameraCapture) — déclaré ici pour la gestion du bouton retour.
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Retours terrain 16/11 (lib/cameraPrefs.js) : repérage sur plan après la photo = interrupteur
+  // mémorisé (en-tête, téléphone) ; bouton « 📷 » à côté d'Enregistrer après la 1re photo prise,
+  // pour enchaîner les photos d'un seul geste.
+  const [placeOn, setPlaceOn] = useState(getPlaceAfterPhoto);
+  const placeOnRef = useRef(placeOn); placeOnRef.current = placeOn;
+  const [shotTaken, setShotTaken] = useState(false);
   const sessionShotsRef = useRef([]); // _id des photos prises dans la rafale en cours
   const cameraCloseRef = useRef(null);
   // Enregistre un handler de retour pour le bouton back Android — ferme d'abord les overlays internes
@@ -1211,6 +1218,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   // Repérage de la photo qu'on vient de prendre (plan de l'observation, sinon de la zone).
   const schedulePlacement = (next, idx, photoId) => {
+    if (!placeOnRef.current) return; // interrupteur « Plan » coupé : la photo est simplement ajoutée
     if ((next.plans || []).length > 0) {
       const counts = next.plans.map(pl => (pl.planAnnotations?.paths || []).filter(a => a.type === 'viewpoint').length);
       const planIdx = counts.indexOf(Math.max(...counts)); // le plan où l'on repère déjà le plus
@@ -1232,7 +1240,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     setCompressing(true);
     // Copie dans le téléphone (Android : téléchargement automatique, nom unique, photo D'ORIGINE en
     // JPG ; iPhone : impossible sans geste → bouton « Enreg. » ; PC : rien) — lib/deviceCamera.js.
-    if (fromCamera) filtered.forEach(f => autoCopyToPhone(f, projetNom));
+    if (fromCamera && getGalleryCopy()) filtered.forEach(f => autoCopyToPhone(f, projetNom));
+    if (fromCamera) setShotTaken(true);
     return Promise.all(filtered.map(compressPhoto))
       .then(done => {
         // _id : identifiant STABLE de la ligne photo en DB, attribué dès la création.
@@ -1288,8 +1297,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   };
   const openCamera = () => {
     requestOrientationAccess(); // iPhone : redresser les photos prises à l'horizontale
-    // PC (pas de téléphone) ou navigateur sans caméra intégrable → comportement d'avant (sélecteur de fichier).
-    if (!platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
+    // Appareil photo du TÉLÉPHONE par défaut (retour Thomas 16/11 : grand angle, zoom…) ; viseur de
+    // l'app seulement si choisi dans Paramètres › Photos. PC / navigateur sans caméra intégrable →
+    // sélecteur de fichier comme avant.
+    if (getCameraMode() !== 'app' || !platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
     sessionShotsRef.current = [];
     cameraCloseRef.current = onCameraClose;
     setCameraOpen(true);
@@ -1571,6 +1582,17 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
+            {/* Téléphone : interrupteur « Plan » = ouvrir le plan pour repérer chaque photo prise. */}
+            {!isDesktop && ((form.plans || []).length > 0 || onPlaceOnZonePlan) && (
+              <button role="switch" aria-checked={placeOn} onClick={() => { const v = !placeOn; setPlaceOn(v); setPlaceAfterPhoto(v); }}
+                title={placeOn ? 'Après une photo, le plan s\'ouvre pour la repérer' : 'Les photos sont ajoutées sans ouvrir le plan'}
+                style={{ marginLeft:'auto', marginRight:6, display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'4px 2px', color: placeOn ? DA.red : DA.grayL, fontSize:12, fontWeight:700 }}>
+                <Ic n="map" s={14}/> Plan
+                <span aria-hidden="true" style={{ width:34, height:20, borderRadius:10, background: placeOn ? DA.red : '#D1D5DB', position:'relative', transition:'background 0.15s', flexShrink:0 }}>
+                  <span style={{ position:'absolute', top:2, left: placeOn ? 16 : 2, width:16, height:16, borderRadius:'50%', background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.25)', transition:'left 0.15s' }}/>
+                </span>
+              </button>
+            )}
             <button onClick={requestClose} aria-label="Fermer" style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
           {draftRestored && (
@@ -2120,6 +2142,13 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               style={{ flex:1,background:!compressing?DA.black:'#ccc',color:'white',border:'none',borderRadius:10,padding:12,fontSize:15,fontWeight:700,cursor:!compressing?'pointer':'not-allowed' }}>
               Enregistrer l'observation
             </button>
+            {/* Mitrailler : après la 1re photo, une nouvelle photo en UN geste (téléphone). */}
+            {!isDesktop && shotTaken && (
+              <button onClick={openCamera} aria-label="Reprendre une photo" title="Reprendre une photo"
+                style={{ flexShrink:0, width:56, background:DA.red, color:'white', border:'none', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <Ic n="cam" s={22}/>
+              </button>
+            )}
           </div>
         </div>
       </div>
