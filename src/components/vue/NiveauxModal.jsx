@@ -126,6 +126,14 @@ export function ConsultViewer({ group, projetId = null, onClose }) {
     let timer = null;
     if (!coarse) {
       (async () => {
+        // FLUIDITÉ (retour Thomas 16/11 « ça lag à mort au zoom ») : si le PDF source est là, le
+        // PC l'affiche dans le lecteur PDF NATIF (iframe, vectoriel) → les images HD ne servent à
+        // RIEN. Avant, on les fabriquait quand même pour TOUTES les pages (rendu 6500 px depuis le
+        // PDF, page après page) → processeur saturé pendant qu'on zoomait. On ne les charge plus
+        // que pour le lecteur image de repli (plan importé en image, PDF indisponible).
+        let pdf = null;
+        try { pdf = await getGroupPdf(); } catch { pdf = null; }
+        if (cancelled || pdf) return;
         for (const p of (group.pages || [])) {
           if (cancelled) return;
           await loadHd(p);
@@ -297,7 +305,7 @@ function ConsultViewerDesktop({ group, hdById = {}, loadingHd = new Set(), getPd
           {group.pages.map(p => (
             <div key={p.id} style={{ position:'relative', marginBottom:8 }}>
               {(hdById[p.id] || p.bg)
-                ? <img src={hdById[p.id] || p.bg} alt="" draggable={false}
+                ? <img src={hdById[p.id] || p.bg} alt="" draggable={false} decoding="async"
                     style={{ width:'100%',display:'block',background:'white',pointerEvents:'none',userSelect:'none' }}/>
                 : <div style={{ padding:'40px 0',textAlign:'center',color:'rgba(255,255,255,0.5)',fontSize:12,background:'#222' }}>Page {p._page} — image non disponible sur cet appareil</div>}
               <span style={{ position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,fontWeight:700,borderRadius:6,padding:'3px 8px' }}>
