@@ -170,14 +170,44 @@ export const VOYAGE_HOLDS = ['londres', 'dijon', 'bale']; // la patte gauche se 
 
 // Patte levée (côté gauche de l'image) : bras arrondi + main ronde, coussinets clairs ; `front`
 // = petits doigts dessinés PAR-DESSUS l'objet tenu (ils l'enserrent).
-function RaisedArm() {
+function RaisedArm({ sleeve = null }) {
   return (
     <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M39 99 Q31 95 28 85" stroke="#6E4521" strokeWidth="10" fill="none"/>
-      <path d="M36.6 97.4 Q31.6 94 30 87" stroke="#7E5230" strokeWidth="3" fill="none" opacity="0.6"/>
+      <path d="M39 99 Q31 95 28 85" stroke={sleeve || '#6E4521'} strokeWidth="10" fill="none"/>
+      {sleeve
+        ? <path d="M31.4 88.6 Q27.6 89.6 25 87.4" stroke="white" strokeWidth="1.6" fill="none"/>
+        : <path d="M36.6 97.4 Q31.6 94 30 87" stroke="#7E5230" strokeWidth="3" fill="none" opacity="0.6"/>}
       <circle cx="27" cy="81" r="6" fill="#6E4521"/>
     </g>
   );
+}
+// Patte « peace » (V de la victoire), version castor mimi : paume claire, deux doigts levés
+// avec coussinets, les deux autres repliés, pouce par-dessus. Retour Thomas 16/11 (« des mains
+// mimi »). Dessinée pour la patte levée gauche ; la droite = miroir (cf. ArmSide).
+function PeaceHand() {
+  const F = '#6E4521', FS = '#4E3016', PAD = '#F2C9A0';
+  return (
+    <g strokeLinecap="round" strokeLinejoin="round">
+      <g transform="rotate(-17 25.6 78)">
+        <rect x="23.2" y="66" width="5" height="13" rx="2.5" fill={F} stroke={FS} strokeWidth="0.55"/>
+        <ellipse cx="25.7" cy="68.4" rx="1.6" ry="1.7" fill={PAD}/>
+      </g>
+      <g transform="rotate(13 28.6 78)">
+        <rect x="26.2" y="65.4" width="5" height="13.6" rx="2.5" fill={F} stroke={FS} strokeWidth="0.55"/>
+        <ellipse cx="28.7" cy="67.8" rx="1.6" ry="1.7" fill={PAD}/>
+      </g>
+      <circle cx="27" cy="81.6" r="6.6" fill={F} stroke={FS} strokeWidth="0.55"/>
+      <ellipse cx="27" cy="82.4" rx="3.4" ry="2.6" fill={PAD}/>
+      <ellipse cx="25.2" cy="85.6" rx="1.9" ry="1.6" fill="#7A4D27" stroke={FS} strokeWidth="0.45"/>
+      <ellipse cx="28.8" cy="85.8" rx="1.9" ry="1.6" fill="#7A4D27" stroke={FS} strokeWidth="0.45"/>
+      <path d="M21.6 83 Q24 86.4 28 84.4" stroke={FS} strokeWidth="2.6" fill="none"/>
+      <path d="M21.6 83 Q24 86.4 28 84.4" stroke="#7A4D27" strokeWidth="1.6" fill="none"/>
+    </g>
+  );
+}
+// Côté du bras levé : 'L' tel quel, 'R' = miroir autour de l'axe de Costar (x = 58).
+function ArmSide({ side, children }) {
+  return side === 'R' ? <g transform="translate(116 0) scale(-1 1)">{children}</g> : <g>{children}</g>;
 }
 function PawFingers() {
   return (
@@ -368,6 +398,8 @@ function FanFrame() {
 // outfit = { head, eyes, face, mouth, neck, body, waist, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
+  const leftUp = VOYAGE_HOLDS.includes(o.voyage) || o.hand === 'peace';
+  const rightUp = o.hand === 'peace';
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
       {/* Skis plantés DERRIÈRE Costar, même style que la planche (retour Thomas) : spatules relevées,
@@ -563,16 +595,18 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       {o.body === 'slip' && !o.feet && (
         <path d="M34.6 121.4 Q44 116.4 53.4 121.4 M62.6 121.4 Q72 116.4 81.4 121.4" stroke="#111827" strokeWidth="1.8" fill="none" strokeLinecap="round"/>
       )}
-      {/* Bras gauche : levé (souvenir de voyage tenu en l'air, cf. RaisedArm) → pas de bras au repos. */}
-      {!VOYAGE_HOLDS.includes(o.voyage) && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>}
-      <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {/* Bras au repos — sauf ceux qui sont LEVÉS : souvenir de voyage tenu (gauche) ou peace
+          & love (les deux). */}
+      {!leftUp && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>}
+      {!rightUp && <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>}
       {o.body === 'costard' && (
         <g>
-          {!VOYAGE_HOLDS.includes(o.voyage) && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>}
-          <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>
-          <path d="M33.6 102.5 Q36.5 105 40 104.6 M82.4 102.5 Q79.5 105 76 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
-          <ellipse cx="36.4" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
-          <ellipse cx="79.6" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
+          {!leftUp && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>}
+          {!rightUp && <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>}
+          {!leftUp && <path d="M33.6 102.5 Q36.5 105 40 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>}
+          {!rightUp && <path d="M82.4 102.5 Q79.5 105 76 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>}
+          {!leftUp && <ellipse cx="36.4" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>}
+          {!rightUp && <ellipse cx="79.6" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>}
           {/* Pochette (après les manches pour rester visible) */}
           <polygon points="66.5,91.2 72.6,89.4 71.6,93" fill="white"/>
           <path d="M66.6 93.4 L72.4 92.2" stroke="#9CA3AF" strokeWidth="0.8"/>
@@ -613,16 +647,6 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       )}
       {/* Peace & love, version castor (retour Thomas : « des petites griffes de castor ») : pattes au
           repos, deux petites griffes claires qui dépassent en V. */}
-      {o.hand === 'peace' && (
-        <g>
-          {(o.body === 'costard' ? [[36.4, 103.2, 1], [79.6, 103.2, -1]] : [[38.8, 91.6, 1], [77.2, 91.6, -1]]).map(([x, y, d]) => (
-            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`} fill="#F5E6D3" stroke="#A47148" strokeWidth="0.45" strokeLinejoin="round">
-              <path d="M-2.6 0.4 Q-3.6 -1.8 -3.4 -3.6 Q-1.8 -2.2 -1 0.2 Z"/>
-              <path d="M0.6 0.2 Q1.4 -2.2 2.8 -3.6 Q3.2 -1.6 2.2 0.4 Z"/>
-            </g>
-          ))}
-        </g>
-      )}
       {/* Guitare électrique rouge en bandoulière (accessoire) + pattes qui la tiennent */}
       {o.extra === 'guitare' && (
         <g strokeLinecap="round" strokeLinejoin="round">
@@ -881,6 +905,17 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         )}
       </g>
       {o.voyage && <VoyageFront kind={o.voyage}/>}
+      {/* Peace & love : pattes levées en V (la gauche tient le souvenir de voyage s'il y en a un). */}
+      {o.hand === 'peace' && (
+        <g>
+          {(VOYAGE_HOLDS.includes(o.voyage) ? ['R'] : ['L', 'R']).map(side => (
+            <ArmSide key={side} side={side}>
+              <RaisedArm sleeve={o.body === 'costard' ? '#2B3445' : null}/>
+              <PeaceHand/>
+            </ArmSide>
+          ))}
+        </g>
+      )}
       {o.cadre === 'fan' && <FanFrame/>}
       {o.aura === 'poubelle' && <TrashAuraFront/>}
     </svg>
