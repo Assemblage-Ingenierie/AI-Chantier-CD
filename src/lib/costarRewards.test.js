@@ -30,8 +30,14 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     const at = (m, h) => new Date(2026, m, 10, h, 30);
     expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(2, 16)).completed.map(m => m.reward)).toContain('londres');
     expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(2, 17)).completed.map(m => m.reward)).not.toContain('londres');
-    expect(applyReview(emptyState(), { note: 9, observations: 5 }, at(2, 10)).completed.map(m => m.reward)).toContain('dijon');
-    expect(applyReview(emptyState(), { note: 9, observations: 4 }, at(2, 10)).completed.map(m => m.reward)).not.toContain('dijon');
+    // Dégustation (Dijon) : 3 relectures DE SUITE du même rapport le même jour.
+    let d = applyReview(emptyState(), { note: 6, observations: 2, projectId: 'p', reportId: 'p|v' }, at(2, 10)).state;
+    d = applyReview(d, { note: 6, observations: 2, projectId: 'p', reportId: 'p|v' }, at(2, 11)).state;
+    expect(unlockedIds(d.stats)).not.toContain('dijon');
+    expect(applyReview(d, { note: 6, observations: 2, projectId: 'p', reportId: 'p|v' }, at(2, 12)).completed.map(m => m.reward)).toContain('dijon');
+    let e = applyReview(emptyState(), { note: 6, observations: 2, projectId: 'p', reportId: 'p|v' }, at(2, 10)).state;
+    e = applyReview(e, { note: 6, observations: 2, projectId: 'q', reportId: 'q|v' }, at(2, 11)).state;
+    expect(applyReview(e, { note: 6, observations: 2, projectId: 'p', reportId: 'p|v' }, at(2, 12)).completed.map(m => m.reward)).not.toContain('dijon');
     let st = applyReview(emptyState(), { note: 3, observations: 2 }, at(2, 10)).state;
     expect(unlockedIds(st.stats)).not.toContain('nimes');
     expect(applyReview(st, { note: 4, observations: 2 }, at(2, 11)).completed.map(m => m.reward)).toContain('nimes');
