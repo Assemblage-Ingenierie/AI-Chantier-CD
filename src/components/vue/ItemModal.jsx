@@ -31,7 +31,7 @@ import { broadcastDraft, broadcastDraftEnd, subscribeDrafts, colorFor, firstName
 import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, htmlToTextOffset, textToHtmlIndex } from '../../lib/liveText.js';
 import CameraCapture from './CameraCapture.jsx';
 import { autoCopyToPhone, requestOrientationAccess, platformOf } from '../../lib/deviceCamera.js';
-import { getCameraMode, getPlaceAfterPhoto, setPlaceAfterPhoto, getGalleryCopy } from '../../lib/cameraPrefs.js';
+import { getPlaceAfterPhoto, getGalleryCopy } from '../../lib/cameraPrefs.js';
 import { parseLooseJson } from '../../lib/aiJson.js';
 import { mergeDictation, capitalizeAfter } from '../../lib/dictation.js';
 import { currentEngine, startAiDictation, markBrowserDictationBroken, isEngineFailure, canRecordAudio } from '../../lib/aiDictation.js';
@@ -291,7 +291,7 @@ function TableSizePicker({ onPick, onClose }) {
   );
 }
 
-export default function ItemModal({ item, zones = [], zoneId = null, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null, baseItem = undefined }) {
+export default function ItemModal({ item, zones = [], zoneId = null, planBg, planAnnotations, onClose, onSave, onOpenAnnot, projetNom, projetId = null, visiteLabel, visiteDate, ingenieur, planLibrary = [], onBackRequest, vpNumByPath = null, vpBase = 0, onPlaceOnZonePlan = null, baseItem = undefined, visiteId = null }) {
   // Fiche ouverte → la mise à jour automatique de l'app attend sa fermeture (incident 15/10).
   useEditLock();
   // Zone de l'observation (déplacement / sortie d'une fusion faite par erreur). '__new__' =
@@ -594,11 +594,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const isDirtyRef = useRef(null);
   // Viseur photo intégré (CameraCapture) — déclaré ici pour la gestion du bouton retour.
   const [cameraOpen, setCameraOpen] = useState(false);
-  // Retours terrain 16/11 (lib/cameraPrefs.js) : repérage sur plan après la photo = interrupteur
-  // mémorisé (en-tête, téléphone) ; bouton « 📷 » à côté d'Enregistrer après la 1re photo prise,
-  // pour enchaîner les photos d'un seul geste.
-  const [placeOn, setPlaceOn] = useState(getPlaceAfterPhoto);
-  const placeOnRef = useRef(placeOn); placeOnRef.current = placeOn;
+  // Retours terrain 16/11 (lib/cameraPrefs.js) : repérage sur plan après la photo = interrupteur de
+  // la VISITE (tuile de la page des visites) ; bouton « 📷 » à côté d'Enregistrer après la 1re
+  // photo prise, pour rouvrir l'appareil d'un seul geste.
+  const placeOnRef = useRef(true); placeOnRef.current = getPlaceAfterPhoto(visiteId);
   const [shotTaken, setShotTaken] = useState(false);
   const sessionShotsRef = useRef([]); // _id des photos prises dans la rafale en cours
   const cameraCloseRef = useRef(null);
@@ -1297,10 +1296,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   };
   const openCamera = () => {
     requestOrientationAccess(); // iPhone : redresser les photos prises à l'horizontale
-    // Appareil photo du TÉLÉPHONE par défaut (retour Thomas 16/11 : grand angle, zoom…) ; viseur de
-    // l'app seulement si choisi dans Paramètres › Photos. PC / navigateur sans caméra intégrable →
-    // sélecteur de fichier comme avant.
-    if (getCameraMode() !== 'app' || !platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
+    // Téléphone : VISEUR DE L'APP (retour Thomas 16/11 : « pas de validation à chaque photo,
+    // l'appareil reste ouvert, un bouton pour fermer » — impossible avec l'appareil du téléphone,
+    // qui fait valider puis se ferme). Zoom / grand angle dans le viseur ; bouton « Appareil photo
+    // du téléphone » dedans pour une photo native. PC / sans caméra → sélecteur de fichier.
+    if (!platformOf().isMobile || !navigator.mediaDevices?.getUserMedia) { openNativeCamera(); return; }
     sessionShotsRef.current = [];
     cameraCloseRef.current = onCameraClose;
     setCameraOpen(true);
@@ -1582,17 +1582,6 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
             <p style={{ fontWeight:700,fontSize:15,color:DA.black }}>
               {item ? "Modifier l'observation" : 'Nouvelle observation'}
             </p>
-            {/* Téléphone : interrupteur « Plan » = ouvrir le plan pour repérer chaque photo prise. */}
-            {!isDesktop && ((form.plans || []).length > 0 || onPlaceOnZonePlan) && (
-              <button role="switch" aria-checked={placeOn} onClick={() => { const v = !placeOn; setPlaceOn(v); setPlaceAfterPhoto(v); }}
-                title={placeOn ? 'Après une photo, le plan s\'ouvre pour la repérer' : 'Les photos sont ajoutées sans ouvrir le plan'}
-                style={{ marginLeft:'auto', marginRight:6, display:'flex', alignItems:'center', gap:6, background:'none', border:'none', cursor:'pointer', padding:'4px 2px', color: placeOn ? DA.red : DA.grayL, fontSize:12, fontWeight:700 }}>
-                <Ic n="map" s={14}/> Plan
-                <span aria-hidden="true" style={{ width:34, height:20, borderRadius:10, background: placeOn ? DA.red : '#D1D5DB', position:'relative', transition:'background 0.15s', flexShrink:0 }}>
-                  <span style={{ position:'absolute', top:2, left: placeOn ? 16 : 2, width:16, height:16, borderRadius:'50%', background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.25)', transition:'left 0.15s' }}/>
-                </span>
-              </button>
-            )}
             <button onClick={requestClose} aria-label="Fermer" style={{ background:'none',border:'none',cursor:'pointer',color:DA.grayL,display:'flex',alignItems:'center',justifyContent:'center',padding:4 }}><Ic n="x" s={20}/></button>
           </div>
           {draftRestored && (
