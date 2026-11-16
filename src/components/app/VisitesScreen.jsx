@@ -12,6 +12,7 @@ import { getDeletedIds, liftTombstone } from '../../lib/tombstones.js';
 import { diffBackup, applyBackup } from '../../lib/backupDiff.js';
 import { addDeletedItem } from '../../lib/recoveryBin.js';
 import BackupDiffPanel from '../ui/BackupDiffPanel.jsx';
+import { getPlaceAfterPhoto, setPlaceAfterPhoto } from '../../lib/cameraPrefs.js';
 
 // État de sync d'une visite pour son badge (V2) :
 //  - pinned    : épinglée hors-ligne (photos + plans pré-téléchargés)
@@ -114,6 +115,9 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
   const summaryGenRef = useRef(false);
   const [visitRecaps, setVisitRecaps] = useState(() => loadVRecapCache());
   const [recapErr, setRecapErr] = useState({});     // id → message d'erreur (affiché sur la tuile)
+  // Interrupteur « Repérer les photos sur le plan » de chaque visite (lib/cameraPrefs.js, retour
+  // Thomas 16/11 : réglé une fois pour la visite, pas dans chaque observation).
+  const [placeOverride, setPlaceOverride] = useState({}); // visiteId → bool (re-rendu immédiat)
 
   // Récap perso — 100 % LOCAL, sans IA (fiable, instantané, pas de quota). SÉLECTIF (retour Thomas) :
   // on met en avant les urgences + les sujets structure/défauts, et on écarte les rappels
@@ -657,6 +661,21 @@ export default function VisitesScreen({ projet, onBack, onSelectVisite, onUpdate
                         )}
                       </div>
                     )}
+
+                    {/* Repérer chaque photo sur le plan (toutes les observations de la visite) */}
+                    {(() => {
+                      const on = placeOverride[v.id] ?? getPlaceAfterPhoto(v.id);
+                      return (
+                        <button role="switch" aria-checked={on}
+                          onClick={e => { e.stopPropagation(); setPlaceAfterPhoto(v.id, !on); setPlaceOverride(o => ({ ...o, [v.id]: !on })); }}
+                          style={{ alignSelf:'flex-start', display:'inline-flex', alignItems:'center', gap:8, background:'none', border:'none', padding:'2px 0', cursor:'pointer', color: on ? DA.black : DA.grayL, fontSize:12.5, fontWeight:600, textAlign:'left' }}>
+                          <span aria-hidden="true" style={{ width:34, height:20, borderRadius:10, background: on ? DA.red : '#D1D5DB', position:'relative', flexShrink:0, transition:'background 0.15s' }}>
+                            <span style={{ position:'absolute', top:2, left: on ? 16 : 2, width:16, height:16, borderRadius:'50%', background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.25)', transition:'left 0.15s' }}/>
+                          </span>
+                          📍 Placer chaque photo sur le plan
+                        </button>
+                      );
+                    })()}
 
                     {/* Résumé thématique IA ou urgences */}
                     {(visitSummary || urgentItems.length > 0) && (

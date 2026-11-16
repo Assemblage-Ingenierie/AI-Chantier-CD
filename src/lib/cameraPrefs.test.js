@@ -1,20 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getCameraMode, setCameraMode, getPlaceAfterPhoto, setPlaceAfterPhoto, getGalleryCopy, setGalleryCopy } from './cameraPrefs.js';
+import { getPlaceAfterPhoto, setPlaceAfterPhoto, getGalleryCopy } from './cameraPrefs.js';
 
 beforeEach(() => localStorage.clear());
 describe('réglages photo', () => {
-  it('par défaut : appareil du téléphone, repérage sur plan, copie galerie', () => {
-    expect(getCameraMode()).toBe('phone');
-    expect(getPlaceAfterPhoto()).toBe(true);
-    expect(getGalleryCopy()).toBe(true);
-  });
-  it('mémorisés', () => {
-    setCameraMode('app'); setPlaceAfterPhoto(false); setGalleryCopy(false);
-    expect(getCameraMode()).toBe('app');
-    expect(getPlaceAfterPhoto()).toBe(false);
+  it('par défaut : repérage sur plan oui, copie galerie non (pas de pop-up)', () => {
+    expect(getPlaceAfterPhoto('v1')).toBe(true);
     expect(getGalleryCopy()).toBe(false);
-    setCameraMode('n_importe_quoi'); setPlaceAfterPhoto(true);
-    expect(getCameraMode()).toBe('phone');
-    expect(getPlaceAfterPhoto()).toBe(true);
+  });
+  it('repérage mémorisé PAR VISITE', () => {
+    setPlaceAfterPhoto('v1', false);
+    expect(getPlaceAfterPhoto('v1')).toBe(false);
+    expect(getPlaceAfterPhoto('v2')).toBe(true);
+    setPlaceAfterPhoto('v1', true);
+    expect(getPlaceAfterPhoto('v1')).toBe(true);
   });
 });

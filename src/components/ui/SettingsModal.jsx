@@ -10,7 +10,6 @@ import { projectMatchesInitials } from '../../lib/profile.js';
 import { getAIProvider, setAIProvider } from '../../lib/aiProxy.js';
 import { getDictationMode, setDictationMode, clearBrowserDictationBroken, hasBrowserSR } from '../../lib/aiDictation.js';
 import { platformOf } from '../../lib/deviceCamera.js';
-import { getCameraMode, setCameraMode, getGalleryCopy, setGalleryCopy } from '../../lib/cameraPrefs.js';
 import { detectPlatform, canInstallNative, isAppInstalled, promptInstall, subscribeInstall } from '../../lib/pwaInstall.js';
 import { subscribePendingChanges } from '../../lib/pendingSync.js';
 import { getPhotoQuality, setPhotoQuality } from '../../lib/uiPrefs.js';
@@ -58,8 +57,6 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
   const [cleared, setCleared] = useState(false);
   const [aiProvider, setAiProviderState] = useState(getAIProvider()); // moteur IA : 'claude' | 'gemini'
   const [dictMode, setDictModeState] = useState(getDictationMode()); // dictée : 'auto' | 'ia'
-  const [camMode, setCamModeState] = useState(getCameraMode);    // photo : 'phone' | 'app'
-  const [galleryCopy, setGalleryCopyState] = useState(getGalleryCopy);
   const [photoQual, setPhotoQualState] = useState(getPhotoQuality()); // qualité photo capture
   // « Télécharger l'application » (PWA) : plateforme dont les instructions sont dépliées,
   // dispo de l'installation native, état installé, message de résultat.
@@ -498,30 +495,6 @@ export default function SettingsModal({ onClose, projets = [], profile = null, o
               Si un moteur est à court de quota ou en panne, l'app <strong>bascule seule</strong> sur un autre (Gemini ↔ Mistral) : rien à faire.
             </p>
           </div>
-
-          {/* ── Photos (téléphone) — lib/cameraPrefs.js, retours terrain 16/11 ── */}
-          {platformOf().isMobile && (
-            <div style={{ marginBottom:22 }}>
-              <p style={sectionTitle}>Photos</p>
-              {[
-                { on: camMode === 'app', set: (v) => { setCameraMode(v ? 'app' : 'phone'); setCamModeState(v ? 'app' : 'phone'); },
-                  l: 'Viseur photo de l\'app', s: camMode === 'app' ? 'Rafale sans quitter l\'app.' : 'Désactivé : « Photo » ouvre l\'appareil photo du téléphone (grand angle, zoom, flash).' },
-                ...(platformOf().isAndroid ? [{ on: galleryCopy, set: (v) => { setGalleryCopy(v); setGalleryCopyState(v); },
-                  l: 'Copie dans la galerie', s: galleryCopy ? 'Chaque photo est aussi copiée dans le téléphone (Chrome affiche alors « téléchargé »).' : 'Pas de copie : plus de message de téléchargement. Les photos restent sur le serveur et le Drive.' }] : []),
-              ].map(o => (
-                <button key={o.l} role="switch" aria-checked={o.on} onClick={() => o.set(!o.on)}
-                  style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 2px', background:'none', border:'none', borderTop:`1px solid ${DA.border}`, cursor:'pointer', textAlign:'left' }}>
-                  <span style={{ flex:1, minWidth:0 }}>
-                    <span style={{ display:'block', fontSize:13, fontWeight:700, color:DA.black }}>{o.l}</span>
-                    <span style={{ display:'block', fontSize:11, color:DA.grayL, marginTop:2, lineHeight:1.35 }}>{o.s}</span>
-                  </span>
-                  <span aria-hidden="true" style={{ width:38, height:22, borderRadius:11, background: o.on ? DA.red : '#D1D5DB', position:'relative', flexShrink:0, transition:'background 0.15s' }}>
-                    <span style={{ position:'absolute', top:2, left: o.on ? 18 : 2, width:18, height:18, borderRadius:'50%', background:'white', boxShadow:'0 1px 2px rgba(0,0,0,0.25)', transition:'left 0.15s' }}/>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* ── Dictée vocale (lib/aiDictation.js) — masqué sur téléphone / tablette, où le bouton
               micro de l'app est caché (dictée avec le micro du clavier, cf. ItemModal SHOW_MIC_ON_MOBILE). ── */}
