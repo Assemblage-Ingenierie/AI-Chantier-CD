@@ -21,6 +21,7 @@ import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
 import { enqueuePhotoUpload, getQueuedUploadPath } from '../../lib/photoUploadQueue.js';
 import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
+import { rotatePhoto } from '../../lib/photoRotate.js';
 import { getPhotoQualityParams } from '../../lib/uiPrefs.js';
 import { uploadCommentImage, signCommentPaths, resolveCommentHtml } from '../../lib/storage.js';
 import { mergePrefix } from '../../lib/zoneMerge.js';
@@ -1418,6 +1419,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         onPrev={annotatingPhotoIdx > 0 ? () => goToPhoto(annotatingPhotoIdx - 1) : null}
         onNext={annotatingPhotoIdx < total - 1 ? () => goToPhoto(annotatingPhotoIdx + 1) : null}
         photoPosition={total > 1 ? `${annotatingPhotoIdx + 1} / ${total}` : null}
+        onRotate={async (deg) => {
+          // Pivoter la photo (PC) : nouvelle version de la photo (lib/photoRotate.js), même ligne.
+          const np = await rotatePhoto(ph, deg, { projetNom, projetId, itemId: form.id });
+          if (!np) { alert('Impossible de pivoter cette photo. Réessayez.'); return; }
+          setForm(f => ({ ...f, photos: f.photos.map((p, i) => i === annotatingPhotoIdx ? np : p) }));
+        }}
       />
     );
   }
