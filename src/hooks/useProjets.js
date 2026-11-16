@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { optimizeHeavyCovers } from '../lib/coverOptimize.js';
 import { markCoverPhotosSettled } from '../lib/coverCache.js';
-import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, restorePlanRows, fetchStoredPlanHd, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject } from '../lib/storage.js';
+import { loadData, loadLocalData, saveData, saveLocalCache, loadProjectPhotos, migratePhotosToStorage, hydratePlans as hydratePlansRemote, hydrateChantierPhotos, coverLoadFailed, relinkStoragePhotos, hydratePlanLibrary as hydratePlanLibraryRemote, loadAllPlanBgs, getPersistedRemoteIds, getPersistedDeletedIds, getPersistedDirtyIds, setPersistedDirtyIds, deleteRemoteProjet, deleteRemotePlan, restorePlanRows, fetchStoredPlanHd, removePersistedDeletedId, loadDeletedChantierIds, removeDeletedChantierTombstone, addPersistedDeletedId, fetchPlanData, replayPendingDeletes, restrictKnownToState, loadRemoteProject, fetchPlanPdfByBase } from '../lib/storage.js';
+import { repairPlanBgs } from '../lib/planRepair.js';
 import { relinkDeletedPlans, visitUsesPlan, detachPlanFromVisit } from '../lib/planRecovery.js';
 import { syncTombstones, flushTombstones, getDeletedIds, liftTombstone } from '../lib/tombstones.js';
 import { renderPdfPage } from '../lib/pdfUtils.js';
@@ -1254,7 +1255,48 @@ export function useProjets(onSyncStatus) {
     setPlanThumbs(Object.fromEntries([...renderedBgs].map(([id, v]) => [id, v.bg])));
   };
 
-  const hydratePlanLibrary = async (projectId, { force = false } = {}) => {
+  // RÉPARATION DES FONDS MANQUANTS (lib/planRepair.js — Voltaire 16/11 : miniatures grises) :
+  // plans de la bibliothèque toujours SANS fond après le chargement → reconstruits depuis le cache
+  // de l'appareil, l'image HD du stockage ou la page du PDF source. Le projet est marqué « à
+  // synchroniser » : la sauvegarde normale renvoie ces fonds en base (saveRemote envoie le bg des
+  // plans qui n'en ont pas en base) → réparé pour tous. Une fois par projet et par session, en
+  // arrière-plan (n'attend pas : l'affichage du reste n'est pas retardé).
+  const bgRepairTried = useRef(new Set());
+  const repairMissingPlanBgs = async (projectId, justLoaded = null) => {
+    if (bgRepairTried.current.has(projectId)) return;
+    const proj = projetsRef.current.find(p => p.id === projectId);
+    // justLoaded : fonds que le chargement vient d'apporter (l'état n'est peut-être pas encore à jour).
+    const missing = (proj?.planLibrary || []).filter(pl => pl?.id && !pl.bg && !justLoaded?.[pl.id]?.bg).map(pl => ({ id: pl.id, nom: pl.nom }));
+    if (!missing.length) return;
+    bgRepairTried.current.add(projectId);
+    const bgs = await repairPlanBgs(missing, {
+      fromCache: (ids) => getPlanThumbs(ids),
+      fromHd: (id) => fetchStoredPlanHd(projectId, id),
+      downscale: (d) => downscaleDataUrl(d, 2400),
+      pdfOf: (base) => fetchPlanPdfByBase(projectId, base),
+      renderPage: (pdf, n) => renderPdfPage(pdf, n),
+    });
+    const ids = Object.keys(bgs);
+    logEvent('plans.bgRepair', { projet: projectId, missing: missing.length, repaired: ids.length });
+    if (!ids.length) return;
+    try { setPlanThumbs(bgs); } catch { /* best-effort */ }
+    dirtyIds.current.add(projectId);
+    userModified.current = true;
+    setProjets(ps => ps.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        updatedAt: new Date().toISOString(),
+        planLibrary: (p.planLibrary || []).map(pl => (!pl.bg && bgs[pl.id] ? { ...pl, bg: bgs[pl.id] } : pl)),
+        visites: (p.visites || []).map(v => ({
+          ...v,
+          localisations: (v.localisations || []).map(loc => (loc.planId && !loc.planBg && bgs[loc.planId] ? { ...loc, planBg: bgs[loc.planId] } : loc)),
+        })),
+      };
+    }));
+  };
+
+  const hydratePlanLibraryInner = async (projectId, { force = false } = {}) => {
     // Skip remote fetch if every plan already has bg in memory (from localStorage or previous fetch)
     // — sauf en mode force (bouton Actualiser) : on veut alors rafraîchir depuis le serveur,
     // car projetsRef.current peut être périmé juste après un poll (mise à jour via useEffect).
@@ -1299,6 +1341,13 @@ export function useProjets(onSyncStatus) {
       Object.entries(plansMap).filter(([, v]) => v?.bg).map(([id, v]) => [id, v.bg])
     ));
     return plansMap; // { planId: { bg, data } }
+  };
+
+  const hydratePlanLibrary = async (projectId, { force = false } = {}) => {
+    const out = await hydratePlanLibraryInner(projectId, { force });
+    // Après le chargement : fonds toujours manquants → réparation en arrière-plan.
+    repairMissingPlanBgs(projectId, out).catch(() => {});
+    return out;
   };
 
   const undo = useCallback(() => {
