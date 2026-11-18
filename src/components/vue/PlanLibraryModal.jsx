@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import { renderPdfPage, renderPdfPages, renderPdfPageHQ } from '../../lib/pdfUtils.js';
+import { getAffaireNum } from '../../lib/driveUpload.js';
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import PdfPagePicker from './PdfPagePicker.jsx';
 import { ConsultViewer } from './NiveauxModal.jsx';
@@ -70,7 +71,7 @@ export default function PlanLibraryModal({ planLibrary, onAdd, onDelete, onRenam
     if (driveContent != null) return; // déjà chargé
     setDriveLoading(true); setDriveErr(null);
     try {
-      const { folderId, folderName, driveId } = await resolveDriveFolder(projetNom);
+      const { folderId, folderName, driveId } = await resolveDriveFolder(projetNom, getAffaireNum(projetId));
       if (!folderId) {
         setDriveErr(`Dossier introuvable dans le Drive pour « ${projetNom} » — le nom du projet doit contenir le numéro d'affaire.`);
         setDriveLoading(false);

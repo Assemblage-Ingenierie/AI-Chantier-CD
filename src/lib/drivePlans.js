@@ -25,10 +25,12 @@ const _browseCache  = new Map(); // folderId  → { folders, files }
 
 // Retrouve le dossier racine de l'affaire → { folderId, folderName, driveId } (folderId
 // null si introuvable).
-export async function resolveDriveFolder(projetNom) {
-  if (_resolveCache.has(projetNom)) return _resolveCache.get(projetNom);
-  const r = await call({ action: 'resolve', projetNom });
-  if (r?.folderId) _resolveCache.set(projetNom, r);
+// projetNum = numéro d'affaire saisi sur l'appareil (cf. getAffaireNum), prioritaire sur le nom.
+export async function resolveDriveFolder(projetNom, projetNum = '') {
+  const key = `${projetNom}|${projetNum || ''}`;
+  if (_resolveCache.has(key)) return _resolveCache.get(key);
+  const r = await call({ action: 'resolve', projetNom, projetNum: projetNum || '' });
+  if (r?.folderId) _resolveCache.set(key, r);
   return r;
 }
 
