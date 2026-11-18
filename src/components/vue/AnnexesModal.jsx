@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
+import { getAffaireNum } from '../../lib/driveUpload.js';
 import { resolveDriveFolder, browseDriveFolder, downloadDrivePlan, fmtDriveSize } from '../../lib/drivePlans.js';
 import { uploadAnnexPdf, deleteAnnexPdf } from '../../lib/storage.js';
 import { getPdfPageCount } from '../../lib/pdfUtils.js';
@@ -84,7 +85,7 @@ export default function AnnexesModal({ annexes = [], onAdd, onDelete, projetNom 
     if (driveContent != null) return;
     setDriveLoading(true); setDriveErr(null);
     try {
-      const { folderId, folderName, driveId } = await resolveDriveFolder(projetNom);
+      const { folderId, folderName, driveId } = await resolveDriveFolder(projetNom, getAffaireNum(projetId));
       if (!folderId) {
         setDriveErr(`Dossier introuvable dans le Drive pour « ${projetNom} » — le nom du projet doit contenir le numéro d'affaire.`);
         setDriveLoading(false); return;

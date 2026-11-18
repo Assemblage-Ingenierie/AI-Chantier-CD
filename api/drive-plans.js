@@ -16,6 +16,7 @@
 // refactorer l'upload photos (en prod, fragile) pour partager du code.
 
 import crypto from 'crypto';
+import { resolveProjetFolder } from './_driveMatch.js';
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
@@ -75,59 +76,13 @@ async function findAffairesFolder(token) {
   throw new Error('Dossier "Affaires" introuvable — ajoutez GOOGLE_AFFAIRES_DRIVE_ID dans Vercel.');
 }
 
-// Numéro d'affaire depuis le nom du projet. Deux conventions Drive : ancien format « A696 »,
-// et format NUMÉRIQUE seul (ex. « 504 ») — c'est ce dernier qui n'était pas reconnu, donc les
-// dossiers dont le Drive ne porte QUE le numéro (« 504 ») restaient introuvables (retour Thomas).
-// On ignore les années (19xx/20xx) pour ne pas confondre un millésime avec un numéro d'affaire.
-function extractProjetNum(nom) {
-  const s = nom || '';
-  const a = s.match(/[Aa]\d{3,4}/);
-  if (a) return a[0].toUpperCase();
-  const nums = s.match(/\b\d{3,4}\b/g) || [];
-  const cand = nums.find(n => !/^(19|20)\d{2}$/.test(n));
-  return cand || null;
-}
-
-// Dossier de l'affaire : par numéro (A696…) à la racine d'Affaires, sinon recherche
-// dans tout le Drive. Renvoie { id, name } ou null (PAS de création ici : lecture seule).
-// Le numéro ne doit pas être COLLÉ à d'autres chiffres (« 504 » ≠ « 1504 » / « 5049 ») : on
-// exige des bords non-chiffres. Les séparateurs (_, espace, tiret) et les bords conviennent →
-// « 2026_504_Pavillon » matche bien. Réduit le risque de tomber sur un mauvais dossier.
-function numBoundaryRe(num) {
-  if (!num) return null;
-  const esc = String(num).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try { return new RegExp('(?<![0-9])' + esc + '(?![0-9])', 'i'); } catch { return null; }
-}
-
-async function findProjetFolder(token, driveId, projetNom) {
-  const num = extractProjetNum(projetNom);
-  const numRe = numBoundaryRe(num);
-  const searches = [];
-  if (num) {
-    searches.push({ q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`, byNum: true });
-    searches.push({ q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and trashed = false`, byNum: true });
-  }
-  const firstWord = (projetNom || '').split(/[\s_-]+/).filter(w => w.length > 3)[0];
-  if (firstWord) searches.push({ q: `name contains ${JSON.stringify(firstWord)} and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`, byNum: false });
-  let fallback = null; // meilleur candidat « approximatif » si aucun match propre du numéro
-  for (const { q, byNum } of searches) {
-    const params = new URLSearchParams({
-      q, fields: 'files(id,name)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
-      driveId, corpora: 'drive', pageSize: '5',
-    });
-    const res = await fetch(`${DRIVE_API}/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    const files = data.files || [];
-    if (!files.length) continue;
-    if (byNum && numRe) {
-      const exact = files.find(f => numRe.test(f.name));
-      if (exact) return exact;                 // numéro isolé → match sûr
-      if (!fallback) fallback = files[0];       // sinon on garde en repli mais on continue à chercher
-      continue;
-    }
-    if (!fallback) return files[0];             // recherche par mot (n'écrase pas un repli numéro)
-  }
-  return fallback;
+// Dossier de l'affaire (lecture seule, aucune création) : recherche intelligente partagée avec
+// l'upload des photos — anciens codes (« 541 », « 021 »), petites fautes, puis Drive des affaires
+// ARCHIVÉES (retour Thomas 18/11). Cf. api/_driveMatch.js. → { id, name, driveId } | null.
+async function findProjetFolder(token, driveId, projetNom, projetNum) {
+  const found = await resolveProjetFolder(token, driveId, { projetNom, projetNum });
+  if (found) console.log(`drive-plans: dossier affaire « ${found.name} » (${found.how})`);
+  return found;
 }
 
 // Contenu d'UN niveau de dossier — navigation « comme dans le Drive » (demande Thomas :
@@ -175,14 +130,15 @@ export default async function handler(req, res) {
   try {
     const sa = JSON.parse(saJson);
     const token = await getAccessToken(sa);
-    const { action, projetNom, fileId, offset = 0 } = req.body || {};
+    const { action, projetNom, projetNum, fileId, offset = 0 } = req.body || {};
 
     if (action === 'resolve') {
       // Retrouve le dossier racine de l'affaire (par numéro, sinon premier mot du nom).
       const { driveId } = await findAffairesFolder(token);
-      const folder = await findProjetFolder(token, driveId, projetNom);
+      const folder = await findProjetFolder(token, driveId, projetNom, projetNum);
       if (!folder) return res.status(200).json({ folderId: null, folderName: null });
-      return res.status(200).json({ folderId: folder.id, folderName: folder.name, driveId });
+      // driveId du dossier trouvé (il peut être dans le Drive des affaires archivées).
+      return res.status(200).json({ folderId: folder.id, folderName: folder.name, driveId: folder.driveId });
     }
 
     if (action === 'browse') {
