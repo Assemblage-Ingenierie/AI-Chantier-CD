@@ -144,6 +144,12 @@ gh pr create --base main --head <feature-branch>
 
 ---
 
+## Titres de mise à jour (Vercel)
+
+Le titre du commit / de la PR apparaît dans la liste des déploiements Vercel. Pour les nouveautés de **Costar** (missions, cosmétiques), garder la surprise : titre NEUTRE (« Améliorations diverses »), sans nom de mission ni d'objet (demande Thomas 16/11).
+
+---
+
 ## Stack technique
 
 - React + Vite, déployé sur Vercel depuis la branche `main`

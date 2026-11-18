@@ -5,6 +5,12 @@ import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_R
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant } from '../../lib/costarRewards.js';
 import { subscribePresence } from '../../lib/presence.js';
+import twPeace from '../../assets/costar/270c-1f3fe.svg?raw';
+import twCroc from '../../assets/costar/1f40a.svg?raw';
+import twDuck from '../../assets/costar/1f986.svg?raw';
+import twIce from '../../assets/costar/1f368.svg?raw';
+import twWine from '../../assets/costar/1f377.svg?raw';
+import twUk from '../../assets/costar/1f1ec-1f1e7.svg?raw';
 
 // Progression du vestiaire (lib/costarRewards.js), partagée en direct entre les Costar affichés.
 // MÉMOIRE DES AVIS (retour Thomas : « il met du temps et bouffe mon quota gratuit ») : un rapport
@@ -160,163 +166,39 @@ function TrashAuraFront() {
   );
 }
 
-// SOUVENIRS DE VOYAGE (demande Thomas 16/11 ; v2 après retour : « des mains mimi », pot de glace
-// DANS la main, gros croco balèze, gros colvert). Dessinés DEVANT Costar.
-//   • Londres : bonnet de garde (coiffe, cf. Bearskin) + Union Jack qui flotte, tenu en l'air ;
-//   • Dijon   : bouteille de rouge tenue fièrement ;
-//   • Nîmes   : gros crocodile musclé, debout bras croisés, à côté de Costar (création originale) ;
-//   • Bâle    : pot de glace dans la patte + gros canard colvert assis à ses pieds.
-export const VOYAGE_HOLDS = ['londres', 'dijon', 'bale']; // la patte gauche se lève pour tenir l'objet
-
-// Patte levée (côté gauche de l'image) : bras arrondi + main ronde, coussinets clairs ; `front`
-// = petits doigts dessinés PAR-DESSUS l'objet tenu (ils l'enserrent).
-function RaisedArm() {
-  return (
-    <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M39 99 Q31 95 28 85" stroke="#6E4521" strokeWidth="10" fill="none"/>
-      <path d="M36.6 97.4 Q31.6 94 30 87" stroke="#7E5230" strokeWidth="3" fill="none" opacity="0.6"/>
-      <circle cx="27" cy="81" r="6" fill="#6E4521"/>
-    </g>
-  );
-}
-function PawFingers() {
-  return (
-    <g>
-      {[[22.4, 80.6], [25.6, 79.2], [28.8, 79.2], [31.6, 80.8]].map(([x, y]) => (
-        <g key={x}>
-          <ellipse cx={x} cy={y} rx="1.9" ry="2.3" fill="#7A4D27" stroke="#4E3016" strokeWidth="0.45"/>
-          <ellipse cx={x} cy={y - 0.6} rx="0.9" ry="0.8" fill="#F2C9A0"/>
-        </g>
-      ))}
-    </g>
-  );
-}
+// SOUVENIRS DE VOYAGE + PEACE : illustrations Twemoji (retour Thomas 16/11 : mes dessins faits
+// main n'étaient pas au niveau → illustrations pro, même style plat que Costar).
+// Twemoji © Twitter, Inc. et contributeurs — graphismes sous licence CC-BY 4.0
+// (https://creativecommons.org/licenses/by/4.0/), mention dans le vestiaire. Fichiers :
+// src/assets/costar/. Embarqués en data URI : rien à charger, marche hors ligne.
+const tw = (raw) => `data:image/svg+xml;utf8,${encodeURIComponent(raw)}`;
+const TW = { peace: tw(twPeace), croc: tw(twCroc), duck: tw(twDuck), ice: tw(twIce), wine: tw(twWine), uk: tw(twUk) };
+const TwImg = ({ src, x, y, size, flip = false, rotate = 0 }) => (
+  <image href={src} x={x} y={y} width={size} height={size}
+    transform={`${rotate ? `rotate(${rotate} ${x + size / 2} ${y + size / 2}) ` : ''}${flip ? `translate(${2 * x + size} 0) scale(-1 1)` : ''}`}/>
+);
+// Souvenir tenu contre la patte gauche au repos (côté gauche de l'image) ; Nîmes et le colvert
+// de Bâle sont posés DEVANT, aux pieds.
 function VoyageFront({ kind }) {
-  if (kind === 'londres') {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <RaisedArm/>
-        <path d="M27 84 L23 40" stroke="#8B5A2B" strokeWidth="1.6"/>
-        <circle cx="22.9" cy="39" r="1.6" fill="#EAB308"/>
-        <defs>
-          <clipPath id="costar-ukflag"><path d="M23 42 Q16 39 9 42 Q4 44 2 42 L2 57 Q4 59 9 57 Q16 54 23 57 Z"/></clipPath>
-        </defs>
-        <g clipPath="url(#costar-ukflag)">
-          <rect x="0" y="36" width="26" height="26" fill="#1E3A8A"/>
-          <path d="M2 41 L23 58 M23 41 L2 58" stroke="white" strokeWidth="3"/>
-          <path d="M2 41 L23 58 M23 41 L2 58" stroke="#DC2626" strokeWidth="1.1"/>
-          <path d="M12.5 36 L12.5 62 M0 49.5 L26 49.5" stroke="white" strokeWidth="4.6"/>
-          <path d="M12.5 36 L12.5 62 M0 49.5 L26 49.5" stroke="#DC2626" strokeWidth="2.4"/>
-          <path d="M2 46 Q9 43 16 46 Q20 48 23 46" stroke="white" strokeWidth="2.4" fill="none" opacity="0.2"/>
-        </g>
-        <path d="M23 42 Q16 39 9 42 Q4 44 2 42 L2 57 Q4 59 9 57 Q16 54 23 57 Z" fill="none" stroke="#1E293B" strokeWidth="0.6"/>
-        <PawFingers/>
-      </g>
-    );
-  }
-  if (kind === 'dijon') {
-    return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <RaisedArm/>
-        <g transform="rotate(-8 27 80)">
-          <rect x="24.6" y="50" width="5" height="4" rx="1" fill="#991B1B"/>
-          <path d="M24.6 53.6 L29.6 53.6 L29.6 63 Q34 66 34 71 L34 96 Q34 98.6 31.4 98.6 L22.8 98.6 Q20.2 98.6 20.2 96 L20.2 71 Q20.2 66 24.6 63 Z" fill="#1F4D2B" stroke="#0B2614" strokeWidth="0.8"/>
-          <rect x="20.8" y="74" width="12.6" height="12" rx="1.2" fill="#FFF7E6" stroke="#B45309" strokeWidth="0.5"/>
-          <path d="M23 77.6 Q27.1 75.6 31.2 77.6" stroke="#991B1B" strokeWidth="1" fill="none"/>
-          <path d="M23.6 81 L30.6 81 M24.6 83.4 L29.6 83.4" stroke="#78350F" strokeWidth="0.7"/>
-          <circle cx="27.1" cy="79.2" r="0.9" fill="#B45309"/>
-          <path d="M22.4 67 Q22 80 22.4 94" stroke="white" strokeWidth="1.4" fill="none" opacity="0.3"/>
-        </g>
-        <PawFingers/>
-      </g>
-    );
-  }
+  if (kind === 'londres') return <TwImg src={TW.uk} x={14} y={80} size={26} rotate={-10}/>;
+  if (kind === 'dijon') return <TwImg src={TW.wine} x={16} y={80} size={28} rotate={-8}/>;
   if (kind === 'bale') {
     return (
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <Mallard/>
-        <RaisedArm/>
-        {/* Pot de glace tenu dans la patte : 3 boules, cuillère en bois */}
-        <circle cx="23.6" cy="68" r="4.6" fill="#FEF3C7" stroke="#D6B36A" strokeWidth="0.6"/>
-        <circle cx="31" cy="68.4" r="4.6" fill="#FBCFE8" stroke="#E879A8" strokeWidth="0.6"/>
-        <circle cx="27.4" cy="63.4" r="4.8" fill="#BBF7D0" stroke="#4ADE80" strokeWidth="0.6"/>
-        <circle cx="25.8" cy="61.6" r="1.2" fill="white" opacity="0.7"/>
-        <path d="M31.6 64.4 L36.8 56.6" stroke="#B7791F" strokeWidth="1.6"/>
-        <ellipse cx="37.2" cy="56" rx="1.4" ry="2" fill="#B7791F" transform="rotate(34 37.2 56)"/>
-        <path d="M19.4 71 L35 71 L32.6 87 L21.8 87 Z" fill="#F9A8D4" stroke="#DB2777" strokeWidth="0.8"/>
-        <path d="M19.4 71 L35 71" stroke="#DB2777" strokeWidth="1.6"/>
-        <path d="M21 76 L33.6 76 M21.6 81 L33 81" stroke="white" strokeWidth="1.3" opacity="0.85"/>
-        <PawFingers/>
+      <g>
+        <TwImg src={TW.duck} x={85} y={92} size={33} flip/>
+        <TwImg src={TW.ice} x={15} y={80} size={28}/>
       </g>
     );
   }
-  if (kind === 'nimes') return <BigCroc/>;
+  if (kind === 'nimes') return <TwImg src={TW.croc} x={28} y={72} size={56} flip/>;
   return null;
 }
-// Gros crocodile musclé, debout bras croisés (création originale, clin d'œil à Nîmes).
-function BigCroc() {
-  const G = '#15803D', GL = '#22C55E', GD = '#14532D', BELLY = '#FDE68A';
+// Peace & love : deux mains ✌ (Twemoji, teinte foncée = pelage), à la place des pattes de Costar.
+function PeaceHands() {
   return (
-    <g transform="translate(95.5 96)" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="0" cy="33" rx="16" ry="1.8" fill="#000" opacity="0.15"/>
-      {/* Queue qui s'enroule au sol */}
-      <path d="M6 22 Q20 24 18 32 Q14 35 8 32" stroke={G} strokeWidth="6" fill="none"/>
-      <path d="M9 21.6 l2 -2 l1 2.4 M14 22.6 l2 -2 l1 2.6" stroke={GD} strokeWidth="0.8" fill="none"/>
-      {/* Jambes */}
-      <path d="M-7 20 L-8 31 M5 20 L6 31" stroke={G} strokeWidth="6.4"/>
-      <path d="M-12 32 Q-8 29.6 -4 32 M2 32 Q6 29.6 10 32" stroke={GD} strokeWidth="2.6"/>
-      {/* Tronc musclé + ventre à écailles */}
-      <path d="M-13 -6 Q-15 10 -10 21 Q0 26 10 21 Q15 10 13 -6 Q0 -11 -13 -6 Z" fill={G} stroke={GD} strokeWidth="0.9"/>
-      <path d="M-8 -3 Q-9 10 -5 20 Q0 22 5 20 Q9 10 8 -3 Q0 -6 -8 -3 Z" fill={BELLY} stroke="#CA8A04" strokeWidth="0.5"/>
-      <path d="M-7.6 2 L7.6 2 M-8 6.6 L8 6.6 M-7.6 11.2 L7.6 11.2 M-6.4 15.6 L6.4 15.6 M0 -4.6 L0 20.6" stroke="#CA8A04" strokeWidth="0.55" opacity="0.8"/>
-      {/* Bras croisés, gros biceps */}
-      <path d="M-13 -3 Q-17 4 -10 7 L8 7" stroke={G} strokeWidth="6.6" fill="none"/>
-      <path d="M13 -3 Q17 4 10 9 L-8 9" stroke={GL} strokeWidth="6" fill="none"/>
-      <path d="M-15 0 Q-17 3 -14.6 5" stroke={GD} strokeWidth="0.8" fill="none"/>
-      <path d="M15 0 Q17 3 14.6 5" stroke={GD} strokeWidth="0.8" fill="none"/>
-      <circle cx="-9" cy="9.6" r="2" fill={GL} stroke={GD} strokeWidth="0.6"/>
-      <circle cx="9" cy="6.6" r="2" fill={G} stroke={GD} strokeWidth="0.6"/>
-      {/* Tête : grosse mâchoire, sourcils froncés, dents */}
-      <path d="M-11 -10 Q-12 -22 0 -24 Q11 -23 12 -16 L22 -15 Q25 -13 23 -10 Q12 -7 0 -6 Q-9 -6 -11 -10 Z" fill={G} stroke={GD} strokeWidth="0.9"/>
-      <path d="M0 -10.6 Q11 -11 23 -11" stroke={GD} strokeWidth="0.9" fill="none"/>
-      <path d="M4 -10.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8 l1 1.8 l1 -1.8" stroke="white" strokeWidth="0.7" fill="white"/>
-      <circle cx="21" cy="-15.4" r="0.7" fill={GD}/><circle cx="18.6" cy="-15.8" r="0.7" fill={GD}/>
-      <circle cx="-3" cy="-21" r="3.6" fill="white" stroke={GD} strokeWidth="0.8"/>
-      <circle cx="4.2" cy="-21" r="3.6" fill="white" stroke={GD} strokeWidth="0.8"/>
-      <circle cx="-2.2" cy="-20.4" r="1.5" fill="#111827"/><circle cx="5" cy="-20.4" r="1.5" fill="#111827"/>
-      <path d="M-7 -25.4 L-0.6 -23 M8.6 -25.4 L2 -23" stroke={GD} strokeWidth="1.6"/>
-      <path d="M-9 -18 l-1.6 -1.4 M-9.6 -14 l-1.8 -0.6" stroke={GD} strokeWidth="0.7"/>
-      {/* Écailles du dos */}
-      <path d="M-13 -8 l-2 -1.4 l1.6 -1.4 M-14 -2 l-2.2 -1 l2 -1.6 M-14.6 4 l-2.2 -0.6 l2.2 -1.8" fill={GD} stroke={GD} strokeWidth="0.6"/>
-      {/* Collier doré (le croco enchaîné du blason de Nîmes) */}
-      <path d="M-10 -7 Q0 -3 11 -7.6" stroke="#EAB308" strokeWidth="1.6" fill="none"/>
-      <circle cx="0.6" cy="-4.8" r="1.3" fill="none" stroke="#CA8A04" strokeWidth="0.8"/>
-    </g>
-  );
-}
-// Gros canard colvert assis aux pieds de Costar (Bâle).
-function Mallard() {
-  return (
-    <g transform="translate(94.5 114.6) scale(1.2)" strokeLinecap="round" strokeLinejoin="round">
-      <ellipse cx="0" cy="12" rx="16" ry="1.8" fill="#000" opacity="0.14"/>
-      {/* Pattes orange */}
-      <path d="M-4 9.6 l-2.6 2.6 l2.6 -0.6 l2.4 0.6 Z M4 9.6 l-2.4 2.6 l2.6 -0.6 l2.4 0.6 Z" fill="#F97316" stroke="#C2410C" strokeWidth="0.5"/>
-      {/* Corps gris-blanc, queue noire recourbée */}
-      <path d="M-15 2 Q-18 -2 -14 -4 L-10 -3 Q0 -6 10 -2 Q16 2 13 8 Q6 12 -6 11 Q-14 9 -15 2 Z" fill="#E5E7EB" stroke="#6B7280" strokeWidth="0.7"/>
-      <path d="M-14 -4 Q-17 -8 -13.6 -9 Q-12.6 -6.4 -12 -4.6" stroke="#111827" strokeWidth="1.4" fill="none"/>
-      <path d="M-15 1.6 Q-18 -1.4 -15.6 -3.6 L-12 -3 Z" fill="#111827"/>
-      {/* Aile brune + miroir bleu bordé de blanc */}
-      <path d="M-11 -1 Q0 -4 8 0 Q4 5 -6 5 Q-11 3.6 -11 -1 Z" fill="#A8A29E" stroke="#78716C" strokeWidth="0.6"/>
-      <path d="M-9 1.6 L-2 0.4 L-1.4 2.8 L-8.6 4 Z" fill="#2563EB" stroke="white" strokeWidth="0.6"/>
-      {/* Poitrail châtaigne */}
-      <path d="M6 -4 Q14 -4 14 3 Q12 7 8 6 Q6 1 6 -4 Z" fill="#7C2D12" stroke="#5B1E0A" strokeWidth="0.6"/>
-      {/* Collier blanc + tête verte irisée + bec jaune */}
-      <path d="M6.4 -5 Q10.6 -3.6 13.6 -5.6" stroke="white" strokeWidth="1.6" fill="none"/>
-      <path d="M7 -5.6 Q6 -10 8 -14 Q11 -18 15 -15.6 Q17 -13 15.6 -9.6 Q14.6 -6.6 13.4 -5.6 Q10 -4.6 7 -5.6 Z" fill="#166534" stroke="#052E16" strokeWidth="0.7"/>
-      <path d="M9 -14 Q11.6 -16.4 14 -15" stroke="#4ADE80" strokeWidth="1" fill="none" opacity="0.8"/>
-      <path d="M15.4 -12.4 Q20.6 -12.6 21.4 -11 Q20.6 -9.4 15.6 -10 Z" fill="#FACC15" stroke="#A16207" strokeWidth="0.6"/>
-      <circle cx="20.4" cy="-11.3" r="0.45" fill="#111827"/>
-      <circle cx="12.4" cy="-12.6" r="1.4" fill="white"/><circle cx="12.7" cy="-12.6" r="0.75" fill="#111827"/>
+    <g>
+      <TwImg src={TW.peace} x={8} y={70} size={30} rotate={-14}/>
+      <TwImg src={TW.peace} x={78} y={70} size={30} rotate={14} flip/>
     </g>
   );
 }
@@ -351,9 +233,9 @@ function FanFrame() {
   const avatar = getFanAvatar();
   return (
     <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M98.4 15 L105 3.6 L111.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
-      <circle cx="105" cy="3.4" r="1.1" fill="#57534E"/>
-      <g transform="translate(105 31)">
+      <path d="M95.4 15 L102 3.6 L108.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
+      <circle cx="102" cy="3.4" r="1.1" fill="#57534E"/>
+      <g transform="translate(102 31)">
         <defs><clipPath id="costar-fan-heart"><path d={HEART}/></clipPath></defs>
         <path d={HEART} transform="scale(1.22)" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.8"/>
         <path d={HEART} fill="#FCE7F3"/>
@@ -368,6 +250,9 @@ function FanFrame() {
 // outfit = { head, eyes, face, mouth, neck, body, waist, hand, feet, extra } : cosmétiques portés, un par catégorie (vestiaire).
 export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   const o = outfit || {};
+  // Peace & love : les mains ✌ remplacent les pattes de Costar (retour Thomas).
+  const leftUp = o.hand === 'peace';
+  const rightUp = o.hand === 'peace';
   return (
     <svg className={className} width={size} height={size * 130 / 120} viewBox="0 0 120 130" aria-hidden="true">
       {/* Skis plantés DERRIÈRE Costar, même style que la planche (retour Thomas) : spatules relevées,
@@ -563,16 +448,18 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       {o.body === 'slip' && !o.feet && (
         <path d="M34.6 121.4 Q44 116.4 53.4 121.4 M62.6 121.4 Q72 116.4 81.4 121.4" stroke="#111827" strokeWidth="1.8" fill="none" strokeLinecap="round"/>
       )}
-      {/* Bras gauche : levé (souvenir de voyage tenu en l'air, cf. RaisedArm) → pas de bras au repos. */}
-      {!VOYAGE_HOLDS.includes(o.voyage) && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>}
-      <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>
+      {/* Bras au repos — sauf ceux qui sont LEVÉS : souvenir de voyage tenu (gauche) ou peace
+          & love (les deux). */}
+      {!leftUp && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(20 40 98)"/>}
+      {!rightUp && <ellipse cx="76" cy="98" rx="6" ry="8" fill="#6E4521" transform="rotate(-20 76 98)"/>}
       {o.body === 'costard' && (
         <g>
-          {!VOYAGE_HOLDS.includes(o.voyage) && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>}
-          <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>
-          <path d="M33.6 102.5 Q36.5 105 40 104.6 M82.4 102.5 Q79.5 105 76 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>
-          <ellipse cx="36.4" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
-          <ellipse cx="79.6" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>
+          {!leftUp && <ellipse cx="40" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(20 40 98)"/>}
+          {!rightUp && <ellipse cx="76" cy="98" rx="6" ry="8" fill="#2B3445" transform="rotate(-20 76 98)"/>}
+          {!leftUp && <path d="M33.6 102.5 Q36.5 105 40 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>}
+          {!rightUp && <path d="M82.4 102.5 Q79.5 105 76 104.6" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round"/>}
+          {!leftUp && <ellipse cx="36.4" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>}
+          {!rightUp && <ellipse cx="79.6" cy="105.6" rx="3.6" ry="3" fill="#6E4521"/>}
           {/* Pochette (après les manches pour rester visible) */}
           <polygon points="66.5,91.2 72.6,89.4 71.6,93" fill="white"/>
           <path d="M66.6 93.4 L72.4 92.2" stroke="#9CA3AF" strokeWidth="0.8"/>
@@ -613,16 +500,6 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
       )}
       {/* Peace & love, version castor (retour Thomas : « des petites griffes de castor ») : pattes au
           repos, deux petites griffes claires qui dépassent en V. */}
-      {o.hand === 'peace' && (
-        <g>
-          {(o.body === 'costard' ? [[36.4, 103.2, 1], [79.6, 103.2, -1]] : [[38.8, 91.6, 1], [77.2, 91.6, -1]]).map(([x, y, d]) => (
-            <g key={x} transform={`translate(${x} ${y}) scale(${d} 1)`} fill="#F5E6D3" stroke="#A47148" strokeWidth="0.45" strokeLinejoin="round">
-              <path d="M-2.6 0.4 Q-3.6 -1.8 -3.4 -3.6 Q-1.8 -2.2 -1 0.2 Z"/>
-              <path d="M0.6 0.2 Q1.4 -2.2 2.8 -3.6 Q3.2 -1.6 2.2 0.4 Z"/>
-            </g>
-          ))}
-        </g>
-      )}
       {/* Guitare électrique rouge en bandoulière (accessoire) + pattes qui la tiennent */}
       {o.extra === 'guitare' && (
         <g strokeLinecap="round" strokeLinejoin="round">
@@ -881,6 +758,7 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
         )}
       </g>
       {o.voyage && <VoyageFront kind={o.voyage}/>}
+      {o.hand === 'peace' && <PeaceHands/>}
       {o.cadre === 'fan' && <FanFrame/>}
       {o.aura === 'poubelle' && <TrashAuraFront/>}
     </svg>
@@ -1279,6 +1157,10 @@ export default function Costar({ projet, fixed = false }) {
                   </div>
                 );
               })}
+            </div>
+            {/* Licence CC-BY 4.0 des illustrations Twemoji : mention obligatoire, discrète. */}
+            <div style={{ marginTop: 10, fontSize: 10, color: DA.grayL, textAlign: 'right' }}>
+              Illustrations : <a href="https://github.com/jdecked/twemoji" target="_blank" rel="noopener noreferrer" style={{ color: DA.grayL }}>Twemoji</a> (CC-BY 4.0)
             </div>
           </div>
         </div>
