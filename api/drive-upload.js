@@ -5,6 +5,7 @@
 // (nouvelle révision Drive, les précédentes restent consultables) au lieu d'en créer un second.
 
 import crypto from 'crypto';
+import { resolveProjetFolder, newFolderName, numFromName, rememberFolder } from './_driveMatch.js';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'text/plain']);
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -166,52 +167,23 @@ async function findAffairesFolder(token) {
   throw new Error(`Dossier "Affaires" introuvable. ${hint} — Ajoutez GOOGLE_AFFAIRES_DRIVE_ID dans les variables Vercel.`);
 }
 
-// Numéro d'affaire depuis le nom : ancien format « A696 », ou NUMÉRIQUE seul (ex. « 504 »).
-// Le format numérique n'était pas reconnu → dossiers Drive « 504 » introuvables (retour Thomas).
-// Années (19xx/20xx) ignorées pour ne pas confondre un millésime avec un numéro d'affaire.
-function extractProjetNum(nom) {
-  const s = nom || '';
-  const a = s.match(/[Aa]\d{3,4}/);
-  if (a) return a[0].toUpperCase();
-  const nums = s.match(/\b\d{3,4}\b/g) || [];
-  const cand = nums.find(n => !/^(19|20)\d{2}$/.test(n));
-  return cand || null;
-}
-
-// Find an existing project folder by number (e.g. A696 matches "2026_A696_PEGUY_...")
-// Falls back to creating a new folder with the project name if no match found.
-// projetNum (fourni explicitement par le client) est PRÉFÉRÉ au numéro déduit du nom : le projet
-// peut avoir été renommé sans le « Axxx », auquel cas seule cette valeur permet de retrouver le
-// bon dossier. Repli sur l'extraction depuis le nom pour les affaires non renseignées (rétro-compat).
+// Dossier de l'affaire (retour Thomas 18/11 — vieux codes « 541 » / « 021 », petites fautes,
+// affaires archivées) : recherche intelligente partagée, cf. api/_driveMatch.js. Rien trouvé →
+// dossier créé dans Affaires au format habituel « AAAA_NUM_TITRE » (retrouvé ensuite par numéro).
+// projetNum (fourni par le client) est PRÉFÉRÉ au numéro déduit du nom : le projet peut avoir été
+// renommé sans son numéro.
 async function findProjetFolder(token, driveId, projetNom, projetNum) {
-  const num = (projetNum || '').trim().toUpperCase() || extractProjetNum(projetNom);
-  if (num) {
-    // Le numéro ne doit pas être collé à d'autres chiffres (« 504 » ≠ « 1504 »/« 5049 »).
-    let numRe = null;
-    try { numRe = new RegExp('(?<![0-9])' + String(num).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![0-9])', 'i'); } catch { numRe = null; }
-    const params = new URLSearchParams({
-      q: `name contains '${num}' and mimeType = '${FOLDER_MIME}' and '${driveId}' in parents and trashed = false`,
-      fields: 'files(id,name)',
-      supportsAllDrives: 'true',
-      includeItemsFromAllDrives: 'true',
-      driveId,
-      corpora: 'drive',
-    });
-    const res = await fetch(`${DRIVE_API}/files?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    const files = data.files || [];
-    if (files.length) {
-      const exact = numRe ? files.find(f => numRe.test(f.name)) : null;
-      if (exact) return exact.id;             // numéro isolé → dossier sûr
-      if (!numRe) return files[0].id;          // pas de regex dispo → ancien comportement
-      // résultats présents mais numéro non isolé (ex. 504 dans « 1504 ») → NE PAS y déposer les
-      // photos (risque de mauvais dossier) : on crée/retrouve le dossier au nom du projet.
-    }
+  const found = await resolveProjetFolder(token, driveId, { projetNom, projetNum });
+  if (found) {
+    console.log(`drive-upload: dossier affaire « ${found.name} » (${found.how})`);
+    return { id: found.id, driveId: found.driveId };
   }
-  // Fallback: create a folder with the project name
-  return findOrCreateFolder(token, slugFolder(projetNom || 'Projet inconnu'), driveId, driveId);
+  const num = (projetNum || '').trim() || numFromName(projetNom);
+  const name = newFolderName(projetNom || 'Projet inconnu', num);
+  const id = await findOrCreateFolder(token, name, driveId, driveId);
+  rememberFolder(driveId, { id, name });
+  console.log(`drive-upload: aucun dossier trouvé → créé « ${name} » dans Affaires`);
+  return { id, driveId };
 }
 
 
@@ -289,8 +261,9 @@ export default async function handler(req, res) {
     const token = await getAccessToken(sa);
 
     // Navigate: Affaires root > project folder > 02_VISITES (or similar) > Visite_label
-    const { driveId } = await findAffairesFolder(token);
-    const projetFolderId = await findProjetFolder(token, driveId, projetNom, projetNum);
+    const { driveId: mainDriveId } = await findAffairesFolder(token);
+    // Le dossier peut être dans le Drive des affaires ARCHIVÉES → on continue dans SON Drive.
+    const { id: projetFolderId, driveId } = await findProjetFolder(token, mainDriveId, projetNom, projetNum);
     const visiteParentId = await findVisiteParent(token, projetFolderId, driveId);
     const datePrefix = visiteDate
       ? new Date(visiteDate).toISOString().slice(0, 10).replace(/-/g, '_')
