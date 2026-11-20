@@ -45,6 +45,10 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     // Portrait : écrire « bon état » dans un rapport relu.
     expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Linteau fissuré.' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
     expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Charpente en Bon Etat général' }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
+    for (const t of ['Ouvrage stable.', 'Béton sain en profondeur', 'Appuis solides', 'Ferraillage conforme au plan', 'État satisfaisant']) {
+      expect(applyReview(emptyState(), { note: 6, observations: 2, text: t }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
+    }
+    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Instable, non conformément au DTU' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
     const r = applyReview(emptyState(), { note: 6, observations: 2, text: 'Poutres en très bon état.' }, at(2, 10));
     expect(r.completed.map(m => m.reward)).toContain('fan');
     expect(r.state.equipped.cadre).toBe('fan');

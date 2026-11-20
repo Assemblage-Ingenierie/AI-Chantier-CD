@@ -125,9 +125,10 @@ export const MISSIONS = [
   { id: 'nimes',     title: 'Larmes de crocodile',    desc: 'Encaisser deux notes de 4/10 ou moins sans broncher. Cuir épais, mâchoire serrée : le croco de Nîmes reconnaît les siens.', reward: 'nimes', progress: s => [Math.min(s.lowCount, 2), 2] },
   { id: 'bale',      title: 'Baignade dans le Rhin',  desc: 'Faire relire un rapport en été (juin à août). Glace en pot à la main, et le colvert du Rhin qui vient te tenir compagnie, comme à Bâle.', reward: 'bale', progress: s => [s.summer ? 1 : 0, 1] },
   // Retour Thomas 20/11 : une mission « rigolote, que tout le monde fait sans s'en rendre compte »
-  // → écrire « bon état » dans un rapport relu (formule de tous les constats). withFan / fissure =
-  // anciennes conditions, gardées pour ne rien retirer à qui a déjà débloqué le portrait.
-  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Écrire « bon état » dans un rapport relu par Costar. Thomas l\'a pris pour un compliment personnel et te remercie avec son portrait encadré. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [(s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
+  // → glisser dans un rapport relu un mot qui pourrait décrire Thomas (« stable », « solide »,
+  // « sain », « bon état », « conforme »… — le vocabulaire de TOUS les constats) : il le prend pour
+  // lui. withFan / fissure = anciennes conditions, gardées pour ne rien retirer à personne.
+  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Glisser dans un rapport relu par Costar un mot qui pourrait décrire Thomas : stable, solide, sain, conforme, en bon état… Il l\'a forcément pris pour lui, et te remercie avec son portrait encadré. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [(s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
@@ -199,8 +200,9 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (Number(trashed) >= 5) s.trashy = true;
   if (note <= 4) s.lowCount += 1;
   if (withFan) s.withFan = true;
-  // « bon état », « bon état général », « en très bon état »… (accents et majuscules tolérés)
-  if (/bons?\s+(?:é|e|&eacute;)tats?/i.test(String(text || ''))) s.bonEtat = true;
+  // Compliments involontaires (accents, pluriels, majuscules tolérés) : stable, stabilité, solide,
+  // solidité, sain(e)(s), satisfaisant, conforme, bon état, robuste.
+  if (/\b(?:stables?|stabilit|solides?|solidit|saine?s?|satisfaisante?s?|conformes?|robustes?)\b|bons?\s+(?:é|e|&eacute;)tats?/i.test(String(text || ''))) s.bonEtat = true;
   s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
   s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
