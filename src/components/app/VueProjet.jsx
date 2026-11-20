@@ -35,6 +35,7 @@ import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { childrenOf, effectiveParentId, placeZone, zonePlanItems } from '../../lib/zoneGroups.js';
 import { mergeZones, canMergeZones, moveItemToZone } from '../../lib/zoneMerge.js';
 import { rotatePhoto } from '../../lib/photoRotate.js';
+import { unionPaths, propagatePaths, sameFps } from '../../lib/sharedPlanAnnots.js';
 import { getObsDrag, markObsDropped } from '../../lib/obsDrag.js';
 import ObsTouchMover from './ObsTouchMover.jsx';
 
@@ -1551,32 +1552,34 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           else if (modal.returnToNiveaux) setModal({ t:'niveaux' });
           else setModal(null);
         };
-        // Merge annotations from ALL locs sharing the same planId.
-        // Deduplication by JSON string prevents doubling when locs are already in sync after a propagation save.
+        // Plan PARTAGÉ entre plusieurs zones (incident Voltaire 20/11, lib/sharedPlanAnnots.js) :
+        // chaque plan — principal ET supplémentaires — s'ouvre avec l'UNION des annotations de
+        // toutes les zones qui l'utilisent (« elles coexistent »). Avant, seuls les plans
+        // principaux étaient fusionnés → à l'enregistrement, les annotations vides d'une zone
+        // écrasaient celles posées depuis l'autre.
         const allLocsFlat = (projet.visites || []).flatMap(v => v.localisations || []);
-        let mergedAnnotations = loc?.planAnnotations ?? null;
-        if (loc?.planId) {
-          const otherLocs = allLocsFlat.filter(
-            l => l.id !== modal.locId && l.planId === loc.planId && samePlan(l.planBg, loc.planBg) && l.planAnnotations?.paths?.length
-          );
-          if (otherLocs.length > 0) {
-            const ownPaths = loc?.planAnnotations?.paths || [];
-            const seen = new Set(ownPaths.map(p => JSON.stringify(p)));
-            const foreign = otherLocs.flatMap(l => l.planAnnotations.paths)
-              .filter(p => !seen.has(JSON.stringify(p)));
-            if (foreign.length > 0) {
-              // Renumber VP labels sequentially to avoid collisions from independent annotations
-              let vpIdx = 1;
-              const mergedPaths = [...ownPaths, ...foreign].map(p =>
-                p.type === 'viewpoint' ? { ...p, label: `V${vpIdx++}` } : p
-              );
-              mergedAnnotations = { ...(loc?.planAnnotations || {}), paths: mergedPaths };
-            }
-          }
-        }
-        const locForModal = mergedAnnotations && mergedAnnotations !== loc?.planAnnotations
-          ? { ...loc, planAnnotations: mergedAnnotations }
-          : loc;
+        const sharedPathsOf = (planId, planBg) => !planId ? [] : allLocsFlat
+          .filter(l => l.id !== modal.locId)
+          .flatMap(l => [
+            ...(l.planId === planId && samePlan(l.planBg, planBg) ? [l.planAnnotations?.paths || []] : []),
+            ...(l.extraPlans || []).filter(ep => ep.planId === planId && samePlan(ep.planBg, planBg)).map(ep => ep.planAnnotations?.paths || []),
+          ]);
+        const withShared = (ann, planId, planBg) => {
+          const others = sharedPathsOf(planId, planBg);
+          if (!others.some(x => x.length)) return ann ?? null;
+          const paths = unionPaths(ann?.paths || [], ...others);
+          return paths.length === (ann?.paths || []).length ? ann : { ...(ann || {}), paths };
+        };
+        const locForModal = loc ? {
+          ...loc,
+          planAnnotations: withShared(loc.planAnnotations, loc.planId, loc.planBg),
+          extraPlans: (loc.extraPlans || []).map(ep => ({ ...ep, planAnnotations: withShared(ep.planAnnotations, ep.planId, ep.planBg) })),
+        } : loc;
+        // Ce que l'utilisateur VOIT à l'ouverture, par plan → à l'enregistrement on ne répercute
+        // que les différences (ajouts / suppressions / déplacements), jamais un remplacement.
+        const openedPaths = new Map();
+        if (locForModal?.planId) openedPaths.set(locForModal.planId, locForModal.planAnnotations?.paths || []);
+        for (const ep of (locForModal?.extraPlans || [])) if (ep.planId && !openedPaths.has(ep.planId)) openedPaths.set(ep.planId, ep.planAnnotations?.paths || []);
         return (
           <PlanLocModal
             loc={locForModal}
@@ -1598,11 +1601,21 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
               // Build annotation map: planId → { planAnnotations, planBg }
               // planBg is stored so that propagation is gated on samePlan() — prevents cross-plan contamination
               // when two unrelated zones accidentally share the same planId.
+              // Seuls les plans dont les annotations ont CHANGÉ pendant la session sont répercutés.
               const annotByPlanId = new Map();
-              if (planId) annotByPlanId.set(planId, { planAnnotations: planAnnotations ?? null, planBg: planBg ?? null });
-              for (const ep of (extraPlans || [])) {
-                if (ep.planId) annotByPlanId.set(ep.planId, { planAnnotations: ep.planAnnotations ?? null, planBg: ep.planBg ?? null });
-              }
+              const keep = (pid, ann, bg) => {
+                if (!pid || annotByPlanId.has(pid)) return;
+                const opened = openedPaths.get(pid) || [];
+                const saved = ann?.paths || [];
+                if (sameFps(opened, saved)) return;
+                annotByPlanId.set(pid, { opened, saved, planBg: bg ?? null });
+              };
+              keep(planId, planAnnotations, planBg);
+              for (const ep of (extraPlans || [])) keep(ep.planId, ep.planAnnotations, ep.planBg);
+              const propagated = (ann, entry) => {
+                const paths = propagatePaths(ann?.paths || [], entry.opened, entry.saved);
+                return paths.length || ann ? { ...(ann || {}), paths } : ann;
+              };
               // Update all visites: full update for target loc + propagate annotations to all
               // other locs that share the same planId AND the same plan image.
               const updatedVisites = (projet.visites || []).map(v => ({
@@ -1615,13 +1628,13 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                   if (l.planId && annotByPlanId.has(l.planId)) {
                     const entry = annotByPlanId.get(l.planId);
                     if (samePlan(l.planBg, entry.planBg)) {
-                      updated = { ...updated, planAnnotations: entry.planAnnotations };
+                      updated = { ...updated, planAnnotations: propagated(l.planAnnotations, entry) };
                     }
                   }
                   const newEPs = (l.extraPlans || []).map(ep => {
                     if (!ep.planId || !annotByPlanId.has(ep.planId)) return ep;
                     const entry = annotByPlanId.get(ep.planId);
-                    return samePlan(ep.planBg, entry.planBg) ? { ...ep, planAnnotations: entry.planAnnotations } : ep;
+                    return samePlan(ep.planBg, entry.planBg) ? { ...ep, planAnnotations: propagated(ep.planAnnotations, entry) } : ep;
                   });
                   if (newEPs.some((ep, i) => ep !== (l.extraPlans || [])[i])) {
                     updated = { ...updated, extraPlans: newEPs };
