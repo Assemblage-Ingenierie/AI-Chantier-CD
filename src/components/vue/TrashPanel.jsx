@@ -4,7 +4,7 @@ import { Ic } from '../ui/Icons.jsx';
 import { listDeletedItems, removeDeletedItem } from '../../lib/recoveryBin.js';
 import { getHiddenTrashKeys, hideTrashKeys } from '../../lib/trashHidden.js';
 import { listSnapshots, getSnapshot } from '../../lib/backupVault.js';
-import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner } from '../../lib/annotRecovery.js';
+import { createAnnotScanner, createLostAnnotScanner, createLostItemScanner, historySnapshots } from '../../lib/annotRecovery.js';
 import { getDeletedIds } from '../../lib/tombstones.js';
 import { listItemHistory, findOrphanStoragePhotos, listZoneHistory } from '../../lib/storage.js';
 import { findDeletedPlans } from '../../lib/planRecovery.js';
@@ -66,7 +66,7 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
     let alive = true;
     listDeletedItems().then(all => { if (alive) setBin(all.filter(e => e.projectId === projet.id)); }).catch(() => alive && setBin([]));
     listItemHistory(projet.id).then(h => { if (alive) setHist(h); }).catch(() => alive && setHist([]));
-    if (onRestoreDeletedPlans) listZoneHistory(projet.id).then(h => { if (alive) setZoneHist(h); }).catch(() => alive && setZoneHist([]));
+    if (onRestoreDeletedPlans || onRestoreLostAnnots) listZoneHistory(projet.id).then(h => { if (alive) setZoneHist(h); }).catch(() => alive && setZoneHist([]));
     (async () => {
       try {
         const lostScan = createLostAnnotScanner(projet);
@@ -183,7 +183,25 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
   };
 
   const annotKey = (e) => (e._merge ? `m|${e.srcLocId}` : `a|${e.visiteId}|${e.locId}|${e.planId}`);
-  const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...(lost || [])].filter(e => !hidden.has(annotKey(e)));
+  // Annotations disparues retrouvées dans l'HISTORIQUE DU SERVEUR (versions précédentes des zones) :
+  // marche depuis n'importe quel appareil (incident Voltaire 20/11 : annotations écrasées par une
+  // autre zone qui partage le même plan). Fusionnées avec celles des sauvegardes de l'appareil :
+  // pour une même zone + plan, on garde la proposition qui rend le plus d'annotations.
+  const serverLost = useMemo(() => {
+    if (!zoneHist?.length) return [];
+    const scan = createLostAnnotScanner(projet);
+    for (const snap of historySnapshots(projet, zoneHist)) scan.add(snap);
+    return scan.entries();
+  }, [projet, zoneHist]);
+  const lostAll = useMemo(() => {
+    const best = new Map();
+    for (const e of [...(lost || []), ...serverLost]) {
+      const k = `${e.visiteId}|${e.locId}|${e.planId}`;
+      if (!best.has(k) || e.count > best.get(k).count) best.set(k, e);
+    }
+    return [...best.values()].sort((a, b) => b.ts - a.ts);
+  }, [lost, serverLost]);
+  const annots = [...(mergeLost || []).map(e => ({ ...e, _merge: true })), ...lostAll].filter(e => !hidden.has(annotKey(e)));
   const scanning = lost == null || mergeLost == null || lostItems == null;
   const empty = bin != null && !scanning && !zones.length && !obs.length && !annots.length && !lostObs.length && !versions.length && !deletedPlans.length && !hiddenHere.length && !orphanGroups.length;
 

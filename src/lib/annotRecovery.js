@@ -188,3 +188,38 @@ export function applyAnnotRecovery(projets, entries) {
   });
   return { projets: out, added, dst };
 }
+
+// ── Annotations perdues retrouvées dans l'HISTORIQUE DU SERVEUR (incident Voltaire 20/11) ──
+// Chaque modification d'une zone garde sa version précédente (aichantier_history, old_row) : on la
+// lit comme un instantané d'appareil → createLostAnnotScanner propose de remettre les annotations
+// absentes aujourd'hui, MÊME depuis un autre appareil que celui qui les avait posées.
+// Format serveur d'une zone : plan_annotations = { paths, _planId, _extraPlans:[{planId,paths}], … }.
+export function zoneFromHistoryRow(row) {
+  if (!row?.id) return null;
+  let a = row.plan_annotations;
+  if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = null; } }
+  if (!a || typeof a !== 'object') return null;
+  // eslint-disable-next-line no-unused-vars
+  const { _planId, _extraPlans, _planReportHidden, _parentId, _dates, ...rest } = a;
+  return {
+    id: row.id, nom: row.nom || '',
+    planId: _planId || null,
+    planAnnotations: Array.isArray(rest.paths) && rest.paths.length ? { paths: rest.paths } : null,
+    extraPlans: (Array.isArray(_extraPlans) ? _extraPlans : []).map(ep => ({
+      planId: ep?.planId || null, planAnnotations: Array.isArray(ep?.paths) && ep.paths.length ? { paths: ep.paths } : null,
+    })),
+  };
+}
+export function historySnapshots(projet, rows) {
+  const visitOf = new Map();
+  for (const v of (projet?.visites || [])) for (const l of (v.localisations || [])) visitOf.set(l.id, v.id);
+  const out = [];
+  for (const h of (rows || [])) {
+    const z = zoneFromHistoryRow(h?.old_row);
+    const visiteId = h?.old_row?.visite_id || visitOf.get(z?.id);
+    if (!z || !visiteId) continue;
+    const ts = Date.parse(h.changed_at) || 0;
+    out.push({ ts, data: [{ id: projet.id, visites: [{ id: visiteId, localisations: [z] }] }] });
+  }
+  return out;
+}
