@@ -42,10 +42,10 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(unlockedIds(st.stats)).not.toContain('nimes');
     expect(applyReview(st, { note: 4, observations: 2 }, at(2, 11)).completed.map(m => m.reward)).toContain('nimes');
     expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(6, 10)).completed.map(m => m.reward)).toContain('bale');
-    // Portrait : parler de fissure (fissuré, microfissures…) dans un rapport relu.
-    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Enduit sain.' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
-    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Microfissures en sous-face' }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
-    const r = applyReview(emptyState(), { note: 6, observations: 2, text: 'Linteau fissuré' }, at(2, 10));
+    // Portrait : écrire « bon état » dans un rapport relu.
+    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Linteau fissuré.' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
+    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Charpente en Bon Etat général' }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
+    const r = applyReview(emptyState(), { note: 6, observations: 2, text: 'Poutres en très bon état.' }, at(2, 10));
     expect(r.completed.map(m => m.reward)).toContain('fan');
     expect(r.state.equipped.cadre).toBe('fan');
     expect(isFanParticipant({ email: 'Thomas@assemblage.net' })).toBe(true);

@@ -125,16 +125,16 @@ export const MISSIONS = [
   { id: 'nimes',     title: 'Larmes de crocodile',    desc: 'Encaisser deux notes de 4/10 ou moins sans broncher. Cuir épais, mâchoire serrée : le croco de Nîmes reconnaît les siens.', reward: 'nimes', progress: s => [Math.min(s.lowCount, 2), 2] },
   { id: 'bale',      title: 'Baignade dans le Rhin',  desc: 'Faire relire un rapport en été (juin à août). Glace en pot à la main, et le colvert du Rhin qui vient te tenir compagnie, comme à Bâle.', reward: 'bale', progress: s => [s.summer ? 1 : 0, 1] },
   // Retour Thomas 20/11 : une mission « rigolote, que tout le monde fait sans s'en rendre compte »
-  // → parler de FISSURE dans un rapport relu (le pain quotidien de l'ingé structure). withFan =
-  // ancienne condition (visite avec Thomas), gardée pour ne rien retirer à qui l'a débloqué.
-  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Parler de fissure dans un rapport relu par Costar. Thomas vit pour les fissures : pour te remercier, il t\'offre son portrait encadré. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [(s.fissure || s.withFan) ? 1 : 0, 1] },
+  // → écrire « bon état » dans un rapport relu (formule de tous les constats). withFan / fissure =
+  // anciennes conditions, gardées pour ne rien retirer à qui a déjà débloqué le portrait.
+  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Écrire « bon état » dans un rapport relu par Costar. Thomas l\'a pris pour un compliment personnel et te remercie avec son portrait encadré. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [(s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
   return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {},
     friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0, trashy: false,
-    teaTime: false, grandCru: false, lowCount: 0, summer: false, withFan: false, fissure: false,
+    teaTime: false, grandCru: false, lowCount: 0, summer: false, withFan: false, fissure: false, bonEtat: false,
     tasting: false, tasteKey: '', tasteN: 0 };
 }
 export function emptyState() {
@@ -159,7 +159,7 @@ export function normalizeState(raw) {
     friday: !!s.friday, monday: !!s.monday, early: !!s.early, afterwork: !!s.afterwork, midNote: !!s.midNote,
     reread: !!s.reread, winter: !!s.winter, bigGood: !!s.bigGood, streak7: num(s.streak7, 0), bestStreak7: num(s.bestStreak7, 0),
     trashy: !!s.trashy,
-    teaTime: !!s.teaTime, grandCru: !!s.grandCru, lowCount: num(s.lowCount, 0), summer: !!s.summer, withFan: !!s.withFan, fissure: !!s.fissure,
+    teaTime: !!s.teaTime, grandCru: !!s.grandCru, lowCount: num(s.lowCount, 0), summer: !!s.summer, withFan: !!s.withFan, fissure: !!s.fissure, bonEtat: !!s.bonEtat,
     tasting: !!s.tasting, tasteKey: typeof s.tasteKey === 'string' ? s.tasteKey : '', tasteN: num(s.tasteN, 0),
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
@@ -199,7 +199,8 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (Number(trashed) >= 5) s.trashy = true;
   if (note <= 4) s.lowCount += 1;
   if (withFan) s.withFan = true;
-  if (/fissur/i.test(String(text || ''))) s.fissure = true; // fissure, fissures, fissuré, microfissure…
+  // « bon état », « bon état général », « en très bon état »… (accents et majuscules tolérés)
+  if (/bons?\s+(?:é|e|&eacute;)tats?/i.test(String(text || ''))) s.bonEtat = true;
   s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
   s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
