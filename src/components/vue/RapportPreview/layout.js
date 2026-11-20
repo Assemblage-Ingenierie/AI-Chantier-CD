@@ -26,14 +26,23 @@ export const PLAN_PORTRAIT_MAXH = PH - HDR - (MT - HDR) - (MB + FTR) - 96; // �
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────────────────────
 export const CHUNK_CHARS = 2500; // max chars per text chunk — only split genuinely long texts
 
-// Découpe un long commentaire en morceaux aux limites de paragraphes
+// Découpe un long commentaire en morceaux aux limites de paragraphes.
+// Retour Gab/Thomas 20/11 (« saut de ligne et de section non demandé » au milieu d'une phrase,
+// « bacs | acier déformés ») : un commentaire MIS EN FORME (HTML de l'éditeur, souvent sans
+// aucun « \n ») était coupé au dernier espace avant 2 500 caractères BALISES COMPRISES → coupure
+// en pleine phrase, gras perdu. Désormais : longueur = texte VISIBLE, et un texte HTML n'est coupé
+// qu'ENTRE deux paragraphes (<div>/<p>), jamais dedans ; un texte brut, à la fin d'une phrase.
 export function splitComment(comment, maxChars = CHUNK_CHARS) {
-  if (!comment || comment.length <= maxChars) return [comment || ''];
+  if (!comment) return [comment || ''];
+  if (/<(?:div|p)\b/i.test(comment)) return splitHtmlComment(comment, maxChars);
+  if (comment.length <= maxChars) return [comment];
   const sep = /\n{2,}/.test(comment) ? /\n{2,}/ : /\n/;
   const paras = comment.split(sep).map(p => p.trim()).filter(Boolean);
   if (paras.length <= 1) {
-    // Pas de paragraphes → couper au dernier espace avant maxChars
-    const cut = comment.lastIndexOf(' ', maxChars) || maxChars;
+    // Pas de paragraphes → couper à la dernière FIN DE PHRASE avant maxChars (sinon au dernier espace)
+    const head = comment.slice(0, maxChars);
+    const sentence = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '));
+    const cut = sentence > maxChars * 0.4 ? sentence + 1 : (comment.lastIndexOf(' ', maxChars) || maxChars);
     return [comment.slice(0, cut).trim(), ...splitComment(comment.slice(cut).trim(), maxChars)];
   }
   const chunks = [];
@@ -45,6 +54,32 @@ export function splitComment(comment, maxChars = CHUNK_CHARS) {
   }
   if (cur) chunks.push(cur);
   return chunks.length > 1 ? chunks : [comment];
+}
+
+// HTML de l'éditeur : unités = paragraphes de 1er niveau (chaque <div>/<p> reste ENTIER, balises
+// comprises), regroupés tant que le texte visible tient dans maxChars. Concaténer les morceaux
+// redonne exactement le HTML d'origine. Un seul gros paragraphe → pas de découpe.
+function splitHtmlComment(html, maxChars) {
+  const visible = (h) => stripMarkup(h).length;
+  if (visible(html) <= maxChars) return [html];
+  const units = [];
+  let depth = 0, start = 0;
+  const re = /<(\/?)(div|p)\b[^>]*>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    if (!m[1]) { if (depth === 0 && m.index > start) { units.push(html.slice(start, m.index)); start = m.index; } depth++; }
+    else { depth = Math.max(0, depth - 1); if (depth === 0) { units.push(html.slice(start, re.lastIndex)); start = re.lastIndex; } }
+  }
+  if (start < html.length) units.push(html.slice(start));
+  const parts = units.filter(u => u.trim());
+  if (parts.length <= 1) return [html];
+  const chunks = [];
+  let cur = '';
+  for (const u of parts) {
+    if (cur && visible(cur + u) > maxChars) { chunks.push(cur); cur = u; } else cur += u;
+  }
+  if (cur) chunks.push(cur);
+  return chunks.length > 1 ? chunks : [html];
 }
 
 // Découpe un texte en segments coupables : paragraphes > lignes > phrases
@@ -166,7 +201,9 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
         textChunks.forEach(({ text, id }, idx) => {
           if (text) {
             blocks.push({ type:'item', id, item, locId:loc.id, mode: idx === 0 ? 'text' : 'cont',
-              textContent:text, vpPhotoOffset:photoOffset, vxxPhotoMap });
+              textContent:text, vpPhotoOffset:photoOffset, vxxPhotoMap,
+              // la suite du texte vient dans le bloc suivant → cadre « ouvert » en bas (pas de section en plus)
+              chunkNext: idx < textChunks.length - 1 });
           } else if (idx === 0 && !photos.length) {
             blocks.push({ type:'item', id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, vxxPhotoMap });
           }

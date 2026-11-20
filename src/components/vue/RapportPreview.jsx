@@ -840,7 +840,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   ? <PlanBlock loc={block.loc} annotScale={annotScale} planLibrary={projet.planLibrary} cutMode={false} pageBreaks={pageBreaks} onCut={handleCut} vpNumByPath={vpNumByPath} onEditPlan={onEditPlan} plansSubset={block.plansSubset ?? null} topBreakId={block.topBreakId ?? null} onOrient={handlePlanOrient} onFullPage={onFullPage}/>
                   : block.type === 'itemplan'
                   ? <ItemPlanBlock plan={block.plan} planNom={block.planNom} annotScale={annotScale} vpNumByPath={vpNumByPath} onFullPage={onFullPage ? () => onFullPage(block.id.replace(/^(.*)_iplan(\d+)$/, 'i:$1:$2')) : null}/>
-                  : <ItemBlock item={block.item} ppl={ppl} visitDate={projet.dateVisite} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} annotScale={annotScale}/>
+                  : <ItemBlock item={block.item} ppl={ppl} visitDate={projet.dateVisite} mode={block.mode ?? 'full'} textContent={block.textContent} locId={block.locId} vpPhotoOffset={block.vpPhotoOffset ?? 0} vxxPhotoMap={block.vxxPhotoMap} photoRow={block.photoRow} photoCols={block.photoCols} isLastPhotoRow={block.isLastPhotoRow ?? true} chunkNext={!!block.chunkNext} annotScale={annotScale}/>
                 }
               </div>
             ))}
@@ -914,7 +914,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               vxxPhotoMap={block.vxxPhotoMap}
                               photoRow={block.photoRow}
                               photoCols={block.photoCols}
-                              isLastPhotoRow={block.isLastPhotoRow ?? true}
+                              isLastPhotoRow={block.isLastPhotoRow ?? true} chunkNext={!!block.chunkNext}
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}

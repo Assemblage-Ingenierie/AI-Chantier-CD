@@ -109,26 +109,43 @@ function normalizeHtmlOutput(html) {
     .replace(/<del>/gi, '<s>').replace(/<\/del>/gi, '</s>');
 }
 
-// Nettoie le HTML collé : garde uniquement les balises supportées, strip tous les attributs
-function cleanPastedHtml(html) {
+// Nettoie le HTML collé : garde uniquement les balises supportées, strip tous les attributs.
+// Retour Thomas 20/11 (« au copier-coller ça ajoute plein de sauts de ligne, comme si on appuyait
+// sur Entrée ») : l'éditeur est en white-space:pre-wrap → les retours à la ligne INVISIBLES du code
+// source collé (Word, Google Docs, pages web, mails : texte coupé à 76 colonnes, indentation entre
+// les balises) devenaient de vraies lignes. On applique donc la règle du HTML : les blancs du
+// source se réduisent à UN espace ; seuls les paragraphes (<p>/<div>…) et <br> font des lignes.
+// + paragraphes vides en série (Word) réduits à une seule ligne vide, <br> collés aux paragraphes
+// (Google Docs) retirés, faux gras de Google Docs (<b style="font-weight:normal">) ignoré,
+// contenu de <style>/<script>/<head> jamais collé, texte échappé (« a < b » reste du texte).
+const PASTE_SKIP = new Set(['style', 'script', 'head', 'meta', 'title', 'link', 'xml', 'template']);
+const escTxt = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function cleanPastedHtml(html) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   function processNode(node) {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (node.nodeType === Node.TEXT_NODE) return escTxt(node.textContent.replace(/[ \t\r\n\f]+/g, ' '));
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const tag = node.tagName.toLowerCase();
+    if (PASTE_SKIP.has(tag)) return '';
     const inner = Array.from(node.childNodes).map(processNode).join('');
-    if (tag === 'strong' || tag === 'b') return `<strong>${inner}</strong>`;
+    const fw = (node.getAttribute('style') || '').match(/font-weight\s*:\s*(\w+)/i)?.[1];
+    if (tag === 'strong' || tag === 'b') return (fw === 'normal' || fw === '400') ? inner : `<strong>${inner}</strong>`;
     if (tag === 'em' || tag === 'i') return `<em>${inner}</em>`;
     if (tag === 'u') return `<u>${inner}</u>`;
     if (tag === 's' || tag === 'strike' || tag === 'del') return `<s>${inner}</s>`;
     if (tag === 'br') return '<br>';
     if (tag === 'li') return `<li>${inner}</li>`;
     if (tag === 'ul' || tag === 'ol') return `<ul>${inner}</ul>`;
-    if (['p','div','h1','h2','h3','h4','h5','h6','blockquote'].includes(tag)) return `<div>${inner}</div>`;
+    if (['p','div','h1','h2','h3','h4','h5','h6','blockquote','tr','section','article','header','footer'].includes(tag)) return `<div>${inner}</div>`;
     return inner; // span et autres : contenu brut
   }
-  return Array.from(tmp.childNodes).map(processNode).join('');
+  const EMPTY = '<div>(?:\\s|&nbsp;|\u00a0|<br>)*</div>';
+  return Array.from(tmp.childNodes).map(processNode).join('')
+    .replace(/\s*(<\/?(?:div|ul|li)>)\s*/g, '$1')                 // blancs autour des paragraphes
+    .replace(/(?<!<div>)<br>(?=<\/div>)/g, '').replace(/(<\/div>)<br>/g, '$1')   // <br> collés aux paragraphes (Google Docs)
+    .replace(new RegExp(`(?:${EMPTY}){2,}`, 'g'), '<div><br></div>')  // plusieurs lignes vides → une seule
+    .replace(new RegExp(`^(?:${EMPTY})+|(?:${EMPTY})+$`, 'g'), '');   // pas de ligne vide au début / à la fin
 }
 
 export function normalizeToHtml(text) {
@@ -575,7 +592,10 @@ const RichTextArea = forwardRef(function RichTextArea(
       document.execCommand('insertHTML', false, cleanPastedHtml(html));
     } else {
       // Texte brut : strip les éventuelles balises HTML littérales
-      const text = e.clipboardData.getData('text/plain').replace(/<[^>]*>/g, '');
+      // \r\n (Windows) comptait pour DEUX retours à la ligne → une ligne vide en trop à chaque
+      // ligne ; et pas plus d'une ligne vide d'affilée (retour Thomas 20/11).
+      const text = e.clipboardData.getData('text/plain').replace(/<[^>]*>/g, '')
+        .replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
       document.execCommand('insertText', false, text);
     }
   };

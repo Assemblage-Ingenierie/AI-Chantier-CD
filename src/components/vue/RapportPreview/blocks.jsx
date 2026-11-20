@@ -364,7 +364,7 @@ export function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ 
   );
 }
 
-export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
+export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -485,7 +485,11 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   // texte ; aperçu uniquement, jamais imprimé).
   const floatingEdit = !showHeader && mode !== 'photos' && mode !== 'cont' && onEdit;
   return (
-    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, ...(floatingEdit ? { position:'relative', overflow:'visible' } : { overflow:'hidden' }) }}>
+    <div style={{ marginBottom:5, border:`1px solid ${DA.border}`, borderRadius:4, ...(floatingEdit ? { position:'relative', overflow:'visible' } : { overflow:'hidden' }),
+      // Texte long découpé (pour pouvoir passer d'une page à l'autre) : les morceaux d'une même
+      // observation forment UN SEUL cadre — pas de bordure ni d'écart entre eux (retour 20/11).
+      ...(chunkNext ? { marginBottom:0, borderBottom:'none', borderBottomLeftRadius:0, borderBottomRightRadius:0 } : {}),
+      ...(mode === 'cont' ? { borderTop:'none', borderTopLeftRadius:0, borderTopRightRadius:0 } : {}) }}>
       {floatingEdit && (
         <button data-print="hide" onClick={onEdit}
           style={{ position:'absolute', top:2, right:-20, zIndex:1, background:'none', border:'none', cursor:'pointer', color:DA.grayL, padding:'1px 3px', display:'flex', alignItems:'center', borderRadius:3 }}

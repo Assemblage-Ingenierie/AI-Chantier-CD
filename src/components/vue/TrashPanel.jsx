@@ -28,9 +28,17 @@ const itemFromRow = (r) => ({
 });
 const TEXT_DEFAULTS = { titre: '', commentaire: '', commentaireAlign: 'left', suivi: 'rien', urgence: 'basse', statut: 'rapport' };
 const textKey = (it) => JSON.stringify(ITEM_TEXT_FIELDS.map(f => (f === 'statut' ? (it?.statut === 'brouillon' ? 'brouillon' : 'rapport') : (it?.[f] ?? TEXT_DEFAULTS[f] ?? null))));
-const excerpt = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
+const excerpt = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
 
-const fmtDate = (ts) => new Date(ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+// « 18/11 à 14:32 » (+ l'année si ce n'est pas l'année en cours) — retour Gab 20/11 : l'heure
+// doit TOUJOURS être visible pour choisir quoi restaurer.
+const fmtDate = (ts) => {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return `${day} à ${time}`;
+};
 
 export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreObservation, onRestoreLostAnnots, onRestoreZoneAnnotations, onRestoreItemText, onRestoreStoragePhotos,
   currentVisiteId = null, onRestoreDeletedPlans = null, onUnhidePlans = null }) {
@@ -211,12 +219,18 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
       <Ic n="x" s={14}/>
     </button>
   );
-  const Row = ({ k, icon, title, sub, onRestore, label = 'Restaurer', onDismiss }) => (
+  // when = date/heure TOUJOURS visible (jamais coupée) ; text = début du texte de l'observation
+  // (2 lignes max) pour reconnaître la bonne version (retour Gab 20/11).
+  const Row = ({ k, icon, title, sub, when = null, text = '', onRestore, label = 'Restaurer', onDismiss }) => (
     <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${DA.grayXL}` }}>
       <span style={{ flexShrink:0, width:30, height:30, borderRadius:8, background:DA.grayXL, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>{icon}</span>
       <div style={{ minWidth:0, flex:1 }}>
         <div style={{ fontSize:13, fontWeight:700, color:DA.black, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{title}</div>
-        <div style={{ fontSize:11, color:DA.grayL, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+        <div style={{ display:'flex', alignItems:'baseline', gap:5, fontSize:11, color:DA.grayL, marginTop:1, minWidth:0 }}>
+          {when != null && fmtDate(when) && <span style={{ flexShrink:0, fontWeight:700, color:DA.gray }}>{fmtDate(when)}</span>}
+          {sub && <span style={{ minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{when != null ? '· ' : ''}{sub}</span>}
+        </div>
+        {text && <div style={{ fontSize:11.5, color:DA.gray, marginTop:3, lineHeight:1.35, fontStyle:'italic', overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>« {text} »</div>}
       </div>
       {done[k]
         ? <span style={{ flexShrink:0, fontSize:12, fontWeight:700, color: done[k].startsWith('✓') ? DA.urgGrn : DA.gray }}>{done[k]}</span>
@@ -316,7 +330,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
           <Section title="Zones" n={zones.length}>
             {zones.map(e => (
               <Row key={e.recId} k={e.recId} icon="📍" title={e.locNom || 'Zone'}
-                sub={`${e.reason === 'fusion' ? `Regroupée sous « ${e.mergedInto?.nom || 'zone'} »` : 'Supprimée'} · ${(e.loc?.items || []).length} obs. · ${fmtDate(e.ts)}${multiVisits ? ` · ${present.visitNom.get(e.visiteId) || ''}` : ''}`}
+                when={e.ts}
+                sub={`${e.reason === 'fusion' ? `Regroupée sous « ${e.mergedInto?.nom || 'zone'} »` : 'Supprimée'} · ${(e.loc?.items || []).length} obs.${multiVisits ? ` · ${present.visitNom.get(e.visiteId) || ''}` : ''}`}
+                text={(e.loc?.items || []).map(i => i.titre).filter(Boolean).slice(0, 4).join(', ')}
                 label={e.reason === 'fusion' ? 'Défaire le regroupement' : 'Restaurer'}
                 onRestore={() => run(e.recId, onRestoreZone, e)} onDismiss={() => discardBin(e.recId)}/>
             ))}
@@ -327,7 +343,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               const photoN = (e.item?.photos || []).filter(p => p && (p.data || p.storage_url)).length;
               return (
                 <Row key={e.recId} k={e.recId} icon="📝" title={e.item?.titre || 'Observation sans titre'}
-                  sub={`${where(e) || 'Zone'} · ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
+                  when={e.ts}
+                  sub={`${where(e) || 'Zone'}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
+                  text={excerpt(e.item?.commentaire)}
                   onRestore={() => run(e.recId, onRestoreObservation, e)} onDismiss={() => discardBin(e.recId)}/>
               );
             })}
@@ -348,7 +366,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               const photoN = (e.item?.photos || []).filter(p => p && (p.data || p.storage_url || p._id)).length;
               return (
                 <Row key={k} k={k} icon="🩹" title={e.item?.titre || 'Observation sans titre'}
-                  sub={`${where(e) || 'Zone'} · sauvegarde du ${fmtDate(e.ts)}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
+                  when={e.ts}
+                  sub={`sauvegarde · ${where(e) || 'Zone'}${photoN ? ` · ${photoN} photo${photoN > 1 ? 's' : ''}` : ''}`}
+                  text={excerpt(e.item?.commentaire)}
                   onRestore={() => run(k, onRestoreObservation, e)} onDismiss={() => hideKeys([k])}/>
               );
             })}
@@ -361,7 +381,9 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
             {versions.map(e => (
               <Row key={e.key} k={e.key} icon={e.op === 'DELETE' ? '📝' : '🕘'}
                 title={e.item.titre || e.curTitre || 'Observation sans titre'}
-                sub={`${where(e) || 'Zone'} · ${e.op === 'DELETE' ? 'supprimée' : 'version'} du ${fmtDate(e.ts)}${excerpt(e.item.commentaire) ? ` · « ${excerpt(e.item.commentaire)} »` : ''}`}
+                when={e.ts}
+                sub={`${e.op === 'DELETE' ? 'supprimée' : 'version'} · ${where(e) || 'Zone'}`}
+                text={excerpt(e.item.commentaire)}
                 label="Rétablir"
                 onRestore={() => run(e.key, onRestoreItemText, e)} onDismiss={() => hideKeys([e.key])}/>
             ))}
@@ -412,11 +434,11 @@ export default function TrashPanel({ projet, onClose, onRestoreZone, onRestoreOb
               const k = annotKey(e);
               return e._merge ? (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} de « ${e.srcNom || 'zone'} »`}
-                  sub={`Perdues au regroupement sous « ${e.dstNom || 'zone'} » · vues le ${fmtDate(e.ts)}`} label="Remettre"
+                  when={e.ts} sub={`perdues au regroupement sous « ${e.dstNom || 'zone'} »`} label="Remettre"
                   onRestore={() => run(k, onRestoreZoneAnnotations ? (x) => { const r = onRestoreZoneAnnotations([x]); return { ok: !!r?.added, added: r?.added }; } : null, e)} onDismiss={() => hideKeys([k])}/>
               ) : (
                 <Row key={k} k={k} icon="✏️" title={`${e.count} annotation${e.count > 1 ? 's' : ''} effacée${e.count > 1 ? 's' : ''} · ${planNom(e.planId)}`}
-                  sub={`${where(e) || 'Zone'} · présentes le ${fmtDate(e.ts)}`} label="Remettre"
+                  when={e.ts} sub={`${where(e) || 'Zone'}`} label="Remettre"
                   onRestore={() => run(k, onRestoreLostAnnots, e)} onDismiss={() => hideKeys([k])}/>
               );
             })}
