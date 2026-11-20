@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS, isFanParticipant } from './costarRewards.js';
+import { canUseGameMode, applyReview, emptyState, normalizeState, toggleEquip, unlockedIds, MISSIONS, COSMETICS, SLOTS, isFanParticipant, fanPunchline } from './costarRewards.js';
 
 const day = new Date(2026, 3, 15, 15, 0); // mercredi d'avril, 15 h : aucune mission de jour / saison / heure
 const night = new Date(2026, 3, 15, 22, 30);
@@ -42,14 +42,15 @@ describe('Vestiaire de Costar — missions et cosmétiques', () => {
     expect(unlockedIds(st.stats)).not.toContain('nimes');
     expect(applyReview(st, { note: 4, observations: 2 }, at(2, 11)).completed.map(m => m.reward)).toContain('nimes');
     expect(applyReview(emptyState(), { note: 6, observations: 2 }, at(6, 10)).completed.map(m => m.reward)).toContain('bale');
-    // Portrait : écrire « bon état » dans un rapport relu.
-    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Linteau fissuré.' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
-    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Charpente en Bon Etat général' }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
-    for (const t of ['Ouvrage stable.', 'Béton sain en profondeur', 'Appuis solides', 'Ferraillage conforme au plan', 'État satisfaisant']) {
+    // Portrait : un mot à double sens (flèche, liaison, fixation, attache) dans un rapport relu.
+    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Poutres en très bon état.' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
+    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Pas de déflexion ; attachement au projet' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
+    for (const t of ['Flèche excessive du plancher', 'Liaison poutre-poteau à reprendre', 'Fixations corrodées', 'Attaches des pannes']) {
       expect(applyReview(emptyState(), { note: 6, observations: 2, text: t }, at(2, 10)).completed.map(m => m.reward)).toContain('fan');
     }
-    expect(applyReview(emptyState(), { note: 6, observations: 2, text: 'Instable, non conformément au DTU' }, at(2, 10)).completed.map(m => m.reward)).not.toContain('fan');
-    const r = applyReview(emptyState(), { note: 6, observations: 2, text: 'Poutres en très bon état.' }, at(2, 10));
+    const stFan = applyReview(emptyState(), { note: 6, observations: 2, text: 'Flèche excessive.' }, at(2, 10)).state;
+    expect(fanPunchline(stFan.stats)).toBe('Tu as parlé de « flèche ». Thomas l\'a reçue en plein cœur. Ému, il t\'offre son portrait encadré.');
+    const r = applyReview(emptyState(), { note: 6, observations: 2, text: 'Liaison à reprendre.' }, at(2, 10));
     expect(r.completed.map(m => m.reward)).toContain('fan');
     expect(r.state.equipped.cadre).toBe('fan');
     expect(isFanParticipant({ email: 'Thomas@assemblage.net' })).toBe(true);

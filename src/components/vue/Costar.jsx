@@ -3,7 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
-import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant } from '../../lib/costarRewards.js';
+import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant, fanPunchline } from '../../lib/costarRewards.js';
 import { subscribePresence } from '../../lib/presence.js';
 import twPeace from '../../assets/costar/270c-1f3fe.svg?raw';
 import twCroc from '../../assets/costar/1f40a.svg?raw';
@@ -991,7 +991,7 @@ export default function Costar({ projet, fixed = false }) {
                   style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '8px 10px', background: 'linear-gradient(90deg,#FEF3C7,#FDE68A)', border: '1px solid #FCD34D', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
                   {unlocks.map(m => (
                     <div key={m.id} style={{ fontSize: 12.5, color: '#78350F', lineHeight: 1.45 }}>
-                      🎉 <strong>Mission « {m.title} » réussie !</strong> Nouveau : {COSMETICS[m.reward].icon} {COSMETICS[m.reward].name} (déjà sur moi)
+                      🎉 <strong>Mission « {m.title} » réussie !</strong> {m.id === 'fan' ? `${fanPunchline(loadCostarState().stats)} ` : ''}Nouveau : {COSMETICS[m.reward].icon} {COSMETICS[m.reward].name} (déjà sur moi)
                     </div>
                   ))}
                   <div style={{ fontSize: 11, color: '#92400E', marginTop: 2, textDecoration: 'underline' }}>Voir le vestiaire</div>
