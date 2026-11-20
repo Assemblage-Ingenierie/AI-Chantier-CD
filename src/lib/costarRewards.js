@@ -124,18 +124,17 @@ export const MISSIONS = [
   { id: 'dijon',     title: 'Dégustation',            desc: 'Faire relire 3 fois de suite le même rapport dans la journée. On le fait tourner, on le hume, on le recrache… et on le corrige.', reward: 'dijon', progress: s => [(s.tasting || s.grandCru) ? 1 : Math.min(s.tasteN || 0, 2), (s.tasting || s.grandCru) ? 1 : 3] },
   { id: 'nimes',     title: 'Larmes de crocodile',    desc: 'Encaisser deux notes de 4/10 ou moins sans broncher. Cuir épais, mâchoire serrée : le croco de Nîmes reconnaît les siens.', reward: 'nimes', progress: s => [Math.min(s.lowCount, 2), 2] },
   { id: 'bale',      title: 'Baignade dans le Rhin',  desc: 'Faire relire un rapport en été (juin à août). Glace en pot à la main, et le colvert du Rhin qui vient te tenir compagnie, comme à Bâle.', reward: 'bale', progress: s => [s.summer ? 1 : 0, 1] },
-  // Retour Thomas 20/11 : une mission « rigolote, que tout le monde fait sans s'en rendre compte »
-  // → glisser dans un rapport relu un mot qui pourrait décrire Thomas (« stable », « solide »,
-  // « sain », « bon état », « conforme »… — le vocabulaire de TOUS les constats) : il le prend pour
-  // lui. withFan / fissure = anciennes conditions, gardées pour ne rien retirer à personne.
-  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Toucher le cœur de Thomas avec un mot de ton rapport. Tu l\'as sûrement déjà fait sans t\'en rendre compte… lui, il a remarqué.', reward: 'fan', progress: s => [(s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
+  // Retour Thomas 20/11 (validé) : « Sous ses yeux » — faire relire un rapport pendant que Thomas
+  // est connecté à l'app (présence en direct). Tout le monde le fait sans s'en rendre compte.
+  // withFan / fissure / bonEtat = anciennes conditions, gardées pour ne rien retirer à personne.
+  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Faire relire un rapport sous les yeux de Thomas. Tu l\'as sûrement déjà fait sans t\'en rendre compte… lui, il a tout vu.', reward: 'fan', progress: s => [(s.fanOnline || s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
 export function emptyStats() {
   return { reviews: 0, bestNote: -1, count8: 0, count9: 0, count10: 0, maxObs: 0, night: false, lowNote: false, remontada: false, projects: {}, affaires: {}, day: '', dayCount: 0, bestDay: 0, days: 0, noon: false, weekend: false, october: false, december: false, shortReport: false, bigComeback: false, perfectBig: false, shrunk: false, reportObs: {},
     friday: false, monday: false, early: false, afterwork: false, midNote: false, reread: false, winter: false, bigGood: false, streak7: 0, bestStreak7: 0, trashy: false,
-    teaTime: false, grandCru: false, lowCount: 0, summer: false, withFan: false, fissure: false, bonEtat: false, fanWord: '',
+    teaTime: false, grandCru: false, lowCount: 0, summer: false, withFan: false, fissure: false, bonEtat: false, fanWord: '', fanOnline: false,
     tasting: false, tasteKey: '', tasteN: 0 };
 }
 export function emptyState() {
@@ -160,7 +159,7 @@ export function normalizeState(raw) {
     friday: !!s.friday, monday: !!s.monday, early: !!s.early, afterwork: !!s.afterwork, midNote: !!s.midNote,
     reread: !!s.reread, winter: !!s.winter, bigGood: !!s.bigGood, streak7: num(s.streak7, 0), bestStreak7: num(s.bestStreak7, 0),
     trashy: !!s.trashy,
-    teaTime: !!s.teaTime, grandCru: !!s.grandCru, lowCount: num(s.lowCount, 0), summer: !!s.summer, withFan: !!s.withFan, fissure: !!s.fissure, bonEtat: !!s.bonEtat, fanWord: typeof s.fanWord === 'string' ? s.fanWord.slice(0, 30) : '',
+    teaTime: !!s.teaTime, grandCru: !!s.grandCru, lowCount: num(s.lowCount, 0), summer: !!s.summer, withFan: !!s.withFan, fissure: !!s.fissure, bonEtat: !!s.bonEtat, fanWord: typeof s.fanWord === 'string' ? s.fanWord.slice(0, 30) : '', fanOnline: !!s.fanOnline,
     tasting: !!s.tasting, tasteKey: typeof s.tasteKey === 'string' ? s.tasteKey : '', tasteN: num(s.tasteN, 0),
   };
   if (raw.equipped && typeof raw.equipped === 'object') {
@@ -182,7 +181,7 @@ export const unlockedIds = (stats) => MISSIONS.filter(m => missionDone(m, stats)
 // Les cosmétiques nouvellement débloqués sont portés tout de suite (effet « waouh » en direct).
 // projectId = l'affaire ; reportId = le rapport relu (affaire + visite), pour la « remontada ».
 // trashed = éléments de l'affaire dans la corbeille de l'appareil (mission « Ça sent le vécu »).
-export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId, trashed = 0, withFan = false, text = '' }, now = new Date()) {
+export function applyReview(state, { note, observations = 0, projectId = null, reportId = projectId, trashed = 0, withFan = false, fanOnline = false }, now = new Date()) {
   const prev = normalizeState(state);
   if (!Number.isFinite(note) || observations <= 0) return { state: prev, completed: [] };
   const s = { ...prev.stats, projects: { ...prev.stats.projects }, affaires: { ...prev.stats.affaires }, reportObs: { ...prev.stats.reportObs } };
@@ -200,13 +199,7 @@ export function applyReview(state, { note, observations = 0, projectId = null, r
   if (Number(trashed) >= 5) s.trashy = true;
   if (note <= 4) s.lowCount += 1;
   if (withFan) s.withFan = true;
-  // Compliments involontaires (accents, pluriels, majuscules tolérés) : stable, stabilité, solide,
-  // solidité, sain(e)(s), satisfaisant, conforme, bon état, robuste.
-  // Le mot est gardé (fanWord) pour la chute au déblocage : « Tu as écrit « stable »… ».
-  // Mots à double sens du quotidien de la structure (retour Thomas 20/11 : « drôle, que tout le
-  // monde fait sans s'en rendre compte ») : flèche (Cupidon), liaison, fixation, attache.
-  const fanHit = String(text || '').match(/(?<![A-Za-zÀ-ÿ])(?:fl[eéè]ches?|liaisons?|fixations?|attaches?)(?![A-Za-zÀ-ÿ])/i);
-  if (fanHit && !s.bonEtat) { s.bonEtat = true; s.fanWord = fanHit[0].toLowerCase(); }
+  if (fanOnline) s.fanOnline = true; // Thomas connecté pendant la relecture (« Sous ses yeux »)
   s.streak7 = note >= 7 ? s.streak7 + 1 : 0; // notes ≥ 7 d'affilée
   s.bestStreak7 = Math.max(s.bestStreak7, s.streak7);
   const dayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
@@ -313,15 +306,7 @@ export function setFanAvatar(url) {
   try { if (localStorage.getItem(FAN_AVATAR_KEY) !== url) localStorage.setItem(FAN_AVATAR_KEY, url); } catch { /* mode privé */ }
 }
 
-// Chute du déblocage du portrait : le mot écrit sans y penser, pris pour une déclaration.
-const FAN_LINES = [
-  [/^fl/, 'Tu as parlé de « flèche ». Thomas l\'a reçue en plein cœur.'],
-  [/^liaison/, 'Tu as écrit « liaison ». Thomas pense que c\'est sérieux entre vous.'],
-  [/^fixation/, 'Tu as écrit « fixation ». Thomas avoue : il fait une fixation sur toi aussi.'],
-  [/^attache/, 'Tu as écrit « attache ». Thomas s\'attache très vite.'],
-];
-export function fanPunchline(stats) {
-  const w = String(stats?.fanWord || '').toLowerCase();
-  const line = FAN_LINES.find(([re]) => re.test(w))?.[1] || 'Un mot de ton rapport a touché Thomas en plein cœur.';
-  return `${line} Ému, il t'offre son portrait encadré.`;
+// Chute du déblocage du portrait (« Sous ses yeux »).
+export function fanPunchline() {
+  return 'Thomas était connecté pendant que tu faisais relire ton rapport. Il a tout suivi en direct, ému aux larmes. Il t\'offre son portrait encadré.';
 }

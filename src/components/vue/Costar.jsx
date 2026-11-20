@@ -4,7 +4,7 @@ import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant, fanPunchline } from '../../lib/costarRewards.js';
-import { subscribePresence } from '../../lib/presence.js';
+import { subscribePresence, getMyName } from '../../lib/presence.js';
 import twPeace from '../../assets/costar/270c-1f3fe.svg?raw';
 import twCroc from '../../assets/costar/1f40a.svg?raw';
 import twDuck from '../../assets/costar/1f986.svg?raw';
@@ -792,8 +792,12 @@ export default function Costar({ projet, fixed = false }) {
   const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 900);
   // Portrait de Thomas (« Fan-club officiel ») : sa photo arrive avec la présence en direct quand
   // il est connecté → gardée sur cet appareil pour la suite.
+  // + « Sous ses yeux » : Thomas est-il connecté en ce moment (n'importe quel appareil) ?
+  const fanOnlineRef = useRef(false);
   useEffect(() => subscribePresence(list => {
-    const t = (list || []).find(m => isFanName(m?.name) && m?.avatar);
+    const fan = (list || []).filter(m => isFanName(m?.name));
+    fanOnlineRef.current = fan.length > 0;
+    const t = fan.find(m => m?.avatar);
     if (t) setFanAvatar(t.avatar);
   }), []);
   useEffect(() => {
@@ -906,7 +910,9 @@ export default function Costar({ projet, fixed = false }) {
         let trashed = 0;
         try { if (pj.id) trashed = (await listDeletedItems()).filter(e => e.projectId === pj.id).length; } catch { /* corbeille illisible */ }
         const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null, trashed,
-          withFan: (pj.participants || []).some(isFanParticipant), text: digest.text });
+          withFan: (pj.participants || []).some(isFanParticipant), text: digest.text,
+          // Thomas connecté (ou Thomas lui-même qui relit : il se regarde, forcément).
+          fanOnline: fanOnlineRef.current || isFanName(getMyName()) });
         saveCostarState(r.state);
         setUnlocks(r.completed);
       } catch { /* vestiaire indisponible : sans effet sur la relecture */ }
@@ -991,7 +997,7 @@ export default function Costar({ projet, fixed = false }) {
                   style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '8px 10px', background: 'linear-gradient(90deg,#FEF3C7,#FDE68A)', border: '1px solid #FCD34D', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
                   {unlocks.map(m => (
                     <div key={m.id} style={{ fontSize: 12.5, color: '#78350F', lineHeight: 1.45 }}>
-                      🎉 <strong>Mission « {m.title} » réussie !</strong> {m.id === 'fan' ? `${fanPunchline(loadCostarState().stats)} ` : ''}Nouveau : {COSMETICS[m.reward].icon} {COSMETICS[m.reward].name} (déjà sur moi)
+                      🎉 <strong>Mission « {m.title} » réussie !</strong> {m.id === 'fan' ? `${fanPunchline()} ` : ''}Nouveau : {COSMETICS[m.reward].icon} {COSMETICS[m.reward].name} (déjà sur moi)
                     </div>
                   ))}
                   <div style={{ fontSize: 11, color: '#92400E', marginTop: 2, textDecoration: 'underline' }}>Voir le vestiaire</div>
