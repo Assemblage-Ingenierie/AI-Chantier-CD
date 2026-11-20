@@ -906,7 +906,7 @@ export default function Costar({ projet, fixed = false }) {
         let trashed = 0;
         try { if (pj.id) trashed = (await listDeletedItems()).filter(e => e.projectId === pj.id).length; } catch { /* corbeille illisible */ }
         const r = applyReview(loadCostarState(), { note: parsed.note, observations: digest.observations, projectId: pj.id || null, reportId: pj.id ? `${pj.id}|${pj.dateVisite || ''}` : null, trashed,
-          withFan: (pj.participants || []).some(isFanParticipant) });
+          withFan: (pj.participants || []).some(isFanParticipant), text: digest.text });
         saveCostarState(r.state);
         setUnlocks(r.completed);
       } catch { /* vestiaire indisponible : sans effet sur la relecture */ }
