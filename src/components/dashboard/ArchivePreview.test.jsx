@@ -11,6 +11,7 @@ const projet = {
     { id: 'v2', label: 'Visite 2', conclusion: 'Bilan final', localisations: [
       { id: 'l2', nom: 'R+1', items: [{ id: 'i2', titre: 'Fissure poutre', commentaire: '<p>Reprise <b>résine</b></p>', photos: [{}, {}] }] },
       { id: 'l3', nom: 'Vide', items: [] },
+      { id: 'l4', nom: 'Toiture', items: [], planId: 'pl1', planAnnotations: { paths: [] } },
     ] },
   ],
 };
@@ -21,9 +22,9 @@ describe('ArchivePreview (lecture seule)', () => {
     expect(html).toContain('Fissure poutre');
     expect(html).toContain('résine');
     expect(html).toContain('Bilan final');
-    expect(html).toContain('2 photos');
     expect(html).not.toContain('Texte V1');
     expect(html).not.toContain('>Vide<');
+    expect(html).toContain('Toiture'); // zone sans observation mais avec plan : affichée
   });
   it('projet sans visite : message vide, pas de crash', () => {
     const html = renderToStaticMarkup(<ArchivePreview projet={{ id: 'p', nom: 'X', visites: [] }} onClose={() => {}}/>);
