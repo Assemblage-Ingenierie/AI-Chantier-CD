@@ -574,7 +574,8 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
           // sans ça, le portrait à aspect figé restait plus court de la valeur du gap (3px).
           return (
             <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
-            <div style={{ display:'flex', gap:3, alignItems:'stretch', ...fitBox }}>
+            <div style={{ display:'flex', gap:3, alignItems:'stretch', ...fitBox, flexDirection: photoRow.side === 'right' ? 'row-reverse' : 'row' }}>
+              {/* side 'right' : le portrait suit les paysages dans l'ordre → affiché à droite. */}
               <div style={{ flex:9, minWidth:0, position:'relative' }}>
                 {renderPhotoCell(photoRow.portraitIdx, null)}
               </div>
