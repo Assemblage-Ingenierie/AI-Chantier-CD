@@ -87,7 +87,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   }, [menuOpen, p.id, setMenuOpen]);
 
   return (
-    <div className="proj-card" style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
+    <div className={arc ? 'proj-card proj-card-arc' : 'proj-card'} title={arc ? 'Consulter (lecture seule)' : undefined} style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
       {/* Photo */}
       <div className="proj-card-img" onClick={() => (arc ? onPreview?.(p) : onSelect(p))}>
         {/* loading="lazy" : avec BEAUCOUP de projets, on ne télécharge que les couvertures
@@ -106,6 +106,8 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
         )}
         {/* Le bouton appareil photo a été retiré (la photo de couverture se change via
             le menu ⋯ → Modifier). PhotoModal reste disponible côté Dashboard. */}
+        {/* Survol (PC) d'un projet archivé : œil « Consulter » (aperçu en lecture seule). */}
+        {arc && <div className="proj-card-arc-eye" aria-hidden="true"><span><Ic n="eye" s={22}/></span></div>}
         {arc && <div style={{ position:'absolute',top:6,left:6,background:'rgba(0,0,0,0.65)',color:'white',fontSize:11,padding:'3px 8px',borderRadius:20,display:'flex',alignItems:'center',gap:3 }}><Ic n="arc" s={10}/> Archivé</div>}
         {/* PC uniquement (masqué en CSS sur mobile) : nom COMPLET de l'affaire en bandeau
             dégradé sur la photo (2 lignes max) — choix Thomas, le titre quitte la zone du bas. */}
