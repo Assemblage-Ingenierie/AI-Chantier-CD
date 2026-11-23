@@ -47,3 +47,22 @@ describe('Réécriture IA du texte entier', () => {
     expect(applyRewriteToHtml('<p>autre texte</p>', plain, 'A b c', { toPlain, patchLine })).toBeNull();
   });
 });
+
+import { numberLines, parseNumbered } from './rewriteDiff.js';
+describe('Échange numéroté avec l\'IA', () => {
+  const plain = 'fissure vu\n\npoutre P3 a reprendre\n';
+  it('numérote les lignes non vides', () => {
+    expect(numberLines(plain).text).toBe('[1] fissure vu\n[2] poutre P3 a reprendre');
+  });
+  it('recompose le même découpage ; ligne manquante = gardée', () => {
+    expect(parseNumbered('[1] Fissure constatée.', plain)).toBe('Fissure constatée.\n\npoutre P3 a reprendre\n');
+    expect(parseNumbered('Voici :\n[2] La poutre P3 est à reprendre.\n[1] Fissure constatée.', plain))
+      .toBe('Fissure constatée.\n\nLa poutre P3 est à reprendre.\n');
+  });
+  it('ligne coupée en deux par l\'IA : recollée', () => {
+    expect(parseNumbered('[1] Fissure\nconstatée.\n[2] P3', plain).split('\n')[0]).toBe('Fissure constatée.');
+  });
+  it('bout en bout : segments toujours constructibles', () => {
+    expect(buildRewriteSegments(plain, parseNumbered('[1] Fissure constatée.\n[2] La poutre P3 est à reprendre.', plain))).not.toBeNull();
+  });
+});

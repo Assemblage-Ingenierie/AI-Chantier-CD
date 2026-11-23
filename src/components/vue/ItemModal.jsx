@@ -16,7 +16,7 @@ import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
 import { diffChunks, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
-import { buildRewriteSegments, composeRewrite, applyRewriteToHtml } from '../../lib/rewriteDiff.js';
+import { buildRewriteSegments, composeRewrite, applyRewriteToHtml, numberLines, parseNumbered } from '../../lib/rewriteDiff.js';
 import RewritePanel from './RewritePanel.jsx';
 import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { useEditLock } from '../../lib/editLock.js';
@@ -193,7 +193,7 @@ const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'ét
 ${SCOPE_STRUCTURE}
 TON ANALYSE PRODUIT 3 CHOSES :
 1) CORRECTIONS : n'en propose AUCUNE (l'orthographe a son propre bouton « Corriger ») → tableau vide.
-2) REFORMULATIONS : ADAPTATIF, SANS PLAFOND. Propose une reformulation pour CHAQUE passage réellement lourd/confus/maladroit — qu'il y en ait 0, 2, 5 ou plus : autant que réellement nécessaire, jamais bridé à un nombre fixe. Le seuil élevé porte sur la PERTINENCE (ne propose RIEN pour un passage déjà clair), PAS sur le nombre : s'il y a 5 passages vraiment à retravailler, propose les 5. Sens, faits, chiffres, références et vocabulaire métier STRICTEMENT préservés. Conserve le découpage en puces/lignes (une puce reste une puce, jamais de fusion). 1 à 2 propositions (variantes) par passage.
+2) REFORMULATIONS : n'en propose AUCUNE (une version réécrite complète est produite à part) → tableau vide.
 3) AJOUTS (points de vigilance / compléments) STRUCTURE fondés sur ce qui est DÉCRIT ou clairement déductible du texte : propose des points d'attention pertinents que l'ingénieur pourrait ajouter (ex. « Attention : … », « À vérifier : … », « À confirmer : … », « Penser à … »). Formulation PRUDENTE : commence par « À vérifier : » ou « À confirmer : » dès que ce n'est pas explicitement affirmé dans le texte. N'invente JAMAIS une cote, une cause ou une préconisation non fondée. Chaque ajout est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) ou "apres" vide. ADAPTATIF : autant que réellement pertinent, ni remplissage ni liste à rallonge.
 STYLE : français technique impeccable. N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – ») ; emploie virgule, deux-points, parenthèse ou point. Ne transforme jamais une affirmation en question.
 Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
@@ -203,14 +203,14 @@ Chaque "extrait"/"apres" doit être recopié à l'identique depuis le texte four
 // VERSION RÉÉCRITE du texte entier (demande Thomas 23/11) — lancée EN PARALLÈLE de l'analyse
 // texte. Affichée comme la correction d'orthographe ; chaque passage peut être gardé tel quel.
 // Même découpage en lignes OBLIGATOIRE (sinon refusée côté app → mise en forme protégée).
-const PROMPT_REECRIRE = `Tu es un INGÉNIEUR STRUCTURE SENIOR de maîtrise d'œuvre. Réécris INTÉGRALEMENT le texte d'une observation de visite de chantier pour qu'il soit clair, précis et professionnel, ton technique neutre de compte-rendu MOE.
-STYLE VISÉ : d'abord le CONSTAT factuel (quoi, où), puis, SEULEMENT si le texte le contient déjà, la cause ou l'hypothèse (formulée prudemment) et l'ACTION demandée (« L'entreprise devra… », « À prévoir : … »). Phrases complètes, vocabulaire du métier, pas de familiarités.
+const PROMPT_REECRIRE = `Tu es un INGÉNIEUR STRUCTURE SENIOR de maîtrise d'œuvre. Réécris le texte d'une observation de visite de chantier pour qu'il soit clair, précis et professionnel, ton technique neutre de compte-rendu MOE.
+STYLE VISÉ : d'abord le CONSTAT factuel (quoi, où), puis, SEULEMENT si le texte le contient déjà, la cause ou l'hypothèse (formulée prudemment) et l'ACTION demandée (« L'entreprise devra… », « À prévoir : … »). Phrases complètes, vocabulaire du métier, pas de familiarités. Corrige aussi les fautes.
 RÈGLES STRICTES :
 - Conserve TOUS les faits, chiffres, cotes, unités, localisations, références, noms et termes techniques. N'ajoute AUCUNE information (pas de cause, préconisation, norme ou cote absentes du texte). Ne supprime rien d'informatif.
-- Garde EXACTEMENT le même nombre de lignes : la ligne N réécrite correspond à la ligne N d'origine ; une ligne vide reste vide ; ne fusionne ni ne coupe aucune ligne ; n'ajoute ni puce ni numéro.
-- Si une ligne est déjà bien rédigée, recopie-la telle quelle (fautes corrigées).
-- N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – »). Ne transforme jamais une affirmation en question.
-Réponds UNIQUEMENT avec ce JSON valide : {"texte":"<texte réécrit, lignes séparées par \n>"}`;
+- Le texte t'est donné ligne par ligne, chaque ligne précédée de son numéro entre crochets ([1], [2]…). Réécris CHAQUE ligne séparément et renvoie-la sur UNE seule ligne précédée du MÊME numéro, dans le même ordre. Ne fusionne pas deux lignes, n'en crée pas de nouvelle, n'ajoute ni puce ni numérotation.
+- Si une ligne est déjà bien rédigée, recopie-la telle quelle.
+- N'utilise JAMAIS de tiret cadratin ni demi-cadratin. Ne transforme jamais une affirmation en question.
+Réponds UNIQUEMENT avec les lignes numérotées, sans titre, sans guillemets, sans commentaire.`;
 
 // Analyse PHOTOS (parallèle) : points de vigilance / à vérifier STRUCTURE fondés sur ce qui est
 // VISIBLE sur les photos et pas déjà dans le texte. Renvoie uniquement des "ajouts".
@@ -1097,13 +1097,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       }
 
       // (c) VERSION RÉÉCRITE — en parallèle de (a), jamais bloquante (échec → comportement d'avant).
-      const rewriteP = callAIProxy({ feature: 'obs-reecrire', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), json: true, system: PROMPT_REECRIRE, messages: [{ role: 'user', content }], _waitOk: true })
+      const numbered = numberLines(plain);
+      const rewriteP = callAIProxy({ feature: 'obs-reecrire', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), system: PROMPT_REECRIRE, messages: [{ role: 'user', content: `Intitulé : "${titre}".\nTexte à réécrire, ligne par ligne :\n${numbered.text}` }], _waitOk: true })
         .then(dr => {
-          const rr = dr.content?.[0]?.text?.trim() || '';
-          let o; try { o = JSON.parse((rr.match(/\{[\s\S]*\}/) || [''])[0]); } catch { return null; }
-          return typeof o?.texte === 'string' ? buildRewriteSegments(plain, o.texte) : null;
+          const out = dr.content?.[0]?.text || '';
+          if (!/\[\d+\]/.test(out)) return 'ERR'; // réponse vide / hors format
+          return buildRewriteSegments(plain, parseNumbered(out, plain)); // null = rien à reformuler
         })
-        .catch(() => null);
+        .catch((e) => { console.warn('[IA] réécriture indisponible', e?.message || e); return 'ERR'; });
 
       // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
       // Longueur max (plafond du proxy) + réflexion BORNÉE sur Gemini Pro (même réglage que le correcteur
@@ -1123,14 +1124,13 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       const hasOrtho = false;
       // Version réécrite (c) : si disponible, elle REMPLACE les cartes « Reformulation » passage par
       // passage (sinon repli sur ces cartes, comme avant).
-      const rwSegs = await rewriteP;
+      const rwRes = await rewriteP;
+      const rwFailed = rwRes === 'ERR';
+      const rwSegs = rwFailed ? null : rwRes;
       if (rwSegs) setRewrite({ original: plain, segments: rwSegs });
       // Reformulations + AJOUTS déduits du texte → cartes (AVANT d'éventuels « à vérifier » photos).
       const unified = [];
-      if (!rwSegs) for (const r of (obj?.reformulations || [])) {
-        if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && _normMatch(plain).includes(_normMatch(r.extrait)) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
-          unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
-      }
+      // (Cartes « Reformulation » à 2 variantes retirées — retour Thomas 23/11 : la version réécrite les remplace.)
       for (const a of (obj?.ajouts || [])) {
         if (a && typeof a.texte === 'string' && a.texte.trim())
           unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && _normMatch(plain).includes(_normMatch(a.apres))) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
@@ -1138,7 +1138,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de
       // « à vérifier ». Si l'analyse photos en ajoute ENSUITE, elle efface ce message (setImproveErr('')).
-      if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
+      if (rwFailed) setImproveErr('Reformulation indisponible pour l\'instant : réessaie');
+      else if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
     setImproving(false);
   };

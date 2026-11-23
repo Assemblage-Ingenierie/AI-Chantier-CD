@@ -68,3 +68,36 @@ export function applyRewriteToHtml(html, plain, finalPlain, { toPlain, patchLine
   }
   return nonWs(toPlain(out)) === nonWs(finalPlain) ? out : null;
 }
+
+// ── Échange LIGNE PAR LIGNE avec l'IA (v2, retour Thomas 23/11 : la v1 en JSON échouait souvent —
+// saut de ligne non échappé, nombre de lignes modifié — et l'app retombait sur les anciennes cartes
+// à 2 propositions). Chaque ligne non vide part numérotée « [n] … » ; l'IA renvoie les mêmes
+// numéros. Une ligne absente ou illisible reste simplement telle quelle : jamais d'échec global.
+export function numberLines(plain) {
+  const lines = String(plain || '').split('\n');
+  const idx = [];
+  const out = [];
+  lines.forEach((l, i) => { if (l.trim()) { idx.push(i); out.push(`[${idx.length}] ${l.trim()}`); } });
+  return { text: out.join('\n'), idx };
+}
+
+// Réponse « [n] texte » → texte complet (même découpage que `plain`).
+export function parseNumbered(output, plain) {
+  const lines = String(plain || '').split('\n');
+  const { idx } = numberLines(plain);
+  const got = new Map();
+  let cur = null;
+  for (const raw of String(output || '').split('\n')) {
+    const m = raw.match(/^\s*\[(\d+)\]\s?(.*)$/);
+    if (m) { cur = Number(m[1]); got.set(cur, m[2].trim()); }
+    else if (cur != null && raw.trim()) got.set(cur, `${got.get(cur)} ${raw.trim()}`.trim()); // ligne coupée par l'IA
+  }
+  idx.forEach((li, k) => {
+    const v = got.get(k + 1);
+    if (typeof v === 'string' && v.trim()) {
+      const lead = lines[li].match(/^\s*/)[0];
+      lines[li] = lead + v.replace(/[—–]/g, ',');
+    }
+  });
+  return lines.join('\n');
+}
