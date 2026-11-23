@@ -15,7 +15,9 @@ import { Ic } from '../ui/Icons.jsx';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
 import Annotator from './Annotator.jsx';
 import RichTextArea, { htmlToPlain } from '../ui/RichTextArea.jsx';
-import { buildDiffSegments, diffChunks, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
+import { diffChunks, applyFixesAtPositions } from '../../lib/applyTextFixes.js';
+import { buildRewriteSegments, composeRewrite, applyRewriteToHtml } from '../../lib/rewriteDiff.js';
+import RewritePanel from './RewritePanel.jsx';
 import { chunkForCorrection, mapLimit } from '../../lib/spellChunks.js';
 import { useEditLock } from '../../lib/editLock.js';
 import { uploadToDrive, getAffaireNum } from '../../lib/driveUpload.js';
@@ -148,14 +150,6 @@ const _normMatch = (s) => String(s || '')
   .replace(/\s+/g, ' ')
   .trim();
 
-// Remplace la 1re occurrence de `find` dans `text` en tolérant apostrophes/guillemets
-// typographiques (normalisation 1:1 → longueur et positions préservées). Inchangé si introuvable.
-function _tolReplace(text, find, repl) {
-  if (!find) return text;
-  const q = (s) => s.replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"');
-  const idx = q(text).indexOf(q(find));
-  return idx < 0 ? text : text.slice(0, idx) + repl + text.slice(idx + find.length);
-}
 
 // Photo (data URL ou URL signée Supabase) → bloc image base64 pour l'API vision. Redimensionne
 // à 800px, ré-encode en JPEG (léger + évite le taint canvas cross-origin). Renvoie null si échec.
@@ -198,13 +192,25 @@ const SCOPE_STRUCTURE = `PÉRIMÈTRE STRICT — STRUCTURE SEULEMENT : béton arm
 const PROMPT_AMELIORER = `Tu es un INGÉNIEUR STRUCTURE SENIOR d'un bureau d'études structure, en visite de chantier. Tu analyses le TEXTE d'une observation rédigé par l'ingénieur et proposes des améliorations, UNIQUEMENT sous l'angle STRUCTURE.
 ${SCOPE_STRUCTURE}
 TON ANALYSE PRODUIT 3 CHOSES :
-1) CORRECTIONS : uniquement fautes d'orthographe/grammaire. Même sens, même longueur, mêmes mots (hors faute).
+1) CORRECTIONS : n'en propose AUCUNE (l'orthographe a son propre bouton « Corriger ») → tableau vide.
 2) REFORMULATIONS : ADAPTATIF, SANS PLAFOND. Propose une reformulation pour CHAQUE passage réellement lourd/confus/maladroit — qu'il y en ait 0, 2, 5 ou plus : autant que réellement nécessaire, jamais bridé à un nombre fixe. Le seuil élevé porte sur la PERTINENCE (ne propose RIEN pour un passage déjà clair), PAS sur le nombre : s'il y a 5 passages vraiment à retravailler, propose les 5. Sens, faits, chiffres, références et vocabulaire métier STRICTEMENT préservés. Conserve le découpage en puces/lignes (une puce reste une puce, jamais de fusion). 1 à 2 propositions (variantes) par passage.
 3) AJOUTS (points de vigilance / compléments) STRUCTURE fondés sur ce qui est DÉCRIT ou clairement déductible du texte : propose des points d'attention pertinents que l'ingénieur pourrait ajouter (ex. « Attention : … », « À vérifier : … », « À confirmer : … », « Penser à … »). Formulation PRUDENTE : commence par « À vérifier : » ou « À confirmer : » dès que ce n'est pas explicitement affirmé dans le texte. N'invente JAMAIS une cote, une cause ou une préconisation non fondée. Chaque ajout est ancré APRÈS une phrase/puce existante (champ "apres", recopiée mot pour mot) ou "apres" vide. ADAPTATIF : autant que réellement pertinent, ni remplissage ni liste à rallonge.
 STYLE : français technique impeccable. N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – ») ; emploie virgule, deux-points, parenthèse ou point. Ne transforme jamais une affirmation en question.
 Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
 {"corrections":[{"extrait":"<copié mot pour mot, sur une seule ligne>","correction":"<corrigé>"}],"reformulations":[{"extrait":"<copié mot pour mot, une seule ligne>","propositions":["<v1>","<v2>"],"raison":"clarté|structure|lourdeur|répétition"}],"ajouts":[{"apres":"<phrase/puce existante copiée mot pour mot, ou vide>","texte":"<ajout>","certitude":"sûr|à vérifier","raison":"vigilance|approfondissement"}]}
 Chaque "extrait"/"apres" doit être recopié à l'identique depuis le texte fourni, sinon il sera ignoré. Si une catégorie n'a rien de pertinent, mets un tableau vide.`;
+
+// VERSION RÉÉCRITE du texte entier (demande Thomas 23/11) — lancée EN PARALLÈLE de l'analyse
+// texte. Affichée comme la correction d'orthographe ; chaque passage peut être gardé tel quel.
+// Même découpage en lignes OBLIGATOIRE (sinon refusée côté app → mise en forme protégée).
+const PROMPT_REECRIRE = `Tu es un INGÉNIEUR STRUCTURE SENIOR de maîtrise d'œuvre. Réécris INTÉGRALEMENT le texte d'une observation de visite de chantier pour qu'il soit clair, précis et professionnel, ton technique neutre de compte-rendu MOE.
+STYLE VISÉ : d'abord le CONSTAT factuel (quoi, où), puis, SEULEMENT si le texte le contient déjà, la cause ou l'hypothèse (formulée prudemment) et l'ACTION demandée (« L'entreprise devra… », « À prévoir : … »). Phrases complètes, vocabulaire du métier, pas de familiarités.
+RÈGLES STRICTES :
+- Conserve TOUS les faits, chiffres, cotes, unités, localisations, références, noms et termes techniques. N'ajoute AUCUNE information (pas de cause, préconisation, norme ou cote absentes du texte). Ne supprime rien d'informatif.
+- Garde EXACTEMENT le même nombre de lignes : la ligne N réécrite correspond à la ligne N d'origine ; une ligne vide reste vide ; ne fusionne ni ne coupe aucune ligne ; n'ajoute ni puce ni numéro.
+- Si une ligne est déjà bien rédigée, recopie-la telle quelle (fautes corrigées).
+- N'utilise JAMAIS de tiret cadratin ni demi-cadratin (« — », « – »). Ne transforme jamais une affirmation en question.
+Réponds UNIQUEMENT avec ce JSON valide : {"texte":"<texte réécrit, lignes séparées par \n>"}`;
 
 // Analyse PHOTOS (parallèle) : points de vigilance / à vérifier STRUCTURE fondés sur ce qui est
 // VISIBLE sur les photos et pas déjà dans le texte. Renvoie uniquement des "ajouts".
@@ -381,6 +387,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const [vigilanceLoading, setVigilanceLoading] = useState(false); // analyse photos (à vérifier) en cours en //
   const vigilanceAddedRef = useRef(false); // l'analyse photos a-t-elle déjà ajouté des « à vérifier » ?
   const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
+  const [rewrite, setRewrite] = useState(null); // version réécrite : { original, segments } (passages activables)
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -566,8 +573,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   }, [uploadingKey, projetId]); // eslint-disable-line react-hooks/exhaustive-deps
   // Dictée / correction IA en cours : le texte reçu attend la fin (ces outils réécrivent le champ).
   useEffect(() => {
-    liveRef.current?.hold(!!(recording || correcting || improving || spellDiff || improveList || genProposal));
-  }, [recording, correcting, improving, spellDiff, improveList, genProposal]);
+    liveRef.current?.hold(!!(recording || correcting || improving || spellDiff || improveList || genProposal || rewrite));
+  }, [recording, correcting, improving, spellDiff, improveList, genProposal, rewrite]);
   useEffect(() => subscribeDrafts((list) => {
     setLiveDraft(list.filter(d => d.projectId === projetId && d.itemId === form.id && Date.now() - d.receivedAt < 15000).sort((x, y) => y.receivedAt - x.receivedAt)[0] || null);
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1032,7 +1039,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const ameliorer = async () => {
     if (improving) return;
     setImproving(true);
-    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null); setVigilanceLoading(false); vigilanceAddedRef.current = false;
+    setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null); setRewrite(null); setVigilanceLoading(false); vigilanceAddedRef.current = false;
     try {
       const plain = htmlToPlain(form.commentaire || '');
       const titre = (form.titre || '').slice(0, 300);
@@ -1089,6 +1096,15 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         })().finally(() => setVigilanceLoading(false));
       }
 
+      // (c) VERSION RÉÉCRITE — en parallèle de (a), jamais bloquante (échec → comportement d'avant).
+      const rewriteP = callAIProxy({ feature: 'obs-reecrire', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), json: true, system: PROMPT_REECRIRE, messages: [{ role: 'user', content }], _waitOk: true })
+        .then(dr => {
+          const rr = dr.content?.[0]?.text?.trim() || '';
+          let o; try { o = JSON.parse((rr.match(/\{[\s\S]*\}/) || [''])[0]); } catch { return null; }
+          return typeof o?.texte === 'string' ? buildRewriteSegments(plain, o.texte) : null;
+        })
+        .catch(() => null);
+
       // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
       // Longueur max (plafond du proxy) + réflexion BORNÉE sur Gemini Pro (même réglage que le correcteur
       // d'orthographe ; Flash garde sa réflexion coupée = rapide) : sur un texte long, la réponse était
@@ -1103,17 +1119,15 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse de l\'IA trop longue, coupée : réessaie (ou découpe le texte)' : 'Illisible → ' + (raw ? raw.slice(0, 180) : '(réponse VIDE)'));
       }
       if (partial) console.warn('[AI] réponse incomplète, éléments complets récupérés', { finish: d._finish });
-      // Ortho → diff global (patchHtmlText à l'application → puces/couleurs/images PRÉSERVÉES).
-      let correctedPlain = plain;
-      for (const c of (obj?.corrections || [])) {
-        if (c && typeof c.extrait === 'string' && !/\n/.test(c.extrait) && typeof c.correction === 'string' && c.correction.trim())
-          correctedPlain = _tolReplace(correctedPlain, c.extrait, c.correction.trim());
-      }
-      const hasOrtho = correctedPlain !== plain;
-      if (hasOrtho) setSpellDiff({ original: plain, segments: buildDiffSegments(plain, correctedPlain) });
+      // Orthographe : plus traitée ici (demande Thomas 23/11 : deux boutons, « Corriger » s'en charge).
+      const hasOrtho = false;
+      // Version réécrite (c) : si disponible, elle REMPLACE les cartes « Reformulation » passage par
+      // passage (sinon repli sur ces cartes, comme avant).
+      const rwSegs = await rewriteP;
+      if (rwSegs) setRewrite({ original: plain, segments: rwSegs });
       // Reformulations + AJOUTS déduits du texte → cartes (AVANT d'éventuels « à vérifier » photos).
       const unified = [];
-      for (const r of (obj?.reformulations || [])) {
+      if (!rwSegs) for (const r of (obj?.reformulations || [])) {
         if (r && typeof r.extrait === 'string' && !/\n/.test(r.extrait) && _normMatch(plain).includes(_normMatch(r.extrait)) && Array.isArray(r.propositions) && r.propositions.some(p => p && p.trim()))
           unified.push({ kind: 'reformulation', extrait: r.extrait, propositions: r.propositions.filter(p => p && p.trim()), raison: r.raison || '' });
       }
@@ -1124,10 +1138,23 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de
       // « à vérifier ». Si l'analyse photos en ajoute ENSUITE, elle efface ce message (setImproveErr('')).
-      if (!unified.length && !hasOrtho && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
+      if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
     setImproving(false);
   };
+
+  // Version réécrite : applique les passages acceptés (les passages gardés restent tels quels).
+  const applyRewrite = () => {
+    if (!rewrite) return;
+    const finalPlain = composeRewrite(rewrite.segments);
+    const out = applyRewriteToHtml(form.commentaire || '', rewrite.original, finalPlain, { toPlain: htmlToPlain, patchLine: patchHtmlText });
+    if (out == null) { setImproveErr('Le texte a changé entre-temps : relance « Améliorer avec l\'IA »'); setRewrite(null); return; }
+    setForm(f => ({ ...f, commentaire: out }));
+    setRewrite(null);
+    bumpSync();
+  };
+  const toggleRewrite = (id) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' && s.id === id ? { ...s, active: !s.active } : s)) } : r));
+  const setAllRewrite = (on) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' ? { ...s, active: on } : s)) } : r));
 
   const applyImprove = (idx, prop) => {
     const seg = improveList?.[idx];
@@ -1873,7 +1900,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
                 <Ic n="spn" s={13}/> Analyse des photos pour les points à vérifier…
               </div>
             )}
-            {improveList && improveList.length > 0 && (
+            {rewrite && (
+              <RewritePanel segments={rewrite.segments} onToggle={toggleRewrite} onAll={setAllRewrite}
+                onApply={applyRewrite} onClose={() => setRewrite(null)}/>
+            )}
+            {!rewrite && improveList && improveList.length > 0 && (
               <div style={{ marginTop:8,border:'1px solid #E5E7EB',borderRadius:10,overflow:'hidden',fontSize:12 }}>
                 <div style={{ background:'#F9FAFB',padding:'8px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid #E5E7EB',gap:8 }}>
                   <span style={{ fontWeight:700,color:'#374151',fontSize:11,textTransform:'uppercase',letterSpacing:0.5 }}>Suggestions de l'IA</span>
