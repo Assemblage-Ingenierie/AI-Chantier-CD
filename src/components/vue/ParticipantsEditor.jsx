@@ -140,7 +140,7 @@ function InlineEditForm({ contact, onSave, onCancel, saving }) {
         );
         return (
           <>
-            {inp('nom', 'Nom *')}
+            {inp('nom', 'Prénom / Nom *')}
             <div style={{ display:'flex', gap:4 }}>
               <div style={{ flex:1, minWidth:0 }}>{inp('poste', 'Poste')}</div>
               <div style={{ flex:1, minWidth:0 }}>{inp('entreprise', 'Entreprise')}</div>
