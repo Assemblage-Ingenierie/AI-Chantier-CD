@@ -158,22 +158,31 @@ export function numberLines(plain) {
   return { text: out.join('\n'), idx };
 }
 
-// Réponse « [n] texte » → texte complet (même découpage que `plain`).
+// Réponse « [n] texte » → texte complet (même découpage que `plain`), ou null si rien d'exploitable.
+// Tolérant (retour Thomas 23/11, « Reformulation indisponible » par intermittence) : accepte aussi
+// « n. texte » / « n) texte », et une réponse SANS numéros mais avec exactement autant de lignes.
 export function parseNumbered(output, plain) {
   const lines = String(plain || '').split('\n');
   const { idx } = numberLines(plain);
   const got = new Map();
   let cur = null;
-  for (const raw of String(output || '').split('\n')) {
-    const m = raw.match(/^\s*\[(\d+)\]\s?(.*)$/);
-    if (m) { cur = Number(m[1]); got.set(cur, m[2].trim()); }
+  const outLines = String(output || '').replace(/^```[a-z]*\s*|```\s*$/g, '').split('\n');
+  for (const raw of outLines) {
+    const m = raw.match(/^\s*(?:\[(\d+)\]|(\d+)[.)])\s?(.*)$/);
+    const n = m ? Number(m[1] ?? m[2]) : null;
+    if (m && n >= 1 && n <= idx.length) { cur = n; got.set(cur, m[3].trim()); }
     else if (cur != null && raw.trim()) got.set(cur, `${got.get(cur)} ${raw.trim()}`.trim()); // ligne coupée par l'IA
+  }
+  if (!got.size) {
+    const plainOut = outLines.map(l => l.trim()).filter(Boolean);
+    if (plainOut.length !== idx.length) return null;
+    plainOut.forEach((t, k) => got.set(k + 1, t));
   }
   idx.forEach((li, k) => {
     const v = got.get(k + 1);
     if (typeof v === 'string' && v.trim()) {
       const lead = lines[li].match(/^\s*/)[0];
-      lines[li] = lead + v.replace(/[—–]/g, ',');
+      lines[li] = lead + v.replace(/[\u2014\u2013]/g, ',');
     }
   });
   return lines.join('\n');

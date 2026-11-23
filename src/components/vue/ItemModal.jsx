@@ -389,7 +389,8 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const [vigilanceLoading, setVigilanceLoading] = useState(false); // analyse photos (à vérifier) en cours en //
   const vigilanceAddedRef = useRef(false); // l'analyse photos a-t-elle déjà ajouté des « à vérifier » ?
   const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
-  const [rewrite, setRewrite] = useState(null); // version réécrite : { original, segments } (passages activables)
+  const [rewrite, setRewrite] = useState(null);
+  const improveRunRef = useRef(0); // n° du dernier lancement de « Améliorer » (réponses tardives ignorées) // version réécrite : { original, segments } (passages activables)
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -1040,6 +1041,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   //    tout en suggestions à valider une par une. Photos envoyées au modèle (vision). ──────────
   const ameliorer = async () => {
     if (improving) return;
+    const runId = ++improveRunRef.current; // les réponses d'un lancement précédent sont ignorées
     setImproving(true);
     setImproveErr(''); setImproveList(null); setImproveApplied(new Set()); setGenProposal(null); setSpellDiff(null); setRewrite(null); setVigilanceLoading(false); vigilanceAddedRef.current = false;
     try {
@@ -1076,7 +1078,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           try {
             const imgs = (await Promise.all(photoRows.map(p => photoToImageBlock(p.data)))).filter(Boolean);
             if (!imgs.length) return;
-            const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, json: true, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true });
+            const dv = await callAIProxy({ feature: 'obs-vigilance', model: 'claude-sonnet-4-6', max_tokens: 1500, json: true, system: PROMPT_VIGILANCE, messages: [{ role: 'user', content: [...imgs, { type: 'text', text: content }] }], _waitOk: true, _throttleMs: 1500 });
             const rawv = dv.content?.[0]?.text?.trim() || '';
             let ov; try { ov = JSON.parse((rawv.match(/\{[\s\S]*\}/) || [''])[0]); } catch { return; }
             const cards = [];
@@ -1098,39 +1100,41 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         })().finally(() => setVigilanceLoading(false));
       }
 
-      // (c) VERSION RÉÉCRITE — en parallèle de (a), jamais bloquante (échec → comportement d'avant).
+      // (c) VERSION RÉÉCRITE — en parallèle, jamais bloquante. UN nouvel essai automatique si la
+      // réponse est inexploitable ou en erreur (retour Thomas 23/11 : « indisponible » par
+      // intermittence, alors qu'un 2e clic marchait). Anti-rafale court (relance sans attente de 15 s).
       const numbered = numberLines(plain);
-      const rewriteP = callAIProxy({ feature: 'obs-reecrire', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), system: PROMPT_REECRIRE, messages: [{ role: 'user', content: `Intitulé : "${titre}".\nTexte à réécrire, ligne par ligne :\n${numbered.text}` }], _waitOk: true })
+      const askRewrite = (throttle) => callAIProxy({ feature: 'obs-reecrire', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), system: PROMPT_REECRIRE, messages: [{ role: 'user', content: `Intitulé : "${titre}".\nTexte à réécrire, ligne par ligne :\n${numbered.text}` }], _waitOk: true, _throttleMs: throttle })
         .then(dr => {
-          const out = dr.content?.[0]?.text || '';
-          if (!/\[\d+\]/.test(out)) return 'ERR'; // réponse vide / hors format
-          return buildRewriteSegments(plain, parseNumbered(out, plain)); // null = rien à reformuler
+          const rewritten = parseNumbered(dr.content?.[0]?.text || '', plain);
+          if (rewritten == null) return { err: 'format', finish: dr._finish || null };
+          return { segs: buildRewriteSegments(plain, rewritten) }; // segs null = rien à reformuler
         })
-        .catch((e) => { console.warn('[IA] réécriture indisponible', e?.message || e); return 'ERR'; });
+        .catch(e => ({ err: 'call', msg: String(e?.message || e).slice(0, 160) }));
+      const rewriteP = askRewrite(1500).then(async r1 => {
+        if (!r1.err) return r1;
+        await new Promise(res => setTimeout(res, 700));
+        const r2 = await askRewrite(0);
+        if (r2.err) logEvent('rewrite.fail', { engine, first: r1, second: r2, len: plain.length });
+        return r2;
+      });
 
-      // (a) Analyse TEXTE — attendue et affichée (rapide, sans photos).
-      // Longueur max (plafond du proxy) + réflexion BORNÉE sur Gemini Pro (même réglage que le correcteur
-      // d'orthographe ; Flash garde sa réflexion coupée = rapide) : sur un texte long, la réponse était
-      // coupée à 3000 jetons (réflexion comprise) → JSON invalide → plus aucune reformulation.
-      const d = await callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), json: true, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true });
-      const raw = d.content?.[0]?.text?.trim() || '';
-      // Lecture TOLÉRANTE (lib/aiJson.js) : JSON complet, sinon tout ce qui est déjà complet dans une
-      // réponse coupée (corrections, reformulations, ajouts) — rien n'est jeté pour une fin tronquée.
-      const { obj, partial } = parseLooseJson(raw, ['corrections', 'reformulations', 'ajouts']);
-      if (!obj) {
-        console.warn('[AI illisible] réponse brute:', raw);
-        throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse de l\'IA trop longue, coupée : réessaie (ou découpe le texte)' : 'Illisible → ' + (raw ? raw.slice(0, 180) : '(réponse VIDE)'));
-      }
-      if (partial) console.warn('[AI] réponse incomplète, éléments complets récupérés', { finish: d._finish });
-      // Orthographe : plus traitée ici (demande Thomas 23/11 : deux boutons, « Corriger » s'en charge).
-      const hasOrtho = false;
-      // Version réécrite (c) : si disponible, elle REMPLACE les cartes « Reformulation » passage par
-      // passage (sinon repli sur ces cartes, comme avant).
+      // (a) Analyse TEXTE (points « à vérifier » déduits du texte) — en parallèle, NON bloquante :
+      // la version reformulée s'affiche dès qu'elle arrive, les ajouts suivent.
+      const aP = callAIProxy({ feature: 'obs-ameliorer', model: 'claude-sonnet-4-6', max_tokens: 4096, ...(engine === 'gemini-pro' ? { thinkingBudget: 1024 } : {}), json: true, system: PROMPT_AMELIORER, messages: [{ role: 'user', content }], _waitOk: true, _throttleMs: 1500 })
+        .then(d => parseLooseJson(d.content?.[0]?.text?.trim() || '', ['corrections', 'reformulations', 'ajouts']).obj || null)
+        .catch(() => null);
+
       const rwRes = await rewriteP;
-      const rwFailed = rwRes === 'ERR';
-      const rwSegs = rwFailed ? null : rwRes;
+      if (runId !== improveRunRef.current) return; // relancé entre-temps
+      const rwFailed = !!rwRes.err;
+      const rwSegs = rwFailed ? null : rwRes.segs;
       if (rwSegs) setRewrite({ original: plain, segments: rwSegs });
-      // Reformulations + AJOUTS déduits du texte → cartes (AVANT d'éventuels « à vérifier » photos).
+      setImproving(false); // le bouton redevient disponible ; les ajouts arrivent ensuite
+
+      const obj = await aP;
+      if (runId !== improveRunRef.current) return;
+      const hasOrtho = false; // orthographe : bouton « Corriger » (deux boutons, demande Thomas 23/11)
       const unified = [];
       // (Cartes « Reformulation » à 2 variantes retirées — retour Thomas 23/11 : la version réécrite les remplace.)
       for (const a of (obj?.ajouts || [])) {
@@ -1138,10 +1142,9 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
           unified.push({ kind: 'ajout', apres: (typeof a.apres === 'string' && !/\n/.test(a.apres) && _normMatch(plain).includes(_normMatch(a.apres))) ? a.apres : '', texte: a.texte.trim(), certitude: a.certitude || 'à vérifier', raison: a.raison || '' });
       }
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
-      // « Rien à améliorer » si le texte n'a rien donné ET que les photos n'ont pas déjà ajouté de
-      // « à vérifier ». Si l'analyse photos en ajoute ENSUITE, elle efface ce message (setImproveErr('')).
       if (rwFailed) setImproveErr('Reformulation indisponible pour l\'instant : réessaie');
       else if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
+      return;
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
     setImproving(false);
   };

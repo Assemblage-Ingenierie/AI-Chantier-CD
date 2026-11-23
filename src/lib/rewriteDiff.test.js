@@ -112,3 +112,17 @@ describe('Code couleur : orthographe seule vs reformulation', () => {
     expect(segs.filter(s => s.type === 'fix').map(s => s.kind)).toEqual(['ortho', 'reform']);
   });
 });
+
+describe('Réponse IA mal formée : tolérance', () => {
+  const plain = 'fissure vu\npoutre a reprendre';
+  it('accepte « 1. » / « 1) » et les blocs de code', () => {
+    expect(parseNumbered('```\n1. Fissure constatée.\n2) Poutre à reprendre.\n```', plain)).toBe('Fissure constatée.\nPoutre à reprendre.');
+  });
+  it('sans numéros mais même nombre de lignes → dans l\'ordre', () => {
+    expect(parseNumbered('Fissure constatée.\nPoutre à reprendre.', plain)).toBe('Fissure constatée.\nPoutre à reprendre.');
+  });
+  it('rien d\'exploitable → null', () => {
+    expect(parseNumbered('', plain)).toBeNull();
+    expect(parseNumbered('Voici une seule phrase.', plain)).toBeNull();
+  });
+});
