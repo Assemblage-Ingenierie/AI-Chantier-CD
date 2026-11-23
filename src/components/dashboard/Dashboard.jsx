@@ -3,6 +3,7 @@ import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
 import ProjectCard from './ProjectCard.jsx';
 import PhotoModal from './PhotoModal.jsx';
+import ArchivePreview from './ArchivePreview.jsx';
 import { useUiScale, uiScaleClass } from '../../lib/uiPrefs.js';
 import { projectMatchesInitials } from '../../lib/profile.js';
 
@@ -20,6 +21,7 @@ const SCOPE_KEY = '_ai_dash_scope';
 export default function Dashboard({ projets, profile = null, remoteLoaded, staleIds = new Set(), dirtyIds = new Set(), syncStatus = 'ok', onSelect, onNew, onUpd, onArchive, onUnarchive, onDelete, onEdit }) {
   const [photoTgt, setPhotoTgt] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
+  const [previewArc, setPreviewArc] = useState(null); // projet archivé consulté en lecture seule
   const [scope, setScopeState] = useState(() => {
     try { return sessionStorage.getItem(SCOPE_KEY) === 'all' ? 'all' : 'mine'; } catch { return 'mine'; }
   });
@@ -157,11 +159,12 @@ export default function Dashboard({ projets, profile = null, remoteLoaded, stale
             <Ic n="arc" s={13}/> Archivés ({archives.length})
           </h2>
           <div className="proj-grid" style={{ opacity:0.65 }}>
-            {archives.map(p => <ProjectCard key={p.id} p={p} arc={true} onSelect={onSelect} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
+            {archives.map(p => <ProjectCard key={p.id} p={p} arc={true} onSelect={onSelect} onPreview={setPreviewArc} onUpd={onUpd} onArchive={onArchive} onUnarchive={onUnarchive} onDelete={onDelete} onEdit={onEdit} menuOpen={menuOpen} setMenuOpen={setMenuOpen} setPhotoTgt={setPhotoTgt}/>)}
           </div>
         </div>
       )}
 
+      {previewArc && <ArchivePreview projet={projets.find(x => x.id === previewArc.id) ?? previewArc} onClose={() => setPreviewArc(null)}/>}
       {photoTgt && <PhotoModal projet={photoTgt} onUpd={onUpd} onClose={() => setPhotoTgt(null)}/>}
     </div>
   );

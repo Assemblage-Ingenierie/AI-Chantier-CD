@@ -23,7 +23,7 @@ function getItems(l) {
 function obsCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).length, 0); }
 function urgCount(p) { return getLocs(p).reduce((n, l) => n + getItems(l).filter(i => i.urgence === 'haute').length, 0); }
 
-export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen }) {
+export default function ProjectCard({ p, arc, stale = false, dirty = false, syncing = false, error = false, onSelect, onPreview, onArchive, onUnarchive, onDelete, onEdit, menuOpen, setMenuOpen }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const [menuPos, setMenuPos] = useState(null);
   // Couverture : on garde le placeholder (icône bâtiment) TANT QUE la photo n'est pas chargée,
@@ -89,7 +89,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
   return (
     <div className="proj-card" style={{ background:DA.white,borderRadius:12,overflow:'hidden',border:`1px solid ${DA.border}`,position:'relative' }}>
       {/* Photo */}
-      <div className="proj-card-img" onClick={() => !arc && onSelect(p)}>
+      <div className="proj-card-img" onClick={() => (arc ? onPreview?.(p) : onSelect(p))}>
         {/* loading="lazy" : avec BEAUCOUP de projets, on ne télécharge que les couvertures
             visibles (les autres se chargent au défilement) → plus d'embouteillage réseau qui
             laissait des cartes blanches. Le placeholder reste affiché tant que la photo n'est pas
@@ -122,7 +122,7 @@ export default function ProjectCard({ p, arc, stale = false, dirty = false, sync
       {/* display/alignements gérés en CSS (.proj-card-body) : centré verticalement sur mobile,
           aligné EN HAUT sur PC — un inline style écraserait la variante desktop. */}
       <div className="proj-card-body" style={{ padding:'10px 12px' }}>
-        <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => !arc && onSelect(p)}>
+        <div style={{ flex:1,minWidth:0,cursor:'pointer' }} onClick={() => (arc ? onPreview?.(p) : onSelect(p))}>
           {/* Rangée titre : MOBILE uniquement (sur PC le nom est en bandeau sur la photo).
               PAS de display inline : il écraserait le display:none du CSS desktop (le nom
               apparaissait en double). */}
