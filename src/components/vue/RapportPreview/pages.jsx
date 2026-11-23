@@ -783,7 +783,7 @@ export function AnnexImagePage({ img, name, docPage, docTotal, pageNum, totalPag
 // de rapport, au choix en paysage ou en portrait. Clé du plan : `z:<zone>` (plan de zone),
 // `z:<zone>:<i>` (plan supplémentaire de zone), `i:<observation>:<k>` (plan d'observation).
 // orientation = 'landscape' | 'portrait'.
-export function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath, orientation, onChange, onOrient = null }) {
+export function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotScale, vpNumByPath, orientation, onChange, onOrient = null, onAnnotate = null }) {
   const land = orientation !== 'portrait';
   const W = land ? PH : PW, H = land ? PW : PH;
   const paths = plan.annotations?.paths || [];
@@ -811,11 +811,15 @@ export function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotSc
       <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center' }}>
         <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} onOrient={onOrient} fill/>
       </div>
-      {onChange && (
+      {(onChange || onAnnotate) && (
         <div data-print="hide" style={{ position:'absolute', top:HDR + 34, right:MX, display:'flex', gap:4, background:'rgba(255,255,255,0.92)', padding:4, borderRadius:8, boxShadow:'0 1px 6px rgba(0,0,0,0.15)' }}>
+          {/* Annoter le plan directement depuis le rapport (demande Thomas 23/11). */}
+          {onAnnotate && <button onClick={onAnnotate} title="Annoter / ajuster les annotations de ce plan" style={{ ...btn(false), color:DA.black }}>✎ Annoter</button>}
+          {onChange && <>
           <button onClick={() => onChange('landscape')} style={btn(land)}>▭ A4 paysage</button>
           <button onClick={() => onChange('portrait')} style={btn(!land)}>▯ A4 portrait</button>
           <button onClick={() => onChange(null)} title="Remettre ce plan à sa place dans le rapport" style={btn(false)}>↩ Dans le texte</button>
+          </>}
         </div>
       )}
       <div style={{ position:'absolute', top:H - FTR, left:0, right:0 }}>

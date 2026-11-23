@@ -922,6 +922,16 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               photoAnnotScales={photoAnnotScales}
                               photoFit={pageFit[pi] ?? null}
                               onAnnotatePhoto={onAnnotatePhoto}
+                              onMovePhoto={onUpdateItem && !cutMode ? (fromPh, toPh) => {
+                                // Même ordre que dans l'observation : on déplace dans la liste complète
+                                // (identité des objets photo), le Vxx des plans suit (vpPhotoSync).
+                                const list = [...(block.item.photos || [])];
+                                const from = list.indexOf(fromPh), to = list.indexOf(toPh);
+                                if (from < 0 || to < 0 || from === to) return;
+                                const [m] = list.splice(from, 1);
+                                list.splice(to, 0, m);
+                                onUpdateItem(block.locId, block.item.id, { photos: list, _photosHydrated: true });
+                              } : null}
                               onPhotoCropChange={onUpdateItem ? (photo, cx, cy, cz, orient, fit = false) => {
                                 if (!photo) return;
                                 // Persistance durable par id de ligne photo (survit au reload
@@ -1036,7 +1046,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               <div style={lp.orient === 'landscape' ? { zoom: PW / PH } : undefined}>
                 <div ref={el => { pageRefs.current[pageIdx] = el; }} data-landscape={lp.orient === 'landscape' ? '1' : undefined}>
                   <PlanFullPage plan={lp.plan} title={lp.title} projet={projet} pageNum={pageNum} totalPages={totalPages} annotScale={annotScale} vpNumByPath={vpNumByPath}
-                    orientation={lp.orient} onOrient={handlePlanOrient} onChange={isPcWide && onSetPlanPages ? (v) => setPlanPage(lp.key, v) : null}/>
+                    orientation={lp.orient} onOrient={handlePlanOrient} onChange={isPcWide && onSetPlanPages ? (v) => setPlanPage(lp.key, v) : null}
+                    onAnnotate={onEditPlan && lp.plan.bg && /^z:/.test(lp.key) ? () => {
+                      // Plan de ZONE (z:locId ou z:locId:epIdx) → même annotateur que « ✎ Ajuster » dans le texte.
+                      const [, locId, ep] = lp.key.split(':');
+                      onEditPlan(locId, ep == null ? null : Number(ep), lp.plan.bg, lp.plan.annotations?.paths || []);
+                    } : null}/>
                 </div>
               </div>
             </React.Fragment>

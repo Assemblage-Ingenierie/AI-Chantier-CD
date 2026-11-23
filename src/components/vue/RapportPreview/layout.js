@@ -124,7 +124,8 @@ export function estimateBlockH(block, ppl) {
     if (row) {
       const cols  = Math.min(ppl, 3);
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-      h += (row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
+      h += (row.kind === 'mixed' ? (CW - 12 - 3 * (row.idxs.length - 1)) / row.ars.reduce((a, b) => a + b, 0)
+        : row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
     } else {
       const nPh = Math.min((item.photos || []).filter(p => p.data || p.annotated).length, 6);
       if (nPh > 0) {
@@ -404,6 +405,11 @@ export function stripFullPagePlans(locs, full) {
 //     (portrait à droite) → zéro blanc sans jamais changer l'ordre ;
 //   • paysages → rangées de `cols`.
 // isPortrait[i] = la photo i est en portrait. Renvoie des rangées { kind, idxs | portraitIdx+stackIdxs+side }.
+// Rangée « mixte » : photos côte à côte à la MÊME hauteur, chacune dans son format (ars = ratios l/h).
+function mixed(idxs, isPortrait) {
+  return { kind:'mixed', idxs, ars: idxs.map(k => (isPortrait[k] ? 3 / 4 : 4 / 3)) };
+}
+
 export function packPhotoRows(isPortrait, cols) {
   const n = isPortrait.length;
   const c = Math.max(1, cols || 2);
@@ -414,7 +420,10 @@ export function packPhotoRows(isPortrait, cols) {
       if (i + 1 < n && isPortrait[i + 1]) { rows.push({ kind:'portraits', idxs:[i, i + 1] }); i += 2; continue; }
       const stack = [];
       for (let k = i + 1; k < n && stack.length < 2 && !isPortrait[k]; k++) stack.push(k);
-      if (stack.length) { rows.push({ kind:'mosaic', portraitIdx:i, stackIdxs:stack, side:'left' }); i += 1 + stack.length; }
+      // Un seul paysage à côté : rangée MIXTE (même hauteur, chacun dans son format) au lieu d'une
+      // mosaïque qui laissait un trou sous le paysage (retour Thomas 23/11).
+      if (stack.length === 1) { rows.push(mixed([i, stack[0]], isPortrait)); i += 2; }
+      else if (stack.length) { rows.push({ kind:'mosaic', portraitIdx:i, stackIdxs:stack, side:'left' }); i += 1 + stack.length; }
       else { rows.push({ kind:'portraits', idxs:[i] }); i += 1; }
       continue;
     }
@@ -428,6 +437,7 @@ export function packPhotoRows(isPortrait, cols) {
     const restStart = i + full;
     // Reste (1 ou 2 paysages) suivi d'un portrait ISOLÉ → mosaïque portrait à droite.
     const nextIsLonePortrait = j < n && isPortrait[j] && !(j + 1 < n && isPortrait[j + 1]);
+    if (rem === 1 && nextIsLonePortrait) { rows.push(mixed([restStart, j], isPortrait)); i = j + 1; continue; }
     if (rem > 0 && rem <= 2 && nextIsLonePortrait) {
       rows.push({ kind:'mosaic', portraitIdx:j, stackIdxs: Array.from({ length: rem }, (_, k) => restStart + k), side:'right' });
       i = j + 1;

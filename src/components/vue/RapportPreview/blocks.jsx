@@ -364,7 +364,10 @@ export function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ 
   );
 }
 
-export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null }) {
+// Photo en cours de glisser dans le rapport (les rangées d'une observation sont des blocs séparés).
+let _photoDrag = null;
+
+export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -382,6 +385,7 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   // Les photos ne se rendent que via les blocs-rangée (photoRow) construits par flattenBlocks.
   const showPhotos   = mode === 'photos' && photoRow && allPhotos.length > 0;
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
+  const [dropIdx, setDropIdx] = React.useState(null); // photo survolée pendant un glisser (contour rouge)
 
   // Cellule photo — absIdx = index ORIGINAL dans allPhotos (badges Vxx + recadrage corrects
   // même quand le packing réorganise l'ordre d'affichage). `ar` = aspect de la cellule ;
@@ -412,7 +416,25 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
     // besoin. (Repli recadré si l'annotation n'existe qu'en calque re-dessiné, calé sur « cover ».)
     const fitWhole = !!ph.cropFit && !useAnnotOverlay;
     return (
-      <div key={absIdx} style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2, ...(fitWhole ? { background:'#fff' } : {}) }}>
+      <div key={absIdx}
+        {...(onMovePhoto ? {
+          // Glisser-déposer (PC) pour réordonner les photos de l'observation depuis le rapport
+          // (même ordre que dans l'observation — demande Thomas 23/11). Seulement au sein de la
+          // même observation ; les rangées étant des blocs séparés, l'état vit au niveau module.
+          draggable: true,
+          title: 'Glisser pour changer l\'ordre des photos',
+          onDragStart: (e) => { _photoDrag = { itemId: item.id, idx: absIdx }; try { e.dataTransfer.setData('text/plain', 'photo'); e.dataTransfer.effectAllowed = 'move'; } catch { /* ignore */ } },
+          onDragEnd: () => { _photoDrag = null; setDropIdx(null); },
+          onDragOver: (e) => { if (_photoDrag && _photoDrag.itemId === item.id && _photoDrag.idx !== absIdx) { e.preventDefault(); if (dropIdx !== absIdx) setDropIdx(absIdx); } },
+          onDragLeave: () => { if (dropIdx === absIdx) setDropIdx(null); },
+          onDrop: (e) => {
+            e.preventDefault();
+            const d = _photoDrag; _photoDrag = null; setDropIdx(null);
+            if (d && d.itemId === item.id && d.idx !== absIdx && allPhotos[d.idx]) onMovePhoto(allPhotos[d.idx], ph);
+          },
+        } : {})}
+        style={{ ...(ar ? { position:'relative', aspectRatio:ar } : { position:'absolute', inset:0 }), overflow:'hidden', borderRadius:2, ...(fitWhole ? { background:'#fff' } : {}),
+          ...(onMovePhoto ? { cursor:'grab' } : {}), ...(dropIdx === absIdx ? { outline:`3px solid ${DA.red}`, outlineOffset:-3 } : {}) }}>
         {/* Image annotée cuite (ph.annotated) en priorité : c'est exactement ce que
             l'utilisateur a annoté (texte/symboles à la bonne taille). Le recadrage
             s'applique en CSS de façon identique. Repli sur re-rendu uniquement si
@@ -568,6 +590,21 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
         const fitBox = fitW < 1 ? { width:`${(fitW * 100).toFixed(2)}%`, margin:'0 auto' } : {};
         const LAND = fitAr < 1 ? `${(4 / 3 / fitAr).toFixed(4)} / 1` : '4 / 3';
         const PORT = fitAr < 1 ? `${(3 / 4 / fitAr).toFixed(4)} / 1` : '3 / 4';
+        if (photoRow.kind === 'mixed') {
+          // Rangée MIXTE : photos côte à côte à la MÊME hauteur, chacune dans son format
+          // (largeurs proportionnelles aux ratios) → aucun trou, ordre conservé.
+          return (
+            <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+            <div style={{ display:'flex', gap:3, ...fitBox }}>
+              {photoRow.idxs.map((i, k) => (
+                <div key={i} style={{ flex:`${photoRow.ars[k]} 1 0`, minWidth:0 }}>
+                  {renderPhotoCell(i, photoRow.ars[k] < 1 ? PORT : LAND)}
+                </div>
+              ))}
+            </div>
+            </div>
+          );
+        }
         if (photoRow.kind === 'mosaic') {
           // Hauteur EXACTEMENT identique : la colonne paysages (2 cellules 4:3 + gap interne)
           // définit la hauteur de la rangée, et le portrait la remplit en absolu (inset:0) —
