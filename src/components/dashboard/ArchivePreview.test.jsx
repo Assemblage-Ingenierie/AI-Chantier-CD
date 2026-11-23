@@ -31,3 +31,18 @@ describe('ArchivePreview (lecture seule)', () => {
     expect(html).toContain('Aucune observation');
   });
 });
+
+describe('ArchivePreview — choix de la visite', () => {
+  it('ouvre sur la visite la plus RÉCENTE (date), menu déroulant, plus de bouton Copier', () => {
+    const p = { id: 'p', nom: 'X', visites: [
+      { id: 'a', label: 'Visite récente', dateVisite: '2026-10-14', localisations: [{ id: 'l', nom: 'Z', items: [{ id: 'i', titre: 'Texte récent' }] }] },
+      { id: 'b', label: 'Visite ancienne', dateVisite: '2026-01-02', localisations: [{ id: 'l2', nom: 'Z', items: [{ id: 'i2', titre: 'Texte ancien' }] }] },
+    ] };
+    const html = renderToStaticMarkup(<ArchivePreview projet={p} onClose={() => {}}/>);
+    expect(html).toContain('Texte récent');
+    expect(html).not.toContain('Texte ancien');
+    expect(html).toContain('<select');
+    expect(html.indexOf('Visite récente')).toBeLessThan(html.indexOf('Visite ancienne'));
+    expect(html).not.toContain('Copier');
+  });
+});
