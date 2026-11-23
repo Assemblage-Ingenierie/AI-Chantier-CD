@@ -92,3 +92,23 @@ describe('Passages par PHRASE entière', () => {
     for (const s of segs.filter(x => x.type === 'fix')) expect(s.del.trim()).not.toMatch(/\n/);
   });
 });
+
+import { changeKind } from './rewriteDiff.js';
+describe('Code couleur : orthographe seule vs reformulation', () => {
+  it('rien de réel (espaces, apostrophes) → non proposé', () => {
+    expect(changeKind("l'enduit  est fissuré.", 'l’enduit est fissuré.')).toBeNull();
+    expect(buildRewriteSegments("l'enduit  est fissuré.", 'l’enduit est fissuré.')).toBeNull();
+  });
+  it('orthographe seule → ortho (orange)', () => {
+    expect(changeKind('la facade est fissuré au droit des linteau', 'La façade est fissurée au droit des linteaux.')).toBe('ortho');
+    expect(changeKind('la présence plusieurs fissures', 'la présence de plusieurs fissures')).toBe('ortho');
+  });
+  it('vraie reformulation → reform (vert)', () => {
+    expect(changeKind('faut reparer avant coulage du plancher', 'L\'entreprise devra la réparer avant le coulage du plancher.')).toBe('reform');
+    expect(changeKind('fissure vu sur poutre', 'Une fissure a été constatée en sous-face de la poutre.')).toBe('reform');
+  });
+  it('le segment porte sa nature', () => {
+    const segs = buildRewriteSegments('la facade est fissuré. faut reparer vite', 'La façade est fissurée. L\'entreprise devra réparer rapidement.');
+    expect(segs.filter(s => s.type === 'fix').map(s => s.kind)).toEqual(['ortho', 'reform']);
+  });
+});
