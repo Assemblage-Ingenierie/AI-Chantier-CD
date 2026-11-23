@@ -36,15 +36,57 @@ function splitSentences(t) {
   if (last < t.length) parts.push(t.slice(last));
   return parts.length ? parts : [t];
 }
+// Nature d'une modification de phrase (code couleur du volet, retour Thomas 23/11) :
+//   null     → rien de réel (espaces / typographie) : non proposée ;
+//   'ortho'  → orthographe seulement (orange) : mêmes mots, chacun à peine retouché (accents,
+//              accords, lettre en trop/manquante, majuscule, ponctuation) ;
+//   'reform' → vraie reformulation / amélioration (vert).
+const _typo = (x) => String(x).replace(/[\u2018\u2019\u201b\u2032]/g, "'").replace(/[\u201c\u201d\u2033\u00ab\u00bb]/g, '"').replace(/[\u00a0\u202f]/g, ' ');
+function lev(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m || !n) return m || n;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+export function changeKind(del, add) {
+  const ns = (x) => _typo(x).replace(/\s+/g, '');
+  if (ns(del) === ns(add)) return null;
+  const words = (x) => _typo(x).toLowerCase().split(/\s+/).map(w => w.replace(/[.,;:!?()"]/g, '')).filter(Boolean);
+  const wa = words(del), wb = words(add);
+  if (wa.join(' ') === wb.join(' ')) return 'ortho'; // majuscules / ponctuation seulement
+  if (Math.abs(wa.length - wb.length) > 1) return 'reform';
+  // Alignement mot à mot tolérant (un mot ajouté/retiré au plus, ex. « de » manquant).
+  let i = 0, j = 0, edits = 0;
+  while (i < wa.length || j < wb.length) {
+    const x = wa[i], y = wb[j];
+    if (x === y) { i++; j++; continue; }
+    if (x != null && y != null && lev(x, y) <= Math.max(2, Math.floor(Math.max(x.length, y.length) * 0.34))) { i++; j++; edits++; continue; }
+    if (wa.length > wb.length) i++; else j++;
+    edits++;
+    if (edits > Math.max(2, Math.ceil(wa.length * 0.4))) return 'reform';
+  }
+  return edits <= Math.max(2, Math.ceil(wa.length * 0.4)) ? 'ortho' : 'reform';
+}
+
 export function bySentence(aLines, bLines) {
   const out = [];
   let id = 0;
   const eq = (text) => { if (!text) return; const l = out[out.length - 1]; if (l?.type === 'eq') l.text += text; else out.push({ type: 'eq', text }); };
   const fix = (del, add) => {
+    // Changement INSIGNIFIANT (espaces, apostrophes/guillemets typographiques) → pas proposé
+    // (retour Thomas 23/11 : « si c'est pour ne rien changer, pas la peine »). On garde l'original.
+    const kind = changeKind(del, add);
+    if (!kind) { eq(del); return; }
     // Blancs de fin communs laissés neutres (jamais de passage qui « mange » l'espace suivant).
     const tw = (x) => x.match(/\s*$/)[0];
     const t = tw(del) === tw(add) ? tw(del) : '';
-    out.push({ type: 'fix', id: id++, del: del.slice(0, del.length - t.length), add: add.slice(0, add.length - t.length), active: true });
+    out.push({ type: 'fix', id: id++, kind, del: del.slice(0, del.length - t.length), add: add.slice(0, add.length - t.length), active: true });
     eq(t);
   };
   aLines.forEach((la, i) => {

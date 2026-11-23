@@ -25,7 +25,9 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
         </div>
       </div>
       <div style={{ background:'#F8FAFC', padding:'5px 12px', borderBottom:'1px solid #E5E7EB', fontSize:10, color:'#475569' }}>
-        Clique sur une phrase proposée pour reprendre la tienne
+        Clique sur une phrase proposée pour reprendre la tienne ·{' '}
+        <span style={{ color:'#166534', fontWeight:700 }}>vert</span> reformulation ·{' '}
+        <span style={{ color:'#9A3412', fontWeight:700 }}>orange</span> orthographe seule
       </div>
       <div style={{ padding:'10px 12px', lineHeight:1.9, color:'#1F2937', background:'white', whiteSpace:'pre-wrap' }}>
         {segments.map((seg, i) => {
@@ -33,12 +35,19 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
           const active = seg.active !== false;
           return (
             <span key={i} onClick={() => onToggle(seg.id)}
-              title={active ? 'Cliquer pour garder ta phrase' : 'Cliquer pour reprendre la phrase proposée'}
+              title={active ? (seg.kind === 'ortho' ? `Orthographe seulement. Ta phrase : « ${seg.del} » — cliquer pour la garder` : 'Cliquer pour garder ta phrase') : 'Cliquer pour reprendre la phrase proposée'}
               style={{ cursor:'pointer', borderRadius:3, padding:'1px 2px', border: active ? '1px solid transparent' : '1px dashed #D1D5DB', background: active ? 'transparent' : '#F9FAFB' }}>
               {active ? (
                 <>
-                  {seg.del && <span style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 2px', marginRight:1 }}>{seg.del}</span>}
-                  {seg.add && <span style={{ background:'#DCFCE7', color:'#166534', fontWeight:600, borderRadius:2, padding:'0 2px' }}>{seg.add}</span>}
+                  {/* Orthographe seule (orange) : la phrase corrigée suffit, l'original barré en petit. */}
+                  {seg.kind === 'ortho' ? (
+                    <span style={{ background:'#FFEDD5', color:'#9A3412', fontWeight:600, borderRadius:2, padding:'0 2px' }}>{seg.add}</span>
+                  ) : (
+                    <>
+                      {seg.del && <span style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 2px', marginRight:1 }}>{seg.del}</span>}
+                      {seg.add && <span style={{ background:'#DCFCE7', color:'#166534', fontWeight:600, borderRadius:2, padding:'0 2px' }}>{seg.add}</span>}
+                    </>
+                  )}
                 </>
               ) : (
                 <span style={{ color:'#374151' }}>{seg.del}</span>
