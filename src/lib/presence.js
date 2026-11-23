@@ -22,6 +22,17 @@ const _statusListeners = new Set();
 const _savedListeners = new Set();
 const _liveListeners = new Set();
 let _trackTimer = null;
+// RECONNEXION (retour Thomas 23/11 : « Stas est connecté et je ne le vois pas ») : avant, un canal
+// fermé / en erreur (veille du PC, réseau coupé, serveur) n'était JAMAIS relancé → la personne
+// devenait invisible pour les autres jusqu'au rechargement de la page. Désormais : relance
+// automatique (délai croissant), présence rafraîchie toutes les 30 s, reprise au retour sur
+// l'onglet / au retour du réseau.
+let _startArgs = null;     // [profile, userId, avatar] pour relancer
+let _stopped = true;
+let _retryTimer = null;
+let _retryDelay = 5000;
+let _beat = null;
+const HEARTBEAT_MS = 30000;
 
 const isMobileUA = () => { try { return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); } catch { return false; } };
 
@@ -51,6 +62,9 @@ function scheduleTrack() {
 // avatar : photo du compte (Google) — sinon initiales.
 export async function startPresence(profile, userId, avatar = null) {
   if (_channel || !userId) return;
+  _startArgs = [profile, userId, avatar];
+  _stopped = false;
+  ensureWatchers();
   setStatus('connecting');
   const first = (profile?.first_name || '').trim(), last = (profile?.last_name || '').trim();
   _me = {
@@ -63,9 +77,10 @@ export async function startPresence(profile, userId, avatar = null) {
   };
   try {
     const sb = await getSupabase();
-    _channel = sb.channel(CHANNEL, { config: { presence: { key: TAB }, broadcast: { self: false } } });
-    _channel
-      .on('presence', { event: 'sync' }, readState)
+    const ch = sb.channel(CHANNEL, { config: { presence: { key: TAB }, broadcast: { self: false } } });
+    _channel = ch;
+    ch
+      .on('presence', { event: 'sync' }, () => { if (ch === _channel) readState(); })
       .on('broadcast', { event: 'draft' }, ({ payload }) => receiveDraft(payload))
       .on('broadcast', { event: 'draft-end' }, ({ payload }) => receiveDraft(payload, true))
       .on('broadcast', { event: 'live' }, ({ payload }) => {
@@ -77,21 +92,64 @@ export async function startPresence(profile, userId, avatar = null) {
         _savedListeners.forEach(fn => { try { fn(payload); } catch { /* listener */ } });
       })
       .subscribe((status, err) => {
+        if (ch !== _channel) return; // ancien canal (fermé lors d'une relance) : ignoré
         _subscribed = status === 'SUBSCRIBED';
-        if (_subscribed) { setStatus('ok'); scheduleTrack(); return; }
-        // CHANNEL_ERROR / TIMED_OUT / CLOSED : visible sur ma bulle + remonté dans les logs Vercel.
+        if (_subscribed) { _retryDelay = 5000; setStatus('ok'); scheduleTrack(); return; }
+        // CHANNEL_ERROR / TIMED_OUT / CLOSED : visible sur ma bulle + remonté dans les logs Vercel,
+        // puis RELANCE automatique (sauf arrêt volontaire : déconnexion).
         const why = `${status}${err?.message ? ` : ${err.message}` : ''}`;
         setStatus(why);
-        if (status !== 'CLOSED') logWarn('presence.channel', { status, error: err?.message || null });
+        if (!_stopped) logWarn('presence.channel', { status, error: err?.message || null });
+        scheduleReconnect();
       });
   } catch (e) {
     _channel = null;
     setStatus(`indisponible : ${e?.message || e}`);
     logWarn('presence.start', { error: String(e?.message || e) });
+    scheduleReconnect();
   }
 }
 
+// Ferme le canal courant (sans marquer l'arrêt volontaire) puis relance après un délai croissant.
+function scheduleReconnect() {
+  if (_stopped || _retryTimer || !_startArgs) return;
+  const delay = _retryDelay;
+  _retryDelay = Math.min(_retryDelay * 2, 60000);
+  _retryTimer = setTimeout(async () => {
+    _retryTimer = null;
+    if (_stopped) return;
+    const ch = _channel;
+    _channel = null; _subscribed = false;
+    try { if (ch) { const sb = await getSupabase(); await sb.removeChannel(ch); } } catch { /* déjà fermé */ }
+    if (_stopped) return;
+    const [profile, userId, avatar] = _startArgs;
+    const loc = _me ? { projectId: _me.projectId, itemId: _me.itemId } : null;
+    await startPresence(profile, userId, avatar);
+    if (loc) setPresenceLocation(loc); // je reste « dans » le même projet
+  }, delay);
+}
+
+// Battement : présence rafraîchie (l'appareil reste visible) ; canal perdu → relance. Idem au
+// retour sur l'onglet et au retour du réseau (iOS / Android coupent le socket en arrière-plan).
+let _watchersOn = false;
+function ensureWatchers() {
+  if (_watchersOn || typeof window === 'undefined') return;
+  _watchersOn = true;
+  const check = () => {
+    if (_stopped) return;
+    if (_channel && _subscribed) scheduleTrack();
+    else scheduleReconnect();
+  };
+  _beat = setInterval(check, HEARTBEAT_MS);
+  try {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    window.addEventListener('online', check);
+  } catch { /* environnement sans DOM */ }
+}
+
 export async function stopPresence() {
+  _stopped = true;
+  clearTimeout(_retryTimer); _retryTimer = null;
   clearTimeout(_trackTimer);
   const ch = _channel;
   _channel = null; _subscribed = false; _others = []; emit(); setStatus('off');
