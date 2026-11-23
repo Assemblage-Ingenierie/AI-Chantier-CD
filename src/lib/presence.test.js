@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 const ch = { handlers: {}, tracked: [], sent: [], state: {} };
 const channel = {
   on(type, filter, fn) { ch.handlers[`${type}:${filter.event}`] = fn; return channel; },
-  subscribe(cb) { setTimeout(() => cb('SUBSCRIBED'), 0); return channel; },
+  subscribe(cb) { ch.subs = (ch.subs || 0) + 1; ch.lastCb = cb; setTimeout(() => cb('SUBSCRIBED'), 0); return channel; },
   track: async (m) => { ch.tracked.push(m); },
   untrack: async () => {},
   send: async (msg) => { ch.sent.push(msg); },
@@ -82,3 +82,34 @@ describe('frappe en direct (comme Google Sheets)', () => {
   });
 });
 
+
+describe('présence : reconnexion automatique (retour Thomas 23/11, « je ne vois pas Stas »)', () => {
+  it('canal fermé → relancé tout seul, ma position (projet) est conservée', async () => {
+    vi.useFakeTimers();
+    await P.stopPresence();
+    await P.startPresence({ first_name: 'Stas', last_name: 'K', initials: 'SK' }, 'u-stas');
+    await vi.advanceTimersByTimeAsync(300);
+    P.setPresenceLocation({ projectId: 'A743' });
+    await vi.advanceTimersByTimeAsync(300);
+    const subsBefore = ch.subs;
+    ch.lastCb('CLOSED'); // veille du PC / réseau coupé / serveur
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(ch.subs).toBe(subsBefore + 1); // nouvel abonnement
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ch.tracked.at(-1)).toMatchObject({ userId: 'u-stas', projectId: 'A743' });
+    await P.stopPresence();
+    vi.useRealTimers();
+  });
+  it('arrêt volontaire (déconnexion) : aucune relance', async () => {
+    vi.useFakeTimers();
+    await P.startPresence({ first_name: 'Stas' }, 'u-stas');
+    await vi.advanceTimersByTimeAsync(300);
+    const cb = ch.lastCb;
+    await P.stopPresence();
+    const subs = ch.subs;
+    cb('CLOSED');
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(ch.subs).toBe(subs);
+    vi.useRealTimers();
+  });
+});
