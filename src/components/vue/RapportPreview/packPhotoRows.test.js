@@ -13,7 +13,8 @@ describe('Photos du rapport : ordre respecté (retour Thomas 23/11)', () => {
     expect(order(rows)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(rows[0]).toEqual({ kind: 'landscape', idxs: [0, 1] });
     // Le paysage restant + le portrait final : mosaïque portrait À DROITE (pas de blanc).
-    expect(rows[rows.length - 1]).toEqual({ kind: 'mosaic', portraitIdx: 5, stackIdxs: [4], side: 'right' });
+    // Le paysage restant + le portrait final : rangée MIXTE (même hauteur, pas de trou).
+    expect(rows[rows.length - 1]).toEqual({ kind: 'mixed', idxs: [4, 5], ars: [4 / 3, 3 / 4] });
   });
   it('ordre conservé quels que soient les formats', () => {
     for (const seq of [[P, L, L, P, P, L], [L, P, L, L, L, P, L], [P, P, P], [L, L, L], [P]])
@@ -23,5 +24,18 @@ describe('Photos du rapport : ordre respecté (retour Thomas 23/11)', () => {
   it('2 portraits consécutifs côte à côte, portrait suivi de paysages = mosaïque à gauche', () => {
     expect(packPhotoRows([P, P], 2)).toEqual([{ kind: 'portraits', idxs: [0, 1] }]);
     expect(packPhotoRows([P, L, L], 2)).toEqual([{ kind: 'mosaic', portraitIdx: 0, stackIdxs: [1, 2], side: 'left' }]);
+  });
+});
+
+describe('Rangées mixtes (retour Thomas 23/11 : plus de trou sous un paysage seul)', () => {
+  it('paysage, portrait, paysage, portrait → 2 rangées mixtes, ordre conservé', () => {
+    expect(packPhotoRows([L, P, L, P], 2)).toEqual([
+      { kind: 'mixed', idxs: [0, 1], ars: [4 / 3, 3 / 4] },
+      { kind: 'mixed', idxs: [2, 3], ars: [4 / 3, 3 / 4] },
+    ]);
+  });
+  it('portrait suivi d\'un seul paysage → mixte ; suivi de 2 paysages → mosaïque', () => {
+    expect(packPhotoRows([P, L], 2)).toEqual([{ kind: 'mixed', idxs: [0, 1], ars: [3 / 4, 4 / 3] }]);
+    expect(packPhotoRows([P, L, L], 2)[0].kind).toBe('mosaic');
   });
 });
