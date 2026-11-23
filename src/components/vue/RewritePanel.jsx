@@ -12,7 +12,7 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
       <div style={{ background:'#EFF6FF', padding:'8px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #BFDBFE', gap:8, flexWrap:'wrap' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontWeight:700, color:'#1D4ED8', fontSize:11, textTransform:'uppercase', letterSpacing:0.5 }}>Version reformulée</span>
-          <span style={{ fontSize:11, color:'#6B7280' }}>{on}/{fixes.length} passage{fixes.length > 1 ? 's' : ''}</span>
+          <span style={{ fontSize:11, color:'#6B7280' }}>{on}/{fixes.length} phrase{fixes.length > 1 ? 's' : ''}</span>
         </div>
         <div style={{ display:'flex', gap:6 }}>
           <button onClick={() => onAll(true)} style={btn}>Tout</button>
@@ -25,7 +25,7 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
         </div>
       </div>
       <div style={{ background:'#F8FAFC', padding:'5px 12px', borderBottom:'1px solid #E5E7EB', fontSize:10, color:'#475569' }}>
-        Clique sur un passage pour le garder tel quel
+        Clique sur une phrase proposée pour reprendre la tienne
       </div>
       <div style={{ padding:'10px 12px', lineHeight:1.9, color:'#1F2937', background:'white', whiteSpace:'pre-wrap' }}>
         {segments.map((seg, i) => {
@@ -33,7 +33,7 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
           const active = seg.active !== false;
           return (
             <span key={i} onClick={() => onToggle(seg.id)}
-              title={active ? 'Cliquer pour garder ton texte ici' : 'Cliquer pour reprendre la proposition'}
+              title={active ? 'Cliquer pour garder ta phrase' : 'Cliquer pour reprendre la phrase proposée'}
               style={{ cursor:'pointer', borderRadius:3, padding:'1px 2px', border: active ? '1px solid transparent' : '1px dashed #D1D5DB', background: active ? 'transparent' : '#F9FAFB' }}>
               {active ? (
                 <>

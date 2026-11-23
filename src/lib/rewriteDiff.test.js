@@ -66,3 +66,29 @@ describe('Échange numéroté avec l\'IA', () => {
     expect(buildRewriteSegments(plain, parseNumbered('[1] Fissure constatée.\n[2] La poutre P3 est à reprendre.', plain))).not.toBeNull();
   });
 });
+
+describe('Passages par PHRASE entière', () => {
+  it('une phrase modifiée = un seul passage, la phrase identique reste neutre', () => {
+    const plain = 'fissure vu sur poutre. Le reste est ok. il faut reparer vite';
+    const rw = 'Fissure constatée sur la poutre. Le reste est ok. L\'entreprise devra réparer rapidement.';
+    const segs = buildRewriteSegments(plain, rw);
+    const fixes = segs.filter(s => s.type === 'fix');
+    expect(fixes).toHaveLength(2);
+    expect(fixes[0].del.trim()).toBe('fissure vu sur poutre.');
+    expect(fixes[0].add.trim()).toBe('Fissure constatée sur la poutre.');
+    expect(fixes[1].del.trim()).toBe('il faut reparer vite');
+    // Recomposition exacte : tout gardé = original ; tout accepté = réécrit
+    expect(segs.map(s => (s.type === 'eq' ? s.text : s.del)).join('')).toBe(plain);
+    expect(composeRewrite(segs)).toBe(rw);
+  });
+  it('garder une phrase : elle revient en entier, les autres sont réécrites', () => {
+    const plain = 'phrase un mal ecrite. phrase deux aussi';
+    const segs = buildRewriteSegments(plain, 'Première phrase bien écrite. Deuxième phrase correcte.');
+    const kept = segs.map((s, i) => (s.type === 'fix' && s.id === 0 ? { ...s, active: false } : s));
+    expect(composeRewrite(kept)).toBe('phrase un mal ecrite. Deuxième phrase correcte.');
+  });
+  it('plusieurs lignes : jamais de passage à cheval sur deux lignes', () => {
+    const segs = buildRewriteSegments('ligne un\nligne deux', 'Ligne une.\nLigne deux.');
+    for (const s of segs.filter(x => x.type === 'fix')) expect(s.del.trim()).not.toMatch(/\n/);
+  });
+});

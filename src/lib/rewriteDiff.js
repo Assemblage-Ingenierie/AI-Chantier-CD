@@ -20,8 +20,43 @@ export function buildRewriteSegments(plain, rewritten) {
   const a = splitLines(plain), b = splitLines(rw);
   if (a.length !== b.length) return null;
   for (let i = 0; i < a.length; i++) if (!a[i].trim() !== !b[i].trim()) return null; // ligne vide ↔ vide
-  const segments = diffChunks(joinLines(a), joinLines(b));
+  const segments = bySentence(a, b);
   return segments.some(s => s.type === 'fix') ? segments : null;
+}
+
+// Passages par PHRASE entière (retour Thomas 23/11 : accepter mot par mot donnait des phrases qui
+// ne veulent plus rien dire). Ligne par ligne : même nombre de phrases → comparées une à une (une
+// phrase identique reste neutre) ; sinon la ligne entière forme un seul passage. Recompose
+// exactement l'original (del/eq) et le texte réécrit (add/eq).
+function splitSentences(t) {
+  const parts = [];
+  let last = 0;
+  const re = /[.!?;](?=\s|$)\s*/g;
+  for (let m = re.exec(t); m; m = re.exec(t)) { parts.push(t.slice(last, m.index + m[0].length)); last = m.index + m[0].length; }
+  if (last < t.length) parts.push(t.slice(last));
+  return parts.length ? parts : [t];
+}
+export function bySentence(aLines, bLines) {
+  const out = [];
+  let id = 0;
+  const eq = (text) => { if (!text) return; const l = out[out.length - 1]; if (l?.type === 'eq') l.text += text; else out.push({ type: 'eq', text }); };
+  const fix = (del, add) => {
+    // Blancs de fin communs laissés neutres (jamais de passage qui « mange » l'espace suivant).
+    const tw = (x) => x.match(/\s*$/)[0];
+    const t = tw(del) === tw(add) ? tw(del) : '';
+    out.push({ type: 'fix', id: id++, del: del.slice(0, del.length - t.length), add: add.slice(0, add.length - t.length), active: true });
+    eq(t);
+  };
+  aLines.forEach((la, i) => {
+    const lb = bLines[i];
+    if (la !== lb) {
+      const sa = splitSentences(la), sb = splitSentences(lb);
+      if (sa.length === sb.length) sa.forEach((x, k) => (x === sb[k] ? eq(x) : fix(x, sb[k])));
+      else fix(la, lb);
+    } else eq(la);
+    if (i < aLines.length - 1) eq('\n');
+  });
+  return out;
 }
 
 const q = (s) => s.replace(/[‘’‛′]/g, "'").replace(/[“”″]/g, '"');

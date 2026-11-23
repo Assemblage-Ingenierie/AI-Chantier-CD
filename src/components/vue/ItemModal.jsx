@@ -208,6 +208,7 @@ STYLE VISÉ : d'abord le CONSTAT factuel (quoi, où), puis, SEULEMENT si le text
 RÈGLES STRICTES :
 - Conserve TOUS les faits, chiffres, cotes, unités, localisations, références, noms et termes techniques. N'ajoute AUCUNE information (pas de cause, préconisation, norme ou cote absentes du texte). Ne supprime rien d'informatif.
 - Le texte t'est donné ligne par ligne, chaque ligne précédée de son numéro entre crochets ([1], [2]…). Réécris CHAQUE ligne séparément et renvoie-la sur UNE seule ligne précédée du MÊME numéro, dans le même ordre. Ne fusionne pas deux lignes, n'en crée pas de nouvelle, n'ajoute ni puce ni numérotation.
+- Dans une ligne, garde autant que possible le même nombre de phrases, dans le même ordre (chaque phrase réécrite remplace la phrase d'origine correspondante) : l'ingénieur valide phrase par phrase.
 - Si une ligne est déjà bien rédigée, recopie-la telle quelle.
 - N'utilise JAMAIS de tiret cadratin ni demi-cadratin. Ne transforme jamais une affirmation en question.
 Réponds UNIQUEMENT avec les lignes numérotées, sans titre, sans guillemets, sans commentaire.`;
