@@ -55,9 +55,11 @@ export function A4Card({ children, projet, pageNum, totalPages }) {
       {/* Indicateur visuel de débordement — masqué à l'impression */}
       {overflow > 0 && (
         <>
-          <div data-print="hide" style={{ position:'absolute', left:0, right:0, top:PH - FTR - MB, borderTop:'2px dashed #F97316', zIndex:6, pointerEvents:'none' }}>
-            <div style={{ background:'#F97316', color:'white', fontSize:7, fontWeight:800, padding:'2px 8px', display:'inline-flex', alignItems:'center', gap:4, borderRadius:'0 0 4px 4px', letterSpacing:0.3, whiteSpace:'nowrap' }}>
-              ⚠ Dépasse la page A4 ({Math.round(overflow)}px) — utiliser ✂ Saut de page
+          {/* Pages coupées automatiquement (23/11) : ne s'affiche plus que si UN bloc est plus
+              grand qu'une page (long texte d'un seul tenant, grand plan…). Plus visible, en mm. */}
+          <div data-print="hide" style={{ position:'absolute', left:0, right:0, top:PH - FTR - MB, borderTop:'3px dashed #EA580C', zIndex:6, pointerEvents:'none' }}>
+            <div style={{ background:'#EA580C', color:'white', fontSize:10, fontWeight:800, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:6, borderRadius:'0 0 6px 6px', letterSpacing:0.2, whiteSpace:'nowrap', boxShadow:'0 2px 6px rgba(0,0,0,0.2)' }}>
+              ⚠ Ce bloc dépasse la page de {Math.max(1, Math.round(overflow / 3))} mm : coupez le texte avec ✂ ou réduisez-le
             </div>
           </div>
           <div data-print="hide" style={{ position:'absolute', left:0, right:0, top:PH - FTR - MB, bottom:0, background:'rgba(249,115,22,0.06)', pointerEvents:'none', zIndex:5 }}/>

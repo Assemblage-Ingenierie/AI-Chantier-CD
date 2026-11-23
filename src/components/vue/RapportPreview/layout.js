@@ -285,21 +285,58 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
 }
 
 // ── Pagination ───────────────────────────────────────────────────────────────────────
-// Ne coupe que sur les sauts forcés (scissors) — jamais automatiquement.
-export function buildPages(allBlocks, ppl, breaks, _heights) {
+// PAGINATION AUTOMATIQUE (demande Thomas 23/11 ; avant : coupe uniquement sur les ✂ manuels →
+// une page contenait tout le reste du rapport, « dépasse de 13 409 px »). Les ✂ restent des coupes
+// FORCÉES. En plus, une page se coupe d'elle-même dès qu'elle est pleine — toujours ENTRE deux
+// blocs (jamais dans une photo / un paragraphe). Une page qui ne dépasse que de peu est gardée si
+// ses rangées de photos peuvent être légèrement resserrées (ajustement pageFit, facteur ≥ minFit)
+// → 4 rangées de photos tiennent sur une page, jamais 5. Un titre de zone (ou l'en-tête court
+// d'une observation) n'est jamais laissé seul en bas de page.
+//   heights : { id: hauteur mesurée } (repli : estimation) ; opts.avail : hauteur utile d'une page ;
+//   opts.gridH : { id: hauteur des photos du bloc } ; opts.minFit : resserrement maxi accepté.
+export function buildPages(allBlocks, ppl, breaks, heights, opts = {}) {
+  const avail = opts.avail || 0;
+  const gridH = opts.gridH || {};
+  const minFit = opts.minFit ?? 0.85;
+  const hOf = (b) => (heights && heights[b.id]) || estimateBlockH(b, ppl);
   const pages  = [];
   let blocks   = [];
+  let H = 0, P = 0;
 
   const flush = () => {
     if (blocks.length) { pages.push(blocks); blocks = []; }
+    H = 0; P = 0;
+  };
+  const fits = (h, p) => {
+    if (!avail || H + h <= avail) return true;
+    const photos = P + p;
+    if (!photos) return false;
+    return 1 - (H + h - avail) / photos >= minFit; // resserrement des photos suffisant
+  };
+  // Blocs à garder avec la suite : titre de zone ; en-tête court d'une observation suivi de ses photos.
+  const keepWithNext = (b, next) => {
+    if (!next) return false;
+    if (b.type === 'zone') return true;
+    return b.type === 'item' && b.mode !== 'photos' && next.type === 'item' && next.mode === 'photos'
+      && next.item?.id === b.item?.id && hOf(b) < 140;
   };
 
-  for (const block of allBlocks) {
+  for (let i = 0; i < allBlocks.length; i++) {
+    const block = allBlocks[i];
     if (breaks.has(block.id)) flush();
+    const h = hOf(block);
+    const p = gridH[block.id] || 0;
+    if (blocks.length && !fits(h, p)) {
+      // Ne pas laisser un titre (ou une chaîne titre → en-tête) seul en bas de page.
+      const carry = [];
+      while (blocks.length > 1 && keepWithNext(blocks[blocks.length - 1], carry[0] || block)) carry.unshift(blocks.pop());
+      flush();
+      for (const c of carry) { blocks.push(c); H += hOf(c); P += gridH[c.id] || 0; }
+    }
     blocks.push(block);
+    H += h; P += p;
   }
   flush();
-
   return pages;
 }
 
