@@ -1151,6 +1151,11 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     if (!rewrite) return;
     const finalPlain = composeRewrite(rewrite.segments);
     const out = applyRewriteToHtml(form.commentaire || '', rewrite.original, finalPlain, { toPlain: htmlToPlain, patchLine: patchHtmlText });
+    // Diagnostic (retour Thomas 23/11 : « quand je valide, ça n'apporte pas les changements ») :
+    // trace dans les journaux Vercel, sans le texte (longueurs et compteurs seulement).
+    const fixes = rewrite.segments.filter(sg => sg.type === 'fix');
+    logEvent('rewrite.apply', { ok: out != null, changed: out != null && out !== (form.commentaire || ''), fixes: fixes.length, active: fixes.filter(sg => sg.active !== false).length,
+      len: (form.commentaire || '').length, plainSame: htmlToPlain(form.commentaire || '') === rewrite.original, item: form.id || null });
     if (out == null) { setImproveErr('Le texte a changé entre-temps : relance « Améliorer avec l\'IA »'); setRewrite(null); return; }
     setForm(f => ({ ...f, commentaire: out }));
     setRewrite(null);
