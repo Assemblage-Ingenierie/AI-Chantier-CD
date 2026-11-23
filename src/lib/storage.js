@@ -2078,12 +2078,28 @@ async function saveRemote(ps, dirtyIds = null) {
       if (incomplete) incompleteItems.add(itemId);
     }
     if (incompleteItems.size) errors.incompletePhotoProjects.add(p.id);
+    // DOUBLONS D'ID dans le lot (incident 23/11, A743 : « ON CONFLICT DO UPDATE command cannot affect
+    // row a second time », code 21000, à chaque sauvegarde) : une même photo (même id stable) présente
+    // DEUX fois dans l'état local (même observation ou deux observations) → Postgres refuse TOUT le
+    // lot. On n'envoie qu'UNE ligne par id (la première). `allPhotoRows` (toutes les références) reste
+    // utilisé pour la purge plus bas → une photo référencée par une observation n'y est jamais purgée.
+    const photoRowsToSend = [];
+    {
+      const firstItemById = new Map();
+      const dups = [];
+      for (const row of allPhotoRows) {
+        if (firstItemById.has(row.id)) { dups.push({ id: row.id, a: firstItemById.get(row.id), b: row.item_id }); continue; }
+        firstItemById.set(row.id, row.item_id);
+        photoRowsToSend.push(row);
+      }
+      if (dups.length) logWarn('saveRemote.photoDupIds', { projet: p.id, n: dups.length, sample: dups.slice(0, 5) });
+    }
     const isAnnotColErr = (e) => e?.code === '42703' || e?.code === 'PGRST204' || e?.message?.includes('annotated_storage_url') || e?.message?.includes('schema cache');
     let photoUpsertOk = false;
-    if (allPhotoRows.length > 0) {
-      const { error } = await sb.from('aichantier_item_photos').upsert(allPhotoRows, { onConflict: 'id' });
+    if (photoRowsToSend.length > 0) {
+      const { error } = await sb.from('aichantier_item_photos').upsert(photoRowsToSend, { onConflict: 'id' });
       if (isAnnotColErr(error)) {
-        const stripped = allPhotoRows.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
+        const stripped = photoRowsToSend.map(({ annotations, annotated_storage_url, ...row }) => row); // eslint-disable-line no-unused-vars
         const { error: e2 } = await sb.from('aichantier_item_photos').upsert(stripped, { onConflict: 'id' });
         if (e2) errors.push(e2); else photoUpsertOk = true;
       } else if (error) {
@@ -2091,8 +2107,8 @@ async function saveRemote(ps, dirtyIds = null) {
         // aucune photo du projet n'était plus reliée, à chaque sauvegarde. Repli observation par
         // observation : les autres passent ; l'erreur reste remontée (pas de purge, re-tentative).
         errors.push(error);
-        logWarn('saveRemote.photoBatchFailed', { projet: p.id, rows: allPhotoRows.length, code: error.code, msg: error.message });
-        const byItem = groupBy(allPhotoRows, 'item_id');
+        logWarn('saveRemote.photoBatchFailed', { projet: p.id, rows: photoRowsToSend.length, code: error.code, msg: error.message });
+        const byItem = groupBy(photoRowsToSend, 'item_id');
         for (const rowsOfItem of Object.values(byItem)) {
           const { error: e3 } = await sb.from('aichantier_item_photos').upsert(rowsOfItem, { onConflict: 'id' });
           if (e3) incompleteItems.add(rowsOfItem[0].item_id);

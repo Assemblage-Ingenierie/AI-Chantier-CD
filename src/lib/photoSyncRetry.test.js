@@ -72,3 +72,31 @@ describe('photos prises sur site : jamais perdues en route', () => {
     expect(photoRows()).toEqual(['ph_b']);  // AVANT : aucune photo reliée
   });
 });
+
+describe('photo en double dans l\'état local (incident 23/11, code 21000)', () => {
+  it('même id deux fois → une seule ligne envoyée, sauvegarde réussie, rien purgé', async () => {
+    db.T.aichantier_localisation_items.push({ id: 'b', localisation_id: 'rdc', titre: 'Dalle', sort_order: 1 });
+    db.T.aichantier_item_photos = [{ id: 'dup', item_id: 'b', name: 'x.jpg', storage_url: 'p/b/dup.jpg', sort_order: 0 }];
+    const storage = await import('./storage.js');
+    const ps = await storage.loadData();
+    // Vrai Postgres : un lot contenant 2 fois le même id est refusé (21000).
+    const realFrom = db.client.from;
+    db.client.from = (t) => {
+      const api = realFrom(t);
+      if (t !== 'aichantier_item_photos') return api;
+      const up = api.upsert;
+      api.upsert = (rows) => {
+        const arr = Array.isArray(rows) ? rows : [rows];
+        if (new Set(arr.map(r => r.id)).size !== arr.length) return { then: (res) => Promise.resolve({ data: null, error: { code: '21000', message: 'ON CONFLICT DO UPDATE command cannot affect row a second time' } }).then(res) };
+        return up(rows);
+      };
+      return api;
+    };
+    const ph = { _id: 'dup', name: 'x.jpg', storage_url: 'p/b/dup.jpg', data: 'https://x/p/b/dup.jpg' };
+    const local = ps.map(p => ({ ...p, visites: p.visites.map(v => ({ ...v, localisations: v.localisations.map(l => ({
+      ...l, items: l.items.map(it => ({ ...it, _photosHydrated: true, photos: it.id === 'b' ? [ph, { ...ph }] : [] })) })) })) }));
+    const ok = await storage.saveData(local, null, new Set(['P']));
+    expect(ok).toBe(true);
+    expect(photoRows()).toEqual(['dup']);
+  });
+});
