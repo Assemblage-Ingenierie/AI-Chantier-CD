@@ -127,7 +127,7 @@ export const MISSIONS = [
   // Retour Thomas 20/11 (validé) : « Sous ses yeux » — faire relire un rapport pendant que Thomas
   // est connecté à l'app (présence en direct). Tout le monde le fait sans s'en rendre compte.
   // withFan / fissure / bonEtat = anciennes conditions, gardées pour ne rien retirer à personne.
-  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Faire relire un rapport sous les yeux de Thomas. Tu l\'as sûrement déjà fait sans t\'en rendre compte… lui, il a tout vu.', reward: 'fan', progress: s => [(s.fanOnline || s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
+  { id: 'fan',       title: 'Fan-club officiel',      desc: 'Faire relire un rapport pendant que Thomas est connecté à l\'app. Tu l\'as sûrement déjà fait sans t\'en rendre compte… lui, il a tout vu. Il a codé l\'appli, il a codé cette mission, il a choisi sa propre photo : aucun conflit d\'intérêts.', reward: 'fan', progress: s => [(s.fanOnline || s.bonEtat || s.fissure || s.withFan) ? 1 : 0, 1] },
   { id: 'legende',   title: 'Légende du Québec',      desc: 'Obtenir 10/10, 3 fois',                                 reward: 'couronne',  progress: s => [Math.min(s.count10, 3), 3] },
 ];
 
