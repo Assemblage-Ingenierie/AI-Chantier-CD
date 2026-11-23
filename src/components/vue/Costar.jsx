@@ -233,9 +233,10 @@ function FanFrame() {
   const avatar = getFanAvatar();
   return (
     <g strokeLinecap="round" strokeLinejoin="round">
-      <path d="M95.4 15 L102 3.6 L108.6 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
-      <circle cx="102" cy="3.4" r="1.1" fill="#57534E"/>
-      <g transform="translate(102 31)">
+      <path d="M94 15 L101 3.6 L108 15" stroke="#78716C" strokeWidth="0.6" fill="none"/>
+      <circle cx="101" cy="3.4" r="1.1" fill="#57534E"/>
+      {/* Cadre + photo agrandis d'environ 12 % (demande Thomas 23/11), recentré pour rester dans le viewBox. */}
+      <g transform="translate(101 33) scale(1.12)">
         <defs><clipPath id="costar-fan-heart"><path d={HEART}/></clipPath></defs>
         <path d={HEART} transform="scale(1.22)" fill="#DC2626" stroke="#7F1D1D" strokeWidth="0.8"/>
         <path d={HEART} fill="#FCE7F3"/>
