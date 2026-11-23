@@ -263,8 +263,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   }, [allBlocks]);
 
   const pages = useMemo(
-    () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null),
-    [allBlocks, ppl, breaks, measuredH]
+    () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null,
+      { avail: PH - (HDR + 1) - (MT - HDR) - (MB + FTR) - 4, gridH, minFit: 0.85 }),
+    [allBlocks, ppl, breaks, measuredH, gridH]
   );
 
   // ── AJUSTEMENT DE PAGE (retours Thomas 02/11 : « 4 rangées de photos sans texte ne rentrent
