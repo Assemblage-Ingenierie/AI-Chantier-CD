@@ -211,7 +211,12 @@ RÈGLES STRICTES :
 - Le texte t'est donné ligne par ligne, chaque ligne précédée de son numéro entre crochets ([1], [2]…). Réécris CHAQUE ligne séparément et renvoie-la sur UNE seule ligne précédée du MÊME numéro, dans le même ordre. Ne fusionne pas deux lignes, n'en crée pas de nouvelle, n'ajoute ni puce ni numérotation.
 - Dans une ligne, garde autant que possible le même nombre de phrases, dans le même ordre (chaque phrase réécrite remplace la phrase d'origine correspondante) : l'ingénieur valide phrase par phrase.
 - Ne modifie une phrase QUE si tu l'améliores réellement (clarté, précision, construction, registre de rapport). Une phrase déjà bien rédigée est recopiée telle quelle (fautes seules corrigées) : ne change pas un mot pour un synonyme équivalent.
+- RESPECTE LA VOIX DE L'INGÉNIEUR : garde ses mots, ses tournures et sa ponctuation (parenthèses comprises) dès qu'ils sont corrects. N'échange JAMAIS un verbe ou un mot correct contre un synonyme (« nous notons » reste « nous notons », pas « nous constatons »). N'ajoute pas de locution ampoulée ou désuète (« à tout le moins », « en outre », « il convient de noter », « force est de constater »…).
+- Une phrase reformulée doit rester naturelle, correcte et avoir EXACTEMENT le même sens. En cas de doute, ne corrige que les fautes et garde la phrase.
 - N'utilise JAMAIS de tiret cadratin ni demi-cadratin. Ne transforme jamais une affirmation en question.
+EXEMPLES :
+• « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ouàu moins de redressement de comble). » → « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ou au moins de redressement de comble). » (phrase correcte : on corrige seulement la faute de frappe, rien d'autre).
+• « [2] faut reparer la poutre avant coulage » → « [2] La poutre devra être réparée avant le coulage. » (phrase familière et incomplète : vraie reformulation).
 Réponds UNIQUEMENT avec les lignes numérotées, sans titre, sans guillemets, sans commentaire.`;
 
 // Analyse PHOTOS (parallèle) : points de vigilance / à vérifier STRUCTURE fondés sur ce qui est
