@@ -20,22 +20,11 @@ function locItems(l) {
   return [...(l?.items || []), ...((l?.sections || []).flatMap(s => s.items || []))];
 }
 
-function visitText(v) {
-  const out = [];
-  for (const l of v.localisations || []) {
-    const items = locItems(l).filter(i => (i.titre || '').trim() || (i.commentaire || '').trim());
-    if (!items.length) continue;
-    out.push(`${(l.nom || 'Zone').toUpperCase()}`);
-    for (const i of items) {
-      if ((i.titre || '').trim()) out.push(`- ${i.titre.trim()}`);
-      const c = stripMarkup(i.commentaire || '').trim();
-      if (c) out.push(c);
-      out.push('');
-    }
-  }
-  const concl = stripMarkup(v.conclusion || '').trim();
-  if (concl) out.push('CONCLUSION', concl);
-  return out.join('\n').trim();
+// Visites de la plus RÉCENTE à la plus ancienne (date de visite ; sans date → ordre de la liste,
+// la dernière ajoutée d'abord). La première est celle affichée à l'ouverture.
+function byRecent(visites) {
+  const t = (x) => { const d = x?.dateVisite ? new Date(x.dateVisite).getTime() : NaN; return isNaN(d) ? -Infinity : d; };
+  return visites.map((x, i) => ({ x, i })).sort((a, b) => (t(b.x) - t(a.x)) || (b.i - a.i)).map(o => o.x);
 }
 
 // Échelles d'annotation réglées dans l'onglet Rapport (mêmes clés localStorage, LECTURE seule).
@@ -70,13 +59,13 @@ const fmtDate = (d) => {
 
 export default function ArchivePreview({ projet, onClose }) {
   const visites = projet?.visites || [];
-  const [vid, setVid] = useState(() => visites[visites.length - 1]?.id ?? null);
-  const [copied, setCopied] = useState(false);
+  const ordered = byRecent(visites);
+  const [vid, setVid] = useState(() => ordered[0]?.id ?? null);
   const [photosByItem, setPhotosByItem] = useState({}); // { itemId: photos[] } — état LOCAL
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [zoom, setZoom] = useState(null); // { src } ou { ph } (photo à calque redessiné)
   const [scales] = useState(() => ({ plan: planScales(), photo: photoScales() }));
-  const v = visites.find(x => x.id === vid) || visites[visites.length - 1] || null;
+  const v = visites.find(x => x.id === vid) || ordered[0] || null;
   const libById = new Map((projet?.planLibrary || []).map(pl => [pl.id, pl]));
 
   // Photos de la visite affichée, chargées à la demande (une seule fois par observation).
@@ -100,13 +89,6 @@ export default function ArchivePreview({ projet, onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, zoom]);
 
-  const copyAll = async () => {
-    if (!v) return;
-    const txt = visitText(v);
-    try { await navigator.clipboard.writeText(txt); setCopied(true); setTimeout(() => setCopied(false), 1800); }
-    catch { /* presse-papiers refusé (ancien navigateur) : la sélection manuelle reste possible */ }
-  };
-
   const locs = (v?.localisations || []).map(l => ({ l, items: locItems(l) })).filter(x => x.items.length > 0 || hasZonePlan(x.l));
   // Clic sur un plan (image rendue par SinglePlanImage, data-role="plan") → en grand.
   const onContentClick = (e) => { const t = e.target; if (t?.tagName === 'IMG' && t.dataset?.role === 'plan') setZoom({ src: t.src }); };
@@ -122,30 +104,20 @@ export default function ArchivePreview({ projet, onClose }) {
               <Ic n="arc" s={11}/> Archivé · lecture seule
             </div>
             <p style={{ margin:'2px 0 0',fontSize:16,fontWeight:800,color:DA.black,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{projet.nom}</p>
+            {/* Choix de la visite (menu déroulant natif : iOS / Android / PC) — seulement s'il y en a plusieurs. */}
+            {ordered.length > 1 && (
+              <select value={v?.id ?? ''} onChange={e => setVid(e.target.value)} aria-label="Visite à consulter"
+                style={{ marginTop:6,maxWidth:'100%',padding:'6px 28px 6px 10px',borderRadius:8,border:`1px solid ${DA.border}`,background:DA.white,color:DA.black,fontSize:13,fontWeight:600,cursor:'pointer' }}>
+                {ordered.map(x => (
+                  <option key={x.id} value={x.id}>{x.label || 'Visite'}{x.dateVisite ? ` · ${fmtDate(x.dateVisite)}` : ''}</option>
+                ))}
+              </select>
+            )}
           </div>
-          {v && (
-            <button onClick={copyAll} title="Copier tout le texte de la visite" style={{ display:'flex',alignItems:'center',gap:6,padding:'8px 11px',borderRadius:8,border:`1px solid ${DA.border}`,background:copied ? '#F0FDF4' : DA.white,color:copied ? DA.urgGrn : DA.gray,fontSize:12,fontWeight:700,cursor:'pointer',flexShrink:0 }}>
-              <Ic n={copied ? 'chk' : 'cpy'} s={14}/> {copied ? 'Copié' : 'Copier'}
-            </button>
-          )}
           <button onClick={onClose} aria-label="Fermer" style={{ padding:8,borderRadius:8,border:'none',background:'none',color:DA.gray,cursor:'pointer',flexShrink:0 }}>
             <Ic n="x" s={20}/>
           </button>
         </div>
-
-        {/* Choix de la visite — seulement s'il y en a plusieurs */}
-        {visites.length > 1 && (
-          <div style={{ display:'flex',gap:6,padding:'10px 14px',overflowX:'auto',borderBottom:`1px solid ${DA.border}`,flexShrink:0 }}>
-            {visites.map(x => {
-              const on = x.id === v?.id;
-              return (
-                <button key={x.id} onClick={() => setVid(x.id)} style={{ flexShrink:0,padding:'6px 12px',borderRadius:20,border:`1px solid ${on ? DA.red : DA.border}`,background:on ? DA.redL : DA.white,color:on ? DA.red : DA.gray,fontSize:12,fontWeight:on ? 700 : 600,cursor:'pointer',whiteSpace:'nowrap' }}>
-                  {x.label || 'Visite'}{x.dateVisite ? ` · ${fmtDate(x.dateVisite)}` : ''}
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         {/* Contenu sélectionnable */}
         <div onClick={onContentClick} style={{ flex:1,overflowY:'auto',padding:'14px 16px calc(24px + env(safe-area-inset-bottom, 0px))',userSelect:'text',WebkitUserSelect:'text',background:DA.grayXL }}>
