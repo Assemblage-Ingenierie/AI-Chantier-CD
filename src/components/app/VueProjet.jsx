@@ -29,6 +29,7 @@ import { countNewTrash, markTrashSeen, TRASH_EVENT } from '../../lib/trashBadge.
 import { setPresenceLocation, subscribePresence, groupPresence, colorFor, subscribeDrafts, firstName } from '../../lib/presence.js';
 import ThumbImg from '../ui/ThumbImg.jsx';
 import { buildVisitProjet } from '../../lib/visitProjet.js';
+import { convertConclusion, needsConclusionConversion } from '../../lib/conclusionToObs.js';
 import { applyObsDates, zoneDatesInfo } from '../../lib/obsDates.js';
 import ObsDatesControl from '../ui/ObsDatesControl.jsx';
 import ObsDatesChip from '../ui/ObsDatesChip.jsx';
@@ -276,6 +277,17 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     () => visites.find(v => v.id === selectedVisiteId) ?? visites[0] ?? null,
     [visites, selectedVisiteId]
   );
+
+  // Option « Ajouter une conclusion » retirée (23/11) : une conclusion déjà rédigée devient une
+  // observation éditable (zone « Conclusion »), enregistrée dès l'ouverture de la visite.
+  // Fonctionnel (prev) + ids déterministes → ni perte, ni doublon (lib/conclusionToObs.js).
+  const conclusionDone = useRef(new Set());
+  useEffect(() => {
+    const v = selectedVisite;
+    if (!v || conclusionDone.current.has(v.id) || !needsConclusionConversion(v)) return;
+    conclusionDone.current.add(v.id);
+    onUpdate(prev => ({ visites: (prev.visites || []).map(x => (x.id === v.id ? convertConclusion(x) : x)) }));
+  }, [selectedVisite, onUpdate]);
 
   const visitProjet = useMemo(() => buildVisitProjet(projet, selectedVisite), [projet, selectedVisite]);
   // Bibliothèque vue depuis CETTE visite : sans les plans qui en ont été retirés (ils restent dans

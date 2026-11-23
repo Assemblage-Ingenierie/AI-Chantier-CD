@@ -228,7 +228,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
                     const projs = projetsOf(c);
                     return (
                       <tr key={c.id} style={{ borderTop: idx === 0 ? 'none' : `1px solid ${DA.grayXL}`, background:'white' }}>
-                        <td style={{ ...td }}><EditableCell value={c.nom} bold placeholder="Nom" onCommit={v => { if (v) patchContact(c, 'nom', v); }}/></td>
+                        <td style={{ ...td }}><EditableCell value={c.nom} bold placeholder="Prénom / Nom" onCommit={v => { if (v) patchContact(c, 'nom', v); }}/></td>
                         <td style={{ ...td, color:DA.gray }}><EditableCell value={c.poste} onCommit={v => patchContact(c, 'poste', v)}/></td>
                         <td style={{ ...td, color:DA.gray }}><EditableCell value={c.entreprise} onCommit={v => patchContact(c, 'entreprise', v)}/></td>
                         <td style={{ ...td, color:DA.gray }}><EditableCell value={c.email} onCommit={v => patchContact(c, 'email', v)}/></td>
@@ -274,7 +274,7 @@ export default function ContactsManagerModal({ projets = [], onClose }) {
           <div className="modal-sheet" style={{ maxWidth:420, padding:20 }} onClick={e => e.stopPropagation()}>
             <p style={{ fontWeight:800, fontSize:15, color:DA.black, margin:'0 0 14px' }}>{editing.id ? 'Modifier le contact' : 'Nouveau contact'}</p>
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              <input value={editing.nom} onChange={e => setEditing(x => ({ ...x, nom: e.target.value }))} placeholder="Nom *" style={inp}/>
+              <input value={editing.nom} onChange={e => setEditing(x => ({ ...x, nom: e.target.value }))} placeholder="Prénom / Nom *" style={inp}/>
               <input value={editing.poste} onChange={e => setEditing(x => ({ ...x, poste: e.target.value }))} placeholder="Poste (ex : Architecte)" style={inp}/>
               <input value={editing.entreprise || ''} onChange={e => setEditing(x => ({ ...x, entreprise: e.target.value }))} placeholder="Entreprise" style={inp}/>
               <input value={editing.email} onChange={e => setEditing(x => ({ ...x, email: e.target.value }))} placeholder="E-mail" style={inp}/>

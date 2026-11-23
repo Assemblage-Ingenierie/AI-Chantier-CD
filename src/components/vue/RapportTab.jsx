@@ -580,23 +580,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
             )}
           </div>
 
-          {/* Conclusion */}
-          <div>
-            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-              <input
-                type="checkbox"
-                checked={projet.includeConclusion ?? false}
-                onChange={e => onUpdate({ includeConclusion: e.target.checked })}
-                style={{ cursor:'pointer', width:14, height:14, accentColor:DA.red }}
-              />
-              <span style={{ fontSize:12, fontWeight:600, color:DA.black }}>Ajouter une conclusion</span>
-            </label>
-            {(projet.includeConclusion ?? false) && (
-              <p style={{ fontSize:10, color:DA.grayL, margin:'3px 0 0 22px', fontStyle:'italic' }}>
-                Modifiable directement dans l'aperçu →
-              </p>
-            )}
-          </div>
+          {/* Option « Ajouter une conclusion » retirée (23/11, demande Thomas) : la conclusion
+              s'écrit comme une observation. Les anciennes sont converties (lib/conclusionToObs.js). */}
 
           {/* Annexes PDF — jointes en fin de rapport (page « Annexes » + PDF à la suite) */}
           <div>

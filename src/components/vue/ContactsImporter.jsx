@@ -58,7 +58,7 @@ const BADGE = {
   present: { bg:'#F3F4F6', bd:'#E5E7EB', fg:'#4B5563', label:'Déjà au carnet' },
   listed:  { bg:'#F3F4F6', bd:'#E5E7EB', fg:'#6B7280', label:'Déjà dans la liste' },
 };
-const FIELDS = [['nom', 'Nom *'], ['poste', 'Métier / rôle'], ['entreprise', 'Entreprise'], ['email', 'E-mail'], ['tel', 'Téléphone']];
+const FIELDS = [['nom', 'Prénom / Nom *'], ['poste', 'Métier / rôle'], ['entreprise', 'Entreprise'], ['email', 'E-mail'], ['tel', 'Téléphone']];
 
 export default function ContactsImporter({ existingContacts = [], alreadyListed = null, mode = 'carnet', onImported, label = 'PDF / Photo' }) {
   const fileRef = useRef();
