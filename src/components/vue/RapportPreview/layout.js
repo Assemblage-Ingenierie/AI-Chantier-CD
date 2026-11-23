@@ -215,31 +215,12 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
         blocks.push({ type:'item', id:item.id, item, locId:loc.id, mode:'full', vpPhotoOffset:photoOffset, vxxPhotoMap });
       }
 
-      // Photos : une rangée = un bloc. PACKING anti-blancs (validé avec l'utilisateur) :
-      //   • 2 portraits → côte à côte (3:4, pleine largeur, zéro blanc) ;
-      //   • 1 portrait restant → MOSAÏQUE : portrait + jusqu'à 2 paysages empilés à côté
-      //     (un portrait ≈ la hauteur de 2 paysages) — les paysages sont « remontés » depuis
-      //     la liste (réorganisation d'affichage autorisée) ; s'il n'y en a qu'un, il se met
-      //     en haut et le bas reste vide ;
-      //   • paysages restants → rangées standards de `cols`, dernière éventuellement partielle
-      //     (taille standard conservée).
-      // Les rangées sont triées par le plus petit index de photo qu'elles contiennent pour
-      // rester proches de l'ordre du récit. Chaque cellule garde l'index ORIGINAL de sa photo
-      // (badges Vxx et recadrage intacts).
+      // Photos : une rangée = un bloc. Mise en page qui RESPECTE L'ORDRE des photos (retour Thomas
+      // 23/11 : l'ancien « packing » remontait les portraits → la dernière photo passait en premier).
+      // Voir packPhotoRows ci-dessous. Chaque cellule garde l'index ORIGINAL de sa photo (badges Vxx
+      // et recadrage intacts).
       if (photos.length > 0) {
-        const portraits = [], landscapes = [];
-        photos.forEach((ph, i) => ((ph?.orient === 'portrait') ? portraits : landscapes).push(i));
-        const rows = [];
-        let p = 0;
-        while (portraits.length - p >= 2) { rows.push({ kind:'portraits', idxs:[portraits[p], portraits[p+1]] }); p += 2; }
-        if (portraits.length - p === 1) {
-          const stack = landscapes.splice(0, 2);
-          if (stack.length) rows.push({ kind:'mosaic', portraitIdx: portraits[p], stackIdxs: stack });
-          else rows.push({ kind:'portraits', idxs:[portraits[p]] });
-        }
-        for (let s = 0; s < landscapes.length; s += cols) rows.push({ kind:'landscape', idxs: landscapes.slice(s, s + cols) });
-        const minIdx = r => r.kind === 'mosaic' ? Math.min(r.portraitIdx, ...r.stackIdxs) : Math.min(...r.idxs);
-        rows.sort((a, b) => minIdx(a) - minIdx(b));
+        const rows = packPhotoRows(photos.map(ph => ph?.orient === 'portrait'), cols);
         rows.forEach((row, k) => {
           blocks.push({
             type:'item',
@@ -377,4 +358,46 @@ export function stripFullPagePlans(locs, full) {
         ? { ...it, plans: it.plans.map((pl, k) => full[`i:${it.id}:${k}`] ? { ...pl, planAnnotations: null } : pl) } : it) };
     return l;
   });
+}
+
+// Rangées de photos d'une observation, DANS L'ORDRE de la liste (lecture gauche → droite, haut → bas) :
+//   • 2 portraits qui se suivent → côte à côte ;
+//   • 1 portrait isolé → MOSAÏQUE avec les paysages qui le JOUXTENT : ceux qui le suivent (portrait
+//     à gauche) ou, s'il arrive après une rangée incomplète de paysages, ceux qui le précèdent
+//     (portrait à droite) → zéro blanc sans jamais changer l'ordre ;
+//   • paysages → rangées de `cols`.
+// isPortrait[i] = la photo i est en portrait. Renvoie des rangées { kind, idxs | portraitIdx+stackIdxs+side }.
+export function packPhotoRows(isPortrait, cols) {
+  const n = isPortrait.length;
+  const c = Math.max(1, cols || 2);
+  const rows = [];
+  let i = 0;
+  while (i < n) {
+    if (isPortrait[i]) {
+      if (i + 1 < n && isPortrait[i + 1]) { rows.push({ kind:'portraits', idxs:[i, i + 1] }); i += 2; continue; }
+      const stack = [];
+      for (let k = i + 1; k < n && stack.length < 2 && !isPortrait[k]; k++) stack.push(k);
+      if (stack.length) { rows.push({ kind:'mosaic', portraitIdx:i, stackIdxs:stack, side:'left' }); i += 1 + stack.length; }
+      else { rows.push({ kind:'portraits', idxs:[i] }); i += 1; }
+      continue;
+    }
+    // Suite de paysages [i, j)
+    let j = i;
+    while (j < n && !isPortrait[j]) j++;
+    const run = j - i;
+    const rem = run % c;
+    const full = run - rem;
+    for (let s = 0; s < full; s += c) rows.push({ kind:'landscape', idxs: Array.from({ length: c }, (_, k) => i + s + k) });
+    const restStart = i + full;
+    // Reste (1 ou 2 paysages) suivi d'un portrait ISOLÉ → mosaïque portrait à droite.
+    const nextIsLonePortrait = j < n && isPortrait[j] && !(j + 1 < n && isPortrait[j + 1]);
+    if (rem > 0 && rem <= 2 && nextIsLonePortrait) {
+      rows.push({ kind:'mosaic', portraitIdx:j, stackIdxs: Array.from({ length: rem }, (_, k) => restStart + k), side:'right' });
+      i = j + 1;
+      continue;
+    }
+    if (rem > 0) rows.push({ kind:'landscape', idxs: Array.from({ length: rem }, (_, k) => restStart + k) });
+    i = j;
+  }
+  return rows;
 }
