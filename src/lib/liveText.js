@@ -26,6 +26,86 @@ import DiffMatchPatch from 'diff-match-patch';
 const dmp = new DiffMatchPatch();
 dmp.Diff_Timeout = 0.1;
 
+// FUSION À TROIS EXACTE (retour Thomas 24/11 : « AU nivedésordres… », « des  au au-dessus ») :
+// base = ce que mon écran affichait, mine = mon écran maintenant, theirs = texte partagé (qui a
+// reçu entre-temps des opérations que mon écran n'avait pas affichées). L'ancienne fusion
+// (patch_apply « approximatif » de diff-match-patch) recollait un morceau de ma modification à un
+// endroit qui lui RESSEMBLAIT (autre ligne) ou la rejouait sur un passage déjà modifié → texte
+// abîmé. Ici : chacune de mes modifications (en positions de `base`) est TRANSPOSÉE dans `theirs`
+// via le diff base→theirs — position exacte, jamais devinée. Si elle chevauche un passage changé
+// par l'autre, c'est ma version qui remplace CE passage-là seulement (ce que je vois et viens de
+// faire) ; tout le reste du texte de l'autre est conservé.
+// Diff MOT À MOT (un mot n'est jamais coupé en morceaux) : chaque mot / espace / signe devient un
+// caractère, on compare ces suites, puis on remet les vrais textes.
+const TOKEN_RE = /[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu;
+function wordDiff(a, b) {
+  const codes = new Map();
+  const toks = [];
+  const enc = (s) => (s.match(TOKEN_RE) || []).map((t) => {
+    let c = codes.get(t);
+    if (c == null) {
+      let n = toks.length + 0x100;
+      if (n >= 0xd800) n += 0x800; // pas de demi-paires de substitution
+      if (n > 0xffff) return null;
+      c = String.fromCharCode(n); codes.set(t, c); toks.push(t);
+    }
+    return c;
+  });
+  const ea = enc(a), eb = enc(b);
+  if (ea.includes(null) || eb.includes(null)) return dmp.diff_main(a, b); // texte énorme : repli
+  const back = new Map([...codes].map(([t, c]) => [c, t]));
+  const ops = dmp.diff_main(ea.join(''), eb.join(''), false);
+  dmp.diff_cleanupSemantic(ops);
+  return ops.map(([op, s]) => [op, [...s].map(ch => back.get(ch)).join('')]);
+}
+
+export function merge3(base, mine, theirs) {
+  if (mine === base || mine === theirs) return theirs;
+  if (theirs === base) return mine;
+  // Modifications de chaque côté, en positions de `base` : { s, e, ins, who }. Diff « nettoyé »
+  // (par mots) : évite qu'une même reformulation, découpée lettre à lettre, s'entrelace.
+  const editsOf = (to, who) => {
+    const ops = wordDiff(base, to);
+    const out = [];
+    let p = 0;
+    for (const [op, str] of ops) {
+      if (op === 0) { p += str.length; continue; }
+      const last = out[out.length - 1];
+      const e = last && last.e === p ? last : null;
+      if (op === -1) { if (e) e.e = p + str.length; else out.push({ s: p, e: p + str.length, ins: '', who }); p += str.length; }
+      else if (e) e.ins += str; else out.push({ s: p, e: p, ins: str, who });
+    }
+    return out;
+  };
+  const all = [...editsOf(theirs, 't'), ...editsOf(mine, 'm')].sort((x, y) => x.s - y.s || x.e - y.e);
+  // Regroupe les modifications qui se CHEVAUCHENT (même passage touché des deux côtés).
+  const overlap = (g, x) => (x.s < g.e && g.s < x.e) || (x.s === x.e && g.s < x.s && x.s < g.e) || (g.s === g.e && x.s < g.s && g.s < x.e) || (x.s === x.e && g.s === g.e && x.s === g.s);
+  const groups = [];
+  for (const x of all) {
+    const g = groups[groups.length - 1];
+    if (g && overlap(g, x)) { g.e = Math.max(g.e, x.e); g.items.push(x); }
+    else groups.push({ s: x.s, e: x.e, items: [x] });
+  }
+  const applyIn = (g, who) => {
+    let out = '', p = g.s;
+    for (const x of g.items) if (x.who === who) { out += base.slice(p, x.s) + x.ins; p = x.e; }
+    return out + base.slice(p, g.e);
+  };
+  let out = '', p = 0;
+  for (const g of groups) {
+    out += base.slice(p, g.s);
+    const hasT = g.items.some(x => x.who === 't'), hasM = g.items.some(x => x.who === 'm');
+    if (hasT && hasM) {
+      const vt = applyIn(g, 't'), vm = applyIn(g, 'm');
+      // Deux insertions au même endroit : les deux restent (la sienne d'abord) ; sinon le
+      // passage touché des deux côtés prend MA version (celle que je vois et viens de faire).
+      out += (g.s === g.e && vt !== vm) ? vt + vm : vm;
+    } else out += applyIn(g, hasM ? 'm' : 't');
+    p = g.e;
+  }
+  return out + base.slice(p);
+}
+
 export const LIVE_FIELDS = ['titre', 'commentaire'];
 const FLUSH_MS = 60;
 const TICK_MS = 3000;
@@ -371,8 +451,8 @@ export function createLiveSession({ initial, send, onText, onConflict = () => {}
         if (cur !== ui[f]) {
           // L'écran n'avait pas encore reçu des opérations du collègue : on rejoue MA modification
           // (ancien écran → nouvel écran) sur le texte partagé, au lieu d'effacer la sienne.
-          const [out] = dmp.patch_apply(dmp.patch_make(ui[f], v), cur);
-          target = out;
+          // Fusion à trois EXACTE (voir merge3), jamais approximative.
+          target = merge3(ui[f], v, cur);
           if (target !== v) (fix = fix || {})[f] = target;
         }
         applyTextChange(yt, cur, target);
