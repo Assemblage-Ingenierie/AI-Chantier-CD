@@ -9,6 +9,7 @@ import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 import Costar from './Costar.jsx';
 import ReviewRequestModal from './ReviewRequestModal.jsx';
+import { isSynthMode, synthRows, synthFlag } from '../../lib/recapSynth.js';
 import DriveSaveBar from './DriveSaveBar.jsx';
 import { saveReportToDrive, reportFileName } from '../../lib/driveReport.js';
 import { affaireCode } from '../../lib/reviewRequest.js';
@@ -202,6 +203,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
 
   const recapRows = useMemo(() => {
     if (projet.includeTableauRecap === false) return [];
+    // Synthèse IA (tableau v2) : points distincts issus de tout le rapport (cf. lib/recapSynth.js).
+    if (isSynthMode(projet.tableauRecap)) return synthRows(projet.tableauRecap);
     const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
     const ovMap = new Map((projet.tableauRecap || []).map(r => [r.itemId, r]));
     // Une observation alimente le récap si elle a du contenu (intitulé OU commentaire OU photos)
@@ -252,7 +255,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
     const next = [...(recapRef.current || [])];
     for (const [id, patch] of entries) {
       const i = next.findIndex(r => r.itemId === id);
-      if (i >= 0) next[i] = { ...next[i], ...patch };
+      // Ligne de synthèse retouchée à la main : gardée telle quelle à la prochaine régénération.
+      if (i >= 0) next[i] = { ...next[i], ...patch, ...(next[i].synth ? { edited: true } : {}) };
       else next.push({ itemId: id, ...patch });
     }
     recapRef.current = next; // appels successifs avant le prochain rendu : ils s'enchaînent
@@ -261,6 +265,13 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
 
   const deleteRecapRow = useCallback((itemId, isCustom) => {
     const curr = projet.tableauRecap || [];
+    const synthRow = curr.find(r => r.itemId === itemId && r.synth);
+    if (synthRow) {
+      // Point de synthèse supprimé : mémorisé pour que l'IA ne le repropose pas.
+      const flag = synthFlag(curr);
+      onUpdate({ tableauRecap: curr.filter(r => r.itemId !== itemId).map(r => (r === flag ? { ...r, ignored: [...(r.ignored || []), synthRow.titre].filter(Boolean).slice(-40) } : r)) });
+      return;
+    }
     if (isCustom) {
       onUpdate({ tableauRecap: curr.filter(r => r.itemId !== itemId) });
     } else {
@@ -611,6 +622,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
         onUpdateRecap={updateRecapField}
         onDeleteRecap={deleteRecapRow}
         onAddCustomRow={addCustomRow}
+        onSetRecap={(next) => { recapRef.current = next; onUpdate({ tableauRecap: next }); }}
         onUpdateConclusion={v => onUpdate({ conclusion: v })}
         onUpdateConclusionAlign={a => onUpdate({ conclusionAlign: a })}
         onAnnotScaleChange={(kind, v) => setScale(kind, v)}

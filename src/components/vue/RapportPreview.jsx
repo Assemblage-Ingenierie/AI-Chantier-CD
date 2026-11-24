@@ -71,7 +71,10 @@ function pdfSrcKey(src) {
   return src.split('?')[0];
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, footer = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+// Hauteur commune des boutons de la barre de l'aperçu (retour Thomas 24/11 : « tous de la même taille »).
+const TB_H = 28;
+
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, footer = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -760,16 +763,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           ))}
         </div>
       )}
-      {/* Bandeau mode coupe */}
-      {cutMode && (
-        <div data-print="hide" style={{ background:'#E30513', color:'white', padding:'5px 14px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-          <span style={{ flex:1 }}>✂ Clique sur les ciseaux entre deux blocs pour commencer une nouvelle page · un saut se retire avec « × Supprimer » entre les pages</span>
-          <button onClick={() => onCutModeChange?.(false)}
-            style={{ background:'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.4)', borderRadius:6, color:'white', fontSize:10, fontWeight:700, padding:'3px 10px', cursor:'pointer', flexShrink:0 }}>
-            Terminer ✕
-          </button>
-        </div>
-      )}
+      {/* Mode coupe : plus de bandeau (retour Thomas 24/11 : « ça charge trop ») — le bouton
+          « ✂ Terminer » de la barre et la touche Échap le quittent. */}
 
       {/* ── Barre de navigation pages ── */}
       {/* Sur écran étroit, le pager (absolu, centré 50vw) chevauchait les boutons Photos/PDF
@@ -782,7 +777,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           <button
             onClick={() => scrollToPage(currentPage - 1)}
             disabled={currentPage <= 1}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, height:TB_H, boxSizing:'border-box', padding:'0 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
             ‹
           </button>
           <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5, minWidth:70, textAlign:'center' }}>
@@ -791,7 +786,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           <button
             onClick={() => scrollToPage(currentPage + 1)}
             disabled={currentPage >= totalPages}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, padding:'4px 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
+            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, height:TB_H, boxSizing:'border-box', padding:'0 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
             ›
           </button>
         </div>
@@ -804,7 +799,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {onTogglePanel && (
               <button
                 onClick={onTogglePanel}
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                style={{ display:'flex', alignItems:'center', gap:5, height:TB_H, boxSizing:'border-box', padding:'0 10px', borderRadius:7, border:'none', cursor:'pointer',
                   background: panelOpen ? DA.red : 'rgba(255,255,255,0.10)',
                   color: panelOpen ? 'white' : 'rgba(255,255,255,0.75)' }}>
                 <Ic n="sld" s={13}/>
@@ -816,7 +811,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {onCutModeChange && (
               <button onClick={() => onCutModeChange(!cutMode)} data-print="hide"
                 title={cutMode ? 'Terminer (Échap)' : 'Forcer un saut de page : clique ensuite sur les ciseaux entre deux blocs'}
-                style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:7, cursor:'pointer', border:'none',
+                style={{ display:'flex', alignItems:'center', gap:6, height:TB_H, boxSizing:'border-box', padding:'0 12px', borderRadius:7, cursor:'pointer', border:'none',
                   background: cutMode ? DA.red : 'white', color: cutMode ? 'white' : DA.black, fontSize:11.5, fontWeight:800,
                   boxShadow: cutMode ? 'none' : '0 1px 6px rgba(0,0,0,0.35)' }}>
                 <span style={{ fontSize:13, lineHeight:1, color: cutMode ? 'white' : DA.red }}>✂</span>
@@ -831,7 +826,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {/* Demande de relecture par email (demande Thomas 24/11). */}
             {onAskReview && (
               <button onClick={onAskReview} data-print="hide" title="Envoyer le lien du rapport à un collègue pour relecture"
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                style={{ display:'flex', alignItems:'center', gap:5, height:TB_H, boxSizing:'border-box', padding:'0 10px', borderRadius:7, border:'none', cursor:'pointer',
                   background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
                 <Ic n="ml" s={12}/>
                 {!narrow && <span>Faire relire</span>}
@@ -839,7 +834,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             )}
             {onExportPhotos && totalPhotos > 0 && (
               <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
+                style={{ display:'flex', alignItems:'center', gap:5, height:TB_H, boxSizing:'border-box', padding:'0 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',
                   background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
                 {zipping ? <Ic n="spn" s={12}/> : <Ic n="dl" s={12}/>}
                 <span>Photos ({totalPhotos})</span>
@@ -847,7 +842,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             )}
             {onExportPdf && (
               <button onClick={onExportPdf} data-print="hide"
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                style={{ display:'flex', alignItems:'center', gap:5, height:TB_H, boxSizing:'border-box', padding:'0 10px', borderRadius:7, border:'none', cursor:'pointer',
                   background: DA.red, color:'white', fontSize:11, fontWeight:700 }}>
                 <Ic n="fil" s={12}/>
                 <span>PDF</span>
@@ -1008,6 +1003,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                   onUpdateRecap={onUpdateRecap}
                   onDeleteRecap={onDeleteRecap}
                   onAddCustomRow={onAddCustomRow}
+                  onSetRecap={onSetRecap}
                 />
               </div>
             </>

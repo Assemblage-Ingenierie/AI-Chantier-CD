@@ -60,7 +60,7 @@ const BADGE = {
 };
 const FIELDS = [['nom', 'Prénom / Nom *'], ['poste', 'Métier / rôle'], ['entreprise', 'Entreprise'], ['email', 'E-mail'], ['tel', 'Téléphone']];
 
-export default function ContactsImporter({ existingContacts = [], alreadyListed = null, mode = 'carnet', onImported, label = 'PDF / Photo' }) {
+export default function ContactsImporter({ existingContacts = [], alreadyListed = null, mode = 'carnet', onImported, label = 'PDF / Photo', block = false }) {
   const fileRef = useRef();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
@@ -188,8 +188,11 @@ export default function ContactsImporter({ existingContacts = [], alreadyListed 
   return (
     <>
       <button onClick={() => setOpen(true)} title="Importer des intervenants depuis un PDF ou une capture d’écran (IA)"
-        style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, padding:'8px 12px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#6D28D9', cursor:'pointer' }}>
-        <Ic n="fil" s={14}/> {label}
+        style={block
+          // Aligné sur les boutons voisins (Assemblage / Externe) : pleine largeur, même hauteur (retour Thomas 24/11).
+          ? { width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:4, fontSize:10, fontWeight:700, padding:'6px 4px', borderRadius:8, border:`1.5px solid ${DA.border}`, background:'white', color:'#6D28D9', cursor:'pointer' }
+          : { display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, padding:'8px 12px', borderRadius:8, border:`1px solid ${DA.border}`, background:'white', color:'#6D28D9', cursor:'pointer' }}>
+        <Ic n="fil" s={block ? 11 : 14}/> {label}
       </button>
       <input ref={fileRef} type="file" multiple accept="application/pdf,.pdf,image/*" style={{ display:'none' }}
         onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; (async () => { for (const f of fs) await analyze(f); })(); }}/>

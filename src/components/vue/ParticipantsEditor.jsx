@@ -623,6 +623,7 @@ export default function ParticipantsEditor({ participants = [], onChange }) {
           mode="participants"
           alreadyListed={(c) => participants.some(p => p.type !== 'separator' && sameContact(p, c))}
           label="Importer depuis PDF / capture"
+          block
           onImported={async (list) => {
             await reloadContacts();
             const fresh = list.filter(c => !participants.some(p => p.type !== 'separator' && sameContact(p, c)));
