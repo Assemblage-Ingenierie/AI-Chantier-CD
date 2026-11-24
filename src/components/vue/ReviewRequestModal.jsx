@@ -14,6 +14,19 @@ export default function ReviewRequestModal({ projet, visiteId, visiteLabel, onCl
   const link = reviewLink(window.location.origin, projet.id, visiteId);
   const mail = buildReviewMail({ nom: projet.nom, visiteLabel, link, note, from: getMyName() });
   const ok = /\S+@\S+\.\S+/.test(to);
+  const [copied, setCopied] = useState(false);
+  // Lien à coller dans un chat (demande Thomas 24/11) : ouvre la visite, onglet Rapport.
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); }
+    catch {
+      // Repli (ancien Safari / contexte non sécurisé) : sélection + copie.
+      const ta = document.createElement('textarea'); ta.value = link; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+      ta.remove();
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
 
   const send = () => {
     if (!ok) return;
@@ -33,10 +46,23 @@ export default function ReviewRequestModal({ projet, visiteId, visiteLabel, onCl
           <span style={{ fontSize:15, fontWeight:800, color:DA.black, flex:1 }}>Faire relire le rapport</span>
           <button onClick={onClose} aria-label="Fermer" style={{ border:'none', background:'#F3F4F6', borderRadius:'50%', width:28, height:28, cursor:'pointer', color:DA.gray }}>×</button>
         </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+          <span style={{ fontSize:12, fontWeight:700, color:DA.gray }}>Lien à envoyer (chat, SMS…) : il ouvre le rapport, modifiable</span>
+          <div style={{ display:'flex', gap:6 }}>
+            <input readOnly value={link} onFocus={e => e.target.select()} aria-label="Lien de relecture" style={{ ...field, fontSize:12, color:DA.gray }}/>
+            <button onClick={copy}
+              style={{ flexShrink:0, display:'flex', alignItems:'center', gap:5, border:'none', borderRadius:8, padding:'0 12px', fontSize:13, fontWeight:800, color:'white', background: copied ? '#15803D' : DA.black, cursor:'pointer' }}>
+              <Ic n={copied ? 'chk' : 'cpy'} s={13}/>{copied ? 'Copié' : 'Copier'}
+            </button>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:11, color:DA.grayL }}>
+          <span style={{ flex:1, height:1, background:DA.border }}/>ou par email<span style={{ flex:1, height:1, background:DA.border }}/>
+        </div>
         <label style={{ display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:700, color:DA.gray }}>
           Relecteur (email)
           <input type="email" inputMode="email" autoComplete="email" list="relecteurs" value={to} onChange={e => setTo(e.target.value)}
-            placeholder="prenom@assemblage.net" style={field} autoFocus={!to}/>
+            placeholder="prenom@assemblage.net" style={field}/>
           <datalist id="relecteurs">{recents.map(r => <option key={r} value={r}/>)}</datalist>
         </label>
         <label style={{ display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:700, color:DA.gray }}>

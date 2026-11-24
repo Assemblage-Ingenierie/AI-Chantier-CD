@@ -70,7 +70,7 @@ function pdfSrcKey(src) {
   return src.split('?')[0];
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, footer = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -1119,6 +1119,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           );
         })()}
 
+        {/* Bas du rapport (jamais imprimé) : enregistrement du PDF sur le Drive. */}
+        {footer}
         <div style={{ height:24 }}/>
         </div>{/* fin conteneur scalé */}
 

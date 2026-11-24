@@ -10,6 +10,8 @@ describe('Faire relire (email)', () => {
     const html = renderToStaticMarkup(<ReviewRequestModal projet={{ id: 'p1', nom: 'A743_TERRESTERRES' }} visiteId="v1" visiteLabel="DET n°5" onClose={() => {}}/>);
     expect(html).toContain('AICHANTIER - Relecture A743');
     expect(html).toContain('#relire=p1.v1');
+    expect(html).toContain('Copier'); // lien à coller dans un chat
+    expect(html).toContain('ou par email');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Préparer l(&#x27;|')email/);
   });
 });

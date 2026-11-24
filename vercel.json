@@ -9,6 +9,9 @@
     },
     "api/drive-upload.js": {
       "maxDuration": 30
+    },
+    "api/drive-report.js": {
+      "maxDuration": 30
     }
   },
   "headers": [
