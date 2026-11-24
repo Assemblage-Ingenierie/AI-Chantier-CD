@@ -145,7 +145,7 @@ export function PlanCutBar({ breakId, forced, onCut }) {
   );
 }
 
-export function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle }) {
+export function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onToggle, onUndoAuto = null }) {
   return (
     <div style={{ width:PW, background:'#1a1a1a', padding:'8px 14px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
       {/* Indicateur page */}
@@ -175,6 +175,12 @@ export function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onT
             × Supprimer
           </span>
         </div>
+      ) : onUndoAuto ? (
+        // Saut AUTOMATIQUE qui ne convient pas : on remonte le contenu sur la page précédente.
+        <button onClick={onUndoAuto} title="Remonter le début de cette page sur la page précédente (s'il y a de la place)"
+          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:5, background:'rgba(245,158,11,0.15)', border:'1px solid rgba(245,158,11,0.6)', color:'#FCD34D', fontSize:9, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+          ↑ Saut automatique · remonter sur la page précédente
+        </button>
       ) : (
         <span style={{ fontSize:8, color:'rgba(255,255,255,0.2)', fontStyle:'italic' }}>
           séparateur automatique

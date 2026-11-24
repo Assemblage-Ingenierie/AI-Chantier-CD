@@ -1168,13 +1168,13 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
               )}
               {reportChanged ? (
                 <button onClick={ask} className="costar-unlock"
-                  style={{ display: 'block', marginTop: 12, fontSize: 12.5, fontWeight: 800, color: 'white', background: '#F97316', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.35)' }}>
-                  Rapport modifié : relire les changements
+                  style={{ display: 'block', width: '100%', marginTop: 12, fontSize: 13, fontWeight: 800, color: 'white', background: '#F97316', border: 'none', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.35)' }}>
+                  ↻ Rapport modifié : relire les changements
                 </button>
               ) : (
                 <button onClick={ask}
-                  style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: DA.gray, background: 'white', border: `1px solid ${DA.border}`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
-                  Relire mon rapport
+                  style={{ display: 'block', width: '100%', marginTop: 12, fontSize: 13, fontWeight: 800, color: '#C2410C', background: '#FFF7ED', border: '1.5px solid #F97316', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(249,115,22,0.18)' }}>
+                  ↻ Relire mon rapport
                 </button>
               )}
             </>
