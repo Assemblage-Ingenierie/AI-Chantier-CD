@@ -8,6 +8,7 @@ import AnnexesModal from './AnnexesModal.jsx';
 import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 import Costar from './Costar.jsx';
+import ReviewRequestModal from './ReviewRequestModal.jsx';
 import { zoneLabel } from '../../lib/zoneGroups.js';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
@@ -84,8 +85,9 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 
 // exportRef (optionnel) : rendu HORS ÉCRAN pour l'export groupé en zip (VisitesScreen) → expose
 // toPdfBlob() de l'aperçu ; Costar masqué. onUpdate est alors un no-op (lecture seule).
-export default function RapportTab({ projet, onUpdate, exportRef = null }) {
+export default function RapportTab({ projet, onUpdate, exportRef = null, visiteId = null }) {
   const [cutMode, setCutMode] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false); // « Faire relire » (email)
   const previewRef = useRef();
   useImperativeHandle(exportRef, () => ({ toPdfBlob: () => previewRef.current?.toPdfBlob?.() ?? null }), []);
   const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 640);
@@ -648,6 +650,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
         onCutModeChange={setCutMode}
         onExportPdf={handleExport}
         onExportPhotos={handleExportPhotos}
+        onAskReview={projet?.id ? () => setReviewOpen(true) : null}
         totalPhotos={totalPhotos}
         zipping={zipping}
         recapRows={recapRows}
@@ -665,6 +668,11 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
       />
 
       {/* ── Costar : avis honnête + note sur le rapport complet (PC uniquement) ── */}
+      {reviewOpen && (
+        <ReviewRequestModal projet={projet} visiteId={visiteId}
+          visiteLabel={projet.visiteNom || (projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : '')}
+          onClose={() => setReviewOpen(false)}/>
+      )}
       {isPc && !exportRef && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet} onOpenObs={(o, note) => previewRef.current?.openItem?.(o.itemId, o.locId, note)}/>}
 
       {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
