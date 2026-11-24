@@ -40,6 +40,17 @@ const _openReports = new Set(); // rapports dont la bulle était ouverte (réouv
 const reportKeyOf = (p) => (p?.id ? `${p.id}|${p.dateVisite || ''}|${p.visiteNom || ''}` : null);
 // État du rapport AU MOMENT de l'avis : empreinte de chaque observation + numérotation « Obs N ».
 const metaOf = (p) => ({ fp: obsFingerprints(p), idx: Object.fromEntries(reportObsIndex(p).map(o => [o.n, o.itemId])) });
+// Avis enregistré par une version précédente (sans empreintes / sans numérotation) : on complète
+// avec le rapport tel qu'il est maintenant, et on l'enregistre → les remarques se barrent dès la
+// PROCHAINE modification (retour Thomas 24/11 : « Costar ne raye pas »).
+function completeMeta(rk, last, p) {
+  if (!last) return null;
+  if (last.fp && last.idx) return { fp: last.fp, idx: last.idx };
+  const cur = metaOf(p);
+  const m = { fp: last.fp || cur.fp, idx: last.idx || cur.idx };
+  writeLast(rk, { ...last, ...m });
+  return m;
+}
 function readLast(rk) {
   if (!rk) return null;
   try { const m = JSON.parse(localStorage.getItem(LAST_KEY) || '{}'); return m?.[rk]?.review ? m[rk] : null; } catch { return null; }
@@ -888,7 +899,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   const [fromCache, setFromCache] = useState(false); // avis repris de la mémoire (rapport inchangé)
   const [reviewedKey, setReviewedKey] = useState(last0?.key || null); // empreinte du rapport tel qu'il a été relu
   // Rapport tel qu'il était à l'avis affiché (empreintes + « Obs N ») → remarques traitées barrées.
-  const [meta, setMeta] = useState(() => (last0 ? { fp: last0.fp || null, idx: last0.idx || null } : null));
+  const [meta, setMeta] = useState(() => completeMeta(rk, last0, projet));
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
@@ -909,7 +920,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
     const l = readLast(rk);
     setReview(l?.review || null);
     setReviewedKey(l?.key || null);
-    setMeta(l ? { fp: l.fp || null, idx: l.idx || null } : null);
+    setMeta(completeMeta(rk, l, projetRef.current));
     setEngine(l?.engine || null);
     setQuip(l?.review ? scoreQuip(l.review.note) : '');
     setFromCache(false);

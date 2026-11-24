@@ -1415,7 +1415,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
       {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
           il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
-      {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed onOpenObs={(o, note) => {
+      {/* Costar reste affiché pendant la correction d'une observation ouverte depuis un de ses liens
+          (retour Thomas 24/11 : « il disparaît quand je clique sur le bleu »). */}
+      {tab === 'visite' && (!modal || (modal.t === 'item' && modal.costarNote != null)) && <Costar projet={visitProjet} fixed onOpenObs={(o, note) => {
         // Lien bleu de Costar (onglet Visite aussi — retour Thomas 24/11 : « plus de liens ») :
         // ouvre l'observation citée, avec la remarque de Costar gardée au-dessus de la fenêtre.
         const all = (l) => [...(l.items || []), ...((l.sections || []).flatMap(sc => sc.items || []))];
