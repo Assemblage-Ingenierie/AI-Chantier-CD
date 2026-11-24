@@ -1415,7 +1415,15 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
 
       {/* Costar aussi dans l'onglet Visite (PC uniquement, masqué pendant une fenêtre ouverte) :
           il relit tout le rapport de la visite comme depuis l'onglet Rapport. */}
-      {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed/>}
+      {tab === 'visite' && !modal && <Costar projet={visitProjet} fixed onOpenObs={(o, note) => {
+        // Lien bleu de Costar (onglet Visite aussi — retour Thomas 24/11 : « plus de liens ») :
+        // ouvre l'observation citée, avec la remarque de Costar gardée au-dessus de la fenêtre.
+        const all = (l) => [...(l.items || []), ...((l.sections || []).flatMap(sc => sc.items || []))];
+        const loc = visitProjet.localisations.find(l => l.id === o.locId && all(l).some(i => i.id === o.itemId))
+          || visitProjet.localisations.find(l => all(l).some(i => i.id === o.itemId));
+        const item = loc && all(loc).find(i => i.id === o.itemId);
+        if (item) setModal({ t:'item', locId: loc.id, item, costarNote: note || '' });
+      }}/>}
       {mergeAsk && (() => {
         const locs = visitProjet.localisations;
         const src = locs.find(l => l.id === mergeAsk.srcId);
@@ -1495,6 +1503,17 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
         const loc      = visitProjet.localisations.find(l => l.id === modal.locId);
         const initItem = modal.savedForm ?? modal.item;
         return (
+          <>
+          {modal.costarNote && (
+            // Remarque de Costar gardée sous les yeux pendant la correction (comme dans l'onglet Rapport).
+            <div style={{ position:'fixed', top:12, left:'50%', transform:'translateX(-50%)', zIndex:45, maxWidth:'min(560px, calc(100vw - 32px))',
+              background:'#FFFBEB', border:'1px solid #FCD34D', borderRadius:10, boxShadow:'0 6px 20px rgba(0,0,0,0.25)', padding:'8px 12px', fontSize:13, lineHeight:1.45, color:'#78350F', display:'flex', gap:8, alignItems:'flex-start' }}>
+              <span style={{ fontWeight:800, flexShrink:0 }}>Costar :</span>
+              <span style={{ flex:1 }}>{modal.costarNote}</span>
+              <button onClick={() => setModal(m => (m ? { ...m, costarNote: '' } : m))} aria-label="Masquer la remarque"
+                style={{ border:'none', background:'none', color:'#92400E', cursor:'pointer', fontSize:16, lineHeight:1, padding:0, flexShrink:0 }}>×</button>
+            </div>
+          )}
           <ItemModal
             key={modal.savedForm ? 'annotated' : 'normal'}
             item={initItem}
@@ -1549,6 +1568,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             visiteDate={visitProjet.dateVisite || null}
             ingenieur={visitProjet.ingenieur || ''}
           />
+          </>
         );
       })()}
 
