@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey, reportObsIndex, splitObsRefs, obsFingerprints, changedObs, stabilizeReview } from '../../lib/costar.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey, reportObsIndex, splitObsRefs, obsFingerprints, changedObs, stabilizeReview, remarkDone, estimateAfterFixes } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant, fanPunchline } from '../../lib/costarRewards.js';
 import { subscribePresence, getMyName } from '../../lib/presence.js';
@@ -38,6 +38,8 @@ function putCachedReview(key, review, engine) {
 const LAST_KEY = 'chantierai_costar_last_v1';
 const _openReports = new Set(); // rapports dont la bulle était ouverte (réouverte au remontage)
 const reportKeyOf = (p) => (p?.id ? `${p.id}|${p.dateVisite || ''}|${p.visiteNom || ''}` : null);
+// État du rapport AU MOMENT de l'avis : empreinte de chaque observation + numérotation « Obs N ».
+const metaOf = (p) => ({ fp: obsFingerprints(p), idx: Object.fromEntries(reportObsIndex(p).map(o => [o.n, o.itemId])) });
 function readLast(rk) {
   if (!rk) return null;
   try { const m = JSON.parse(localStorage.getItem(LAST_KEY) || '{}'); return m?.[rk]?.review ? m[rk] : null; } catch { return null; }
@@ -814,7 +816,7 @@ function ObsText({ text, obsIdx = [], onOpen = null }) {
   });
 }
 
-function Section({ title, color, items, obsIdx, onOpen }) {
+function Section({ title, color, items, obsIdx, onOpen, isDone = () => false }) {
   if (!items?.length) return null;
   return (
     <div style={{ marginTop: 10 }}>
@@ -823,7 +825,15 @@ function Section({ title, color, items, obsIdx, onOpen }) {
         {title}
       </div>
       <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {items.map((t, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.45, color: DA.black }}><ObsText text={t} obsIdx={obsIdx} onOpen={onOpen}/></li>)}
+        {items.map((t, i) => {
+          const done = isDone(t);
+          return (
+            <li key={i} title={done ? 'Observation modifiée depuis ma relecture' : undefined} style={{ fontSize: 12.5, lineHeight: 1.45, color: done ? DA.grayL : DA.black }}>
+              <span style={done ? { textDecoration: 'line-through', textDecorationColor: '#9CA3AF' } : undefined}><ObsText text={t} obsIdx={obsIdx} onOpen={onOpen}/></span>
+              {done && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: '#15803D', whiteSpace: 'nowrap' }}>✓ corrigé</span>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -877,6 +887,8 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   const [engine, setEngine] = useState(last0?.engine || null); // { provider, from, why } : moteur qui a VRAIMENT répondu
   const [fromCache, setFromCache] = useState(false); // avis repris de la mémoire (rapport inchangé)
   const [reviewedKey, setReviewedKey] = useState(last0?.key || null); // empreinte du rapport tel qu'il a été relu
+  // Rapport tel qu'il était à l'avis affiché (empreintes + « Obs N ») → remarques traitées barrées.
+  const [meta, setMeta] = useState(() => (last0 ? { fp: last0.fp || null, idx: last0.idx || null } : null));
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
@@ -897,6 +909,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
     const l = readLast(rk);
     setReview(l?.review || null);
     setReviewedKey(l?.key || null);
+    setMeta(l ? { fp: l.fp || null, idx: l.idx || null } : null);
     setEngine(l?.engine || null);
     setQuip(l?.review ? scoreQuip(l.review.note) : '');
     setFromCache(false);
@@ -940,7 +953,9 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
     const cacheKey = costarCacheKey(digest.text, getAIProvider());
     const hit = getCachedReview(cacheKey);
     if (hit) {
-      writeLast(reportKeyOf(projetRef.current), { review: hit.review, key: cacheKey, engine: hit.engine || null, fp: obsFingerprints(projetRef.current) });
+      const m = metaOf(projetRef.current);
+      writeLast(reportKeyOf(projetRef.current), { review: hit.review, key: cacheKey, engine: hit.engine || null, ...m });
+      setMeta(m);
       setReview(hit.review);
       setQuip(scoreQuip(hit.review.note));
       setEngine(hit.engine || null);
@@ -988,7 +1003,9 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
       const eng = d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null;
       setEngine(eng);
       putCachedReview(cacheKey, parsed, eng);
-      writeLast(reportKeyOf(projetRef.current), { review: parsed, key: cacheKey, engine: eng, fp: obsFingerprints(projetRef.current) });
+      const m = metaOf(projetRef.current);
+      writeLast(reportKeyOf(projetRef.current), { review: parsed, key: cacheKey, engine: eng, ...m });
+      setMeta(m);
       setReviewedKey(cacheKey);
       setStatus('done');
       // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
@@ -1034,6 +1051,11 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   const doneCount = MISSIONS.filter(m => realUnlocked.has(m.reward)).length;
 
   const sc = review ? scoreLabel(review.note) : null;
+  // Remarques traitées depuis l'avis (observation citée modifiée) → barrées ; points retirés
+  // corrigés → note ESTIMÉE (confirmée seulement par « Relire »).
+  const fpNow = React.useMemo(() => (meta?.fp ? obsFingerprints(projet) : null), [projet, meta]);
+  const isDone = (t) => remarkDone(t, meta?.idx, meta?.fp, fpNow);
+  const est = review && status === 'done' ? estimateAfterFixes(review, isDone) : null;
   // Rapport modifié depuis l'avis affiché → Costar propose de relire (demande Thomas : « dès qu'on
   // modifie le rapport, ça doit proposer de remouliner »). Calculé seulement quand l'avis est ouvert.
   const reportChanged = open && status === 'done' && !!reviewedKey
@@ -1087,6 +1109,12 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
                   {review.note}<span style={{ fontSize: 15, fontWeight: 800, opacity: 0.7 }}>/10</span>
                 </div>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: sc.color, background: sc.bg, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap' }}>{sc.label}</span>
+                {est != null && (
+                  <span title="Estimation d'après les remarques corrigées : « Relire » pour confirmer"
+                    style={{ fontSize: 12.5, fontWeight: 900, color: '#15803D', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>
+                    → ~{est}/10
+                  </span>
+                )}
               </div>
               {quip && <div style={{ marginTop: 4, fontSize: 11.5, color: DA.gray }}>{quip}</div>}
               {review.stabilized && (
@@ -1121,19 +1149,26 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
                         <span><ObsText text={review.plafond.raison} obsIdx={obsIdx} onOpen={onOpenObs}/></span>
                       </div>
                     )}
-                    {(review.pertes || []).map((x, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
-                        <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#B91C1C', background: '#FEE2E2', borderRadius: 6, padding: '0 4px' }}>−{x.points}</span>
-                        <span><ObsText text={x.raison} obsIdx={obsIdx} onOpen={onOpenObs}/>{x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL }}>« {x.citation} »</span>}</span>
-                      </div>
-                    ))}
+                    {(review.pertes || []).map((x, i) => {
+                      const done = isDone(x.raison);
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: done ? DA.grayL : DA.black }}>
+                          <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: done ? '#15803D' : '#B91C1C', background: done ? '#DCFCE7' : '#FEE2E2', borderRadius: 6, padding: '0 4px', textDecoration: done ? 'line-through' : 'none' }}>−{x.points}</span>
+                          <span>
+                            <span style={done ? { textDecoration: 'line-through', textDecorationColor: '#9CA3AF' } : undefined}><ObsText text={x.raison} obsIdx={obsIdx} onOpen={onOpenObs}/></span>
+                            {done && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, color: '#15803D', whiteSpace: 'nowrap' }}>✓ corrigé</span>}
+                            {x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL, textDecoration: done ? 'line-through' : 'none' }}>« {x.citation} »</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
-              <Section title="Pourquoi pas plus haut" color="#92400E" items={review.manques} obsIdx={obsIdx} onOpen={onOpenObs}/>
+              <Section title="Pourquoi pas plus haut" color="#92400E" items={review.manques} obsIdx={obsIdx} onOpen={onOpenObs} isDone={isDone}/>
               <Section title="Ce qui est bien" color="#15803D" items={review.bien} obsIdx={obsIdx} onOpen={onOpenObs}/>
-              <Section title="Suggestions (sans pénalité)" color="#C2410C" items={review.ameliorer} obsIdx={obsIdx} onOpen={onOpenObs}/>
-              <Section title="Ce qui coince" color="#B91C1C" items={review.coince} obsIdx={obsIdx} onOpen={onOpenObs}/>
+              <Section title="Suggestions (sans pénalité)" color="#C2410C" items={review.ameliorer} obsIdx={obsIdx} onOpen={onOpenObs} isDone={isDone}/>
+              <Section title="Ce qui coince" color="#B91C1C" items={review.coince} obsIdx={obsIdx} onOpen={onOpenObs} isDone={isDone}/>
               {review.priorite && (
                 <div style={{ marginTop: 10, padding: '8px 10px', background: '#FEF2F2', borderRadius: 10, fontSize: 12.5, color: DA.black, lineHeight: 1.45 }}>
                   <span style={{ fontWeight: 800, color: '#B91C1C' }}>Avant d'envoyer : </span><ObsText text={review.priorite} obsIdx={obsIdx} onOpen={onOpenObs}/>
