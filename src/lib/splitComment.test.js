@@ -37,3 +37,14 @@ describe('Découpe des longs commentaires du rapport', () => {
     expect(chunks[0].endsWith('.')).toBe(true);
   });
 });
+
+describe('Texte avec image collée (retour Gab 24/11)', () => {
+  it('une image compte dans la hauteur : le texte est coupé ENTRE deux paragraphes', () => {
+    const p = (n) => `<div>${'Constat détaillé de la fissure. '.repeat(n)}</div>`;
+    const html = p(30) + '<div><img data-cimg="x.webp" src="data:image/webp;base64,AAA"></div>' + p(30);
+    const chunks = splitComment(html, 2500);
+    expect(chunks.length).toBe(2);
+    expect(chunks.join('')).toBe(html);
+    expect(chunks.every(c => !/<div>[^<]*$/.test(c))).toBe(true); // jamais au milieu d'un paragraphe
+  });
+});

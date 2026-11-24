@@ -50,3 +50,18 @@ describe('Saut automatique annulé à la main (retour Thomas 24/11)', () => {
     expect(seen[0]).toMatchObject({ id: 'big', H: 200, h: 700, measured: true });
   });
 });
+
+describe('Sauts automatiques mal placés (retour Gab 24/11)', () => {
+  const zone = { type: 'zone', id: 'z' };
+  const txt = (id, itemId = id) => ({ type: 'item', id, mode: 'text', item: { id: itemId } });
+  const run = (blocks, heights, opts = {}) => buildPages(blocks, 2, new Set(), heights, { avail: AVAIL, minFit: 0.85, ...opts }).map(p => p.map(b => b.id));
+  it('jamais un titre de zone seul sur une page', () => {
+    expect(run([zone, txt('t')], { z: 42, t: 819 })).toEqual([['z', 't']]);
+  });
+  it('« remonter » sur le titre de zone (1er bloc de la page) annule bien le saut', () => {
+    const blocks = [txt('a'), zone, txt('t')];
+    const heights = { a: 500, z: 42, t: 400 };
+    expect(run(blocks, heights)).toEqual([['a'], ['z', 't']]);
+    expect(run(blocks, heights, { noBreak: new Set(['z']) })).toEqual([['a', 'z', 't']]);
+  });
+});

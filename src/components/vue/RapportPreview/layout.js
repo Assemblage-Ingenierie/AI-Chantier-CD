@@ -60,7 +60,12 @@ export function splitComment(comment, maxChars = CHUNK_CHARS) {
 // comprises), regroupés tant que le texte visible tient dans maxChars. Concaténer les morceaux
 // redonne exactement le HTML d'origine. Un seul gros paragraphe → pas de découpe.
 function splitHtmlComment(html, maxChars) {
-  const visible = (h) => stripMarkup(h).length;
+  // « Poids » d'un morceau ≈ hauteur : texte visible + IMAGES collées dans le texte (≈ 15 lignes
+  // chacune) + lignes vides. Retour Gab 24/11 : un texte court avec une image n'était jamais
+  // découpé → bloc plus haut qu'une page, qui débordait et sautait à un endroit « random ».
+  const visible = (h) => stripMarkup(h).length
+    + (String(h).match(/<img\b/gi) || []).length * 1000
+    + (String(h).match(/<(div|p)[^>]*>\s*(<br\s*\/?>)?\s*<\/\1>/gi) || []).length * 65;
   if (visible(html) <= maxChars) return [html];
   const units = [];
   let depth = 0, start = 0;
@@ -114,7 +119,8 @@ export function estimateBlockH(block, ppl) {
   if (block.type === 'plan') return Math.round(CW * 0.6) + 30 + 90;
   const item = block.item;
   const mode = block.mode || 'full';
-  const txt  = block.textContent ?? item.commentaire ?? '';
+  // Texte VISIBLE (sans balises ni liens d'images) : l'HTML gonflait l'estimation → faux sauts.
+  const txt  = stripMarkup(block.textContent ?? item.commentaire ?? '');
   let h = mode === 'cont' ? 20 : 52;
   if (mode !== 'photos' && txt) h += Math.ceil(txt.length / 65) * 16;
   if (mode !== 'text' && mode !== 'cont') {
@@ -330,14 +336,26 @@ export function buildPages(allBlocks, ppl, breaks, heights, opts = {}) {
     if (breaks.has(block.id)) flush();
     const h = hOf(block);
     const p = gridH[block.id] || 0;
-    if (blocks.length && !fits(h, p) && !noBreak.has(block.id)) {
-      // Trace : saut automatique qui laisse beaucoup de vide (pour corriger la mesure en cause).
-      if (opts.onLooseBreak && avail && H < avail * 0.6) opts.onLooseBreak({ id: block.id, type: block.type, mode: block.mode || null, H: Math.round(H), h: Math.round(h), p: Math.round(p), avail: Math.round(avail), measured: !!(heights && heights[block.id]), est: Math.round(estimateBlockH(block, ppl)) });
-      // Ne pas laisser un titre (ou une chaîne titre → en-tête) seul en bas de page.
-      const carry = [];
-      while (blocks.length > 1 && keepWithNext(blocks[blocks.length - 1], carry[0] || block)) carry.unshift(blocks.pop());
-      flush();
-      for (const c of carry) { blocks.push(c); H += hOf(c); P += gridH[c.id] || 0; }
+    if (blocks.length && !fits(h, p)) {
+      // Blocs (titre de zone, en-tête court) qui partiraient AVEC lui sur la page suivante.
+      let k = blocks.length;
+      while (k > 0 && keepWithNext(blocks[k - 1], k < blocks.length ? blocks[k] : block)) k--;
+      const chain = blocks.slice(k);
+      // Pas de saut (retour Gab / Thomas 24/11 : « ça saute à un endroit random, et après on ne
+      // peut pas modifier ») :
+      //  - saut annulé à la main, sur ce bloc OU sur le titre qui l'accompagne (le bouton
+      //    « remonter » vise le 1er bloc de la page, souvent le titre de zone) ;
+      //  - la page ne contient que ce qui partirait avec lui (titre seul) : sauter ne gagne rien.
+      const manual = noBreak.has(block.id) || chain.some(c => noBreak.has(c.id));
+      const onlyChain = k === 0;
+      if (!manual && !onlyChain) {
+        // Trace : saut automatique qui laisse beaucoup de vide (pour corriger la mesure en cause).
+        if (opts.onLooseBreak && avail && H < avail * 0.6) opts.onLooseBreak({ id: block.id, type: block.type, mode: block.mode || null, H: Math.round(H), h: Math.round(h), p: Math.round(p), avail: Math.round(avail), measured: !!(heights && heights[block.id]), est: Math.round(estimateBlockH(block, ppl)) });
+        // Ne pas laisser un titre (ou une chaîne titre → en-tête) seul en bas de page.
+        blocks.length = k;
+        flush();
+        for (const c of chain) { blocks.push(c); H += hOf(c); P += gridH[c.id] || 0; }
+      }
     }
     blocks.push(block);
     H += h; P += p;
