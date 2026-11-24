@@ -210,9 +210,9 @@ RÈGLES STRICTES :
 - Conserve TOUS les faits, chiffres, cotes, unités, localisations, références, noms et termes techniques. N'ajoute AUCUNE information (pas de cause, préconisation, norme ou cote absentes du texte). Ne supprime rien d'informatif.
 - Le texte t'est donné ligne par ligne, chaque ligne précédée de son numéro entre crochets ([1], [2]…). Réécris CHAQUE ligne séparément et renvoie-la sur UNE seule ligne précédée du MÊME numéro, dans le même ordre. Ne fusionne pas deux lignes, n'en crée pas de nouvelle, n'ajoute ni puce ni numérotation.
 - Dans une ligne, garde autant que possible le même nombre de phrases, dans le même ordre (chaque phrase réécrite remplace la phrase d'origine correspondante) : l'ingénieur valide phrase par phrase.
-- Ne modifie une phrase QUE si tu l'améliores réellement (clarté, précision, construction, registre de rapport). Une phrase déjà bien rédigée est recopiée telle quelle (fautes seules corrigées) : ne change pas un mot pour un synonyme équivalent.
+- Une phrase déjà bien rédigée est recopiée telle quelle (fautes seules corrigées) : ne change pas un mot pour un synonyme équivalent.
 - RESPECTE LA VOIX DE L'INGÉNIEUR : garde ses mots, ses tournures et sa ponctuation (parenthèses comprises) dès qu'ils sont corrects. N'échange JAMAIS un verbe ou un mot correct contre un synonyme (« nous notons » reste « nous notons », pas « nous constatons »). N'ajoute pas de locution ampoulée ou désuète (« à tout le moins », « en outre », « il convient de noter », « force est de constater »…).
-- Une phrase reformulée doit rester naturelle, correcte et avoir EXACTEMENT le même sens. En cas de doute, ne corrige que les fautes et garde la phrase.
+- REFORMULE FRANCHEMENT toute phrase maladroite, familière, télégraphique, mal construite, lourde ou peu claire pour un rapport : l'ingénieur attend de vraies améliorations de rédaction, pas seulement des corrections de fautes. Une phrase reformulée reste naturelle, correcte et garde EXACTEMENT le même sens. Une phrase déjà correcte et claire ne change pas (fautes seules).
 - N'utilise JAMAIS de tiret cadratin ni demi-cadratin. Ne transforme jamais une affirmation en question.
 EXEMPLES :
 • « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ouàu moins de redressement de comble). » → « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ou au moins de redressement de comble). » (phrase correcte : on corrige seulement la faute de frappe, rien d'autre).
@@ -395,7 +395,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const vigilanceAddedRef = useRef(false); // l'analyse photos a-t-elle déjà ajouté des « à vérifier » ?
   const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
   const [rewrite, setRewrite] = useState(null);
-  const improveRunRef = useRef(0); // n° du dernier lancement de « Améliorer » (réponses tardives ignorées) // version réécrite : { original, segments } (passages activables)
+  const improveRunRef = useRef(0);
+  // Diagnostic (retour Thomas 24/11 : « j'applique, je ne vois pas les tournures changer ») :
+  // texte appliqué par la reformulation, vérifié quelques secondes après et à l'enregistrement.
+  const formRef = useRef(null);
+  formRef.current = form;
+  const lastRewriteRef = useRef(null); // { plain, at } // n° du dernier lancement de « Améliorer » (réponses tardives ignorées) // version réécrite : { original, segments } (passages activables)
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -723,6 +728,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   const handleSave = () => {
     purgeDrafts();
+    if (lastRewriteRef.current) {
+      const cur = htmlToPlain(form.commentaire || '').replace(/\s+/g, ' ').trim();
+      logEvent('rewrite.save', { item: form.id || null, kept: cur === lastRewriteRef.current.plain, sinceMs: Date.now() - lastRewriteRef.current.at });
+    }
     // DIAGNOSTIC image collée absente (bug Thomas) : trace ce qui est réellement enregistré.
     try {
       const c = form.commentaire || '';
@@ -1168,6 +1177,16 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     setForm(f => ({ ...f, commentaire: out }));
     setRewrite(null);
     bumpSync();
+    // Le texte appliqué est-il toujours là ? (trace sans contenu : seulement oui / non + tailles)
+    const want = htmlToPlain(out).replace(/\s+/g, ' ').trim();
+    lastRewriteRef.current = { plain: want, at: Date.now() };
+    const check = (ms) => setTimeout(() => {
+      const cur = htmlToPlain(formRef.current?.commentaire || '').replace(/\s+/g, ' ').trim();
+      const ed = textareaRef.current?.getEditor?.();
+      const shown = ed ? (ed.innerText || '').replace(/\s+/g, ' ').trim() : null;
+      logEvent('rewrite.check', { item: form.id || null, ms, kept: cur === want, shown: shown == null ? null : shown === want, len: want.length, curLen: cur.length, live: !!liveRef.current });
+    }, ms);
+    check(3000); check(15000);
   };
   const toggleRewrite = (id) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' && s.id === id ? { ...s, active: !s.active } : s)) } : r));
   const setAllRewrite = (on) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' ? { ...s, active: on } : s)) } : r));
