@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DA } from '../../lib/constants.js';
 import { Ic } from '../ui/Icons.jsx';
-import { buildReviewMail, mailtoUrl, reviewLink, recentReviewers, rememberReviewer } from '../../lib/reviewRequest.js';
+import { buildReviewMail, mailtoUrl, gmailUrl, reviewLink, recentReviewers, rememberReviewer } from '../../lib/reviewRequest.js';
 import { getMyName } from '../../lib/presence.js';
 
 // « Faire relire » (demande Thomas 24/11) : prépare l'email de demande de relecture dans la
@@ -28,10 +28,17 @@ export default function ReviewRequestModal({ projet, visiteId, visiteLabel, onCl
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  const send = () => {
+  // Gmail (messagerie d'Assemblage) : nouveau message prérempli dans un nouvel onglet.
+  const sendGmail = () => {
     if (!ok) return;
     rememberReviewer(to);
-    // Navigation directe (et non window.open) : marche sur iOS Safari, Android et PC.
+    window.open(gmailUrl(to, mail), '_blank', 'noopener');
+    onClose();
+  };
+  // Autre messagerie (Outlook, Mail…) : lien mailto:, navigation directe (iOS Safari, Android, PC).
+  const sendMailto = () => {
+    if (!ok) return;
+    rememberReviewer(to);
     window.location.href = mailtoUrl(to, mail);
     onClose();
   };
@@ -73,11 +80,14 @@ export default function ReviewRequestModal({ projet, visiteId, visiteLabel, onCl
         <div style={{ background:DA.grayXL, border:`1px solid ${DA.border}`, borderRadius:8, padding:'8px 10px', fontSize:11.5, color:DA.gray, lineHeight:1.45, whiteSpace:'pre-wrap', maxHeight:160, overflowY:'auto' }}>
           <strong style={{ color:DA.black }}>{mail.subject}</strong>{'\n\n'}{mail.body}
         </div>
-        <button onClick={send} disabled={!ok}
+        <button onClick={sendGmail} disabled={!ok}
           style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, border:'none', borderRadius:10, padding:'11px 14px', fontSize:14, fontWeight:800, color:'white', background: ok ? DA.red : '#D1D5DB', cursor: ok ? 'pointer' : 'default' }}>
-          <Ic n="snd" s={14}/> Préparer l'email
+          <Ic n="snd" s={14}/> Ouvrir dans Gmail
         </button>
-        <div style={{ fontSize:11, color:DA.grayL, textAlign:'center', marginTop:-4 }}>L'email s'ouvre dans ta messagerie : tu n'as plus qu'à l'envoyer.</div>
+        <div style={{ fontSize:11, color:DA.grayL, textAlign:'center', marginTop:-4 }}>
+          Le message s'ouvre prérempli dans Gmail : tu n'as plus qu'à cliquer sur Envoyer.{' '}
+          <button onClick={sendMailto} disabled={!ok} style={{ border:'none', background:'none', padding:0, color: ok ? DA.gray : DA.grayL, textDecoration:'underline', fontSize:11, cursor: ok ? 'pointer' : 'default' }}>Autre messagerie</button>
+        </div>
       </div>
     </div>
   );
