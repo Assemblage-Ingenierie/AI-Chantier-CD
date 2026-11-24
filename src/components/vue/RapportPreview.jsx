@@ -70,7 +70,7 @@ function pdfSrcKey(src) {
   return src.split('?')[0];
 }
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -815,6 +815,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           {!narrow && pager}
           {/* Droite : export — Photos d'abord, PDF ensuite */}
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+            {/* Demande de relecture par email (demande Thomas 24/11). */}
+            {onAskReview && (
+              <button onClick={onAskReview} data-print="hide" title="Envoyer le lien du rapport à un collègue pour relecture"
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor:'pointer',
+                  background:'rgba(255,255,255,0.10)', color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:700 }}>
+                <Ic n="ml" s={12}/>
+                {!narrow && <span>Faire relire</span>}
+              </button>
+            )}
             {onExportPhotos && totalPhotos > 0 && (
               <button onClick={onExportPhotos} disabled={zipping} data-print="hide"
                 style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, border:'none', cursor: zipping ? 'wait' : 'pointer',

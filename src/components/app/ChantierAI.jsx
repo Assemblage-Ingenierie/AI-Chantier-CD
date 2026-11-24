@@ -22,6 +22,7 @@ import NewProjet from '../dashboard/NewProjet.jsx';
 import EditProjet from '../dashboard/EditProjet.jsx';
 import VueProjet from './VueProjet.jsx';
 import VisitesScreen from './VisitesScreen.jsx';
+import { captureReviewLink, clearReviewLink } from '../../lib/reviewRequest.js';
 import { isGameMode, setGameMode as setCostarGame, canUseGameMode, setFanAvatar } from '../../lib/costarRewards.js';
 
 export default function ChantierAI({ profile, session, onLogout, onProfileSaved }) {
@@ -40,6 +41,12 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   const [editTarget, setEditTarget] = useState(null);
   const [ouvert, setOuvert] = useState(null);
   const [selectedVisiteId, setSelectedVisiteId] = useState(null);
+  // LIEN DE RELECTURE (#relire=<projet>.<visite>, email « Faire relire », demande Thomas 24/11) :
+  // capturé au démarrage (gardé le temps de la session si la connexion passe avant), puis la
+  // visite s'ouvre sur l'onglet Rapport dès que les projets sont chargés.
+  const pendingOpenRef = useRef(undefined);
+  if (pendingOpenRef.current === undefined) pendingOpenRef.current = captureReviewLink();
+  const [openTab, setOpenTab] = useState(null);
 
   const { projets, updateProjet, deleteProjet, deletePlanFromLibrary, addProjet, hydrated, remoteLoaded, loadError, hydratePhotos, hydratePlans, hydratePlanLibrary, undo, canUndo, refreshNow, backupRecovery, restoreFromBackup, dismissBackupRecovery,
     dirtyProjectIds, syncPaused, setVisitMode, pinnedVisites, pinVisite, unpinVisite, precacheProjectOffline, syncPendingNow, restoreObservation, restoreZoneAnnotations, restoreZone, restoreLostAnnots, restoreItemText, restoreStoragePhotos, syncOpenProject, restoreDeletedPlans, unhidePlansInVisit } = useProjets(setSyncStatus);
@@ -241,6 +248,26 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   // évite que le handler popstate lise des valeurs obsolètes juste après un setState
   React.useLayoutEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
   React.useLayoutEffect(() => { selectedVisiteIdRef.current = selectedVisiteId; }, [selectedVisiteId]);
+
+  // Lien de relecture reçu : ouvre l'affaire + la visite (onglet Rapport) dès que possible.
+  useEffect(() => {
+    const r = pendingOpenRef.current;
+    if (!r || !hydrated) return;
+    const p = projets.find(x => x.id === r.projetId);
+    if (!p) {
+      // Projet introuvable même après le chargement serveur (pas d'accès / supprimé) : on oublie.
+      if (remoteLoaded) { pendingOpenRef.current = null; clearReviewLink(); }
+      return;
+    }
+    pendingOpenRef.current = null;
+    clearReviewLink();
+    setOuvert(p);
+    hydratePlanLibrary(p.id).then(lm => hydratePlans(p.id, lm));
+    if (r.visiteId && (p.visites || []).some(v => v.id === r.visiteId)) { setOpenTab('rapport'); setSelectedVisiteId(r.visiteId); }
+  }, [hydrated, remoteLoaded, projets]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // L'onglet Rapport n'est imposé qu'à la visite ouverte par le lien (pas aux suivantes).
+  useEffect(() => { if (openTab && selectedVisiteId) setOpenTab(null); }, [openTab, selectedVisiteId]);
 
   // Lazy loading photos : charger uniquement la visite sélectionnée
   useEffect(() => {
@@ -679,6 +706,7 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
             onRestoreStoragePhotos={restoreStoragePhotos}
             onRestoreDeletedPlans={(opts) => restoreDeletedPlans(ouvert.id, opts)}
             onUnhidePlans={(visiteId, ids) => unhidePlansInVisit(ouvert.id, visiteId, ids)}
+            initialTab={openTab}
           />
         ) : ouvert ? (
           <VisitesScreen

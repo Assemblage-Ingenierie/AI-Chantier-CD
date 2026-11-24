@@ -203,7 +203,7 @@ function PlanGrip({ payload }) {
 
 export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDeletePlan = null, setBackHandler, syncStatus = 'ok', onRefresh = null, refreshing = false,
   onRestoreZone = null, onRestoreObservation = null, onRestoreLostAnnots = null, onRestoreZoneAnnotations = null,
-  onRestoreItemText = null, onRestoreStoragePhotos = null, onRestoreDeletedPlans = null, onUnhidePlans = null }) {
+  onRestoreItemText = null, onRestoreStoragePhotos = null, onRestoreDeletedPlans = null, onUnhidePlans = null, initialTab = null }) {
   const [trashOpen, setTrashOpen] = useState(false); // corbeille du projet (PC)
   // Alerte corbeille : nombre d'éléments restaurables apparus depuis la dernière ouverture
   // (suppressions ici, ou observations / photos détachées ailleurs — historique serveur).
@@ -219,7 +219,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   }, [projet, trashOpen, onRestoreZone]);
   const visites = projet.visites || [];
   const [selectedVisiteId, setSelectedVisiteId] = useState(() => visiteId ?? visites[0]?.id ?? null);
-  const [tab, setTab] = useState('visite');
+  const [tab, setTab] = useState(initialTab === 'rapport' ? 'rapport' : 'visite'); // lien de relecture → onglet Rapport
   const [modal, setModal] = useState(null);
   const modalRef = useRef(null);
   const itemModalBackRef = useRef(null); // handler interne de ItemModal (photo/plan annotateur, zoom)
@@ -1408,7 +1408,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           )}
 
           {tab === 'rapport' && (
-            <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} />
+            <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} visiteId={visiteId} />
           )}
         </div>
       </div>
