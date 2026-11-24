@@ -12,6 +12,7 @@ import { CW, FTR, HDR, MB, MT, PH, PW, VXX_DEBUG, buildPages, flattenBlocks, ite
 import { CutZone, PageSepBanner, TopBreakControl } from './RapportPreview/controls.jsx';
 import { ItemBlock, ItemPlanBlock, PlanBlock, SymbolIcon, ViewpointIcon, ZoneHeader } from './RapportPreview/blocks.jsx';
 import { A4Card, AnnexImagePage, AnnexRecapPage, ConclusionPage, CoverOverflowPage, CoverPage, PlanFullPage, TableauRecapPage, computeParticipantChunks } from './RapportPreview/pages.jsx';
+import { logEvent } from '../../lib/logger.js';
 export { flattenBlocks } from './RapportPreview/layout.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
@@ -186,6 +187,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     return s;
   }, [bodyLocs, planOrient, projet.planLibrary]);
 
+  // Sauts automatiques annulés à la main : stockés dans la même liste que les sauts forcés, sous
+  // la forme « nb:<id du bloc>: » (le « : » final empêche toute confusion avec les coupures de
+  // texte _pN / _pmsN, et un ancien appareil l'ignore simplement).
+  const noBreak = useMemo(() => new Set((pageBreaks || []).filter(id => /^nb:.+:$/.test(id)).map(id => id.slice(3, -1))), [pageBreaks]);
   const breaks = useMemo(() => {
     const s = new Set(pageBreaks || []);
     for (const id of (pageBreaks || [])) {
@@ -264,8 +269,9 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
   const pages = useMemo(
     () => buildPages(allBlocks, ppl, breaks, Object.keys(measuredH).length > 0 ? measuredH : null,
-      { avail: PH - (HDR + 1) - (MT - HDR) - (MB + FTR) - 4, gridH, minFit: 0.85 }),
-    [allBlocks, ppl, breaks, measuredH, gridH]
+      { avail: PH - (HDR + 1) - (MT - HDR) - (MB + FTR) - 4, gridH, minFit: 0.85, noBreak,
+        onLooseBreak: (info) => logEvent('rapport.autobreak.loose', info) }),
+    [allBlocks, ppl, breaks, measuredH, gridH, noBreak]
   );
 
   // ── AJUSTEMENT DE PAGE (retours Thomas 02/11 : « 4 rangées de photos sans texte ne rentrent
@@ -886,6 +892,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 firstBlockId={firstId}
                 isForced={firstForced}
                 onToggle={onTogglePageBreak}
+                onUndoAuto={cutMode && pi > 0 && !firstForced && firstId ? () => onTogglePageBreak(`nb:${firstId}:`) : null}
               />
               <div ref={el => { pageRefs.current[coverPageCount + pi] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
@@ -904,6 +911,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                     return (
                     <React.Fragment key={block.id}>
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
+                      {cutMode && noBreak.has(block.id) && (
+                        <div data-print="hide" style={{ display:'flex', justifyContent:'center', margin:'2px 0' }}>
+                          <button onClick={() => onTogglePageBreak(`nb:${block.id}:`)} title="Laisser l'application couper la page ici si besoin"
+                            style={{ fontSize:9, fontWeight:700, color:'#92400E', background:'#FFFBEB', border:'1px dashed #F59E0B', borderRadius:5, padding:'2px 8px', cursor:'pointer' }}>
+                            ↑ Remonté à la main · rétablir le saut automatique
+                          </button>
+                        </div>
+                      )}
                       {/* flow-root : même empilement (marges comprises) que la couche de mesure → la
                           hauteur calculée d'une page = la hauteur réelle (ajustement de page fiable). */}
                       <div style={{ display:'flow-root' }}>

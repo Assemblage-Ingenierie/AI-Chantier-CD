@@ -299,6 +299,9 @@ export function buildPages(allBlocks, ppl, breaks, heights, opts = {}) {
   const avail = opts.avail || 0;
   const gridH = opts.gridH || {};
   const minFit = opts.minFit ?? 0.85;
+  // Sauts AUTOMATIQUES annulés à la main (outil saut de page, retour Thomas 24/11 : « ça saute
+  // tout seul alors qu'il y a du vide ») : ce bloc reste sur la page courante.
+  const noBreak = opts.noBreak || new Set();
   const hOf = (b) => (heights && heights[b.id]) || estimateBlockH(b, ppl);
   const pages  = [];
   let blocks   = [];
@@ -327,7 +330,9 @@ export function buildPages(allBlocks, ppl, breaks, heights, opts = {}) {
     if (breaks.has(block.id)) flush();
     const h = hOf(block);
     const p = gridH[block.id] || 0;
-    if (blocks.length && !fits(h, p)) {
+    if (blocks.length && !fits(h, p) && !noBreak.has(block.id)) {
+      // Trace : saut automatique qui laisse beaucoup de vide (pour corriger la mesure en cause).
+      if (opts.onLooseBreak && avail && H < avail * 0.6) opts.onLooseBreak({ id: block.id, type: block.type, mode: block.mode || null, H: Math.round(H), h: Math.round(h), p: Math.round(p), avail: Math.round(avail), measured: !!(heights && heights[block.id]), est: Math.round(estimateBlockH(block, ppl)) });
       // Ne pas laisser un titre (ou une chaîne titre → en-tête) seul en bas de page.
       const carry = [];
       while (blocks.length > 1 && keepWithNext(blocks[blocks.length - 1], carry[0] || block)) carry.unshift(blocks.pop());

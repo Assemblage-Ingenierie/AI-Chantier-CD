@@ -34,3 +34,19 @@ describe('Pagination automatique du rapport', () => {
     expect(pagesOf(blocks, { a: 100, big: 1200, c: 100 })).toEqual([['a'], ['big'], ['c']]);
   });
 });
+
+describe('Saut automatique annulé à la main (retour Thomas 24/11)', () => {
+  it('le bloc « remonté » reste sur la page précédente, la suite continue normalement', () => {
+    const blocks = ['a', 'b', 'c'].map(id => ({ type: 'item', id, mode: 'text', item: { id } }));
+    const heights = { a: 400, b: 300, c: 200 };
+    const run = (noBreak) => buildPages(blocks, 2, new Set(), heights, { avail: AVAIL, minFit: 0.85, noBreak }).map(p => p.map(b => b.id));
+    expect(run(new Set())).toEqual([['a', 'b'], ['c']]);
+    expect(run(new Set(['c']))).toEqual([['a', 'b', 'c']]);
+  });
+  it('trace quand un saut automatique laisse beaucoup de vide', () => {
+    const seen = [];
+    const blocks = [{ type: 'item', id: 'a', mode: 'text', item: { id: 'a' } }, row('big')];
+    buildPages(blocks, 2, new Set(), { a: 200, big: 700 }, { avail: AVAIL, minFit: 0.85, onLooseBreak: (i) => seen.push(i) });
+    expect(seen[0]).toMatchObject({ id: 'big', H: 200, h: 700, measured: true });
+  });
+});
