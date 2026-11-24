@@ -799,17 +799,21 @@ export function PlanFullPage({ plan, title, projet, pageNum, totalPages, annotSc
       <HdrBar projet={projet} dateStr={dateStr}/>
       <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0 6px', borderBottom:`2px solid ${DA.red}`, margin:`0 ${MX}px` }}>
         <span style={{ fontSize:9, fontWeight:700, color:'#000', textTransform:'uppercase', letterSpacing:'0.06em' }}>{title}</span>
-        {(legendSy.length > 0 || hasVp) && (
-          <span style={{ marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:'2px 12px', justifyContent:'flex-end' }}>
-            {legendSy.map(s => (
-              <span key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D' }}><SymbolIcon sym={s} size={13}/>{s.label}</span>
-            ))}
-            {hasVp && <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D' }}><ViewpointIcon size={13}/>Vue photo</span>}
-          </span>
-        )}
       </div>
-      <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ flex:1, minHeight:0, padding:`8px ${MX}px ${FTR + 8}px`, display:'flex', alignItems:'center', justifyContent:'center', position:'relative' }}>
         <SinglePlanImage bg={plan.bg} planId={plan.planId} annotations={plan.annotations} annotScale={annotScale} alt={title} vpNumByPath={vpNumByPath} onOrient={onOrient} fill/>
+        {/* Légende POSÉE SUR le plan (coin haut gauche) et plus dans le bandeau de titre : le plan
+            garde la même taille quel que soit le nombre de symboles (retour Thomas 24/11 :
+            « un plan qui a plus de légende que l'autre, ça réduit la taille du plan »). */}
+        {(legendSy.length > 0 || hasVp) && (
+          <div style={{ position:'absolute', top:8, left:MX, maxWidth:'46%', display:'flex', flexDirection:'column', gap:2,
+            background:'rgba(255,255,255,0.92)', border:'1px solid #E5E7EB', borderRadius:4, padding:'4px 7px' }}>
+            {legendSy.map(s => (
+              <span key={s.id} style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D', lineHeight:1.25 }}><SymbolIcon sym={s} size={13}/>{s.label}</span>
+            ))}
+            {hasVp && <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:8, color:'#4D4D4D', lineHeight:1.25 }}><ViewpointIcon size={13}/>Vue photo</span>}
+          </div>
+        )}
       </div>
       {(onChange || onAnnotate) && (
         <div data-print="hide" style={{ position:'absolute', top:HDR + 34, right:MX, display:'flex', gap:4, background:'rgba(255,255,255,0.92)', padding:4, borderRadius:8, boxShadow:'0 1px 6px rgba(0,0,0,0.15)' }}>
