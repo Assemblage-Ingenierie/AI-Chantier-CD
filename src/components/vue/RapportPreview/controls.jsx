@@ -176,11 +176,16 @@ export function PageSepBanner({ pageNum, totalPages, firstBlockId, isForced, onT
           </span>
         </div>
       ) : onUndoAuto ? (
-        // Saut AUTOMATIQUE qui ne convient pas : on remonte le contenu sur la page précédente.
-        <button onClick={onUndoAuto} title="Remonter le début de cette page sur la page précédente (s'il y a de la place)"
-          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:5, background:'rgba(245,158,11,0.15)', border:'1px solid rgba(245,158,11,0.6)', color:'#FCD34D', fontSize:9, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
-          ↑ Saut automatique · remonter sur la page précédente
-        </button>
+        // Saut AUTOMATIQUE matérialisé (retour Thomas 24/11) : « Supprimer » → le début de cette
+        // page remonte sur la précédente et la mise en page automatique se refait.
+        <div onClick={onUndoAuto} title="Supprimer ce saut : le début de cette page remonte sur la page précédente, la suite se remet en page automatiquement"
+          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:5,
+            background:'rgba(255,255,255,0.06)', border:'1px dashed rgba(255,255,255,0.35)', cursor:'pointer' }}>
+          <span style={{ fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.75)', whiteSpace:'nowrap' }}>Saut automatique</span>
+          <span style={{ fontSize:9, color:'rgba(255,255,255,0.55)', background:'rgba(255,255,255,0.08)', borderRadius:3, padding:'1px 6px' }}>
+            × Supprimer
+          </span>
+        </div>
       ) : (
         <span style={{ fontSize:8, color:'rgba(255,255,255,0.2)', fontStyle:'italic' }}>
           séparateur automatique

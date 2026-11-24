@@ -9,7 +9,7 @@ import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
 import { childrenOf } from '../../lib/zoneGroups.js';
 import { CW, FTR, HDR, MB, MT, PH, PW, VXX_DEBUG, buildPages, flattenBlocks, itemHasReportContent, splitPlanGroups, stripFullPagePlans } from './RapportPreview/layout.js';
-import { CutZone, PageSepBanner, TopBreakControl } from './RapportPreview/controls.jsx';
+import { CutZone, PageSepBanner } from './RapportPreview/controls.jsx';
 import { ItemBlock, ItemPlanBlock, PlanBlock, SymbolIcon, ViewpointIcon, ZoneHeader } from './RapportPreview/blocks.jsx';
 import { A4Card, AnnexImagePage, AnnexRecapPage, ConclusionPage, CoverOverflowPage, CoverPage, PlanFullPage, TableauRecapPage, computeParticipantChunks } from './RapportPreview/pages.jsx';
 import { logEvent } from '../../lib/logger.js';
@@ -890,7 +890,6 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         {/* ── PAGES OBSERVATIONS ── */}
         {pages.map((pageBlocks, pi) => {
           const firstId     = pageBlocks[0]?.id;
-          const firstBlock  = pageBlocks[0];
           const firstForced = breaks.has(firstId);
           const pageNum     = coverPageCount + 1 + pi;
           return (
@@ -901,33 +900,17 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 firstBlockId={firstId}
                 isForced={firstForced}
                 onToggle={onTogglePageBreak}
-                onUndoAuto={cutMode && pi > 0 && !firstForced && firstId ? () => onTogglePageBreak(`nb:${firstId}:`) : null}
+                onUndoAuto={onTogglePageBreak && pi > 0 && !firstForced && firstId ? () => onTogglePageBreak(`nb:${firstId}:`) : null}
               />
               <div ref={el => { pageRefs.current[coverPageCount + pi] = el; }}>
                 <A4Card projet={projet} pageNum={pageNum} totalPages={totalPages}>
-                  {/* Bouton de suppression d'un saut forcé — uniquement en mode édition cutMode */}
-                  {cutMode && firstForced && firstBlock && (
-                    <div data-print="hide">
-                      <TopBreakControl
-                        id={firstId}
-                        zoneName={firstBlock.type === 'zone' ? firstBlock.loc?.nom : firstBlock.item?.titre}
-                        onToggle={onTogglePageBreak}
-                      />
-                    </div>
-                  )}
+                  {/* Saut forcé / automatique : un seul contrôle, sur le bandeau entre les pages
+                      (retour Thomas 24/11 : « c'est lourdingue » — plus de badges en double ici). */}
                   {pageBlocks.map((block, bi) => {
                     const isCutCandidate = !(pi === 0 && bi === 0);
                     return (
                     <React.Fragment key={block.id}>
                       <CutZone blockId={block.id} active={cutMode && isCutCandidate} onCut={handleCut}/>
-                      {cutMode && noBreak.has(block.id) && (
-                        <div data-print="hide" style={{ display:'flex', justifyContent:'center', margin:'2px 0' }}>
-                          <button onClick={() => onTogglePageBreak(`nb:${block.id}:`)} title="Laisser l'application couper la page ici si besoin"
-                            style={{ fontSize:9, fontWeight:700, color:'#92400E', background:'#FFFBEB', border:'1px dashed #F59E0B', borderRadius:5, padding:'2px 8px', cursor:'pointer' }}>
-                            ↑ Remonté à la main · rétablir le saut automatique
-                          </button>
-                        </div>
-                      )}
                       {/* flow-root : même empilement (marges comprises) que la couche de mesure → la
                           hauteur calculée d'une page = la hauteur réelle (ajustement de page fiable). */}
                       <div style={{ display:'flow-root' }}>
