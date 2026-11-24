@@ -596,6 +596,13 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   useEffect(() => () => { prewarmRef.current.run++; }, []);
 
   useImperativeHandle(ref, () => ({
+    // Costar : clic sur une observation citée → on l'ouvre pour la corriger, avec la remarque
+    // de Costar affichée au-dessus (demande Thomas 24/11).
+    openItem: (itemId, locId, note = '') => {
+      const loc = localisations.find(l => l.id === locId) || localisations.find(l => [...(l.items || []), ...((l.sections || []).flatMap(sc => sc.items || []))].some(i => i.id === itemId));
+      const item = loc && [...(loc.items || []), ...((loc.sections || []).flatMap(sc => sc.items || []))].find(i => i.id === itemId);
+      if (item) setEditingItem({ item, locId: loc.id, note });
+    },
     // EXPORT GROUPÉ (zip de tous les rapports, PC — demande Thomas 15/10/2026) : le rapport est
     // rendu EXACTEMENT comme l'aperçu (mêmes pages, mêmes images encodées sous budget), chaque
     // page est photographiée puis assemblée en PDF A4. Budget de poids : si le PDF dépasse ~5 Mo,
@@ -1094,6 +1101,17 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         {editingItem && (() => {
           const editingLoc = localisations.find(l => l.id === editingItem.locId);
           return (
+            <>
+            {editingItem.note && (
+              // Remarque de Costar gardée sous les yeux pendant la correction (au-dessus de la fenêtre).
+              <div data-print="hide" style={{ position:'fixed', top:12, left:'50%', transform:'translateX(-50%)', zIndex:45, maxWidth:'min(560px, calc(100vw - 32px))',
+                background:'#FFFBEB', border:'1px solid #FCD34D', borderRadius:10, boxShadow:'0 6px 20px rgba(0,0,0,0.25)', padding:'8px 12px', fontSize:13, lineHeight:1.45, color:'#78350F', display:'flex', gap:8, alignItems:'flex-start' }}>
+                <span style={{ fontWeight:800, flexShrink:0 }}>Costar :</span>
+                <span style={{ flex:1 }}>{editingItem.note}</span>
+                <button onClick={() => setEditingItem(e => (e ? { ...e, note: '' } : e))} aria-label="Masquer la remarque"
+                  style={{ border:'none', background:'none', color:'#92400E', cursor:'pointer', fontSize:16, lineHeight:1, padding:0, flexShrink:0 }}>×</button>
+              </div>
+            )}
             <ItemModal
               item={editingItem.item}
               planBg={editingLoc?.planBg}
@@ -1105,6 +1123,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               }}
               onOpenAnnot={() => setEditingItem(null)}
             />
+            </>
           );
         })()}
       </div>

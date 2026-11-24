@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey } from '../../lib/costar.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey, reportObsIndex, splitObsRefs } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant, fanPunchline } from '../../lib/costarRewards.js';
 import { subscribePresence, getMyName } from '../../lib/presence.js';
@@ -766,7 +766,34 @@ export function CostarSvg({ size = 100, className = '', outfit = {} }) {
   );
 }
 
-function Section({ title, color, items }) {
+// Même texte avec les titres à la place des « Obs N » (remarque affichée pendant la correction).
+const withTitles = (text, obsIdx) => splitObsRefs(text).map(p => {
+  if (typeof p === 'string') return p;
+  const o = obsIdx.find(x => x.n === p.obs);
+  return o?.titre ? `« ${o.titre} »` : p.raw;
+}).join('');
+
+// Texte de Costar : « Obs N » remplacé par le TITRE de l'observation, cliquable → ouvre
+// l'observation pour la corriger avec la remarque sous les yeux (demande Thomas 24/11).
+function ObsText({ text, obsIdx = [], onOpen = null }) {
+  const parts = splitObsRefs(text);
+  if (parts.length === 1 && typeof parts[0] === 'string') return text;
+  return parts.map((p, i) => {
+    if (typeof p === 'string') return <React.Fragment key={i}>{p}</React.Fragment>;
+    const o = obsIdx.find(x => x.n === p.obs);
+    if (!o) return <React.Fragment key={i}>{p.raw}</React.Fragment>;
+    const label = o.titre ? `« ${o.titre} »` : `Obs ${o.n}`;
+    if (!onOpen) return <strong key={i}>{label}</strong>;
+    return (
+      <button key={i} type="button" onClick={() => onOpen(o, withTitles(text, obsIdx))} title="Ouvrir cette observation pour la corriger"
+        style={{ display:'inline', padding:'0 4px', margin:0, border:'none', borderRadius:4, background:'#EFF6FF', color:'#1D4ED8', fontWeight:700, fontSize:'inherit', fontFamily:'inherit', lineHeight:'inherit', cursor:'pointer', textDecoration:'underline', textUnderlineOffset:2 }}>
+        {label}
+      </button>
+    );
+  });
+}
+
+function Section({ title, color, items, obsIdx, onOpen }) {
   if (!items?.length) return null;
   return (
     <div style={{ marginTop: 10 }}>
@@ -775,7 +802,7 @@ function Section({ title, color, items }) {
         {title}
       </div>
       <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {items.map((t, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>{t}</li>)}
+        {items.map((t, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.45, color: DA.black }}><ObsText text={t} obsIdx={obsIdx} onOpen={onOpen}/></li>)}
       </ul>
     </div>
   );
@@ -789,7 +816,8 @@ const LABEL_HALF = 49;
 
 // fixed = position fixe dans la fenêtre (onglet Visite, qui défile) ; sinon ancré au conteneur
 // (onglet Rapport). Costar est réservé au PC : masqué sous 900 px de large.
-export default function Costar({ projet, fixed = false }) {
+export default function Costar({ projet, fixed = false, onOpenObs = null }) {
+  const obsIdx = React.useMemo(() => reportObsIndex(projet), [projet]); // « Obs N » → observation (titre, lien)
   const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 900);
   // Portrait de Thomas (« Fan-club officiel ») : sa photo arrive avec la présence en direct quand
   // il est connecté → gardée sur cet appareil pour la suite.
@@ -882,7 +910,7 @@ export default function Costar({ projet, fixed = false }) {
         // délai quand Gemini est chargé (« Gemini ne répond pas ») ; la consigne détaillée suffit.
         // Réponse courte demandée par la consigne : 1800 tokens suffisent largement (avant 4096) ;
         // la sortie est ce qui coûte le plus de temps.
-        max_tokens: 1800,
+        max_tokens: 3000, // avis plus détaillé (manques, points forts, suggestions — retour Thomas 24/11)
         temperature: 0.1, // même rapport → même note (pas de loterie d'un essai à l'autre)
         json: true,
         system: COSTAR_SYSTEM,
@@ -1017,31 +1045,32 @@ export default function Costar({ projet, fixed = false }) {
                     {review.plafond && (
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
                         <span title="Note plafonnée" style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#92400E', background: '#FEF3C7', borderRadius: 6, padding: '0 4px' }}>≤{review.plafond.value}</span>
-                        <span>{review.plafond.raison}</span>
+                        <span><ObsText text={review.plafond.raison} obsIdx={obsIdx} onOpen={onOpenObs}/></span>
                       </div>
                     )}
                     {(review.pertes || []).map((x, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12.5, lineHeight: 1.45, color: DA.black }}>
                         <span style={{ flexShrink: 0, minWidth: 26, textAlign: 'center', fontWeight: 900, fontSize: 12, color: '#B91C1C', background: '#FEE2E2', borderRadius: 6, padding: '0 4px' }}>−{x.points}</span>
-                        <span>{x.raison}{x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL }}>« {x.citation} »</span>}</span>
+                        <span><ObsText text={x.raison} obsIdx={obsIdx} onOpen={onOpenObs}/>{x.citation && <span style={{ display: 'block', fontSize: 11.5, fontStyle: 'italic', color: DA.grayL }}>« {x.citation} »</span>}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              <Section title="Ce qui est bien" color="#15803D" items={review.bien}/>
-              <Section title="Suggestions (sans pénalité)" color="#C2410C" items={review.ameliorer}/>
-              <Section title="Ce qui coince" color="#B91C1C" items={review.coince}/>
+              <Section title="Pourquoi pas plus haut" color="#92400E" items={review.manques} obsIdx={obsIdx} onOpen={onOpenObs}/>
+              <Section title="Ce qui est bien" color="#15803D" items={review.bien} obsIdx={obsIdx} onOpen={onOpenObs}/>
+              <Section title="Suggestions (sans pénalité)" color="#C2410C" items={review.ameliorer} obsIdx={obsIdx} onOpen={onOpenObs}/>
+              <Section title="Ce qui coince" color="#B91C1C" items={review.coince} obsIdx={obsIdx} onOpen={onOpenObs}/>
               {review.priorite && (
                 <div style={{ marginTop: 10, padding: '8px 10px', background: '#FEF2F2', borderRadius: 10, fontSize: 12.5, color: DA.black, lineHeight: 1.45 }}>
-                  <span style={{ fontWeight: 800, color: '#B91C1C' }}>Avant d'envoyer : </span>{review.priorite}
+                  <span style={{ fontWeight: 800, color: '#B91C1C' }}>Avant d'envoyer : </span><ObsText text={review.priorite} obsIdx={obsIdx} onOpen={onOpenObs}/>
                 </div>
               )}
               {review.reecriture && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 800, color: '#1D4ED8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1D4ED8', flexShrink: 0 }}/>
-                    Je l'aurais écrit comme ça{review.reecriture.obs ? ` (${review.reecriture.obs})` : ''}
+                    Je l'aurais écrit comme ça{review.reecriture.obs ? <> (<ObsText text={review.reecriture.obs} obsIdx={obsIdx} onOpen={onOpenObs}/>)</> : ''}
                   </div>
                   {review.reecriture.avant && <div style={{ fontSize: 12, color: DA.grayL, textDecoration: 'line-through', lineHeight: 1.4 }}>{review.reecriture.avant}</div>}
                   <div style={{ marginTop: 3, fontSize: 12.5, color: DA.black, lineHeight: 1.45, background: '#EFF6FF', borderRadius: 8, padding: '6px 8px' }}>{review.reecriture.apres}</div>
