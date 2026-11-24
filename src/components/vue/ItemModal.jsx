@@ -88,6 +88,10 @@ export function readDraft(id, projetId, item = null) {
 // Nouvelle version : matching TOLÉRANT aux frontières de balises via le DOM. On concatène les
 // nœuds texte, on compare EN IGNORANT les espaces (les sauts de ligne de l'extrait viennent des
 // balises, absents des nœuds ; &nbsp; varie), puis on remplace la plage exacte sur les nœuds.
+// Affiché quand l'IA ne propose aucune reformulation (seulement des points « à vérifier ») —
+// avant, rien ne le disait (retour Thomas 24/11 : « ça n'améliore plus ? »).
+const NO_REWRITE_MSG = 'Aucune reformulation proposée : texte jugé déjà clair ✓';
+
 function patchHtmlText(html, del, add) {
   if (!del) return html;
   let doc;
@@ -228,9 +232,9 @@ RÈGLES STRICTES :
 - Conserve TOUS les faits, chiffres, cotes, unités, localisations, références, noms et termes techniques. N'ajoute AUCUNE information (pas de cause, préconisation, norme ou cote absentes du texte). Ne supprime rien d'informatif.
 - Le texte t'est donné ligne par ligne, chaque ligne précédée de son numéro entre crochets ([1], [2]…). Réécris CHAQUE ligne séparément et renvoie-la sur UNE seule ligne précédée du MÊME numéro, dans le même ordre. Ne fusionne pas deux lignes, n'en crée pas de nouvelle, n'ajoute ni puce ni numérotation.
 - Dans une ligne, garde autant que possible le même nombre de phrases, dans le même ordre (chaque phrase réécrite remplace la phrase d'origine correspondante) : l'ingénieur valide phrase par phrase.
-- Ne modifie une phrase QUE si tu l'améliores réellement (clarté, précision, construction, registre de rapport). Une phrase déjà bien rédigée est recopiée telle quelle (fautes seules corrigées) : ne change pas un mot pour un synonyme équivalent.
+- Une phrase déjà bien rédigée est recopiée telle quelle (fautes seules corrigées) : ne change pas un mot pour un synonyme équivalent.
 - RESPECTE LA VOIX DE L'INGÉNIEUR : garde ses mots, ses tournures et sa ponctuation (parenthèses comprises) dès qu'ils sont corrects. N'échange JAMAIS un verbe ou un mot correct contre un synonyme (« nous notons » reste « nous notons », pas « nous constatons »). N'ajoute pas de locution ampoulée ou désuète (« à tout le moins », « en outre », « il convient de noter », « force est de constater »…).
-- Une phrase reformulée doit rester naturelle, correcte et avoir EXACTEMENT le même sens. En cas de doute, ne corrige que les fautes et garde la phrase.
+- REFORMULE FRANCHEMENT toute phrase maladroite, familière, télégraphique, mal construite, lourde ou peu claire pour un rapport : l'ingénieur attend de vraies améliorations de rédaction, pas seulement des corrections de fautes. Une phrase reformulée reste naturelle, correcte et garde EXACTEMENT le même sens. Une phrase déjà correcte et claire ne change pas (fautes seules).
 - N'utilise JAMAIS de tiret cadratin ni demi-cadratin. Ne transforme jamais une affirmation en question.
 EXEMPLES :
 • « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ouàu moins de redressement de comble). » → « [1] Nous notons différents niveaux de sols, des modifications de charpente ainsi que des traces de surélévation (ou au moins de redressement de comble). » (phrase correcte : on corrige seulement la faute de frappe, rien d'autre).
@@ -416,7 +420,12 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
   const vigilanceAddedRef = useRef(false); // l'analyse photos a-t-elle déjà ajouté des « à vérifier » ?
   const [genProposal, setGenProposal] = useState(null); // texte généré (champ vide) à accepter
   const [rewrite, setRewrite] = useState(null);
-  const improveRunRef = useRef(0); // n° du dernier lancement de « Améliorer » (réponses tardives ignorées) // version réécrite : { original, segments } (passages activables)
+  const improveRunRef = useRef(0);
+  // Diagnostic (retour Thomas 24/11 : « j'applique, je ne vois pas les tournures changer ») :
+  // texte appliqué par la reformulation, vérifié quelques secondes après et à l'enregistrement.
+  const formRef = useRef(null);
+  formRef.current = form;
+  const lastRewriteRef = useRef(null); // { plain, at } // n° du dernier lancement de « Améliorer » (réponses tardives ignorées) // version réécrite : { original, segments } (passages activables)
   const gallRef = useRef();
   const camRef = useRef();
   const textareaRef = useRef(); // ref vers RichTextArea (expose focus() et getEditor())
@@ -744,6 +753,10 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   const handleSave = () => {
     purgeDrafts();
+    if (lastRewriteRef.current) {
+      const cur = htmlToPlain(form.commentaire || '').replace(/\s+/g, ' ').trim();
+      logEvent('rewrite.save', { item: form.id || null, kept: cur === lastRewriteRef.current.plain, sinceMs: Date.now() - lastRewriteRef.current.at });
+    }
     // DIAGNOSTIC image collée absente (bug Thomas) : trace ce qui est réellement enregistré.
     try {
       const c = form.commentaire || '';
@@ -1116,7 +1129,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               vigilanceAddedRef.current = true;
               // N'efface QUE « Rien à améliorer » : une vraie erreur de l'analyse du texte reste
               // visible (avant, elle disparaissait → « ça ne reformule plus », sans explication).
-              setImproveErr(e => (e === 'Rien à améliorer ✓' ? '' : e));
+              setImproveErr(e => (e === 'Rien à améliorer ✓' ? NO_REWRITE_MSG : e));
               setImproveList(prev => {
                 const seen = new Set((prev || []).filter(x => x.kind === 'ajout').map(x => x.texte));
                 return [...(prev || []), ...cards.filter(c => !seen.has(c.texte))];
@@ -1134,7 +1147,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         .then(dr => {
           const rewritten = parseNumbered(dr.content?.[0]?.text || '', plain);
           if (rewritten == null) return { err: 'format', finish: dr._finish || null };
-          return { segs: buildRewriteSegments(plain, rewritten) }; // segs null = rien à reformuler
+          const segs = buildRewriteSegments(plain, rewritten); // null = rien à reformuler
+          if (!segs) {
+            // Trace (retour Thomas 24/11 : « ça n'améliore plus ») : l'IA a-t-elle renvoyé le texte
+            // tel quel, ou des changements jugés purement typographiques ? (compteurs, sans texte)
+            const a = plain.split('\n'), b = rewritten.split('\n');
+            logEvent('rewrite.none', { engine, lines: a.filter(l => l.trim()).length, rawChanged: a.filter((l, k) => l !== b[k]).length, outLen: (dr.content?.[0]?.text || '').length, len: plain.length, finish: dr._finish || null });
+          }
+          return { segs };
         })
         .catch(e => ({ err: 'call', msg: String(e?.message || e).slice(0, 160) }));
       const rewriteP = askRewrite(1500).then(async r1 => {
@@ -1169,6 +1189,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       }
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       if (rwFailed) setImproveErr('Reformulation indisponible pour l\'instant : réessaie');
+      else if (!rwSegs && (unified.length || vigilanceAddedRef.current)) setImproveErr(NO_REWRITE_MSG);
       else if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
       return;
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
@@ -1189,6 +1210,16 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     setForm(f => ({ ...f, commentaire: out }));
     setRewrite(null);
     bumpSync();
+    // Le texte appliqué est-il toujours là ? (trace sans contenu : seulement oui / non + tailles)
+    const want = htmlToPlain(out).replace(/\s+/g, ' ').trim();
+    lastRewriteRef.current = { plain: want, at: Date.now() };
+    const check = (ms) => setTimeout(() => {
+      const cur = htmlToPlain(formRef.current?.commentaire || '').replace(/\s+/g, ' ').trim();
+      const ed = textareaRef.current?.getEditor?.();
+      const shown = ed ? (ed.innerText || '').replace(/\s+/g, ' ').trim() : null;
+      logEvent('rewrite.check', { item: form.id || null, ms, kept: cur === want, shown: shown == null ? null : shown === want, len: want.length, curLen: cur.length, live: !!liveRef.current });
+    }, ms);
+    check(3000); check(15000);
   };
   const toggleRewrite = (id) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' && s.id === id ? { ...s, active: !s.active } : s)) } : r));
   const setAllRewrite = (on) => setRewrite(r => (r ? { ...r, segments: r.segments.map(s => (s.type === 'fix' ? { ...s, active: on } : s)) } : r));

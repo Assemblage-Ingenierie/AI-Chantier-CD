@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset } from './liveText.js';
+import { createLiveSession, stripSrc, restoreSrc, srcMapOf, mapOffset, merge3 } from './liveText.js';
 
 // Bus « Realtime » en mémoire : diffusion à tous les autres appareils (comme le canal Supabase).
 function makeBus({ drop = () => false } = {}) {
@@ -326,5 +326,67 @@ describe('photos à plusieurs (liste partagée)', () => {
     expect(Object.keys(oA.state).sort()).toEqual(['a1', 'b1']);
     expect(Object.keys(oB.state).sort()).toEqual(['a1', 'b1']);
     expect(oA.state.a1.del).toBeUndefined();
+  });
+});
+
+describe('co-édition : rejeu STRICT de ma modification (bug 24/11 « AU nivedésordres »)', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+  const L1 = "AU niveau du bâtiment sur rue, seul le porche a pu être inspecté.";
+  const L2o = 'le revêtement nous empeche d\'inspecter. Nous subodorons que ce doublage peu caché des desordres au dessus.';
+  const L2n = 'le revêtement nous empêche d\'inspecter. Nous subodorons que ce doublage peut cacher des désordres au-dessus.';
+  const L3o = 'Sur la façade côté cour, un poitrail bois en plancher haut rez-de-chaussée au niveau du porche qui est endommagé.';
+  const L3n = 'En façade côté cour, un poitrail en bois soutenant le plancher haut du rez-de-chaussée, au droit du porche, présente des dégradations.';
+  const h = (a, b, c) => `<div>${a}</div><div>${b}</div><div>${c}</div>`;
+  it('le texte partagé a déjà bougé sous mon écran : jamais de morceaux recollés au mauvais endroit', () => {
+    const q = [];
+    const init = h(L1, L2o, L3o);
+    const mk = (tab, refuse) => {
+      const texts = { titre: '', commentaire: init };
+      const s = createLiveSession({
+        initial: { titre: '', commentaire: init },
+        send: (m) => { q.push({ ...m, tab }); return true; },
+        onText: (f) => { if (refuse.on) return { commentaire: true }; Object.assign(texts, f); return null; },
+      });
+      return { s, texts, refuse };
+    };
+    const A = mk('A', { on: false }), B = mk('B', { on: true });
+    const deliver = () => { while (q.length) { const m = q.shift(); (m.tab === 'A' ? B : A).s.receive(m); } };
+    A.s.hello(); B.s.hello(); deliver();
+    // Autre écran : la ligne 3 est déjà reformulée ; mon écran (B) ne l'a pas encore affichée.
+    A.s.local({ commentaire: h(L1, L2o, L3n) });
+    vi.advanceTimersByTime(80); deliver();
+    // J'applique la reformulation (lignes 2 et 3) depuis mon écran.
+    const mine = h(L1, L2n, L3n);
+    const r = B.s.local({ commentaire: mine });
+    const got = r.fix?.commentaire ?? mine;
+    expect(got).toBe(mine);
+    expect(B.s.text().commentaire).toBe(mine);
+    expect(got).not.toMatch(/du du|,,|drdroit|nived/);
+    vi.advanceTimersByTime(80); deliver();
+    expect(A.s.text().commentaire).toBe(B.s.text().commentaire);
+  });
+});
+
+describe('merge3 (fusion à trois exacte)', () => {
+  it('modifications à des endroits différents : les deux sont gardées', () => {
+    expect(merge3('Ligne un.\nLigne deux.', 'Ligne 1.\nLigne deux.', 'Ligne un.\nLigne deux !')).toBe('Ligne 1.\nLigne deux !');
+  });
+  it('insertions au même endroit : les deux restent, la mienne après', () => {
+    expect(merge3('Base.', 'Base. Stas', 'Base. Thomas.')).toBe('Base. Thomas. Stas');
+  });
+  it('même passage modifié des deux côtés : ma version remplace ce passage seulement', () => {
+    expect(merge3('Le mur est fissuré. B ok.', 'Le mur présente des fissures. B ok.', 'Le mur était fissuré. B ok !')).toBe('Le mur présente des fissures. B ok !');
+  });
+  it('jamais de morceau recollé sur une phrase qui « ressemble » (bug 24/11)', () => {
+    const base = 'seul le porche a pu être inspecté.\ncombustible. le revêtement nous empeche des desordres au dessus.';
+    const mine = 'seul le porche a pu être inspecté.\ncombustible. Le revêtement nous empêche des désordres au-dessus.';
+    const theirs = 'Seul le porche a pu être inspecté.\ncombustible. le revêtement nous empeche des desordres au dessus.';
+    expect(merge3(base, mine, theirs)).toBe('Seul le porche a pu être inspecté.\ncombustible. Le revêtement nous empêche des désordres au-dessus.');
+  });
+  it('cas triviaux', () => {
+    expect(merge3('a', 'a', 'b')).toBe('b');
+    expect(merge3('a', 'b', 'a')).toBe('b');
+    expect(merge3('', 'x', 'y')).toBe('yx');
   });
 });

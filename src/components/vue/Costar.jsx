@@ -819,6 +819,15 @@ const LABEL_HALF = 49;
 export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   const obsIdx = React.useMemo(() => reportObsIndex(projet), [projet]); // « Obs N » → observation (titre, lien)
   const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 900);
+  // Grand écran : Costar reste NET au-dessus du voile de la fenêtre « Modifier l'observation »
+  // (ouverte depuis un de ses liens) → son avis se lit pendant la correction (demande Thomas 24/11).
+  // Sur un écran plus étroit il passerait sur la fenêtre : il reste alors derrière (bandeau en haut).
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1500);
+  useEffect(() => {
+    const on = () => setWide(window.innerWidth >= 1500);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
   // Portrait de Thomas (« Fan-club officiel ») : sa photo arrive avec la présence en direct quand
   // il est connecté → gardée sur cet appareil pour la suite.
   // + « Sous ses yeux » : Thomas est-il connecté en ce moment (n'importe quel appareil) ?
@@ -983,7 +992,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   if (!isPc) return null;
 
   return (
-    <div style={{ position: fixed ? 'fixed' : 'absolute', right: 34, bottom: fixed ? 18 : 14, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
+    <div style={{ position: fixed ? 'fixed' : 'absolute', right: 34, bottom: fixed ? 18 : 14, zIndex: wide ? 41 : 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
       {open && (
         <div className="costar-bubble" role="dialog" aria-label="Avis de Costar"
           style={{ pointerEvents: 'auto', position: 'relative', width: 370, marginBottom: 14 }}>

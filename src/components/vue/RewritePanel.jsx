@@ -1,4 +1,28 @@
 import React from 'react';
+import { buildDiffSegments } from '../../lib/applyTextFixes.js';
+
+// Orthographe seule : on montre la phrase, et SEULEMENT le(s) mot(s) corrigé(s) mis en évidence,
+// l'ancien barré juste avant (retour Thomas 24/11 : « géneral → général » était invisible quand
+// toute la phrase était surlignée — « j'ai l'impression que rien ne change »).
+function OrthoDiff({ del, add }) {
+  let parts;
+  try { parts = buildDiffSegments(del, add); } catch { parts = null; }
+  if (!parts) return <span style={{ background:'#FFEDD5', color:'#9A3412', fontWeight:600, borderRadius:2, padding:'0 2px' }}>{add}</span>;
+  return (
+    <>
+      {parts.map((p, k) => (p.type === 'eq'
+        ? <span key={k}>{p.text}</span>
+        : (
+          <span key={k}>
+            {(/^\s/.test(p.add) || (!p.add.trim() && /^\s/.test(p.del))) ? ' ' : ''}
+            {p.del.trim() && <span style={{ color:'#B91C1C', textDecoration:'line-through', fontSize:'0.92em', marginRight:2 }}>{p.del.trim()}</span>}
+            {p.add.trim() && <span style={{ background:'#FED7AA', color:'#9A3412', fontWeight:700, borderRadius:2, padding:'0 2px' }}>{p.add.trim()}</span>}
+            {(/\s$/.test(p.add) || (!p.add.trim() && /\s$/.test(p.del))) ? ' ' : ''}
+          </span>
+        )))}
+    </>
+  );
+}
 
 // Volet « Version reformulée » de « Améliorer avec l'IA » (demande Thomas 23/11). Même lecture que
 // la correction d'orthographe : passage barré (rouge) → passage proposé (vert). Clic sur un passage
@@ -39,9 +63,9 @@ export default function RewritePanel({ segments, onToggle, onAll, onApply, onClo
               style={{ cursor:'pointer', borderRadius:3, padding:'1px 2px', border: active ? '1px solid transparent' : '1px dashed #D1D5DB', background: active ? 'transparent' : '#F9FAFB' }}>
               {active ? (
                 <>
-                  {/* Orthographe seule (orange) : la phrase corrigée suffit, l'original barré en petit. */}
+                  {/* Orthographe seule (orange) : seul le mot corrigé ressort, l'ancien barré juste avant. */}
                   {seg.kind === 'ortho' ? (
-                    <span style={{ background:'#FFEDD5', color:'#9A3412', fontWeight:600, borderRadius:2, padding:'0 2px' }}>{seg.add}</span>
+                    <OrthoDiff del={seg.del} add={seg.add} />
                   ) : (
                     <>
                       {seg.del && <span style={{ background:'#FEE2E2', color:'#991B1B', textDecoration:'line-through', borderRadius:2, padding:'0 2px', marginRight:1 }}>{seg.del}</span>}
