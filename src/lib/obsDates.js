@@ -88,8 +88,20 @@ export function itemMetaToRow(item) {
   if ([1, 2, 3].includes(item?.reportCols)) m.reportCols = item.reportCols;
   const big = cleanBig(item?.photoBig);
   if (big.length) m.photoBig = big;
+  // Par LIGNE (retour Thomas 24/11) : nb de photos de la ligne qui commence par cette photo, et
+  // largeur d'une photo « en grand » (toujours centrée).
+  const rc = cleanMap(item?.rowCols, v => [1, 2, 3].includes(v));
+  if (rc) m.rowCols = rc;
+  const bw = cleanMap(item?.photoBigW, v => BIG_WIDTHS.includes(v));
+  if (bw) m.photoBigW = bw;
   return Object.keys(m).length ? m : null;
 }
+export const BIG_WIDTHS = [0.5, 0.75, 1];
+const cleanMap = (o, ok) => {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  const e = Object.entries(o).filter(([k, v]) => typeof k === 'string' && k && ok(v)).slice(0, 60);
+  return e.length ? Object.fromEntries(e) : null;
+};
 const cleanBig = (v) => (Array.isArray(v) ? [...new Set(v.filter(x => typeof x === 'string' && x))].slice(0, 60) : []);
 export function itemMetaFromRow(meta) {
   let m = meta;
@@ -101,5 +113,9 @@ export function itemMetaFromRow(meta) {
   if ([1, 2, 3].includes(m.reportCols)) out.reportCols = m.reportCols;
   const big = cleanBig(m.photoBig);
   if (big.length) out.photoBig = big;
+  const rc = cleanMap(m.rowCols, v => [1, 2, 3].includes(v));
+  if (rc) out.rowCols = rc;
+  const bw = cleanMap(m.photoBigW, v => BIG_WIDTHS.includes(v));
+  if (bw) out.photoBigW = bw;
   return out;
 }
