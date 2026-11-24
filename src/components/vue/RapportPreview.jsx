@@ -762,7 +762,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       {/* Bandeau mode coupe */}
       {cutMode && (
         <div data-print="hide" style={{ background:'#E30513', color:'white', padding:'5px 14px', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-          <span style={{ flex:1 }}>✂ Cliquez sur les tirets pour couper — mode persistant</span>
+          <span style={{ flex:1 }}>✂ Clique sur les ciseaux entre deux blocs pour commencer une nouvelle page · un saut se retire avec « × Supprimer » entre les pages</span>
           <button onClick={() => onCutModeChange?.(false)}
             style={{ background:'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.4)', borderRadius:6, color:'white', fontSize:10, fontWeight:700, padding:'3px 10px', cursor:'pointer', flexShrink:0 }}>
             Terminer ✕
@@ -810,6 +810,18 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 <span style={{ fontSize:11, fontWeight:700, letterSpacing:0.3 }}>Paramètres</span>
               </button>
             )}
+            {/* Outil SAUT DE PAGE, bien visible dans la barre (demande Thomas 24/11 : « important mais
+                un peu caché » — il était au fond du panneau Paramètres). */}
+            {onCutModeChange && (
+              <button onClick={() => onCutModeChange(!cutMode)} data-print="hide"
+                title={cutMode ? 'Terminer (Échap)' : 'Forcer un saut de page : clique ensuite sur les ciseaux entre deux blocs'}
+                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, cursor:'pointer',
+                  border: cutMode ? 'none' : '1px solid rgba(255,255,255,0.25)',
+                  background: cutMode ? DA.red : 'rgba(255,255,255,0.10)', color:'white', fontSize:11, fontWeight:700 }}>
+                <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
+                {!narrow && <span>{cutMode ? 'Terminer' : 'Saut de page'}</span>}
+              </button>
+            )}
           </div>
           {/* Centre : navigation pages — sur la même ligne uniquement si l'écran est assez large */}
           {!narrow && pager}
@@ -844,6 +856,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
         </div>
         {/* Écran étroit : pager sur sa propre ligne, centré */}
         {narrow && pager}
+
       </div>
       ); })()}
 
