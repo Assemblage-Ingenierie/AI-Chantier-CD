@@ -13,6 +13,7 @@ import { CutZone, PageSepBanner } from './RapportPreview/controls.jsx';
 import { ItemBlock, ItemPlanBlock, PlanBlock, SymbolIcon, ViewpointIcon, ZoneHeader } from './RapportPreview/blocks.jsx';
 import { A4Card, AnnexImagePage, AnnexRecapPage, ConclusionPage, CoverOverflowPage, CoverPage, PlanFullPage, TableauRecapPage, computeParticipantChunks } from './RapportPreview/pages.jsx';
 import { logEvent } from '../../lib/logger.js';
+import { photoKey } from '../../lib/photoMerge.js';
 export { flattenBlocks } from './RapportPreview/layout.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
@@ -943,6 +944,15 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               photoRow={block.photoRow}
                               photoCols={block.photoCols}
                               isLastPhotoRow={block.isLastPhotoRow ?? true} chunkNext={!!block.chunkNext}
+                              isFirstPhotoRow={!!block.isFirstPhotoRow}
+                              // Réglages photos propres à l'observation (demande Thomas 24/11).
+                              onSetCols={onUpdateItem && !cutMode ? (n) => onUpdateItem(block.locId, block.item.id, { reportCols: n }) : null}
+                              onToggleBig={onUpdateItem && !cutMode ? (ph) => {
+                                const k = photoKey(ph);
+                                if (!k) return;
+                                const cur = block.item.photoBig || [];
+                                onUpdateItem(block.locId, block.item.id, { photoBig: cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k] });
+                              } : null}
                               cutMode={cutMode}
                               onParaCut={handleCut}
                               annotScale={annotScale}

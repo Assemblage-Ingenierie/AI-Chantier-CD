@@ -39,3 +39,18 @@ describe('Rangées mixtes (retour Thomas 23/11 : plus de trou sous un paysage se
     expect(packPhotoRows([P, L, L], 2)[0].kind).toBe('mosaic');
   });
 });
+
+import { packPhotoRowsBig } from './layout.js';
+describe('Photo « en grand » (demande Thomas 24/11)', () => {
+  it('la photo en grand prend sa rangée, les autres gardent ordre et mise en page', () => {
+    const rows = packPhotoRowsBig([false, false, false, false, false], [false, false, true, false, false], 2);
+    expect(rows).toEqual([
+      { kind: 'landscape', idxs: [0, 1] },
+      { kind: 'big', idxs: [2], portrait: false },
+      { kind: 'landscape', idxs: [3, 4] },
+    ]);
+  });
+  it('sans photo en grand : identique à packPhotoRows ; 3 par ligne pour une observation', () => {
+    expect(packPhotoRowsBig([false, false, false], [false, false, false], 3)).toEqual([{ kind: 'landscape', idxs: [0, 1, 2] }]);
+  });
+});

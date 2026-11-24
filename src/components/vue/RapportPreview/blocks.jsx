@@ -11,7 +11,8 @@ import { fetchPlanData, fetchPlanHdDataUrl } from '../../../lib/storage.js';
 import ObsDatesChip from '../../ui/ObsDatesChip.jsx';
 import { obsDatesInfo, zoneDatesInfo } from '../../../lib/obsDates.js';
 import { reportCrop } from '../../../lib/photoFrame.js';
-import { PLAN_PORTRAIT_MAXH, VXX_DEBUG, splitTextSegs } from './layout.js';
+import { PLAN_PORTRAIT_MAXH, VXX_DEBUG, BIG_PORTRAIT_W, splitTextSegs } from './layout.js';
+import { photoKey } from '../../../lib/photoMerge.js';
 import { ParaCutZone, PlanCutBar, PlanPageButton } from './controls.jsx';
 
 export function makeIconDataUrl(drawFn) {
@@ -367,7 +368,7 @@ export function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ 
 // Photo en cours de glisser dans le rapport (les rangées d'une observation sont des blocs séparés).
 let _photoDrag = null;
 
-export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null }) {
+export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null, isFirstPhotoRow = false, onSetCols = null, onToggleBig = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -386,6 +387,24 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   const showPhotos   = mode === 'photos' && photoRow && allPhotos.length > 0;
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
   const [dropIdx, setDropIdx] = React.useState(null); // photo survolée pendant un glisser (contour rouge)
+  // Réglages de mise en page propres à l'observation (demande Thomas 24/11), visibles au survol
+  // des photos dans l'aperçu (jamais imprimés) : photos par ligne (sur la 1re rangée) et « en grand ».
+  const [gridHover, setGridHover] = React.useState(false);
+  const gridHoverProps = onSetCols && isFirstPhotoRow ? { onMouseEnter: () => setGridHover(true), onMouseLeave: () => setGridHover(false) } : {};
+  const isBigPhoto = (ph) => (item.photoBig || []).includes(photoKey(ph));
+  const curCols = [1, 2, 3].includes(item.reportCols) ? item.reportCols : null;
+  const colsControl = onSetCols && isFirstPhotoRow && gridHover ? (
+    <div data-print="hide" style={{ position:'absolute', top:8, left:10, zIndex:3, display:'flex', alignItems:'center', gap:2, background:'white', border:`1px solid ${DA.border}`, borderRadius:7, padding:'2px 4px', boxShadow:'0 1px 6px rgba(0,0,0,0.18)' }}
+      title="Photos par ligne pour CETTE observation (re-cliquer pour revenir au réglage du rapport)">
+      <span style={{ fontSize:9, color:DA.gray, fontWeight:700, padding:'0 3px' }}>Photos / ligne</span>
+      {[1, 2, 3].map(n => (
+        <button key={n} onClick={(e) => { e.stopPropagation(); onSetCols(curCols === n ? null : n); }}
+          style={{ width:20, height:18, borderRadius:4, border:'none', cursor:'pointer', fontSize:10, fontWeight:800,
+            background: (curCols ?? photoCols ?? Math.min(ppl, 3)) === n ? (curCols ? DA.red : '#E5E7EB') : 'transparent',
+            color: (curCols ?? photoCols ?? Math.min(ppl, 3)) === n ? (curCols ? 'white' : DA.black) : DA.gray }}>{n}</button>
+      ))}
+    </div>
+  ) : null;
 
   // Cellule photo — absIdx = index ORIGINAL dans allPhotos (badges Vxx + recadrage corrects
   // même quand le packing réorganise l'ordre d'affichage). `ar` = aspect de la cellule ;
@@ -476,6 +495,17 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
             flat={vpPhotoOffset + absIdx} id={String(ph?._id ?? ph?.id ?? '∅').slice(0,6)}<br/>
             pid={vxxPhotoMap?.get(photoVpKey(ph)) ?? '—'} idx={vxxPhotoMap?.get(`${locId}_${vpPhotoOffset + absIdx}`) ?? '—'} ann={hasAnnotations ? 'O' : 'N'}
           </div>
+        )}
+        {/* « En grand » (demande Thomas 24/11) : la photo prend sa rangée, seule, pleine largeur. */}
+        {onToggleBig && photoKey(ph) && (
+          <button data-print="hide"
+            onClick={(e) => { e.stopPropagation(); onToggleBig(ph); }}
+            title={isBigPhoto(ph) ? 'Remettre cette photo à sa taille normale' : 'Mettre cette photo en grand (seule sur sa ligne)'}
+            style={{ position:'absolute', bottom:4, left:4, background: isBigPhoto(ph) ? DA.red : 'rgba(0,0,0,0.62)',
+              color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
+              fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1 }}>
+            {isBigPhoto(ph) ? '↙ Normal' : '⤢ En grand'}
+          </button>
         )}
         {onPhotoCropChange && (
           <button data-print="hide"
@@ -590,11 +620,26 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
         const fitBox = fitW < 1 ? { width:`${(fitW * 100).toFixed(2)}%`, margin:'0 auto' } : {};
         const LAND = fitAr < 1 ? `${(4 / 3 / fitAr).toFixed(4)} / 1` : '4 / 3';
         const PORT = fitAr < 1 ? `${(3 / 4 / fitAr).toFixed(4)} / 1` : '3 / 4';
+        if (photoRow.kind === 'big') {
+          // Photo « en grand » : seule, pleine largeur (portrait : largeur réduite, sinon plus
+          // haute qu'une page).
+          const i = photoRow.idxs[0];
+          const w = (photoRow.portrait ? BIG_PORTRAIT_W : 1) * fitW;
+          return (
+            <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
+              {colsControl}
+              <div style={{ width:`${(w * 100).toFixed(2)}%`, margin:'0 auto' }}>
+                {renderPhotoCell(i, photoRow.portrait ? PORT : LAND)}
+              </div>
+            </div>
+          );
+        }
         if (photoRow.kind === 'mixed') {
           // Rangée MIXTE : photos côte à côte à la MÊME hauteur, chacune dans son format
           // (largeurs proportionnelles aux ratios) → aucun trou, ordre conservé.
           return (
-            <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+            <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
+              {colsControl}
             <div style={{ display:'flex', gap:3, ...fitBox }}>
               {photoRow.idxs.map((i, k) => (
                 <div key={i} style={{ flex:`${photoRow.ars[k]} 1 0`, minWidth:0 }}>
@@ -610,7 +655,8 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
           // définit la hauteur de la rangée, et le portrait la remplit en absolu (inset:0) —
           // sans ça, le portrait à aspect figé restait plus court de la valeur du gap (3px).
           return (
-            <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+            <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
+              {colsControl}
             <div style={{ display:'flex', gap:3, alignItems:'stretch', ...fitBox, flexDirection: photoRow.side === 'right' ? 'row-reverse' : 'row' }}>
               {/* side 'right' : le portrait suit les paysages dans l'ordre → affiché à droite. */}
               <div style={{ flex:9, minWidth:0, position:'relative' }}>
@@ -629,7 +675,8 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
         const isPortraits = photoRow.kind === 'portraits';
         const colsN = isPortraits ? 2 : (photoCols ?? Math.min(ppl, 3));
         return (
-          <div data-photogrid="1" style={{ padding:'4px 6px 6px' }}>
+          <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
+              {colsControl}
             <div style={{ display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3, ...fitBox }}>
               {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? PORT : LAND))}
             </div>

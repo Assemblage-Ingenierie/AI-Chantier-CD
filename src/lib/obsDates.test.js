@@ -62,3 +62,13 @@ describe('zones datées', () => {
     expect(zoneDatesInfo({ nom: 'RDC' }, '2026-10-20')).toBeNull();
   });
 });
+
+import { itemMetaToRow as _toRow, itemMetaFromRow as _fromRow } from './obsDates.js';
+describe('Réglages photos du rapport enregistrés avec l\'observation (demande Thomas 24/11)', () => {
+  it('aller-retour serveur : photos par ligne + photos en grand', () => {
+    const row = _toRow({ reportCols: 3, photoBig: ['p1', 'p1', '', 'p2'] });
+    expect(row).toEqual({ reportCols: 3, photoBig: ['p1', 'p2'] });
+    expect(_fromRow(JSON.stringify(row))).toEqual({ reportCols: 3, photoBig: ['p1', 'p2'] });
+    expect(_toRow({ reportCols: 7, photoBig: [] })).toBeNull();
+  });
+});
