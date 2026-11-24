@@ -9,6 +9,10 @@ import { setPhotoAnnotPref, setPhotoPref } from '../../lib/photoPrefs.js';
 import { logEvent } from '../../lib/logger.js';
 import Costar from './Costar.jsx';
 import ReviewRequestModal from './ReviewRequestModal.jsx';
+import DriveSaveBar from './DriveSaveBar.jsx';
+import { saveReportToDrive, reportFileName } from '../../lib/driveReport.js';
+import { affaireCode } from '../../lib/reviewRequest.js';
+import { getAffaireNum } from '../../lib/driveUpload.js';
 import { zoneLabel } from '../../lib/zoneGroups.js';
 
 function ConclusionEditor({ value, align, onChange, onAlignChange }) {
@@ -651,6 +655,15 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
         onExportPdf={handleExport}
         onExportPhotos={handleExportPhotos}
         onAskReview={projet?.id ? () => setReviewOpen(true) : null}
+        footer={projet?.id ? <DriveSaveBar onSave={async (dest, onProgress) => {
+          // PDF identique à l'aperçu (même moteur que l'export groupé, budget ~5 Mo).
+          const blob = await previewRef.current?.toPdfBlob?.();
+          if (!blob) throw new Error('PDF impossible à préparer');
+          const fileName = reportFileName({ dateVisite: projet.dateVisite, code: affaireCode(projet.nom), visiteLabel: projet.visiteNom });
+          const r = await saveReportToDrive({ blob, projetNom: projet.nom, projetNum: getAffaireNum(projet.id), dest, fileName, onProgress });
+          logEvent('rapport.drive', { dest, size: blob.size, replaced: !!r.replaced });
+          return r;
+        }}/> : null}
         totalPhotos={totalPhotos}
         zipping={zipping}
         recapRows={recapRows}
