@@ -1113,6 +1113,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
               </div>
             )}
             <ItemModal
+              key={editingItem.item.id /* autre observation cliquée dans Costar → fenêtre rechargée */}
               item={editingItem.item}
               planBg={editingLoc?.planBg}
               planAnnotations={editingLoc?.planAnnotations}
