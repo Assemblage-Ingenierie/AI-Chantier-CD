@@ -62,6 +62,8 @@ export async function rotatePhoto(ph, deg, { projetNom, projetId, itemId } = {})
   // REMPLACE par la photo tournée (sans annotation, c'est la même image). La laisser à null
   // ne l'effacerait pas en base → l'ancienne version non tournée reviendrait au rechargement.
   const hadComposite = !!(ph.annotated || ph.annotated_storage_url);
+  // _annotReset : si aucune image annotée n'est connue ICI, la base peut quand même en avoir une
+  // (ancienne, non tournée) → la sauvegarde l'efface (storage.js), sinon elle revenait au rechargement.
   return { ...ph, data: out.dataUrl, name, storage_url: null, _uploadId: uploadId,
-    annotated: hadComposite ? out.dataUrl : null, annotated_storage_url: null, ...frame };
+    annotated: hadComposite ? out.dataUrl : null, annotated_storage_url: null, _annotReset: !hadComposite, ...frame };
 }

@@ -1426,7 +1426,11 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       ? (extractPhotoPath(ph.annotated_storage_url) ?? ph.annotated_storage_url)
       : null;
     if (!annotatedUrl && ph.annotated?.startsWith('data:')) {
-      annotatedUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, `${rowId}_annot`, ph.name, ph.annotated);
+      // Chemin DÉPENDANT DU CONTENU (incident 23/11, « la photo pivotée revient non tournée ») :
+      // avant, toujours `${rowId}_annot` → la nouvelle image (pivotée, ré-annotée) écrasait l'ancienne
+      // au MÊME chemin, servi depuis le cache (1 an) → l'ancienne image revenait partout. Même
+      // contenu → même chemin (ré-envoi idempotent) ; contenu différent → nouveau fichier.
+      annotatedUrl = await uploadPhotoToStorage(sb, projectSlug, itemId, `${rowId}_annot_${contentKey(ph.annotated)}`, ph.name, ph.annotated);
     } else if (!annotatedUrl && ph.annotated?.startsWith('http')) {
       annotatedUrl = extractPhotoPath(ph.annotated) ?? null;
     }
@@ -1439,8 +1443,10 @@ async function processPhotosForItem(sb, item, itemId, fetchedPhotosByItem, proje
       data: null,
       sort_order: pi,
     };
-    // Only include annotation columns if they exist in DB (migration may not be applied yet)
-    if (ph.annotations?.length || annotatedUrl) {
+    // Only include annotation columns if they exist in DB (migration may not be applied yet).
+    // _annotReset (photo pivotée sans image annotée connue ici) : on EFFACE l'ancienne image annotée
+    // en base, sinon elle (non tournée) revenait au rechargement à la place de la photo pivotée.
+    if (ph.annotations?.length || annotatedUrl || (ph._annotReset && !ph.annotations?.length)) {
       photoRow.annotations = ph.annotations?.length ? ph.annotations : null;
       photoRow.annotated_storage_url = annotatedUrl ?? null;
     }

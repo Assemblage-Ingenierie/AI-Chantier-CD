@@ -100,3 +100,31 @@ describe('photo en double dans l\'état local (incident 23/11, code 21000)', () 
     expect(photoRows()).toEqual(['dup']);
   });
 });
+
+describe('photo pivotée / ré-annotée : jamais l\'ancienne image (incident 23/11)', () => {
+  it('nouvelle image annotée → NOUVEAU fichier (pas d\'écrasement servi depuis le cache)', async () => {
+    db.T.aichantier_item_photos = [{ id: 'ph', item_id: 'a', name: 'x.webp', storage_url: 'P/a/ph.webp', annotated_storage_url: null, sort_order: 0 }];
+    const storage = await import('./storage.js');
+    const ps = await storage.loadData();
+    const base = { _id: 'ph', name: 'x.webp', storage_url: 'P/a/ph.webp', data: 'https://x/P/a/ph.webp' };
+    const v1 = withPhotos(ps, [{ ...base, annotated: 'data:image/webp;base64,' + 'A'.repeat(300) }]);
+    await storage.saveData(v1, null, new Set(['P']));
+    const p1 = db.rows('aichantier_item_photos').find(r => r.id === 'ph').annotated_storage_url;
+    const v2 = withPhotos(ps, [{ ...base, annotated: 'data:image/webp;base64,' + 'B'.repeat(300) }]);
+    await storage.saveData(v2, null, new Set(['P']));
+    const p2 = db.rows('aichantier_item_photos').find(r => r.id === 'ph').annotated_storage_url;
+    expect(p1).toBeTruthy();
+    expect(p2).toBeTruthy();
+    expect(p2).not.toBe(p1);
+  });
+  it('photo pivotée sans image annotée connue ici → l\'ancienne image annotée est effacée en base', async () => {
+    db.T.aichantier_item_photos = [{ id: 'ph', item_id: 'a', name: 'x.webp', storage_url: 'P/a/ph.webp', annotated_storage_url: 'P/a/ph_annot.webp', sort_order: 0 }];
+    const storage = await import('./storage.js');
+    const ps = await storage.loadData();
+    const rotated = withPhotos(ps, [{ _id: 'ph', name: 'x.webp', storage_url: 'P/a/ph2.webp', data: 'https://x/P/a/ph2.webp', annotated: null, _annotReset: true }]);
+    await storage.saveData(rotated, null, new Set(['P']));
+    const row = db.rows('aichantier_item_photos').find(r => r.id === 'ph');
+    expect(row.storage_url).toBe('P/a/ph2.webp');
+    expect(row.annotated_storage_url).toBeNull();
+  });
+});
