@@ -44,19 +44,37 @@ const DRAFT_KEY = (id) => `chantierai_draft_${id || 'new'}`;
 // du même projet. Retour Thomas 10/11 : « quand je crée une observation, ça met automatiquement
 // Dorure » — un vieux brouillon jamais effacé ressortait dans chaque nouvelle observation.
 const NEW_DRAFT_MAX_AGE_MS = 24 * 3600 * 1000;
-function readDraft(id, projetId) {
+// INCIDENT 24/11 (Thomas : « j'avais fait plein de modifs avec Améliorer avec l'IA, rien n'a été
+// gardé ») : le brouillon d'une observation EXISTANTE (fermée sans enregistrer) restait sur
+// l'appareil sans limite et était remis PAR-DESSUS le texte enregistré à la réouverture — même si
+// ce texte avait été amélioré entre-temps ailleurs (autre appareil, lien Costar…) → les
+// améliorations étaient écrasées par l'ancien brouillon. Désormais le brouillon retient le texte
+// enregistré au moment où il a été commencé (_base) : il n'est proposé QUE si ce texte n'a pas changé
+// depuis. Ancien format (sans _base) : seulement s'il a moins de 24 h. Identique au texte → rien.
+const EXISTING_DRAFT_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+export function readDraft(id, projetId, item = null) {
   try {
     const raw = localStorage.getItem(DRAFT_KEY(id));
     if (!raw) return null;
     const d = JSON.parse(raw);
+    const drop = () => { localStorage.removeItem(DRAFT_KEY(id)); return null; };
     if (!id) {
       // Ancien format (sans date) ou trop vieux / autre projet → abandonné et effacé.
       const stale = !d?._ts || Date.now() - d._ts > NEW_DRAFT_MAX_AGE_MS || (d._projet && projetId && d._projet !== projetId);
-      if (stale) { localStorage.removeItem(DRAFT_KEY(id)); return null; }
+      if (stale) return drop();
+    } else if (item) {
+      const cur = { titre: item.titre || '', commentaire: item.commentaire || '' };
+      if (d?._base) {
+        // Le texte enregistré a changé depuis le début de ce brouillon → brouillon périmé.
+        if ((d._base.titre || '') !== cur.titre || (d._base.commentaire || '') !== cur.commentaire) return drop();
+      } else if (!d?._ts || Date.now() - d._ts > NEW_DRAFT_MAX_AGE_MS) return drop();
+      if (d?._ts && Date.now() - d._ts > EXISTING_DRAFT_MAX_AGE_MS) return drop();
+      // Rien de différent du texte enregistré → pas de « brouillon restauré ».
+      if ((d.titre || '') === cur.titre && (d.commentaire || '') === cur.commentaire) return drop();
     }
     if (!(d?.titre || d?.commentaire)) return null;
     // eslint-disable-next-line no-unused-vars
-    const { _ts, _projet, ...fields } = d;
+    const { _ts, _projet, _base, ...fields } = d;
     return fields;
   } catch { return null; }
 }
@@ -322,11 +340,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
     const base = item
       ? { ...item, id: item.id || crypto.randomUUID(), photos: (item.photos||[]).filter(ph => ph.data), plans: item.plans || [], suivi: item.suivi||'rien', commentaireAlign: item.commentaireAlign||'left' }
       : { id: crypto.randomUUID(), titre:'', commentaire:'', urgence:'rien', photos:[], plans:[], suivi:'rien', commentaireAlign:'left' };
-    const draft = readDraft(item?.id, projetId);
+    const draft = readDraft(item?.id, projetId, item);
     if (draft) return { ...base, ...draft, photos: base.photos };
     return base;
   });
-  const [draftRestored, setDraftRestored] = useState(() => !!readDraft(item?.id, projetId));
+  const [draftRestored, setDraftRestored] = useState(() => !!readDraft(item?.id, projetId, item));
+  // Texte ENREGISTRÉ au moment où cette fenêtre a été ouverte : mémorisé avec le brouillon (_base)
+  // pour ne jamais le reproposer si l'observation a été modifiée ailleurs entre-temps.
+  const draftBaseRef = useRef({ titre: item?.titre || '', commentaire: item?.commentaire || '' });
   const draftJustMounted = useRef(true);
   const [showPlan, setShowPlan] = useState(false);
   const [annotatingPhotoIdx, setAnnotatingPhotoIdx] = useState(null);
@@ -686,7 +707,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
 
   useEffect(() => {
     const t = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi, commentaireAlign: form.commentaireAlign, _ts: Date.now(), _projet: projetId || null })); } catch {}
+      try { localStorage.setItem(DRAFT_KEY(item?.id), JSON.stringify({ titre: form.titre, commentaire: form.commentaire, urgence: form.urgence, suivi: form.suivi, commentaireAlign: form.commentaireAlign, _ts: Date.now(), _projet: projetId || null, _base: draftBaseRef.current })); } catch {}
     }, 600);
     return () => clearTimeout(t);
   }, [form.titre, form.commentaire, form.urgence, form.suivi]);
