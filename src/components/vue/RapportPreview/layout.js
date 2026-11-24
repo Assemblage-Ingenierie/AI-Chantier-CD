@@ -3,6 +3,7 @@
 import { isBrouillon } from '../../../lib/constants.js';
 import { stripMarkup } from '../../../lib/markup.jsx';
 import { childrenOf, effectiveParentId } from '../../../lib/zoneGroups.js';
+import { photoKey } from '../../../lib/photoMerge.js';
 
 // Mode diagnostic Vxx : activé via ?vxxdebug=1 dans l'URL. Affiche un panneau + étiquettes photo
 // pour comprendre pourquoi un badge ne se pose pas. Sans effet en utilisation normale.
@@ -24,6 +25,8 @@ export const CW  = PW - 2 * MX; // 522px largeur contenu
 export const PLAN_PORTRAIT_MAXH = PH - HDR - (MT - HDR) - (MB + FTR) - 96; // ≈ 678px
 
 // ── Hauteur disponible par page A4 (px preview) ────────────────────────────────────────────
+// Photo portrait « en grand » : largeur réduite (sinon plus haute qu'une page).
+export const BIG_PORTRAIT_W = 0.62;
 export const CHUNK_CHARS = 2500; // max chars per text chunk — only split genuinely long texts
 
 // Découpe un long commentaire en morceaux aux limites de paragraphes.
@@ -128,9 +131,10 @@ export function estimateBlockH(block, ppl) {
     // portraits/mosaïque ≈ hauteur d'un 3:4). Sinon estimation classique multi-rangées.
     const row = block.photoRow;
     if (row) {
-      const cols  = Math.min(ppl, 3);
+      const cols  = block.photoCols || Math.min(ppl, 3);
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-      h += (row.kind === 'mixed' ? (CW - 12 - 3 * (row.idxs.length - 1)) / row.ars.reduce((a, b) => a + b, 0)
+      h += (row.kind === 'big' ? (row.portrait ? (CW - 12) * BIG_PORTRAIT_W * (4 / 3) : (CW - 12) * 0.75)
+        : row.kind === 'mixed' ? (CW - 12 - 3 * (row.idxs.length - 1)) / row.ars.reduce((a, b) => a + b, 0)
         : row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
     } else {
       const nPh = Math.min((item.photos || []).filter(p => p.data || p.annotated).length, 6);
@@ -227,14 +231,18 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
       // Voir packPhotoRows ci-dessous. Chaque cellule garde l'index ORIGINAL de sa photo (badges Vxx
       // et recadrage intacts).
       if (photos.length > 0) {
-        const rows = packPhotoRows(photos.map(ph => ph?.orient === 'portrait'), cols);
+        // Réglages propres à l'observation (demande Thomas 24/11) : photos par ligne, photos en grand.
+        const itemCols = [1, 2, 3].includes(item.reportCols) ? item.reportCols : cols;
+        const big = new Set(item.photoBig || []);
+        const rows = packPhotoRowsBig(photos.map(ph => ph?.orient === 'portrait'), photos.map(ph => big.has(photoKey(ph))), itemCols);
         rows.forEach((row, k) => {
           blocks.push({
             type:'item',
             id: k === 0 ? `${item.id}_ph` : `${item.id}_ph${k}`,
             item, locId:loc.id, mode:'photos',
-            photoRow: row, photoCols: cols,
+            photoRow: row, photoCols: itemCols,
             isLastPhotoRow: k === rows.length - 1,
+            isFirstPhotoRow: k === 0,
             vpPhotoOffset: photoOffset, vxxPhotoMap,
           });
         });
@@ -431,6 +439,27 @@ export function stripFullPagePlans(locs, full) {
 // Rangée « mixte » : photos côte à côte à la MÊME hauteur, chacune dans son format (ars = ratios l/h).
 function mixed(idxs, isPortrait) {
   return { kind:'mixed', idxs, ars: idxs.map(k => (isPortrait[k] ? 3 / 4 : 4 / 3)) };
+}
+
+// Comme packPhotoRows, mais une photo « en grand » occupe SA rangée, seule et pleine largeur ;
+// les autres gardent l'ordre et la mise en page habituels avant et après elle.
+export function packPhotoRowsBig(isPortrait, isBig, cols) {
+  if (!isBig?.some(Boolean)) return packPhotoRows(isPortrait, cols);
+  const rows = [];
+  const shift = (r, o) => ({ ...r,
+    ...(r.idxs ? { idxs: r.idxs.map(i => i + o) } : {}),
+    ...(r.portraitIdx != null ? { portraitIdx: r.portraitIdx + o } : {}),
+    ...(r.stackIdxs ? { stackIdxs: r.stackIdxs.map(i => i + o) } : {}) });
+  let start = 0;
+  const flushSeg = (end) => { if (end > start) for (const r of packPhotoRows(isPortrait.slice(start, end), cols)) rows.push(shift(r, start)); };
+  isPortrait.forEach((port, i) => {
+    if (!isBig[i]) return;
+    flushSeg(i);
+    rows.push({ kind:'big', idxs:[i], portrait: !!port });
+    start = i + 1;
+  });
+  flushSeg(isPortrait.length);
+  return rows;
 }
 
 export function packPhotoRows(isPortrait, cols) {

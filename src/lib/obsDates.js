@@ -83,8 +83,14 @@ export function itemMetaToRow(item) {
   const m = {};
   if (isIsoDate(item?.dateOuverture)) m.dateOuverture = item.dateOuverture;
   if (isIsoDate(item?.dateCloture)) m.dateCloture = item.dateCloture;
+  // Mise en page des photos DANS LE RAPPORT, propre à l'observation (demande Thomas 24/11) :
+  // nombre de photos par ligne (sinon réglage du rapport) et photos « en grand ».
+  if ([1, 2, 3].includes(item?.reportCols)) m.reportCols = item.reportCols;
+  const big = cleanBig(item?.photoBig);
+  if (big.length) m.photoBig = big;
   return Object.keys(m).length ? m : null;
 }
+const cleanBig = (v) => (Array.isArray(v) ? [...new Set(v.filter(x => typeof x === 'string' && x))].slice(0, 60) : []);
 export function itemMetaFromRow(meta) {
   let m = meta;
   if (typeof m === 'string') { try { m = JSON.parse(m); } catch { m = null; } }
@@ -92,5 +98,8 @@ export function itemMetaFromRow(meta) {
   const out = {};
   if (isIsoDate(m.dateOuverture)) out.dateOuverture = m.dateOuverture;
   if (isIsoDate(m.dateCloture)) out.dateCloture = m.dateCloture;
+  if ([1, 2, 3].includes(m.reportCols)) out.reportCols = m.reportCols;
+  const big = cleanBig(m.photoBig);
+  if (big.length) out.photoBig = big;
   return out;
 }
