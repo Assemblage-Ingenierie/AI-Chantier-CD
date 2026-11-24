@@ -70,6 +70,10 @@ function readDraft(id, projetId) {
 // Nouvelle version : matching TOLÉRANT aux frontières de balises via le DOM. On concatène les
 // nœuds texte, on compare EN IGNORANT les espaces (les sauts de ligne de l'extrait viennent des
 // balises, absents des nœuds ; &nbsp; varie), puis on remplace la plage exacte sur les nœuds.
+// Affiché quand l'IA ne propose aucune reformulation (seulement des points « à vérifier ») —
+// avant, rien ne le disait (retour Thomas 24/11 : « ça n'améliore plus ? »).
+const NO_REWRITE_MSG = 'Aucune reformulation proposée : texte jugé déjà clair ✓';
+
 function patchHtmlText(html, del, add) {
   if (!del) return html;
   let doc;
@@ -1104,7 +1108,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
               vigilanceAddedRef.current = true;
               // N'efface QUE « Rien à améliorer » : une vraie erreur de l'analyse du texte reste
               // visible (avant, elle disparaissait → « ça ne reformule plus », sans explication).
-              setImproveErr(e => (e === 'Rien à améliorer ✓' ? '' : e));
+              setImproveErr(e => (e === 'Rien à améliorer ✓' ? NO_REWRITE_MSG : e));
               setImproveList(prev => {
                 const seen = new Set((prev || []).filter(x => x.kind === 'ajout').map(x => x.texte));
                 return [...(prev || []), ...cards.filter(c => !seen.has(c.texte))];
@@ -1122,7 +1126,14 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
         .then(dr => {
           const rewritten = parseNumbered(dr.content?.[0]?.text || '', plain);
           if (rewritten == null) return { err: 'format', finish: dr._finish || null };
-          return { segs: buildRewriteSegments(plain, rewritten) }; // segs null = rien à reformuler
+          const segs = buildRewriteSegments(plain, rewritten); // null = rien à reformuler
+          if (!segs) {
+            // Trace (retour Thomas 24/11 : « ça n'améliore plus ») : l'IA a-t-elle renvoyé le texte
+            // tel quel, ou des changements jugés purement typographiques ? (compteurs, sans texte)
+            const a = plain.split('\n'), b = rewritten.split('\n');
+            logEvent('rewrite.none', { engine, lines: a.filter(l => l.trim()).length, rawChanged: a.filter((l, k) => l !== b[k]).length, outLen: (dr.content?.[0]?.text || '').length, len: plain.length, finish: dr._finish || null });
+          }
+          return { segs };
         })
         .catch(e => ({ err: 'call', msg: String(e?.message || e).slice(0, 160) }));
       const rewriteP = askRewrite(1500).then(async r1 => {
@@ -1157,6 +1168,7 @@ export default function ItemModal({ item, zones = [], zoneId = null, planBg, pla
       }
       if (unified.length) setImproveList(prev => [...unified, ...(prev || [])]);
       if (rwFailed) setImproveErr('Reformulation indisponible pour l\'instant : réessaie');
+      else if (!rwSegs && (unified.length || vigilanceAddedRef.current)) setImproveErr(NO_REWRITE_MSG);
       else if (!unified.length && !hasOrtho && !rwSegs && !vigilanceAddedRef.current) setImproveErr('Rien à améliorer ✓');
       return;
     } catch (e) { setImproveErr(e.message || 'Erreur IA'); }
