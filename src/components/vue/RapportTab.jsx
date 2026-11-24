@@ -559,16 +559,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
           </div>
 
 
-          {/* Sauts de page */}
-          <button
-            onClick={() => setCutMode(v => !v)}
-            style={{ padding:'8px 0', borderRadius:8, fontSize:11, fontWeight:700,
-              border: cutMode ? `1.5px solid ${DA.red}` : `1px solid ${DA.border}`,
-              background: cutMode ? '#FFF0F0' : 'white',
-              color: cutMode ? DA.red : DA.black,
-              display:'flex', alignItems:'center', justifyContent:'center', gap:6, cursor:'pointer' }}>
-            ✂ {cutMode ? "Mode coupe actif" : 'Saut de page'}
-          </button>
+          {/* Sauts de page : bouton déplacé dans la barre de l'aperçu, bien visible (demande Thomas 24/11). */}
 
           {/* Tableau récapitulatif */}
           <div>
