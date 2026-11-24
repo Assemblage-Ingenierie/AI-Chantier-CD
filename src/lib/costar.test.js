@@ -228,3 +228,21 @@ describe('Costar — note stable après correction (retour Thomas 24/11 : 7 → 
     expect(stabilizeReview({ note: 7 }, { note: 1, pertes: [] }, { words: 10 }).note).toBe(1);
   });
 });
+
+import { remarkDone, estimateAfterFixes } from './costar.js';
+describe('Costar — remarque barrée et note estimée sans relance (retour Thomas 24/11)', () => {
+  const idx = { 1: 'a', 2: 'b' };
+  const fpThen = { a: 'x', b: 'y' };
+  it('barrée seulement si une observation citée a changé depuis l\'avis', () => {
+    expect(remarkDone('Obs 1 : rien à prévoir ?', idx, fpThen, { a: 'x2', b: 'y' })).toBe(true);
+    expect(remarkDone('Obs 2 : rien à prévoir ?', idx, fpThen, { a: 'x2', b: 'y' })).toBe(false);
+    expect(remarkDone('Texte sans référence', idx, fpThen, { a: 'x2', b: 'y' })).toBe(false);
+  });
+  it('seuls les points retirés corrigés font monter la note estimée (plafond respecté)', () => {
+    const review = { note: 6, plafond: null, pertes: [{ points: 1, raison: 'Obs 1 : x' }, { points: 2, raison: 'Obs 2 : y' }] };
+    const done = (t) => remarkDone(t, idx, fpThen, { a: 'x2', b: 'y' });
+    expect(estimateAfterFixes(review, done)).toBe(7);
+    expect(estimateAfterFixes({ ...review, plafond: { value: 6 } }, done)).toBeNull();
+    expect(estimateAfterFixes(review, () => false)).toBeNull();
+  });
+});

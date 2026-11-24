@@ -30,4 +30,23 @@ describe('Costar — dernier avis gardé, relecture seulement sur demande (retou
     expect(msg).not.toContain('Ton avis précédent'); // pas d'empreinte enregistrée → pas d'ancrage
     await act(async () => { root.unmount(); });
   });
+  it('observation modifiée après l\'avis : remarque barrée « ✓ corrigé » et note estimée, sans relance', async () => {
+    const { obsFingerprints } = await import('../../lib/costar.js');
+    localStorage.setItem('chantierai_costar_last_v1', JSON.stringify({ 'p1|2026-11-20|V1': {
+      review: { note: 6, pertes: [{ type: 'action', points: 1, raison: 'Obs 1 : aucune suite', citation: 'Revêtement' }], bien: [], manques: [], ameliorer: ['Obs 1 : tu pourrais préciser'], coince: [], verdict: 'Ok' },
+      key: 'k', t: 1, fp: obsFingerprints(projet), idx: { 1: 'a' } } }));
+    const div = document.createElement('div'); document.body.appendChild(div);
+    const root = createRoot(div);
+    await act(async () => { root.render(<Costar projet={projet} fixed/>); });
+    // Bulle rouverte d'elle-même si elle était ouverte avant (remontage) ; sinon clic sur Costar.
+    if (!div.textContent.includes('/10')) await act(async () => { [...div.querySelectorAll('button')].pop().click(); });
+    expect(div.textContent).toContain('6/10');
+    expect(div.textContent).not.toContain('✓ corrigé');
+    const modifie = { ...projet, localisations: [{ ...projet.localisations[0], items: [{ id: 'a', titre: 'Porche', commentaire: 'Revêtement à déposer : prévoir la dépose.' }] }] };
+    await act(async () => { root.render(<Costar projet={modifie} fixed/>); });
+    expect(div.textContent).toContain('✓ corrigé');
+    expect(div.textContent).toContain('→ ~7/10');
+    expect(callAIProxy).not.toHaveBeenCalled();
+    await act(async () => { root.unmount(); });
+  });
 });

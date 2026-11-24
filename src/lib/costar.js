@@ -450,3 +450,27 @@ export function stabilizeReview(prev, next, { changedText = '', words } = {}) {
   if (note <= next.note) return next;
   return { ...next, note, plafond: next.plafond && next.plafond.value < note ? null : next.plafond, stabilized: { prev: prev.note, raw: next.note } };
 }
+
+// ── REMARQUES TRAITÉES sans relancer Costar (retour Thomas 24/11 : « une fois cliqué et modifié,
+// il faudrait qu'il barre automatiquement la remarque, et même que la note bouge — ou pas si
+// c'était mineur ») ──────────────────────────────────────────────────────────────────────────
+// Une remarque est « traitée » dès qu'une observation qu'elle cite (« Obs N », numérotation AU
+// MOMENT de l'avis) a été modifiée depuis. Seuls les points RETIRÉS font bouger la note estimée ;
+// manques et suggestions ne changent rien (« mineur »). Estimation affichée comme telle : seule
+// une relecture la confirme.
+export function remarkDone(text, idxThen, fpThen, fpNow) {
+  if (!text || !idxThen || !fpThen || !fpNow) return false;
+  return splitObsRefs(text).some(p => {
+    if (typeof p === 'string') return false;
+    const id = idxThen[p.obs];
+    return !!id && fpThen[id] != null && fpNow[id] !== fpThen[id];
+  });
+}
+export function estimateAfterFixes(review, isDone) {
+  if (!review || !Array.isArray(review.pertes)) return null;
+  const back = review.pertes.reduce((t, x) => t + (isDone(x.raison) ? x.points : 0), 0);
+  if (!back) return null;
+  const cap = review.plafond?.value ?? 10;
+  const est = Math.min(10, cap, review.note + back);
+  return est > review.note ? est : null;
+}
