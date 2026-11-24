@@ -136,6 +136,11 @@ describe('Costar — économie de tokens', () => {
     expect(COSTAR_SYSTEM).toMatch(/« toute la zone »/);
     expect(COSTAR_SYSTEM).not.toMatch(/dimension, localisation, cause probable/);
   });
+  it('préconisation donnée ailleurs dans le rapport = pas de retrait ; « flou » expliqué (retour Thomas 24/11)', () => {
+    expect(COSTAR_SYSTEM).toMatch(/NULLE PART dans le rapport/);
+    expect(COSTAR_SYSTEM).toMatch(/travaux à prévoir/);
+    expect(COSTAR_SYSTEM).toMatch(/deux lectures possibles/);
+  });
   it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
     expect(COSTAR_SYSTEM.length).toBeLessThan(6500); // v1 : 7 547 caractères
     for (const k of ['-2', '"type"', 'EST une préconisation', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
@@ -192,5 +197,34 @@ describe('Costar : « Obs N » → titre + lien (demande Thomas 24/11)', () => {
   it('repère « Obs 7 », « obs. 3 », « Obs n° 2 »', () => {
     expect(splitObsRefs('Obs 7 : flou, voir aussi obs. 3 et Obs n° 2.').filter(p => typeof p === 'object').map(p => p.obs)).toEqual([7, 3, 2]);
     expect(splitObsRefs('rien ici')).toEqual(['rien ici']);
+  });
+});
+
+import { obsFingerprints, changedObs, stabilizeReview } from './costar.js';
+describe('Costar — note stable après correction (retour Thomas 24/11 : 7 → 4 → 6)', () => {
+  const projet = (t2) => ({ localisations: [{ id: 'l1', nom: 'RDC', items: [
+    { id: 'a', titre: 'Porche', commentaire: 'Revêtement combustible à déposer.' },
+    { id: 'b', titre: 'Façade', commentaire: t2 },
+  ] }] });
+  it('repère les observations modifiées', () => {
+    const fp = obsFingerprints(projet('Fissure horizontale.'));
+    const c = changedObs(projet('Fissure horizontale, à surveiller.'), fp);
+    expect(c.nums).toEqual([2]);
+    expect(c.text).toContain('à surveiller');
+  });
+  it('baisse sans lien avec ce qui a changé → note précédente conservée', () => {
+    const next = { note: 4, pertes: [{ type: 'flou', points: 1, raison: 'Obs 1', citation: 'Revêtement combustible à déposer' }], plafond: { value: 4, raison: 'x' } };
+    const r = stabilizeReview({ note: 7 }, next, { changedText: 'Façade\nFissure horizontale, à surveiller.', words: 200 });
+    expect(r.note).toBe(7);
+    expect(r.plafond).toBeNull();
+    expect(r.stabilized).toEqual({ prev: 7, raw: 4 });
+  });
+  it('baisse justifiée par un passage MODIFIÉ → acceptée', () => {
+    const next = { note: 5, pertes: [{ type: 'erreur', points: 2, raison: 'Obs 2', citation: 'à surveiller' }] };
+    expect(stabilizeReview({ note: 7 }, next, { changedText: 'Fissure horizontale, à surveiller.', words: 200 }).note).toBe(5);
+  });
+  it('hausse : inchangée ; rapport vidé : le plafond de volume s\'applique quand même', () => {
+    expect(stabilizeReview({ note: 6 }, { note: 8, pertes: [] }, { words: 200 }).note).toBe(8);
+    expect(stabilizeReview({ note: 7 }, { note: 1, pertes: [] }, { words: 10 }).note).toBe(1);
   });
 });
