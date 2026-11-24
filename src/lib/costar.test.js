@@ -130,6 +130,12 @@ describe('Costar — économie de tokens', () => {
     expect(costarCacheKey('rapport A ', 'mistral')).not.toBe(a);
     expect(costarCacheKey('rapport A', 'gemini-flash')).not.toBe(a);
   });
+  it('ne demande ni localisation (plans de repérage) ni estimation chiffrée (retour Thomas 24/11)', () => {
+    expect(COSTAR_SYSTEM).toMatch(/plans de repérage/);
+    expect(COSTAR_SYSTEM).toMatch(/estimation \(coût, charge, quantité, surface, linéaire\)/);
+    expect(COSTAR_SYSTEM).toMatch(/« toute la zone »/);
+    expect(COSTAR_SYSTEM).not.toMatch(/dimension, localisation, cause probable/);
+  });
   it('consigne compacte mais complète (barème, interdits, preuve, format JSON)', () => {
     expect(COSTAR_SYSTEM.length).toBeLessThan(6500); // v1 : 7 547 caractères
     for (const k of ['-2', '"type"', 'EST une préconisation', 'INTERDIT', 'MOT POUR MOT', '"points_perdus"', '"reecriture"', '"blague"']) expect(COSTAR_SYSTEM).toContain(k);
