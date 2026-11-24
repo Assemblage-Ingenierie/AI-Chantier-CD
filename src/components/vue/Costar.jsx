@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DA } from '../../lib/constants.js';
 import { callAIProxy, getAIProvider } from '../../lib/aiProxy.js';
-import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey, reportObsIndex, splitObsRefs } from '../../lib/costar.js';
+import { buildReportDigest, COSTAR_SYSTEM, parseCostarReply, scoreLabel, EMPTY_REVIEW, COSTAR_LOADING, COSTAR_ERRORS, COSTAR_HELLO, pick, scoreQuip, costarErrorHint, ENGINE_NAMES, costarCacheKey, reportObsIndex, splitObsRefs, obsFingerprints, changedObs, stabilizeReview } from '../../lib/costar.js';
 import { listDeletedItems } from '../../lib/recoveryBin.js';
 import { MISSIONS, COSMETICS, CATEGORIES, CHANGE_EVENT, applyReview, toggleEquip, unlockedIds, loadCostarState, saveCostarState, isGameMode, getFanAvatar, setFanAvatar, isFanName, isFanParticipant, fanPunchline } from '../../lib/costarRewards.js';
 import { subscribePresence, getMyName } from '../../lib/presence.js';
@@ -29,6 +29,27 @@ function putCachedReview(key, review, engine) {
     const keep = Object.entries(m).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, REVIEW_CACHE_MAX);
     localStorage.setItem(REVIEW_CACHE_KEY, JSON.stringify(Object.fromEntries(keep)));
   } catch { /* mode privé / quota : pas de mémoire, sans conséquence */ }
+}
+
+// DERNIER AVIS PAR RAPPORT (retour Thomas 24/11 : « j'ai fait une seule modif, je dois relancer
+// Costar sans avoir pu prendre en compte les autres remarques ») : l'avis reste affiché après une
+// modification (même si la fenêtre de Costar a été démontée par l'ouverture d'une observation) ;
+// la relecture ne part QUE sur « Relire ». Sert aussi de référence pour stabiliser la note.
+const LAST_KEY = 'chantierai_costar_last_v1';
+const _openReports = new Set(); // rapports dont la bulle était ouverte (réouverte au remontage)
+const reportKeyOf = (p) => (p?.id ? `${p.id}|${p.dateVisite || ''}|${p.visiteNom || ''}` : null);
+function readLast(rk) {
+  if (!rk) return null;
+  try { const m = JSON.parse(localStorage.getItem(LAST_KEY) || '{}'); return m?.[rk]?.review ? m[rk] : null; } catch { return null; }
+}
+function writeLast(rk, entry) {
+  if (!rk) return;
+  try {
+    const m = JSON.parse(localStorage.getItem(LAST_KEY) || '{}') || {};
+    m[rk] = { ...entry, t: Date.now() };
+    const keep = Object.entries(m).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, REVIEW_CACHE_MAX);
+    localStorage.setItem(LAST_KEY, JSON.stringify(Object.fromEntries(keep)));
+  } catch { /* mode privé / quota : sans conséquence */ }
 }
 
 // Relu à chaque changement (progression, tenue, game mode).
@@ -846,13 +867,16 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   const [hello] = useState(() => pick(COSTAR_HELLO));
   const [loadMsg, setLoadMsg] = useState(COSTAR_LOADING[0]);
   const [errMsg, setErrMsg] = useState(COSTAR_ERRORS[0]);
-  const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle | loading | done | error
-  const [review, setReview] = useState(null);
-  const [quip, setQuip] = useState('');
-  const [engine, setEngine] = useState(null); // { provider, from, why } : moteur qui a VRAIMENT répondu
+  const rk = reportKeyOf(projet);
+  const [last0] = useState(() => readLast(rk));
+  const [open, setOpenRaw] = useState(() => !!(rk && _openReports.has(rk) && last0));
+  const setOpen = (v) => { setOpenRaw(v); if (rk) { if (v) _openReports.add(rk); else _openReports.delete(rk); } };
+  const [status, setStatus] = useState(last0 ? 'done' : 'idle'); // idle | loading | done | error
+  const [review, setReview] = useState(last0?.review || null);
+  const [quip, setQuip] = useState(() => (last0?.review ? scoreQuip(last0.review.note) : ''));
+  const [engine, setEngine] = useState(last0?.engine || null); // { provider, from, why } : moteur qui a VRAIMENT répondu
   const [fromCache, setFromCache] = useState(false); // avis repris de la mémoire (rapport inchangé)
-  const [reviewedKey, setReviewedKey] = useState(null); // empreinte du rapport tel qu'il a été relu
+  const [reviewedKey, setReviewedKey] = useState(last0?.key || null); // empreinte du rapport tel qu'il a été relu
   const [error, setError] = useState(null);
   const [wiggle, setWiggle] = useState(false);
   // Vestiaire (engrenage à côté de « Ask Costar ») + missions accomplies à la dernière relecture.
@@ -864,6 +888,21 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
   projetRef.current = projet;
 
   useEffect(() => () => abortRef.current?.abort(), []);
+  // Autre rapport / autre visite affiché dans le même Costar → on reprend SON dernier avis.
+  const rkRef = useRef(rk);
+  useEffect(() => {
+    if (rkRef.current === rk) return;
+    rkRef.current = rk;
+    abortRef.current?.abort();
+    const l = readLast(rk);
+    setReview(l?.review || null);
+    setReviewedKey(l?.key || null);
+    setEngine(l?.engine || null);
+    setQuip(l?.review ? scoreQuip(l.review.note) : '');
+    setFromCache(false);
+    setUnlocks([]);
+    setStatus(l ? 'done' : 'idle');
+  }, [rk]);
   // Pendant la lecture : 3 petites phrases AU PLUS, espacées de 7 s (retour Thomas : « il en
   // dit 15, deux ou trois suffisent »). Après la 3e, il se tait jusqu'à la réponse.
   useEffect(() => {
@@ -889,9 +928,10 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setError(null);
-    setReview(null);
-    setEngine(null);
     setFromCache(false);
+    // L'avis affiché RESTE visible pendant la relecture (grisé) : ses remarques ne disparaissent
+    // pas avant que le nouvel avis soit là.
+    const prevEntry = readLast(reportKeyOf(projetRef.current));
 
     const digest = buildReportDigest(projetRef.current);
     if (digest.observations === 0) { setReview(EMPTY_REVIEW); setQuip(scoreQuip(0)); setStatus('done'); return; }
@@ -900,6 +940,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
     const cacheKey = costarCacheKey(digest.text, getAIProvider());
     const hit = getCachedReview(cacheKey);
     if (hit) {
+      writeLast(reportKeyOf(projetRef.current), { review: hit.review, key: cacheKey, engine: hit.engine || null, fp: obsFingerprints(projetRef.current) });
       setReview(hit.review);
       setQuip(scoreQuip(hit.review.note));
       setEngine(hit.engine || null);
@@ -909,6 +950,12 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
       return;
     }
 
+    // Relecture après modification : Costar sait ce qui a changé et quelle note il avait donnée
+    // (même grille ; seules les observations modifiées peuvent faire bouger son jugement).
+    const ch = prevEntry?.fp ? changedObs(projetRef.current, prevEntry.fp) : null;
+    const anchor = prevEntry?.review && ch
+      ? `\nTon avis précédent sur ce rapport : ${prevEntry.review.note}/10. Depuis, j'ai modifié ${ch.nums.length ? ch.nums.map(n => `Obs ${n}`).join(', ') : 'presque rien'}. Garde EXACTEMENT la même exigence : ne retire pas de nouveaux points sur des passages qui n'ont pas changé ; ce qui a été corrigé ne doit plus être reproché.`
+      : '';
     setStatus('loading');
     try {
       const d = await callAIProxy({
@@ -923,7 +970,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
         temperature: 0.1, // même rapport → même note (pas de loterie d'un essai à l'autre)
         json: true,
         system: COSTAR_SYSTEM,
-        messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.\n\n${digest.text}` }],
+        messages: [{ role: 'user', content: `Voici les textes de mon rapport (${digest.observations} observations, ${digest.zones} zones). Lis tout, puis juge le fond.${anchor}\n\n${digest.text}` }],
         _waitOk: true,
         _throttleMs: 4000, // avant 15 s d'attente forcée entre deux relectures (le cache évite les doublons)
         _signal: ctrl.signal,
@@ -932,13 +979,16 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
       const raw = (d.content || []).map(c => c?.text || '').join('');
       // Points sans citation exacte = annulés ; note plafonnée par la richesse du rapport (IA) et par
       // son volume écrit (app) → plus de bonne note « gratuite » pour un rapport mince.
-      const parsed = parseCostarReply(raw, digest.text, { words: digest.words });
-      if (!parsed) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
+      const parsed0 = parseCostarReply(raw, digest.text, { words: digest.words });
+      if (!parsed0) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
+      // Note stable : une baisse n'est acceptée que si elle vient d'un passage MODIFIÉ.
+      const parsed = ch ? stabilizeReview(prevEntry.review, parsed0, { changedText: ch.text, words: digest.words }) : parsed0;
       setReview(parsed);
       setQuip(scoreQuip(parsed.note));
       const eng = d._provider ? { provider: d._provider, from: d._fallbackFrom || null, why: d._fallbackWhy || null } : null;
       setEngine(eng);
       putCachedReview(cacheKey, parsed, eng);
+      writeLast(reportKeyOf(projetRef.current), { review: parsed, key: cacheKey, engine: eng, fp: obsFingerprints(projetRef.current) });
       setReviewedKey(cacheKey);
       setStatus('done');
       // Missions du vestiaire : best-effort, ne doit JAMAIS gêner l'affichage de l'avis.
@@ -1005,6 +1055,14 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
             <div style={{ fontSize: 11, fontWeight: 800, color: DA.grayL, textTransform: 'uppercase', letterSpacing: 0.6 }}>Costar</div>
             <div style={{ fontSize: 10.5, fontWeight: 600, color: DA.grayL, marginTop: 1 }}>Ingénieur Senior chez Assemblage Ingénierie</div>
           </div>
+          {/* Relance MANUELLE toujours à portée (retour Thomas 24/11) : l'avis ne se relance jamais
+              tout seul après une modification ; on corrige plusieurs remarques, puis « Relire ». */}
+          {status === 'done' && review && (
+            <button onClick={ask} title="Relancer la relecture du rapport"
+              style={{ position: 'absolute', top: 8, right: 40, height: 26, borderRadius: 13, border: `1px solid ${reportChanged ? '#F97316' : DA.border}`, background: reportChanged ? '#F97316' : 'white', color: reportChanged ? 'white' : DA.gray, cursor: 'pointer', fontSize: 11.5, fontWeight: 800, padding: '0 10px', lineHeight: 1 }}>
+              ↻ Relire
+            </button>
+          )}
 
           {loading && (
             <div style={{ fontSize: 13, color: DA.black, lineHeight: 1.5, paddingRight: 22 }}>
@@ -1021,7 +1079,8 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
             </div>
           )}
 
-          {status === 'done' && review && (
+          {(status === 'done' || loading) && review && (
+            <div style={loading ? { opacity: 0.45, pointerEvents: 'none', marginTop: 8 } : undefined}>
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingRight: 22 }}>
                 <div style={{ fontSize: 26, fontWeight: 900, color: sc.color, lineHeight: 1, flexShrink: 0 }}>
@@ -1030,6 +1089,11 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: sc.color, background: sc.bg, borderRadius: 20, padding: '4px 10px', whiteSpace: 'nowrap' }}>{sc.label}</span>
               </div>
               {quip && <div style={{ marginTop: 4, fontSize: 11.5, color: DA.gray }}>{quip}</div>}
+              {review.stabilized && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#15803D', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8, padding: '5px 8px', lineHeight: 1.4 }}>
+                  Note maintenue à {review.stabilized.prev}/10 : tes modifications n'ont rien dégradé (ma relecture brute disait {review.stabilized.raw}/10, sur des passages que tu n'as pas touchés).
+                </div>
+              )}
               {unlocks.length > 0 && (
                 <button onClick={toggleWardrobe} className="costar-unlock"
                   style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 8, padding: '8px 10px', background: 'linear-gradient(90deg,#FEF3C7,#FDE68A)', border: '1px solid #FCD34D', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1114,6 +1178,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
                 </button>
               )}
             </>
+            </div>
           )}
           </div>
         </div>
@@ -1231,7 +1296,7 @@ export default function Costar({ projet, fixed = false, onOpenObs = null }) {
           {cst.unseen.length > 0 && !wardrobe && <span aria-hidden="true" style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: '50%', background: '#DC2626', border: '2px solid white' }}/>}
         </button>
       </div>
-      <button onClick={open && !loading ? close : ask} title={open ? 'Fermer' : hello}
+      <button onClick={open && !loading ? close : (status === 'done' && review ? () => setOpen(true) : ask)} title={open ? 'Fermer' : hello}
         aria-label="Ask Costar : avis sur le rapport"
         style={{ pointerEvents: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer', lineHeight: 0, filter: 'drop-shadow(0 6px 10px rgba(0,0,0,0.25))' }}>
         <CostarSvg outfit={outfit} className={`costar${wiggle ? ' costar-wiggle' : ''}${loading ? ' costar-busy' : ''}`}/>

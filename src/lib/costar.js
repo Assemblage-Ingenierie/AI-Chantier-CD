@@ -133,14 +133,14 @@ CONTEXTE : rapport de diagnostic / faisabilité, constats visuels souvent sans m
 TU JUGES UNIQUEMENT LE FOND DES TEXTES (titres, commentaires, conclusion). Tu ne vois pas les champs de l'application (présences, urgence, suivi, photos, date, plans, mise en page) : n'en parle jamais.
 
 MÉTHODE
-1. Que faire : chaque désordre décrit dit-il quoi faire (réparer, surveiller en disant quoi, consulter un spécialiste, rien à prévoir) ? Un risque pour les personnes ou la stabilité dit-il quoi faire tout de suite (étaiement, balisage, purge, interdiction d'accès) ? C'est l'essentiel.
-2. Rédaction : fautes, phrases incompréhensibles, formulations floues qui empêchent d'agir (« à surveiller » sans dire quoi, « voir photo » au lieu de décrire, « reprendre » sans dire comment).
-3. Erreurs manifestes : affirmation technique clairement fausse ou contradiction nette entre deux textes. Dans le doute, ce n'est pas une erreur.
+1. Que faire : chaque désordre dit-il quoi faire (réparer, surveiller quoi, consulter, rien à prévoir) ? Un risque pour les personnes ou la stabilité dit-il quoi faire tout de suite (étaiement, balisage, purge) ? C'est l'essentiel.
+2. Rédaction : fautes, phrases incompréhensibles, formulations qui empêchent d'agir (« à surveiller » sans dire quoi, « voir photo » au lieu de décrire).
+3. Erreurs manifestes : affirmation clairement fausse ou contradiction nette. Dans le doute, pas d'erreur.
 4. Suggestions (jamais pénalisées, « tu pourrais… ») : cause probable, témoin, délai, investigation utile, seulement si ça apporte vraiment.
 Ne reproche jamais (ni dans "manques" ni dans "ameliorer") : titre absent, observation courte, zone vide, conclusion absente, mise en forme, absence de chiffrage, de mesures ou de localisation.
 Sois précis : désigne TOUJOURS l'observation par « Obs N » (son numéro dans le texte fourni : l'application affiche son titre et un lien pour l'ouvrir), et cite la phrase critiquée entre guillemets. Zéro généralité creuse.
 
-TON : franc, direct, vraiment drôle mais professionnel (jamais vulgaire ni méprisant). Castor québécois chaleureux et taquin : 4 à 6 expressions québécoises au total, compréhensibles par le contexte (mon chum, tiguidou, lâche pas, attache ta tuque avec de la broche, c'est de la belle ouvrage, pantoute, icitte). Images de castor et de chantier (barrage, billot, tuque, poutine). L'humour vient de comparaisons tirées DU RAPPORT ; le fond reste 100 % pro et ne minimise jamais un vrai problème. N'utilise jamais le tiret long (—).
+TON : franc, direct, drôle mais pro (jamais vulgaire ni méprisant). Castor québécois taquin : 4 à 6 expressions québécoises, compréhensibles par le contexte (mon chum, tiguidou, lâche pas, attache ta tuque avec de la broche, c'est de la belle ouvrage, pantoute, icitte). Images de castor et de chantier (barrage, billot, tuque, poutine). L'humour vient de comparaisons tirées DU RAPPORT ; le fond reste 100 % pro et ne minimise jamais un vrai problème. N'utilise jamais le tiret long (—).
 
 SOIS EXIGEANT, DUR MAIS JUSTE : une bonne note se MÉRITE par le contenu. N'hésite pas à mettre une mauvaise note à un rapport pauvre. Repères : quasi vide = 0 à 1 ; très mince = 2 à 3 ; sommaire = 4 à 5 ; correct = 6 ; bon = 7 ; très bon = 8 ; 9-10 = exceptionnel (chaque désordre décrit, ampleur, cause probable, préconisation claire et hiérarchisée, conclusion utile). Un rapport sans faute mais creux ne vaut PAS une bonne note. La LONGUEUR ne fait pas la qualité : un rapport court mais dense (quoi, pourquoi, quoi faire) peut valoir 8 ou plus ; un long rapport vague ou sans préconisation reste bas. Tes conseils restent précis, utiles et bienveillants.
 
@@ -148,8 +148,8 @@ PLAFOND DE VALEUR ("plafond", 0 à 10) : la note maximale que mérite la QUALIT�
 
 POINTS PERDUS : pars de 10 et retire des points UNIQUEMENT pour (la note finale = le plus bas entre 10 moins le total de "points_perdus" et le plafond), avec son "type" :
 - "danger" : risque pour les personnes ou la stabilité décrit sans dire quoi faire tout de suite : -2 ;
-- "action" : désordre décrit sans AUCUNE suite (ni réparer, ni vérifier, ni surveiller, ni consulter, ni « rien à prévoir ») : -1 par cas ;
-- "flou" : phrase qu'un lecteur ne peut PAS comprendre (incompréhensible, ambiguë au point d'être mal lue) : -1 ;
+- "action" : désordre sans AUCUNE suite (réparer, vérifier, surveiller, consulter, « rien à prévoir ») NULLE PART dans le rapport : une préconisation donnée ailleurs (autre observation, « travaux à prévoir », synthèse, conclusion) compte ; -1 par cas ;
+- "flou" : phrase qu'un ingénieur ne peut PAS comprendre ; la "raison" dit les deux lectures possibles, sinon pas de retrait. Phrase technique lisible = jamais floue : -1 ;
 - "fautes" : orthographe ou grammaire : -1 si plusieurs, -2 si elles gênent vraiment la lecture ;
 - "erreur" : erreur technique manifeste ou contradiction nette : -1 à -2.
 Une vérification, un contrôle ou une surveillance ciblée (« le linteau devra être vérifié lors des travaux », « un contrôle de la VMC pourra être effectué ») EST une préconisation : jamais de retrait. « Pourrait être plus précis », « que faire si… » = suggestion, PAS un retrait.
@@ -179,7 +179,7 @@ export function volumeCap(words) {
 // consigne « même rapport → même note »). Évite de repayer une relecture d'un rapport inchangé.
 export function costarCacheKey(text, engine = '') {
   let h = 5381;
-  const s = `v7\u0001${engine}\u0001${text || ''}`; // v7 : plus de demandes de localisation / estimation (retour Thomas 24/11) — anciens avis non resservis
+  const s = `v8\u0001${engine}\u0001${text || ''}`; // v8 : préconisations lues sur tout le rapport, « flou » resserré (retour Thomas 24/11) — anciens avis non resservis
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return `${s.length.toString(36)}-${h.toString(36)}`;
 }
@@ -408,3 +408,45 @@ export const EMPTY_REVIEW = {
   ameliorer: ['Écris au moins une observation avant de me la faire relire, j\'ai rien à gruger.'],
   coince: [],
 };
+
+// ── STABILITÉ DE LA NOTE d'une relecture à l'autre (retour Thomas 24/11 : « j'avais 7/10, j'ai
+// corrigé une remarque de Costar, boom 4/10 ; une correction c'est passé à 6/10 ») ──────────────
+// Empreinte de chaque observation (titre + texte) : sert à savoir CE QUI A CHANGÉ depuis l'avis
+// précédent.
+const _h = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
+export function obsFingerprints(projet) {
+  const out = {};
+  for (const l of (projet?.localisations || [])) {
+    for (const it of itemsOf(l)) {
+      if (!it || isBrouillon(it)) continue;
+      const titre = it.titre?.trim() || '';
+      const txt = plainText(it.commentaire);
+      if (!titre && !txt) continue;
+      out[it.id] = _h(`${titre}\u0001${txt}`);
+    }
+  }
+  return out;
+}
+// Observations modifiées ou ajoutées depuis l'empreinte `prevFp` : leurs numéros « Obs N » et
+// leur texte (titre + commentaire).
+export function changedObs(projet, prevFp) {
+  const fp = obsFingerprints(projet);
+  const idx = reportObsIndex(projet);
+  const changed = idx.filter(o => fp[o.itemId] && fp[o.itemId] !== prevFp?.[o.itemId]);
+  const byId = new Map();
+  for (const l of (projet?.localisations || [])) for (const it of itemsOf(l)) if (it) byId.set(it.id, it);
+  const text = changed.map(o => { const it = byId.get(o.itemId); return `${it?.titre || ''}\n${plainText(it?.commentaire)}`; }).join('\n');
+  return { nums: changed.map(o => o.n), text };
+}
+// Une relecture APRÈS modification ne peut faire baisser la note que si un point retiré cite un
+// passage MODIFIÉ (la modification a introduit un problème). Sinon la baisse vient de l'IA qui
+// juge autrement un texte qui n'a pas bougé → la note précédente est conservée (le plafond de
+// volume, calculé par l'app, s'applique toujours : un rapport vidé ne garde pas sa note).
+export function stabilizeReview(prev, next, { changedText = '', words } = {}) {
+  if (!prev || !next || !Number.isFinite(prev.note) || next.note >= prev.note) return next;
+  const src = norm(changedText);
+  if (src && (next.pertes || []).some(p => citationInReport(p.citation, src))) return next;
+  const note = Math.min(prev.note, volumeCap(words));
+  if (note <= next.note) return next;
+  return { ...next, note, plafond: next.plafond && next.plafond.value < note ? null : next.plafond, stabilized: { prev: prev.note, raw: next.note } };
+}
