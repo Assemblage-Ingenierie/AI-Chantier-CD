@@ -72,3 +72,10 @@ export function captureReviewLink() {
   } catch { return null; }
 }
 export function clearReviewLink() { try { sessionStorage.removeItem(SS_KEY); } catch { /* ignore */ } }
+
+// Nouveau message dans GMAIL (web) — retour Thomas 24/11 : « ça ne s'ouvre pas du tout dans
+// Gmail » (le lien mailto: ouvre la messagerie installée par défaut, pas Gmail dans le navigateur).
+export function gmailUrl(to, { subject, body }) {
+  const q = new URLSearchParams({ view: 'cm', fs: '1', to: String(to || '').trim(), su: subject, body });
+  return `https://mail.google.com/mail/?${q.toString()}`;
+}

@@ -12,6 +12,6 @@ describe('Faire relire (email)', () => {
     expect(html).toContain('#relire=p1.v1');
     expect(html).toContain('Copier'); // lien à coller dans un chat
     expect(html).toContain('ou par email');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Préparer l(&#x27;|')email/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Ouvrir dans Gmail/);
   });
 });

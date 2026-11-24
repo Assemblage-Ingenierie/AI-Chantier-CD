@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { affaireCode, reviewLink, parseReviewHash, buildReviewMail, mailtoUrl } from './reviewRequest.js';
+import { affaireCode, reviewLink, parseReviewHash, buildReviewMail, mailtoUrl, gmailUrl } from './reviewRequest.js';
 
 describe('Demande de relecture par email (demande Thomas 24/11)', () => {
   it('code affaire tiré du nom', () => {
@@ -23,5 +23,13 @@ describe('Demande de relecture par email (demande Thomas 24/11)', () => {
   it('mailto encodé', () => {
     const u = mailtoUrl('pierre@x.fr', { subject: 'A & B', body: 'l1\nl2' });
     expect(u).toBe('mailto:pierre@x.fr?subject=A%20%26%20B&body=l1%0Al2');
+  });
+  it('nouveau message Gmail prérempli', () => {
+    const u = new URL(gmailUrl('pierre@x.fr', { subject: 'AICHANTIER - Relecture A743', body: 'l1\nl2' }));
+    expect(u.origin + u.pathname).toBe('https://mail.google.com/mail/');
+    expect(u.searchParams.get('view')).toBe('cm');
+    expect(u.searchParams.get('to')).toBe('pierre@x.fr');
+    expect(u.searchParams.get('su')).toBe('AICHANTIER - Relecture A743');
+    expect(u.searchParams.get('body')).toBe('l1\nl2');
   });
 });
