@@ -9,6 +9,7 @@ import { useBrandingLogo } from '../../../lib/branding.js';
 import { callAIProxy } from '../../../lib/aiProxy.js';
 import RichTextArea from '../../ui/RichTextArea.jsx';
 import { zoneLabel } from '../../../lib/zoneGroups.js';
+import { isSynthMode, synthFlag, buildRecapDigest, RECAP_SYSTEM, recapUserPrompt, parseRecapReply, applySynthesis } from '../../../lib/recapSynth.js';
 import { FTR, HDR, MB, MT, MX, PH, PW } from './layout.js';
 import { SinglePlanImage, SymbolIcon, ViewpointIcon } from './blocks.jsx';
 
@@ -533,7 +534,7 @@ export function AutoTextarea({ value, style, ...props }) {
 export const RECAP_BATCH = 15;
 export let recapAutoPauseUntil = 0;
 
-export function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow }) {
+export function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
   // Use passed recapRows when available (interactive preview), otherwise compute
   const ovMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
@@ -548,6 +549,29 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
 
   const [loadingAI, setLoadingAI] = useState(null);
   const [aiErr, setAiErr] = useState(null);
+  // ── SYNTHÈSE IA (tableau v2, demande Thomas 24/11) : une analyse de TOUT le rapport → points
+  //    distincts « désordre → préconisation », triés par priorité. Lancée à la demande seulement.
+  const synth = isSynthMode(tableauRecap);
+  const [synthLoading, setSynthLoading] = useState(false);
+  const recapLiveRef = useRef(tableauRecap);
+  recapLiveRef.current = tableauRecap;
+  const genSynthesis = async () => {
+    if (!onSetRecap || synthLoading) return;
+    setSynthLoading(true); setAiErr(null);
+    try {
+      const digest = buildRecapDigest(localisations, { conclusion: projet.includeConclusion ? projet.conclusion : '' });
+      if (!digest.trim()) throw new Error('Rien à synthétiser : le rapport est vide');
+      const cur = recapLiveRef.current || [];
+      const keep = cur.filter(r => r?.synth && r.edited).map(r => ({ zone: r.zone, titre: r.titre }));
+      const d = await callAIProxy({ feature: 'recap_synth', model: 'claude-sonnet-4-6', max_tokens: 3000, temperature: 0.1, json: true,
+        system: RECAP_SYSTEM, messages: [{ role: 'user', content: recapUserPrompt(digest, { keep, ignored: synthFlag(cur)?.ignored || [] }) }], _waitOk: true });
+      const raw = (d.content || []).map(c => c?.text || '').join('');
+      const fresh = parseRecapReply(raw, () => `synth_${crypto.randomUUID()}`);
+      if (!fresh) throw new Error(d._finish === 'MAX_TOKENS' ? 'Réponse coupée, réessaie' : 'Réponse illisible, réessaie');
+      onSetRecap(applySynthesis(recapLiveRef.current, fresh));
+    } catch (e) { setAiErr(e?.message || 'Erreur IA'); }
+    finally { setSynthLoading(false); }
+  };
   const genDoneRef = useRef(new Set());
   // Ref toujours à jour : évite la closure stale quand onUpdateRecap change entre deux rows
   const onUpdateRecapRef = useRef(onUpdateRecap);
@@ -619,6 +643,7 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
   const rowIdsKey = rows.map(r => r.itemId).join(',');
   useEffect(() => {
     if (!onUpdateRecap) return;
+    if (synth) return; // synthèse : jamais de génération automatique ligne par ligne
     if (Date.now() < recapAutoPauseUntil) return;
     let cancelled = false;
     const snapOvMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
@@ -647,6 +672,10 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
 
   const dateStr = projet.dateVisite ? new Date(projet.dateVisite + 'T12:00:00').toLocaleDateString('fr-FR') : null;
   const isEditable = !!onUpdateRecap;
+  // Synthèse : numéro de point dans la pastille de couleur, désordre et préconisation à parts égales.
+  const gridCols = synth
+    ? (isEditable ? '16px 0.8fr 1.6fr 1.6fr 60px 24px' : '16px 70px 1.5fr 1.5fr 60px')
+    : (isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px');
 
   return (
     <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
@@ -655,22 +684,32 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
         <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tableau récapitulatif</span>
           <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
+          {isEditable && onSetRecap && (
+            <button data-print="hide" onClick={genSynthesis} disabled={synthLoading}
+              title={synth ? 'Refaire la synthèse à partir du rapport (les lignes que tu as modifiées sont gardées)' : 'Remplacer ce tableau par une synthèse concise de tout le rapport : un point par désordre, avec sa préconisation'}
+              style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, border:'none', borderRadius:6, padding:'4px 10px', fontSize:9, fontWeight:800, cursor: synthLoading ? 'wait' : 'pointer',
+                color:'white', background: synthLoading ? '#9CA3AF' : DA.red }}>
+              {synthLoading ? <><Ic n="spn" s={10}/> Analyse du rapport…</> : synth ? '↻ Régénérer la synthèse' : '✨ Générer la synthèse'}
+            </button>
+          )}
         </div>
         {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
         {/* En-tête */}
-        <div style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px', background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
+        <div style={{ display:'grid', gridTemplateColumns: gridCols, background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
           <div/>
           <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Zone</span>
           <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Désordre</span>
-          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Solution</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>{synth ? 'Préconisation' : 'Solution'}</span>
           <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Urgence</span>
           {isEditable && <div data-print="hide"/>}
         </div>
         {rows.map((row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px', gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
-              <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>
+            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: gridCols, gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
+              {synth
+                ? <div style={{ background:u.dot, borderRadius:3, minHeight:14, alignSelf:'stretch', color:'white', fontSize:7.5, fontWeight:800, display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:2 }}>{i + 1}</div>
+                : <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>}
               {isEditable ? (
                 <AutoTextarea value={row.locNom} onChange={e => onUpdateRecap(row.itemId, 'zone', e.target.value)}
                   style={{ fontSize:7, color:DA.gray, lineHeight:1.4, border:'none', background:'transparent', outline:'none', fontFamily:'inherit', width:'100%', padding:0, whiteSpace:'pre-wrap', wordBreak:'break-word' }}/>
