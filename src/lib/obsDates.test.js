@@ -72,3 +72,11 @@ describe('Réglages photos du rapport enregistrés avec l\'observation (demande 
     expect(_toRow({ reportCols: 7, photoBig: [] })).toBeNull();
   });
 });
+
+describe('Réglages par ligne / taille en grand enregistrés avec l\'observation', () => {
+  it('aller-retour : rowCols et photoBigW (valeurs invalides ignorées)', () => {
+    const row = _toRow({ rowCols: { p1: 3, p2: 9 }, photoBigW: { p3: 0.5, p4: 0.3 } });
+    expect(row).toEqual({ rowCols: { p1: 3 }, photoBigW: { p3: 0.5 } });
+    expect(_fromRow(row)).toEqual({ rowCols: { p1: 3 }, photoBigW: { p3: 0.5 } });
+  });
+});

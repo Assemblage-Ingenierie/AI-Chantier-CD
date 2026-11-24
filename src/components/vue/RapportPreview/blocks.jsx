@@ -368,7 +368,7 @@ export function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ 
 // Photo en cours de glisser dans le rapport (les rangées d'une observation sont des blocs séparés).
 let _photoDrag = null;
 
-export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null, isFirstPhotoRow = false, onSetCols = null, onToggleBig = null }) {
+export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null, isFirstPhotoRow = false, onSetRowCols = null, onSetBigW = null, onToggleBig = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -387,21 +387,31 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   const showPhotos   = mode === 'photos' && photoRow && allPhotos.length > 0;
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
   const [dropIdx, setDropIdx] = React.useState(null); // photo survolée pendant un glisser (contour rouge)
-  // Réglages de mise en page propres à l'observation (demande Thomas 24/11), visibles au survol
-  // des photos dans l'aperçu (jamais imprimés) : photos par ligne (sur la 1re rangée) et « en grand ».
+  // Réglages de mise en page des photos (retour Thomas 24/11), au survol dans l'aperçu (jamais
+  // imprimés) : nombre de photos de CETTE LIGNE (1-3) ; taille d'une photo « en grand » (centrée).
   const [gridHover, setGridHover] = React.useState(false);
-  const gridHoverProps = onSetCols && isFirstPhotoRow ? { onMouseEnter: () => setGridHover(true), onMouseLeave: () => setGridHover(false) } : {};
+  const gridHoverProps = (onSetRowCols || onSetBigW) ? { onMouseEnter: () => setGridHover(true), onMouseLeave: () => setGridHover(false) } : {};
   const isBigPhoto = (ph) => (item.photoBig || []).includes(photoKey(ph));
-  const curCols = [1, 2, 3].includes(item.reportCols) ? item.reportCols : null;
-  const colsControl = onSetCols && isFirstPhotoRow && gridHover ? (
-    <div data-print="hide" style={{ position:'absolute', top:8, left:10, zIndex:3, display:'flex', alignItems:'center', gap:2, background:'white', border:`1px solid ${DA.border}`, borderRadius:7, padding:'2px 4px', boxShadow:'0 1px 6px rgba(0,0,0,0.18)' }}
-      title="Photos par ligne pour CETTE observation (re-cliquer pour revenir au réglage du rapport)">
-      <span style={{ fontSize:9, color:DA.gray, fontWeight:700, padding:'0 3px' }}>Photos / ligne</span>
+  const chip = (active, strong) => ({ minWidth:20, height:18, padding:'0 4px', borderRadius:4, border:'none', cursor:'pointer', fontSize:10, fontWeight:800,
+    background: active ? (strong ? DA.red : '#E5E7EB') : 'transparent', color: active ? (strong ? 'white' : DA.black) : DA.gray });
+  const ctlBox = { position:'absolute', top:8, left:10, zIndex:3, display:'flex', alignItems:'center', gap:2, background:'white', border:`1px solid ${DA.border}`, borderRadius:7, padding:'2px 4px', boxShadow:'0 1px 6px rgba(0,0,0,0.18)' };
+  const rowCount = photoRow ? (photoRow.idxs ? photoRow.idxs.length : 1 + (photoRow.stackIdxs?.length || 0)) : 0;
+  const custom = photoRow?.kind === 'custom' ? photoRow.cols : null;
+  const colsControl = onSetRowCols && gridHover && photoRow && photoRow.kind !== 'big' && photoRow.firstKey ? (
+    <div data-print="hide" style={ctlBox} title="Nombre de photos de CETTE ligne (re-cliquer pour revenir à la mise en page automatique)">
+      <span style={{ fontSize:9, color:DA.gray, fontWeight:700, padding:'0 3px' }}>Photos sur la ligne</span>
       {[1, 2, 3].map(n => (
-        <button key={n} onClick={(e) => { e.stopPropagation(); onSetCols(curCols === n ? null : n); }}
-          style={{ width:20, height:18, borderRadius:4, border:'none', cursor:'pointer', fontSize:10, fontWeight:800,
-            background: (curCols ?? photoCols ?? Math.min(ppl, 3)) === n ? (curCols ? DA.red : '#E5E7EB') : 'transparent',
-            color: (curCols ?? photoCols ?? Math.min(ppl, 3)) === n ? (curCols ? 'white' : DA.black) : DA.gray }}>{n}</button>
+        <button key={n} onClick={(e) => { e.stopPropagation(); onSetRowCols(photoRow.firstKey, custom === n ? null : n); }}
+          style={chip((custom ?? rowCount) === n, !!custom)}>{n}</button>
+      ))}
+    </div>
+  ) : null;
+  const bigW = photoRow?.kind === 'big' ? (photoRow.w || 1) : null;
+  const sizeControl = onSetBigW && gridHover && photoRow?.kind === 'big' && photoRow.firstKey ? (
+    <div data-print="hide" style={ctlBox} title="Taille de la photo en grand (toujours centrée)">
+      <span style={{ fontSize:9, color:DA.gray, fontWeight:700, padding:'0 3px' }}>Taille</span>
+      {[[0.5, '50 %'], [0.75, '75 %'], [1, '100 %']].map(([w, l]) => (
+        <button key={w} onClick={(e) => { e.stopPropagation(); onSetBigW(photoRow.firstKey, w); }} style={chip(bigW === w, true)}>{l}</button>
       ))}
     </div>
   ) : null;
@@ -624,12 +634,28 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
           // Photo « en grand » : seule, pleine largeur (portrait : largeur réduite, sinon plus
           // haute qu'une page).
           const i = photoRow.idxs[0];
-          const w = (photoRow.portrait ? BIG_PORTRAIT_W : 1) * fitW;
+          const w = (photoRow.w || 1) * (photoRow.portrait ? BIG_PORTRAIT_W : 1) * fitW;
+          return (
+            <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
+              {sizeControl}
+              <div style={{ width:`${(w * 100).toFixed(2)}%`, margin:'0 auto' }}>
+                {renderPhotoCell(i, photoRow.portrait ? PORT : LAND)}
+              </div>
+            </div>
+          );
+        }
+        if (photoRow.kind === 'custom') {
+          // Ligne dont le nombre de photos est choisi à la main (1, 2 ou 3).
           return (
             <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
               {colsControl}
-              <div style={{ width:`${(w * 100).toFixed(2)}%`, margin:'0 auto' }}>
-                {renderPhotoCell(i, photoRow.portrait ? PORT : LAND)}
+              {/* Ligne incomplète (moins de photos que demandé) : photos de même taille, CENTRÉES. */}
+              <div style={{ display:'flex', justifyContent:'center', gap:3, ...fitBox }}>
+                {photoRow.idxs.map(i => (
+                  <div key={i} style={{ flex:`0 0 calc((100% - ${(photoRow.cols - 1) * 3}px) / ${photoRow.cols})`, minWidth:0 }}>
+                    {renderPhotoCell(i, photoRow.portrait ? PORT : LAND)}
+                  </div>
+                ))}
               </div>
             </div>
           );

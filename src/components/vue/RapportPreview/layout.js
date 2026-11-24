@@ -133,7 +133,8 @@ export function estimateBlockH(block, ppl) {
     if (row) {
       const cols  = block.photoCols || Math.min(ppl, 3);
       const cellW = (CW - 12 - (cols - 1) * 3) / cols;
-      h += (row.kind === 'big' ? (row.portrait ? (CW - 12) * BIG_PORTRAIT_W * (4 / 3) : (CW - 12) * 0.75)
+      h += (row.kind === 'big' ? (CW - 12) * (row.w || 1) * (row.portrait ? BIG_PORTRAIT_W * (4 / 3) : 0.75)
+        : row.kind === 'custom' ? ((CW - 12 - (row.cols - 1) * 3) / row.cols) * (row.portrait ? 4 / 3 : 0.75)
         : row.kind === 'mixed' ? (CW - 12 - 3 * (row.idxs.length - 1)) / row.ars.reduce((a, b) => a + b, 0)
         : row.kind === 'landscape' ? cellW * 0.75 : ((CW - 12) / 2) * (4 / 3)) + 14;
     } else {
@@ -234,7 +235,11 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
         // Réglages propres à l'observation (demande Thomas 24/11) : photos par ligne, photos en grand.
         const itemCols = [1, 2, 3].includes(item.reportCols) ? item.reportCols : cols;
         const big = new Set(item.photoBig || []);
-        const rows = packPhotoRowsBig(photos.map(ph => ph?.orient === 'portrait'), photos.map(ph => big.has(photoKey(ph))), itemCols);
+        const keys = photos.map(ph => photoKey(ph));
+        const bigW = item.photoBigW || {};
+        const rowCols = item.rowCols || {};
+        const rows = packPhotoRowsBig(photos.map(ph => ph?.orient === 'portrait'), keys.map(k => (big.has(k) ? (bigW[k] || 1) : 0)), itemCols, keys.map(k => rowCols[k] || 0))
+          .map(r => ({ ...r, firstKey: keys[r.idxs ? r.idxs[0] : (r.side === 'right' ? r.stackIdxs[0] : r.portraitIdx)] || null }));
         rows.forEach((row, k) => {
           blocks.push({
             type:'item',
@@ -443,22 +448,35 @@ function mixed(idxs, isPortrait) {
 
 // Comme packPhotoRows, mais une photo « en grand » occupe SA rangée, seule et pleine largeur ;
 // les autres gardent l'ordre et la mise en page habituels avant et après elle.
-export function packPhotoRowsBig(isPortrait, isBig, cols) {
-  if (!isBig?.some(Boolean)) return packPhotoRows(isPortrait, cols);
+export function packPhotoRowsBig(isPortrait, isBig, cols, rowCols = []) {
+  // isBig[i] : 0 = normale, sinon largeur de la photo « en grand » (0.5 / 0.75 / 1, centrée).
+  // rowCols[i] : nb de photos (1-3) imposé à la LIGNE qui commence par la photo i (retour Thomas
+  // 24/11 : « le 1/2/3 par ligne, pas pour toute l'observation »).
+  if (!isBig?.some(Boolean) && !rowCols?.some(Boolean)) return packPhotoRows(isPortrait, cols);
   const rows = [];
   const shift = (r, o) => ({ ...r,
     ...(r.idxs ? { idxs: r.idxs.map(i => i + o) } : {}),
     ...(r.portraitIdx != null ? { portraitIdx: r.portraitIdx + o } : {}),
     ...(r.stackIdxs ? { stackIdxs: r.stackIdxs.map(i => i + o) } : {}) });
-  let start = 0;
+  const n = isPortrait.length;
+  let start = 0, i = 0;
   const flushSeg = (end) => { if (end > start) for (const r of packPhotoRows(isPortrait.slice(start, end), cols)) rows.push(shift(r, start)); };
-  isPortrait.forEach((port, i) => {
-    if (!isBig[i]) return;
-    flushSeg(i);
-    rows.push({ kind:'big', idxs:[i], portrait: !!port });
-    start = i + 1;
-  });
-  flushSeg(isPortrait.length);
+  while (i < n) {
+    if (isBig[i]) {
+      flushSeg(i);
+      rows.push({ kind:'big', idxs:[i], portrait: !!isPortrait[i], w: isBig[i] === true ? 1 : isBig[i] });
+      i++; start = i; continue;
+    }
+    if (rowCols[i]) {
+      flushSeg(i);
+      const idxs = [i];
+      for (let k = i + 1; k < n && idxs.length < rowCols[i] && !isBig[k] && !rowCols[k]; k++) idxs.push(k);
+      rows.push({ kind:'custom', idxs, cols: rowCols[i], portrait: idxs.every(k => isPortrait[k]) });
+      i += idxs.length; start = i; continue;
+    }
+    i++;
+  }
+  flushSeg(n);
   return rows;
 }
 

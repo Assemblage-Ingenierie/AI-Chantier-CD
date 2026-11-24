@@ -941,7 +941,13 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               isLastPhotoRow={block.isLastPhotoRow ?? true} chunkNext={!!block.chunkNext}
                               isFirstPhotoRow={!!block.isFirstPhotoRow}
                               // Réglages photos propres à l'observation (demande Thomas 24/11).
-                              onSetCols={onUpdateItem && !cutMode ? (n) => onUpdateItem(block.locId, block.item.id, { reportCols: n }) : null}
+                              onSetRowCols={onUpdateItem && !cutMode ? (key, n) => {
+                                const next = { ...(block.item.rowCols || {}) };
+                                if (n) next[key] = n; else delete next[key];
+                                // Ancien réglage « par observation » remplacé par le réglage par ligne.
+                                onUpdateItem(block.locId, block.item.id, { rowCols: next, reportCols: null });
+                              } : null}
+                              onSetBigW={onUpdateItem && !cutMode ? (key, w) => onUpdateItem(block.locId, block.item.id, { photoBigW: { ...(block.item.photoBigW || {}), [key]: w } }) : null}
                               onToggleBig={onUpdateItem && !cutMode ? (ph) => {
                                 const k = photoKey(ph);
                                 if (!k) return;

@@ -46,11 +46,35 @@ describe('Photo « en grand » (demande Thomas 24/11)', () => {
     const rows = packPhotoRowsBig([false, false, false, false, false], [false, false, true, false, false], 2);
     expect(rows).toEqual([
       { kind: 'landscape', idxs: [0, 1] },
-      { kind: 'big', idxs: [2], portrait: false },
+      { kind: 'big', idxs: [2], portrait: false, w: 1 },
       { kind: 'landscape', idxs: [3, 4] },
     ]);
   });
   it('sans photo en grand : identique à packPhotoRows ; 3 par ligne pour une observation', () => {
     expect(packPhotoRowsBig([false, false, false], [false, false, false], 3)).toEqual([{ kind: 'landscape', idxs: [0, 1, 2] }]);
+  });
+});
+
+describe('Photos par LIGNE et taille « en grand » (retour Thomas 24/11)', () => {
+  it('3 photos sur une ligne choisie, le reste en automatique', () => {
+    const rows = packPhotoRowsBig([false, false, false, false, false], [0, 0, 0, 0, 0], 2, [3, 0, 0, 0, 0]);
+    expect(rows).toEqual([
+      { kind: 'custom', idxs: [0, 1, 2], cols: 3, portrait: false },
+      { kind: 'landscape', idxs: [3, 4] },
+    ]);
+  });
+  it('1 photo seule sur sa ligne au milieu de l\'observation', () => {
+    const rows = packPhotoRowsBig([false, false, false, false], [0, 0, 0, 0], 2, [0, 0, 1, 0]);
+    expect(rows).toEqual([
+      { kind: 'landscape', idxs: [0, 1] },
+      { kind: 'custom', idxs: [2], cols: 1, portrait: false },
+      { kind: 'landscape', idxs: [3] },
+    ]);
+  });
+  it('photo en grand à 50 % (centrée au rendu)', () => {
+    expect(packPhotoRowsBig([false, false], [0.5, 0], 2)).toEqual([
+      { kind: 'big', idxs: [0], portrait: false, w: 0.5 },
+      { kind: 'landscape', idxs: [1] },
+    ]);
   });
 });
