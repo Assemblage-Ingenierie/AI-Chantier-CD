@@ -38,6 +38,38 @@ export function reportItems(projet) {
   return (projet?.localisations || []).flatMap(l => itemsOf(l).filter(i => i && !isBrouillon(i)));
 }
 
+// Observations NUMÉROTÉES exactement comme dans le digest envoyé à Costar (« Obs N ») : sert à
+// afficher le TITRE et un lien cliquable à la place du numéro (demande Thomas 24/11).
+export function reportObsIndex(projet) {
+  const out = [];
+  let n = 0;
+  for (const l of (projet?.localisations || [])) {
+    for (const it of itemsOf(l)) {
+      if (!it || isBrouillon(it)) continue;
+      const titre = it.titre?.trim() || '';
+      if (!titre && !plainText(it.commentaire)) continue;
+      n++;
+      out.push({ n, itemId: it.id, locId: l.id, titre });
+    }
+  }
+  return out;
+}
+
+// Découpe un texte de Costar en morceaux : texte simple, ou référence { obs: N } (« Obs 7 », « obs. 7 »).
+export function splitObsRefs(text) {
+  const s = String(text || '');
+  const parts = [];
+  const re = /\b[Oo]bs\.?\s*(?:n°\s*)?(\d+)\b/g;
+  let last = 0;
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    if (m.index > last) parts.push(s.slice(last, m.index));
+    parts.push({ obs: Number(m[1]), raw: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) parts.push(s.slice(last));
+  return parts;
+}
+
 // Le CONTENU du rapport, en texte structuré : uniquement ce que l'ingénieur a ÉCRIT (zones,
 // titres, commentaires, conclusion). Volontairement SANS les champs de formulaire (présences,
 // urgence, suivi, nombre de photos, date…) : Costar juge le fond, pas les cases cochées
@@ -106,7 +138,7 @@ MÉTHODE
 3. Erreurs manifestes : affirmation technique clairement fausse ou contradiction nette entre deux textes. Dans le doute, ce n'est pas une erreur.
 4. Suggestions (jamais pénalisées, « tu pourrais… ») : dimension, localisation, cause probable, témoin, délai, investigation utile, seulement si ça apporte vraiment.
 Ne reproche jamais : titre absent, observation courte, zone vide, conclusion absente, mise en forme, absence de chiffrage ou de mesures.
-Sois précis : cite « Obs N » ou le titre, et la phrase critiquée entre guillemets. Zéro généralité creuse.
+Sois précis : désigne TOUJOURS l'observation par « Obs N » (son numéro dans le texte fourni : l'application affiche son titre et un lien pour l'ouvrir), et cite la phrase critiquée entre guillemets. Zéro généralité creuse.
 
 TON : franc, direct, vraiment drôle mais professionnel (jamais vulgaire ni méprisant). Castor québécois chaleureux et taquin : 4 à 6 expressions québécoises au total, compréhensibles par le contexte (mon chum, tiguidou, lâche pas, attache ta tuque avec de la broche, c'est de la belle ouvrage, pantoute, icitte, une vraie job de bras, être dans le jus, c'est écœurant). Images de castor et de chantier canadien (barrage, billot, gruger, tuque, sirop d'érable, poutine, Zamboni). L'humour vient de comparaisons tirées DU RAPPORT ; le fond reste 100 % pro et ne minimise jamais un vrai problème. N'utilise jamais le tiret long (—).
 
@@ -124,8 +156,10 @@ Une vérification, un contrôle ou une surveillance ciblée (« le linteau devra
 INTERDIT de retirer des "points_perdus" pour : manque de précision (dimensions, mesures, cause, témoins, délais, investigations, suite à donner), chiffrage, titre manquant, observation courte, longueur, conclusion absente, mise en page, champs de formulaire, photos ; le manque de contenu se reflète dans le PLAFOND, pas dans les points perdus. Regroupe un même défaut répété en UNE ligne. Rapport clair, sans faute, qui dit quoi faire → liste vide ; la note est alors celle du plafond. Ta note doit coller à ton verdict : « bon diagnostic » ne peut pas valoir 3.
 PREUVE : chaque retrait cite dans "citation" l'extrait du rapport COPIÉ MOT POUR MOT (4 à 15 mots, même orthographe et ponctuation), sinon il est annulé. Pas de citation exacte possible → pas de retrait. Même rapport → toujours la même note.
 
-RÉPONSE COURTE : UNIQUEMENT un objet JSON valide, sans texte autour, chaque point en UNE phrase :
-{"plafond":7,"raison_plafond":"ce qui manque pour viser plus haut","points_perdus":[{"type":"action","points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["1 à 3 points forts concrets"],"ameliorer":["0 à 3 suggestions « tu pourrais… » avec l'observation visée"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
+JUSTIFIE TOUTE LA NOTE : plafond sous 10 → "manques" liste chaque manque (une ligne, « Obs N »). "bien" : les vrais points forts.
+
+RÉPONSE : UNIQUEMENT un objet JSON valide, sans texte autour, chaque point en UNE phrase :
+{"plafond":7,"raison_plafond":"en une phrase","manques":["Obs N : ce qui manque (0 à 6)"],"points_perdus":[{"type":"action","points":1,"raison":"Obs N : le défaut précis","citation":"extrait exact du rapport"}],"verdict":"phrase punchy de 15 mots max, touche québécoise","bien":["2 à 5 points forts, avec Obs N"],"ameliorer":["0 à 6 suggestions « tu pourrais… », avec Obs N"],"coince":["0 à 2 vrais problèmes à corriger avant envoi"],"priorite":"LA chose à faire avant d'envoyer","reecriture":{"obs":"Obs N","avant":"la phrase actuelle citée","apres":"ta version, sans inventer de mesure ([à compléter] si une donnée manque)"},"blague":"une phrase de castor québécois, drôle et bienveillante, sur CE rapport"}
 Si rien à réécrire : "reecriture": null.`;
 
 // PLAFOND DE VOLUME (retour Thomas 21/10 : « 9/10 sur un rapport de 9 lignes, trop généreux ;
@@ -145,7 +179,7 @@ export function volumeCap(words) {
 // consigne « même rapport → même note »). Évite de repayer une relecture d'un rapport inchangé.
 export function costarCacheKey(text, engine = '') {
   let h = 5381;
-  const s = `v5\u0001${engine}\u0001${text || ''}`; // v5 : retraits plafonnés par type (les anciens avis ne resservent pas)
+  const s = `v6\u0001${engine}\u0001${text || ''}`; // v5 : retraits plafonnés par type (les anciens avis ne resservent pas)
   for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
   return `${s.length.toString(36)}-${h.toString(36)}`;
 }
@@ -155,7 +189,7 @@ export function costarCacheKey(text, engine = '') {
 export const TYPE_CAPS = { danger: 4, action: 3, flou: 2, fautes: 2, erreur: 2 };
 
 const asList = (v) => (Array.isArray(v) ? v : (typeof v === 'string' && v.trim() ? [v] : []))
-  .map(s => String(s ?? '').trim()).filter(Boolean).slice(0, 6);
+  .map(s => String(s ?? '').trim()).filter(Boolean).slice(0, 8);
 
 const clean = (v) => (typeof v === 'string' ? v : '').replace(/\s*—\s*/g, ', ').trim();
 
@@ -217,6 +251,7 @@ export function parseCostarReply(raw, source = null, opts = {}) {
     plafond,
     verdict: String(obj.verdict || '').replace(/\s*—\s*/g, ', ').trim(),
     bien: asList(obj.bien),
+    manques: asList(obj.manques),
     ameliorer: asList(obj.ameliorer),
     coince: asList(obj.coince),
     priorite: clean(obj.priorite),

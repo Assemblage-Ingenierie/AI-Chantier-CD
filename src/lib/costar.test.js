@@ -53,7 +53,7 @@ describe('Costar — lecture du rapport', () => {
 describe('Costar — réponse IA', () => {
   it('JSON pur', () => {
     const r = parseCostarReply('{"note":7,"verdict":"Tiguidou","bien":["a"],"ameliorer":["b","c"],"coince":[]}');
-    expect(r).toEqual({ note: 7, pertes: [], plafond: null, verdict: 'Tiguidou', bien: ['a'], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
+    expect(r).toEqual({ note: 7, pertes: [], plafond: null, verdict: 'Tiguidou', bien: ['a'], manques: [], ameliorer: ['b', 'c'], coince: [], priorite: '', reecriture: null, blague: '' });
   });
 
   it('JSON entouré de texte / balises, note bornée', () => {
@@ -163,5 +163,28 @@ describe('Costar — barème exigeant (retour Amaury : 9/10 pour 9 lignes)', () 
   it('consigne : exigeante, avec plafond justifié', () => {
     expect(COSTAR_SYSTEM).toContain('"plafond"');
     expect(COSTAR_SYSTEM).toContain('EXIGEANT');
+  });
+});
+
+import { reportObsIndex, splitObsRefs } from './costar.js';
+describe('Costar : « Obs N » → titre + lien (demande Thomas 24/11)', () => {
+  const projet = { nom: 'P', localisations: [
+    { id: 'z1', nom: 'RDC', items: [
+      { id: 'a', titre: 'Fissure poutre', commentaire: 'x' },
+      { id: 'vide', titre: '', commentaire: '' },           // vide : pas numérotée
+      { id: 'b', titre: '', commentaire: 'texte seul' },
+      { id: 'br', titre: 'Brouillon', commentaire: 'y', statut: 'brouillon' },
+    ] },
+    { id: 'z2', nom: 'R+1', items: [{ id: 'c', titre: 'Linteau', commentaire: '' }] },
+  ] };
+  it('même numérotation que le texte envoyé à Costar', () => {
+    const idx = reportObsIndex(projet);
+    const digest = buildReportDigest(projet).text;
+    for (const o of idx) expect(digest).toContain(`[Obs ${o.n}]${o.titre ? ` ${o.titre}` : ''}`);
+    expect(idx.map(o => [o.n, o.itemId, o.locId])).toEqual([[1, 'a', 'z1'], [2, 'b', 'z1'], [3, 'c', 'z2']]);
+  });
+  it('repère « Obs 7 », « obs. 3 », « Obs n° 2 »', () => {
+    expect(splitObsRefs('Obs 7 : flou, voir aussi obs. 3 et Obs n° 2.').filter(p => typeof p === 'object').map(p => p.obs)).toEqual([7, 3, 2]);
+    expect(splitObsRefs('rien ici')).toEqual(['rien ici']);
   });
 });

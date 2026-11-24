@@ -665,7 +665,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null }) {
       />
 
       {/* ── Costar : avis honnête + note sur le rapport complet (PC uniquement) ── */}
-      {isPc && !exportRef && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet}/>}
+      {isPc && !exportRef && !editingPlan && !editingPhoto && !annexesOpen && <Costar projet={projet} onOpenObs={(o, note) => previewRef.current?.openItem?.(o.itemId, o.locId, note)}/>}
 
       {/* ── Annotateur plan (ajustement rapide depuis le rapport) ── */}
       {editingPlan && (
