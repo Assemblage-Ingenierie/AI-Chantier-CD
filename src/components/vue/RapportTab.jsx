@@ -654,7 +654,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
         onCutModeChange={setCutMode}
         onExportPdf={handleExport}
         onExportPhotos={handleExportPhotos}
-        onAskReview={projet?.id ? () => setReviewOpen(true) : null}
+        onAskReview={projet?.id && isPc ? () => setReviewOpen(true) : null /* PC uniquement (demande Thomas 24/11) */}
         footer={projet?.id ? <DriveSaveBar onSave={async (dest, onProgress) => {
           // PDF identique à l'aperçu (même moteur que l'export groupé, budget ~5 Mo).
           const blob = await previewRef.current?.toPdfBlob?.();
