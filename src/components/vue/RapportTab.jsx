@@ -295,7 +295,9 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
       const target = pBreaks[n - 1];
       if (target) { onUpdate({ rapportPageBreaks: curr.filter(x => x !== target) }); return; }
     }
-    onUpdate({ rapportPageBreaks: [...curr, id] });
+    // Nouveau saut forcé sur un bloc : on oublie un éventuel « saut automatique supprimé » au même
+    // endroit (les deux se contrediraient).
+    onUpdate({ rapportPageBreaks: [...curr.filter(x => x !== `nb:${id}:`), id] });
   };
 
   const handleExport = () => {
