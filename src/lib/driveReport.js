@@ -3,9 +3,9 @@
 import { getSupabase } from '../supabase.js';
 
 export const DRIVE_DESTS = [
-  { id: 'visites', label: 'Visites (02_VISITES)' },
-  { id: 'det', label: 'DET (08_DET)' },
-  { id: 'rendus', label: 'Rendus AI (10_RENDUS AI)' },
+  { id: 'visites', label: 'Visites' },
+  { id: 'det', label: 'DET' },
+  { id: 'rendus', label: 'Rendus AI' },
 ];
 const CHUNK = 9 * 256 * 1024; // multiple de 256 Ko (exigé par Google), ~3 Mo en base64
 

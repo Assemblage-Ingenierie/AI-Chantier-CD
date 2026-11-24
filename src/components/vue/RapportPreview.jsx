@@ -815,10 +815,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             {onCutModeChange && (
               <button onClick={() => onCutModeChange(!cutMode)} data-print="hide"
                 title={cutMode ? 'Terminer (Échap)' : 'Forcer un saut de page : clique ensuite sur les ciseaux entre deux blocs'}
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:7, cursor:'pointer',
-                  border: cutMode ? 'none' : '1px solid rgba(255,255,255,0.25)',
-                  background: cutMode ? DA.red : 'rgba(255,255,255,0.10)', color:'white', fontSize:11, fontWeight:700 }}>
-                <span style={{ fontSize:12, lineHeight:1 }}>✂</span>
+                style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:7, cursor:'pointer', border:'none',
+                  background: cutMode ? DA.red : 'white', color: cutMode ? 'white' : DA.black, fontSize:11.5, fontWeight:800,
+                  boxShadow: cutMode ? 'none' : '0 1px 6px rgba(0,0,0,0.35)' }}>
+                <span style={{ fontSize:13, lineHeight:1, color: cutMode ? 'white' : DA.red }}>✂</span>
                 {!narrow && <span>{cutMode ? 'Terminer' : 'Saut de page'}</span>}
               </button>
             )}
