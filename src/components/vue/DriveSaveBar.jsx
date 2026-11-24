@@ -8,7 +8,7 @@ import { DRIVE_DESTS } from '../../lib/driveReport.js';
 const LS_KEY = 'chantierai_drive_dest_v1';
 const readDest = () => { try { const v = localStorage.getItem(LS_KEY); return DRIVE_DESTS.some(d => d.id === v) ? v : 'visites'; } catch { return 'visites'; } };
 
-export default function DriveSaveBar({ onSave }) {
+export default function DriveSaveBar({ onSave, compact = false }) {
   const [dest, setDest] = useState(readDest);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -23,13 +23,15 @@ export default function DriveSaveBar({ onSave }) {
     setBusy(false);
   };
   return (
-    <div data-print="hide" style={{ width:630, margin:'18px auto 0', background:'white', borderRadius:10, boxShadow:'0 2px 14px rgba(0,0,0,0.3)', padding:'12px 14px', display:'flex', flexDirection:'column', gap:8, fontFamily:"'Open Sans', sans-serif" }}>
+    <div data-print="hide" style={compact
+      ? { background:'white', borderRadius:9, border:`1px solid ${DA.border}`, padding:'9px 10px', display:'flex', flexDirection:'column', gap:7 }
+      : { width:630, margin:'18px auto 0', background:'white', borderRadius:10, boxShadow:'0 2px 14px rgba(0,0,0,0.3)', padding:'12px 14px', display:'flex', flexDirection:'column', gap:8, fontFamily:"'Open Sans', sans-serif" }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         <Ic n="arc" s={15}/>
         <span style={{ fontSize:12.5, fontWeight:800, color:DA.black }}>Enregistrer le PDF sur le Drive</span>
-        <span style={{ flex:1 }}/>
+        <span style={{ flex: compact ? '1 0 100%' : 1 }}/>
         <select value={dest} onChange={e => choose(e.target.value)} disabled={busy} aria-label="Dossier du Drive"
-          style={{ fontSize:12, padding:'6px 8px', borderRadius:7, border:`1px solid ${DA.border}`, background:'white', color:DA.black, fontFamily:'inherit' }}>
+          style={{ fontSize:12, padding:'6px 8px', borderRadius:7, border:`1px solid ${DA.border}`, background:'white', color:DA.black, fontFamily:'inherit', ...(compact ? { flex:1, minWidth:0 } : {}) }}>
           {DRIVE_DESTS.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
         </select>
         <button onClick={save} disabled={busy}

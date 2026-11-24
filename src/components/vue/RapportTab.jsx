@@ -390,27 +390,19 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
     localisations.flatMap(l => l.items || []).filter(i => !isBrouillon(i)).reduce((s, i) => s + (i.photos || []).filter(p => p.data).length, 0),
   [localisations]);
 
-  // ── Estimation POIDS PDF (info, demande Thomas) — heuristique légère, pas d'encodage réel.
-  // Photos = moteur principal du poids ; plans (nets) plus lourds à l'unité. L'export garantit
-  // < 5 Mo (budget dans print()) : si l'estimation dépasse, on l'indique « compressé sous 5 Mo ».
-  const pdfEstimate = useMemo(() => {
-    let plans = 0;
-    for (const l of localisations) {
-      if (l.planAnnotations?.paths?.length || l.planBg || l.planId) plans++;
-      for (const it of (l.items || [])) {
-        if (isBrouillon(it)) continue;
-        for (const ep of (it.plans || [])) {
-          if (ep?.planAnnotations?.paths?.length || ep?.planBg || ep?.planId) plans++;
-        }
-      }
-    }
-    // Coefficients calibrés sur des exports réels (photo ~1280px q0.72, plan net ~3000px q0.85).
-    const bytes = totalPhotos * 250000 + plans * 820000;
-    const mo = bytes / 1048576;
-    return { mo, over: mo > 4.6 };
-  }, [localisations, totalPhotos]);
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+  // Enregistrement du PDF sur le Drive (en haut du panneau Paramètres).
+  const driveBar = projet?.id ? <DriveSaveBar compact onSave={async (dest, onProgress) => {
+          // PDF identique à l'aperçu (même moteur que l'export groupé, budget ~5 Mo).
+          const blob = await previewRef.current?.toPdfBlob?.();
+          if (!blob) throw new Error('PDF impossible à préparer');
+          const fileName = reportFileName({ dateVisite: projet.dateVisite, code: affaireCode(projet.nom), visiteLabel: projet.visiteNom });
+          const r = await saveReportToDrive({ blob, projetNom: projet.nom, projetNum: getAffaireNum(projet.id), dest, fileName, onProgress });
+          logEvent('rapport.drive', { dest, size: blob.size, replaced: !!r.replaced });
+          return r;
+        }}/> : null;
 
   return (
     <div style={{ display:'flex', height:'100%', overflow:'hidden', position:'relative' }}>
@@ -433,20 +425,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
 
         <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
 
-          {/* Estimation du poids du PDF (info) — vert si envoyable direct, orange si compression forte */}
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 11px', borderRadius:9,
-            background: pdfEstimate.over ? '#FFFBEB' : '#ECFDF5',
-            border:`1px solid ${pdfEstimate.over ? '#FCD34D' : '#A7F3D0'}` }}>
-            <Ic n="fil" s={16} color={pdfEstimate.over ? '#92400E' : '#065F46'}/>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:12.5, fontWeight:800, color: pdfEstimate.over ? '#92400E' : '#065F46' }}>
-                PDF ≈ {pdfEstimate.mo < 0.1 ? '<0,1' : pdfEstimate.mo.toFixed(1)} Mo
-              </div>
-              <div style={{ fontSize:10.5, color: pdfEstimate.over ? '#92400E' : '#047857', opacity:0.9 }}>
-                {pdfEstimate.over ? 'Compressé automatiquement sous 5 Mo (photos réduites)' : 'Envoyable par e-mail'}
-              </div>
-            </div>
-          </div>
+          {/* PDF sur le Drive — tout en haut du panneau (demande Thomas 24/11). */}
+          {driveBar}
 
           {/* Intervenants */}
           <ParticipantsEditor
@@ -454,31 +434,8 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
             onChange={ps => onUpdate({ participants: ps })}
           />
 
-          {/* Maître d'ouvrage */}
-          <div>
-            <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:4, textTransform:'uppercase', letterSpacing:0.5 }}>
-              Maître d'ouvrage
-            </label>
-            <input
-              value={projet.maitreOuvrage || ''}
-              onChange={e => onUpdate({ maitreOuvrage: e.target.value })}
-              placeholder="Nom du maître d'ouvrage…"
-              style={{ width:'100%', fontSize:12, border:`1px solid ${DA.border}`, borderRadius:8, padding:'7px 10px', outline:'none', boxSizing:'border-box', fontFamily:'inherit' }}
-            />
-          </div>
-
-          {/* Date de visite */}
-          <div>
-            <label style={{ fontSize:10, fontWeight:700, color:DA.gray, display:'block', marginBottom:4, textTransform:'uppercase', letterSpacing:0.5 }}>
-              Date de la visite
-            </label>
-            <input
-              type="date"
-              value={projet.dateVisite || ''}
-              onChange={e => onUpdate({ dateVisite: e.target.value || null })}
-              style={{ width:'100%', padding:'7px 10px', borderRadius:8, border:`1px solid ${DA.border}`, fontSize:12, color:DA.black, background:DA.white, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}
-            />
-          </div>
+          {/* Maître d'ouvrage et date de visite : retirés d'ici (retour Thomas 24/11), ils se
+              modifient sur la fiche de l'affaire et la tuile de la visite. */}
 
           {/* Photos par ligne */}
           <div>
@@ -648,15 +605,6 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
         onExportPdf={handleExport}
         onExportPhotos={handleExportPhotos}
         onAskReview={projet?.id && isPc ? () => setReviewOpen(true) : null /* PC uniquement (demande Thomas 24/11) */}
-        footer={projet?.id ? <DriveSaveBar onSave={async (dest, onProgress) => {
-          // PDF identique à l'aperçu (même moteur que l'export groupé, budget ~5 Mo).
-          const blob = await previewRef.current?.toPdfBlob?.();
-          if (!blob) throw new Error('PDF impossible à préparer');
-          const fileName = reportFileName({ dateVisite: projet.dateVisite, code: affaireCode(projet.nom), visiteLabel: projet.visiteNom });
-          const r = await saveReportToDrive({ blob, projetNom: projet.nom, projetNum: getAffaireNum(projet.id), dest, fileName, onProgress });
-          logEvent('rapport.drive', { dest, size: blob.size, replaced: !!r.replaced });
-          return r;
-        }}/> : null}
         totalPhotos={totalPhotos}
         zipping={zipping}
         recapRows={recapRows}
