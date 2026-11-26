@@ -2,8 +2,8 @@
 // sert (jamais dans les Paramètres).
 //   • placeAfterPhoto(visiteId) : après une photo, ouvrir le plan pour la repérer. Interrupteur sur
 //     la TUILE de la visite — vaut pour toutes ses observations. Défaut : oui.
-//   • useAppCamera : interrupteur « Rafale » de l'observation. Oui (défaut) = viseur de l'app
-//     (rafale sans validation, zoom, bouton « Placer ») ; non = appareil photo du téléphone.
+//   • useAppCamera : interrupteur « Rafale » de l'observation. Oui = viseur de l'app (rafale sans
+//     validation, zoom, bouton « Placer ») ; non (DÉFAUT depuis le 26/11) = appareil photo du téléphone.
 //   • galleryCopy : copie automatique dans la galerie — COUPÉE (voir getGalleryCopy).
 
 const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -17,8 +17,12 @@ export const getPlaceAfterPhoto = (visiteId = null) => {
   return get(placeKey(null)) !== '0'; // défaut : oui
 };
 export const setPlaceAfterPhoto = (visiteId, on) => set(placeKey(visiteId), on ? '1' : '0');
-export const getUseAppCamera = () => get('chantierai_app_camera') !== '0';
-export const setUseAppCamera = (on) => set('chantierai_app_camera', on ? '1' : '0');
+// Retour Thomas 26/11 (2 visites terrain) : « l'appareil photo de l'app est super limité, on ne
+// peut pas mettre directement celui du téléphone ? » → l'APPAREIL PHOTO DU TÉLÉPHONE devient le
+// défaut pour tout le monde (nouvelle clé : l'ancien réglage « viseur » n'est pas repris). Le
+// viseur de l'app (rafale) reste disponible avec l'interrupteur « Rafale ».
+export const getUseAppCamera = () => get('chantierai_app_camera_v2') === '1';
+export const setUseAppCamera = (on) => set('chantierai_app_camera_v2', on ? '1' : '0');
 // Retour Thomas 16/11 (définitif) : « le pop-up de téléchargement ne doit ABSOLUMENT pas apparaître à
 // l'écran ; le mieux est de ne rien avoir ». Une app web ne peut ni écrire dans la galerie sans ce
 // message, ni le reléguer dans la barre de notifications → copie automatique COUPÉE (aucun message).

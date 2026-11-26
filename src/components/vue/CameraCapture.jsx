@@ -194,13 +194,21 @@ export default function CameraCapture({ onShot, onNative, onClose, onPlace = nul
       ctx.translate(cv.width / 2, cv.height / 2);
       ctx.rotate((r * Math.PI) / 180);
       ctx.drawImage(v, sx, sy, w, h, -w / 2, -h / 2, w, h);
-      const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+      // Retour Thomas 26/11 : « je ne pouvais pas mitrailler, il fallait appuyer sur ×2 / ×5 pour
+      // reprendre une photo ». toBlob peut ne jamais répondre (mémoire du téléphone) → déclencheur
+      // bloqué : délai de garde de 5 s, puis le viseur se relance si l'image s'est figée.
+      const blob = await Promise.race([
+        new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92)),
+        new Promise(res => setTimeout(() => res(null), 5000)),
+      ]);
+      cv.width = 0; cv.height = 0; // libère la mémoire du grand canevas tout de suite
       if (blob) {
         const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
         onShot?.(file);
         setCount(c => c + 1);
       }
     } catch { /* capture impossible : on reste dans le viseur */ }
+    try { if (v.paused || v.readyState < 2) await v.play(); } catch { /* ignore */ }
     setBusy(false);
   };
 
