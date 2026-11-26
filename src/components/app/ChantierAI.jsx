@@ -188,7 +188,10 @@ export default function ChantierAI({ profile, session, onLogout, onProfileSaved 
   useEffect(() => {
     processDriveQueue();
     window.addEventListener('online', processDriveQueue);
-    return () => window.removeEventListener('online', processDriveQueue);
+    // Retour au premier plan (téléphone sorti de la poche) : on vide aussi la file Drive.
+    const onVis = () => { if (document.visibilityState === 'visible') processDriveQueue(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.removeEventListener('online', processDriveQueue); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
   const [staleIds, setStaleIds] = useState(new Set());

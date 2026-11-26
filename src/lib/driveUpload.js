@@ -37,16 +37,47 @@ async function driveUploadAttempt({ data, name, projetNom, projetNum, visiteLabe
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
-export async function uploadToDrive(item) {
-  const delays = [0, 2000, 5000];
-  for (const delay of delays) {
+// ── FILE D'ATTENTE DRIVE (retour Thomas 26/11 : « ça n'a pas enregistré les photos dans mon
+// Drive, cata ») ─────────────────────────────────────────────────────────────────────────────
+// Avant : une photo qui n'arrivait pas à partir (réseau faible sur site) était mise en attente
+// dans localStorage, plafonné à ~5 Mo et 15 photos → au-delà de quelques photos, les suivantes
+// étaient ABANDONNÉES sans rien dire. Et une photo en cours d'envoi quand l'app passait en
+// arrière-plan était perdue (rien n'était écrit avant l'envoi).
+// Désormais : chaque envoi est d'abord INSCRIT dans IndexedDB (pas de limite pratique), puis
+// tenté ; il n'est retiré qu'une fois réussi. La file est vidée au démarrage, au retour du réseau
+// et à chaque retour au premier plan. IndexedDB indisponible (navigation privée) → ancienne
+// méthode (localStorage), inchangée.
+const IDB_NAME = 'chantierai_drive';
+const IDB_STORE = 'queue';
+const MAX_IDB = 500;
+let _db = null;
+function openIdb() {
+  if (_db) return _db;
+  _db = new Promise((resolve) => {
     try {
-      if (delay) await new Promise(r => setTimeout(r, delay));
-      await driveUploadAttempt(item);
-      return;
-    } catch { /* try next */ }
-  }
-  // All attempts failed — queue for retry when back online
+      if (typeof indexedDB === 'undefined') { resolve(null); return; }
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return _db;
+}
+function idb(mode, fn) {
+  return openIdb().then(d => new Promise((resolve) => {
+    if (!d) { resolve(undefined); return; }
+    try {
+      const r = fn(d.transaction(IDB_STORE, mode).objectStore(IDB_STORE));
+      r.onsuccess = () => resolve(r.result === undefined ? true : r.result);
+      r.onerror = () => resolve(undefined);
+    } catch { resolve(undefined); }
+  }));
+}
+const _inflight = new Set(); // envois en cours dans uploadToDrive : la file ne les renvoie pas (pas de doublon)
+const newKey = () => `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+
+function legacyQueue(item) {
   try {
     const stored = localStorage.getItem(DRIVE_QUEUE_KEY);
     const queue = stored ? JSON.parse(stored) : [];
@@ -54,23 +85,66 @@ export async function uploadToDrive(item) {
       queue.push({ ...item, _ts: Date.now() });
       localStorage.setItem(DRIVE_QUEUE_KEY, JSON.stringify(queue));
     }
-  } catch { /* localStorage full or unavailable */ }
+  } catch { /* localStorage plein ou indisponible */ }
 }
 
-export async function processDriveQueue() {
+export async function uploadToDrive(item) {
+  // 1) Inscrit AVANT d'envoyer : si l'app est fermée ou mise en arrière-plan pendant l'envoi, la
+  //    photo repartira au prochain lancement.
+  const key = newKey();
+  const count = await idb('readonly', st => st.count());
+  const saved = typeof count === 'number' && count < MAX_IDB
+    ? await idb('readwrite', st => st.put({ ...item, _ts: Date.now() }, key))
+    : undefined;
+  // 2) Envoi immédiat (3 essais rapprochés).
+  _inflight.add(key);
   try {
-    const stored = localStorage.getItem(DRIVE_QUEUE_KEY);
-    if (!stored) return;
-    const queue = JSON.parse(stored);
-    if (!queue.length) return;
-    const remaining = [];
-    for (const item of queue) {
+    for (const delay of [0, 2000, 5000]) {
       try {
+        if (delay) await new Promise(r => setTimeout(r, delay));
         await driveUploadAttempt(item);
-      } catch {
-        remaining.push(item);
-      }
+        if (saved) await idb('readwrite', st => st.delete(key));
+        return;
+      } catch { /* essai suivant */ }
     }
-    localStorage.setItem(DRIVE_QUEUE_KEY, JSON.stringify(remaining));
-  } catch { /* ignore */ }
+  } finally { _inflight.delete(key); }
+  // 3) Échec : la photo reste dans la file IndexedDB (ou, sans IndexedDB, ancienne file).
+  if (!saved) legacyQueue(item);
+}
+
+let _draining = false;
+export async function processDriveQueue() {
+  if (_draining) return;
+  _draining = true;
+  try {
+    // Ancienne file (localStorage) : reprise dans IndexedDB si possible.
+    try {
+      const stored = localStorage.getItem(DRIVE_QUEUE_KEY);
+      const queue = stored ? JSON.parse(stored) : [];
+      if (queue.length && await openIdb()) {
+        for (const it of queue) await idb('readwrite', st => st.put(it, newKey()));
+        localStorage.removeItem(DRIVE_QUEUE_KEY);
+      } else if (queue.length) {
+        const remaining = [];
+        for (const it of queue) { try { await driveUploadAttempt(it); } catch { remaining.push(it); } }
+        localStorage.setItem(DRIVE_QUEUE_KEY, JSON.stringify(remaining));
+      }
+    } catch { /* ignore */ }
+    const keys = (await idb('readonly', st => st.getAllKeys())) || [];
+    let fails = 0;
+    for (const k of keys) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) break;
+      if (_inflight.has(k)) continue;
+      const it = await idb('readonly', st => st.get(k));
+      if (!it || it === true) { await idb('readwrite', st => st.delete(k)); continue; }
+      try { await driveUploadAttempt(it); await idb('readwrite', st => st.delete(k)); fails = 0; }
+      catch { if (++fails >= 3) break; } // réseau encore mauvais : on réessaiera plus tard
+    }
+  } finally { _draining = false; }
+}
+
+// Nombre de fichiers en attente d'envoi vers le Drive (affichage).
+export async function pendingDriveCount() {
+  const n = await idb('readonly', st => st.count());
+  return typeof n === 'number' ? n : 0;
 }
