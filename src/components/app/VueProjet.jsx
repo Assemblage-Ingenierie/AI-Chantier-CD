@@ -691,6 +691,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
     showUndo(`Observation déplacée dans « ${toName} »`, () => onUpdateVisit({ localisations: prev }));
   };
   const annotatorRef = useRef(null);
+  // Emplacements, dans la barre du haut (PC), des boutons de l'onglet Rapport.
+  const [hdrSlotL, setHdrSlotL] = useState(null);
+  const [hdrSlotR, setHdrSlotR] = useState(null);
   const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
   // SÉLECTION MULTIPLE DE PHOTOS (PC — demande Thomas 27/11) : Ctrl/Cmd + clic sur des vignettes ;
@@ -933,6 +936,9 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                 )}
                 {projet.adresse && <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', margin:'2px 0 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{projet.adresse}</p>}
               </div>
+              {/* Onglet Rapport (PC) : boutons Paramètres / Saut de page du rapport, rendus ici par
+                  portail → une seule barre (retour Thomas 27/11). */}
+              {tab === 'rapport' && <div ref={setHdrSlotL} style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginLeft:4 }}/>}
             </div>
 
             <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', display:'flex', alignItems:'stretch', gap:4, padding:'0 8px', height:'100%' }}>
@@ -948,6 +954,8 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
             </div>
 
             <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+              {/* Onglet Rapport (PC) : Faire relire / Photos / PDF du rapport (portail). */}
+              {tab === 'rapport' && <div ref={setHdrSlotR} style={{ display:'flex', alignItems:'center', gap:6, marginRight:4 }}/>}
               {/* Corbeille du projet (PC) : tout ce qui a été supprimé, restaurable en un clic. */}
               {onRestoreZone && (
                 <button onClick={() => setTrashOpen(true)} className={trashNew > 0 && !trashOpen ? 'trash-alert' : undefined}
@@ -1452,7 +1460,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           )}
 
           {tab === 'rapport' && (
-            <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} visiteId={visiteId} />
+            <RapportTab projet={visitProjet} onUpdate={onUpdateVisit} visiteId={visiteId} headerSlots={isDesktop && hdrSlotL && hdrSlotR ? { left: hdrSlotL, right: hdrSlotR } : null} />
           )}
         </div>
       </div>

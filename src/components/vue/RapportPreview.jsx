@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, useImperativeHandle } from 'react';
 import { DA, isBrouillon } from '../../lib/constants.js';
 import { getAllSymbols } from './Annotator.jsx';
@@ -75,7 +76,7 @@ function pdfSrcKey(src) {
 // Hauteur commune des boutons de la barre de l'aperçu (retour Thomas 24/11 : « tous de la même taille »).
 const TB_H = 28;
 
-const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, footer = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null }, ref) {
+const RapportPreview = React.forwardRef(function RapportPreview({ projet, localisations, photosParLigne, pageBreaks, onTogglePageBreak, plansEnFin, plansNoBreak = false, includeTableauRecap = true, tableauRecap = [], includeConclusion = false, conclusion = '', conclusionAlign = 'left', planPagesPaysage = false, planPages = null, onSetPlanPages = null, annexes = [], annotScales = { text: 1, shape: 1, symbol: 1 }, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, onAnnotScaleChange, onUpdateItem, onTogglePanel, panelOpen, panelW = 0, cutMode = false, onCutModeChange, onExportPdf, onExportPhotos, onAskReview = null, footer = null, totalPhotos = 0, zipping = false, recapRows = [], onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null, onUpdateConclusion, onUpdateConclusionAlign, onEditPlan = null, onAnnotatePhoto = null, headerSlots = null }, ref) {
   const ppl  = photosParLigne ?? 2;
   // Échelles d'annotation par type (texte/forme/symbole) — diffusées telles quelles aux blocs.
   const annotScale = annotScales;
@@ -787,36 +788,14 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
       {/* Mode coupe : plus de bandeau (retour Thomas 24/11 : « ça charge trop ») — le bouton
           « ✂ Terminer » de la barre et la touche Échap le quittent. */}
 
-      {/* ── Barre de navigation pages ── */}
-      {/* Sur écran étroit, le pager (absolu, centré 50vw) chevauchait les boutons Photos/PDF
-          → il passe sur sa PROPRE ligne en dessous. Une seule ligne conservée sur desktop. */}
+      {/* ── Barre d'outils du rapport ──
+          PC (retour Thomas 27/11 : « fusionner les deux barres ») : les boutons vont DANS la barre
+          du haut de l'application (portails vers les emplacements fournis par VueProjet) → une
+          seule barre. Ailleurs (téléphone, export) : barre propre au rapport, comme avant.
+          La navigation « Page X / Y » est retirée (« ça sert à rien »). */}
       {(() => { const narrow = typeof window !== 'undefined' && window.innerWidth < 640;
-      const pager = (
-        <div style={ narrow
-          ? { display:'flex', alignItems:'center', justifyContent:'center', gap:6 }
-          : { position:'absolute', left:`calc(50vw - ${panelOpen ? panelW : 0}px)`, transform:'translateX(-50%)', display:'flex', alignItems:'center', gap:6 }}>
-          <button
-            onClick={() => scrollToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage <= 1 ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, height:TB_H, boxSizing:'border-box', padding:'0 11px', cursor: currentPage <= 1 ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
-            ‹
-          </button>
-          <span style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.7)', letterSpacing:0.5, minWidth:70, textAlign:'center' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            onClick={() => scrollToPage(currentPage + 1)}
-            disabled={currentPage >= totalPages}
-            style={{ background:'rgba(255,255,255,0.08)', border:'none', color: currentPage >= totalPages ? 'rgba(255,255,255,0.2)' : 'white', borderRadius:6, height:TB_H, boxSizing:'border-box', padding:'0 11px', cursor: currentPage >= totalPages ? 'default' : 'pointer', fontSize:16, fontWeight:700, lineHeight:1 }}>
-            ›
-          </button>
-        </div>
-      );
-      return (
-      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', flexDirection:'column', gap:6, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display:'flex', alignItems:'center', position:'relative' }}>
-          {/* Gauche : Paramètres */}
-          <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
+      const leftBtns = (
+          <>
             {onTogglePanel && (
               <button
                 onClick={onTogglePanel}
@@ -839,11 +818,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 {!narrow && <span>{cutMode ? 'Terminer' : 'Saut de page'}</span>}
               </button>
             )}
-          </div>
-          {/* Centre : navigation pages — sur la même ligne uniquement si l'écran est assez large */}
-          {!narrow && pager}
-          {/* Droite : export — Photos d'abord, PDF ensuite */}
-          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+          </>
+      );
+      const rightBtns = (
+          <>
             {/* Demande de relecture par email (demande Thomas 24/11). */}
             {onAskReview && (
               <button onClick={onAskReview} data-print="hide" title="Envoyer le lien du rapport à un collègue pour relecture"
@@ -869,11 +847,21 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                 <span>PDF</span>
               </button>
             )}
+          </>
+      );
+      if (!narrow && headerSlots?.left && headerSlots?.right) {
+        return <>{createPortal(leftBtns, headerSlots.left)}{createPortal(rightBtns, headerSlots.right)}</>;
+      }
+      return (
+      <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', flexDirection:'column', gap:6, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display:'flex', alignItems:'center', position:'relative' }}>
+          <div style={{ flex:1, display:'flex', alignItems:'center', gap:6 }}>
+            {leftBtns}
+          </div>
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+            {rightBtns}
           </div>
         </div>
-        {/* Écran étroit : pager sur sa propre ligne, centré */}
-        {narrow && pager}
-
       </div>
       ); })()}
 
