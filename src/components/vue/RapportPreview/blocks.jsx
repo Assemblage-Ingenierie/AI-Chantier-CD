@@ -646,16 +646,25 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
         }
         if (photoRow.kind === 'custom') {
           // Ligne dont le nombre de photos est choisi à la main (1, 2 ou 3).
+          // Chaque photo GARDE SON FORMAT (retour Thomas 27/11 : ses portraits repassaient en
+          // paysage et le recadrage semblait perdu dès qu'on réglait le nombre de photos d'une
+          // ligne mixte). Ligne mixte : même hauteur qu'une ligne paysage, le portrait est plus
+          // étroit (3:4 → 9/16 de la largeur d'un paysage) ; l'ensemble est CENTRÉ.
+          const cellW = `((100% - ${(photoRow.cols - 1) * 3}px) / ${photoRow.cols})`;
+          const isP = (i) => allPhotos[i]?.orient === 'portrait';
           return (
             <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
               {colsControl}
               {/* Ligne incomplète (moins de photos que demandé) : photos de même taille, CENTRÉES. */}
               <div style={{ display:'flex', justifyContent:'center', gap:3, ...fitBox }}>
-                {photoRow.idxs.map(i => (
-                  <div key={i} style={{ flex:`0 0 calc((100% - ${(photoRow.cols - 1) * 3}px) / ${photoRow.cols})`, minWidth:0 }}>
-                    {renderPhotoCell(i, photoRow.portrait ? PORT : LAND)}
-                  </div>
-                ))}
+                {photoRow.idxs.map(i => {
+                  const narrow = !photoRow.portrait && isP(i);
+                  return (
+                    <div key={i} style={{ flex:`0 0 calc(${cellW}${narrow ? ' * 0.5625' : ''})`, minWidth:0 }}>
+                      {renderPhotoCell(i, photoRow.portrait || isP(i) ? PORT : LAND)}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -703,8 +712,14 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
         return (
           <div data-photogrid="1" {...gridHoverProps} style={{ padding:'4px 6px 6px', position:'relative' }}>
               {colsControl}
-            <div style={{ display:'grid', gridTemplateColumns:`repeat(${colsN},1fr)`, gap:3, ...fitBox }}>
-              {photoRow.idxs.map(i => renderPhotoCell(i, isPortraits ? PORT : LAND))}
+            {/* Ligne incomplète (ex. 1 photo restante sur 2) : même taille, CENTRÉE (retour
+                Thomas 27/11 — elle partait à gauche). */}
+            <div style={{ display:'flex', justifyContent:'center', gap:3, ...fitBox }}>
+              {photoRow.idxs.map(i => (
+                <div key={i} style={{ flex:`0 0 calc((100% - ${(colsN - 1) * 3}px) / ${colsN})`, minWidth:0 }}>
+                  {renderPhotoCell(i, isPortraits ? PORT : LAND)}
+                </div>
+              ))}
             </div>
           </div>
         );
