@@ -13,6 +13,7 @@ import { restoreItemInLocs, restoreZoneInLocs, restoreItemTextInLocs } from '../
 import { addDeletedItem } from '../lib/recoveryBin.js';
 import { applyBackup } from '../lib/backupDiff.js';
 import { getPhotoPref } from '../lib/photoPrefs.js';
+import { localOrphansToKeep } from '../lib/photoMerge.js';
 import { getCachedPhotoData, getCachedPhotoIds, cachePhoto, fetchAsDataUrl } from '../lib/offlineCache.js';
 import { logEvent } from '../lib/logger.js';
 import { publishPendingCount } from '../lib/pendingSync.js';
@@ -1022,6 +1023,8 @@ export function useProjets(onSyncStatus) {
       return;
     }
 
+    // Ids de TOUTES les photos lues en base (toutes observations confondues).
+    const dbPhotoIds = new Set(Object.values(photosMap).flat().map(x => x?.id).filter(Boolean));
     setProjets(ps => ps.map(p => {
       if (p.id !== projectId) return p;
       return {
@@ -1087,9 +1090,9 @@ export function useProjets(onSyncStatus) {
                       // l'état React → saveRemote n'écrivait jamais leur ligne → octets orphelins dans
                       // Storage, invisibles partout. On les garde (celles qui ont des octets : data
                       // ou composite annoté) → saveRemote écrira leur ligne au prochain cycle.
-                      ...(item.photos || []).filter(p =>
-                        p._id && !photosMap[item.id].some(x => x.id === p._id) && (p.data || p.annotated)
-                      )]
+                      // Photo DÉPLACÉE : son id est en base sous l'AUTRE observation → pas gardée ici
+                      // (sinon doublon au rechargement — incident 27/11, voir localOrphansToKeep).
+                      ...localOrphansToKeep(item.photos, dbPhotoIds)]
                     // La lecture DB ne renvoie rien pour cet item (chargement partiel/timing) :
                     // NE PAS écraser par [] des photos locales déjà présentes (cache hydraté),
                     // sinon les photos annotées « disparaissent » jusqu'au prochain reload propre.

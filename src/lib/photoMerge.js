@@ -16,3 +16,15 @@ export function keepCollaboratorPhotos(basePhotos, savedPhotos, currentPhotos) {
   const extra = (currentPhotos || []).filter(ph => { const k = photoKey(ph); return k && !known.has(k); });
   return extra.length ? [...saved, ...extra] : saved;
 }
+
+// RECHARGEMENT — photos LOCALES à garder en plus de celles lues en base pour une observation
+// (anti-orphelin : photo prise ici dont la ligne item_photos n'existe pas encore). Incident
+// 27/11 (Thomas, ~30 photos déplacées d'une observation à l'autre puis rechargement) : une
+// photo DÉPLACÉE est, selon que la sauvegarde ou le cache local était en retard, absente de
+// la base pour l'une des deux observations mais présente dans son état local → elle était
+// gardée des DEUX côtés → photos en double. Règle : une photo locale n'est gardée que si son
+// id n'existe NULLE PART dans la lecture base (toutes observations confondues) — sinon la base
+// dit déjà où elle est.
+export function localOrphansToKeep(localPhotos, dbIdsAll) {
+  return (localPhotos || []).filter(p => p && p._id && !dbIdsAll.has(p._id) && (p.data || p.annotated));
+}
