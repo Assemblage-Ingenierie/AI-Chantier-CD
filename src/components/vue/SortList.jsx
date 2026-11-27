@@ -10,6 +10,7 @@ import ObsDatesChip from '../ui/ObsDatesChip.jsx';
 import { obsDatesInfo } from '../../lib/obsDates.js';
 import { getPlanDrag, endPlanDrag } from '../../lib/planDrag.js';
 import { getObsDrag, startObsDrag, markObsDropped, endObsDrag } from '../../lib/obsDrag.js';
+import { isSelected as isPhotoSelected } from '../../lib/photoMulti.js';
 
 const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 900;
 
@@ -146,7 +147,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
         onLoad={() => { thumb.onLoad(); setImgLoaded(true); }} onError={() => { if (!thumb.onError()) setImgLoaded(true); }}
         onPointerDown={e => { e.stopPropagation(); startLP(fullSrc); }}
         onPointerUp={endLP} onPointerLeave={endLP} onPointerCancel={endLP}
-        onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(); }}
+        onClick={e => { e.stopPropagation(); if (lpRef.current.fired) { lpRef.current.fired = false; return; } onOpen(e); }}
         style={{ ...imgStyle, opacity: imgLoaded ? 1 : 0, transition:'opacity 0.2s ease' }}/>
       {live && (
         <canvas ref={cvRef} style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', borderRadius: imgStyle?.borderRadius }}/>
@@ -155,7 +156,7 @@ function AnnotatedThumb({ photo, imgStyle, onOpen, startLP, endLP, lpRef }) {
   );
 }
 
-export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null, onMoveItemAcross = null, onTouchDragStart = null }) {
+export default function SortList({ items, locId = null, compactEmpty = false, visitDate = null, liveDrafts = null, onReorder, onEdit, onDelete, onAnnotatePhoto, onDeletePhoto, onReorderPhoto, onMovePhotoAcross, onOpenItemPlan, onDropPlan = null, onMoveItemAcross = null, onTouchDragStart = null, photoSel = null, onTogglePhotoSel = null, onDeleteSelPhotos = null, onMoveSelPhotos = null }) {
   const [confirmDelId, setConfirmDelId] = useState(null);
   const [confirmDelPhoto, setConfirmDelPhoto] = useState(null); // { item, photoIdx }
   const [lightbox, setLightbox]         = useState(null);
@@ -230,6 +231,8 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
   // Dépose la photo glissée dans `item` à la position d'insertion `ins` (0…nb photos).
   const dropPhotoInto = (item, ins, d) => {
     if (!d) return;
+    // Glisser d'une photo SÉLECTIONNÉE (Ctrl + clic, PC) → toute la sélection suit.
+    if (d.multi && onMoveSelPhotos) { onMoveSelPhotos(locId, item.id, ins); return; }
     if (d.fromItemId === item.id) {
       const to = ins > d.fromPhotoIdx ? ins - 1 : ins;
       reorderPhotos(item, d.fromPhotoIdx, Math.min(to, (item.photos || []).length - 1));
@@ -656,7 +659,13 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                         {shown.map((ph, pi) => {
                           // trouver l'index réel dans item.photos (pas dans validPhotos)
                           const realIdx = (item.photos || []).indexOf(ph);
-                          const openPhoto = () => { if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); } };
+                          const selected = !!photoSel && isPhotoSelected(photoSel, item.id, ph);
+                          const multiSel = selected && photoSel.length > 1;
+                          const openPhoto = (e) => {
+                            // Ctrl (Cmd sur Mac) + clic : ajoute / retire la photo de la sélection.
+                            if (onTogglePhotoSel && e && (e.ctrlKey || e.metaKey)) { onTogglePhotoSel(locId, item, ph); return; }
+                            if (onAnnotatePhoto) { onAnnotatePhoto(item, realIdx >= 0 ? realIdx : pi); } else { setLightbox({ photos: validPhotos, idx: pi, item }); }
+                          };
                           // Glissable dès qu'on peut réordonner OU déplacer entre observations →
                           // la poignée apparaît MÊME sur une photo seule (pour la sortir ailleurs).
                           const canDrag = !!(onReorderPhoto || onMovePhotoAcross);
@@ -665,9 +674,9 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                             draggable={canDrag}
                             onDragStart={canDrag ? (e => {
                               e.stopPropagation(); clearTimeout(photoLP.current.timer);
-                              const payload = { fromLocId: locId, fromItemId: item.id, fromPhotoIdx: realIdx };
+                              const payload = { fromLocId: locId, fromItemId: item.id, fromPhotoIdx: realIdx, ...(multiSel && onMoveSelPhotos ? { multi: true } : {}) };
                               photoDragRef.current = payload;
-                              setDragSrc({ itemId: item.id, idx: realIdx });
+                              setDragSrc({ itemId: item.id, idx: realIdx, multi: !!payload.multi });
                               _photoDragPayload = payload; // partagé entre zones (fallback robuste au drop)
                               // dataTransfer = canal qui survit au passage d'une zone (SortList) à l'autre.
                               try { e.dataTransfer.setData('text/photo', JSON.stringify(payload)); e.dataTransfer.effectAllowed = 'move'; } catch {}
@@ -685,7 +694,13 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                             }) : undefined}
                             onDragEnd={canDrag ? (() => { photoDragRef.current = null; _photoDragPayload = null; window.dispatchEvent(new Event('ai-photo-drag-end')); }) : undefined}
                             style={{ position:'relative', flexShrink:0,
-                              opacity: dragSrc && dragSrc.itemId === item.id && dragSrc.idx === realIdx ? 0.35 : 1 }}>
+                              opacity: dragSrc && ((dragSrc.itemId === item.id && dragSrc.idx === realIdx) || (dragSrc.multi && selected)) ? 0.35 : 1 }}>
+                            {/* Photo sélectionnée (Ctrl + clic) : contour rouge + coche. */}
+                            {selected && (
+                              <span aria-hidden="true" style={{ position:'absolute', inset:0, borderRadius: isDesktop ? 10 : 6, boxShadow:`0 0 0 3px ${DA.red}`, background:'rgba(227,5,19,0.12)', zIndex:2, pointerEvents:'none' }}>
+                                <span style={{ position:'absolute', top:4, right:4, width:22, height:22, borderRadius:'50%', background:DA.red, color:'white', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:900 }}>✓</span>
+                              </span>
+                            )}
                             {/* Trait d'insertion (avant / après cette vignette) */}
                             {photoDrop?.itemId === item.id && (photoDrop.idx === realIdx || (photoDrop.idx === realIdx + 1 && pi === shown.length - 1)) && (
                               <span aria-hidden="true" style={{ position:'absolute', top:-3, bottom:-3, width:4, borderRadius:2, background:DA.red, zIndex:3, pointerEvents:'none',
@@ -704,9 +719,9 @@ export default function SortList({ items, locId = null, compactEmpty = false, vi
                                   onClick={e => e.stopPropagation()}/>
                               ) : (
                                 <button
-                                  onClick={e => { e.stopPropagation(); setConfirmDelPhoto({ item, photoIdx: realIdx }); }}
-                                  title="Supprimer" aria-label="Supprimer la photo"
-                                  style={{ position:'absolute', top:4, left:4, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 30, height: isDesktop ? 28 : 30, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                                  onClick={e => { e.stopPropagation(); if (multiSel && onDeleteSelPhotos) { onDeleteSelPhotos(); return; } setConfirmDelPhoto({ item, photoIdx: realIdx }); }}
+                                  title={multiSel ? `Supprimer les ${photoSel.length} photos sélectionnées` : 'Supprimer'} aria-label="Supprimer la photo"
+                                  style={{ position:'absolute', top:4, left:4, zIndex:3, background:'rgba(0,0,0,0.6)', color:'white', border:'none', borderRadius:'50%', width: isDesktop ? 28 : 30, height: isDesktop ? 28 : 30, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
                                   <Ic n="x" s={isDesktop ? 12 : 13}/>
                                 </button>
                               )
