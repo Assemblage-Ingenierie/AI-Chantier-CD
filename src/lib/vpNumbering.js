@@ -33,8 +33,12 @@ export function computeVpNumbering(localisations) {
   let g = 0;
 
   const fp = (vp) => `${Math.round(vp.x ?? -1)}|${Math.round(vp.y ?? -1)}|${vp.photoIdx ?? '_'}`;
+  // Identité de PHOTO d'abord (photoId, figé à la pose) : un index périmé ne peut plus donner le
+  // même numéro à deux photos différentes (incident Voltaire 27/11). Repli historique sur
+  // origine + index pour les repères anciens sans photoId.
   const groupKey = (vp, ownerId) =>
-    (vp.originLocId != null && vp.photoIdx != null) ? `O:${vp.originLocId}_${vp.photoIdx}`
+    vp.photoId != null ? `P:${vp.photoId}`
+    : (vp.originLocId != null && vp.photoIdx != null) ? `O:${vp.originLocId}_${vp.photoIdx}`
     : (ownerId != null && vp.photoIdx != null && vp.originLocId == null) ? `O:${ownerId}_${vp.photoIdx}`
     : vp._vpId ? `I:${vp._vpId}`
     : `F:${fp(vp)}`;

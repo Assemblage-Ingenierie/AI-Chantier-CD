@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dedupPlanPaths } from './vpNumbering.js';
+import { dedupPlanPaths, computeVpNumbering } from './vpNumbering.js';
 
 const txt = (text, x, y, extra = {}) => ({ type: 'text', text, x, y, color: '#E30513', size: 3, ...extra });
 
@@ -35,5 +35,17 @@ describe('dedupPlanPaths — textes', () => {
       { type: 'symbol', symbolId: 'fissure', x: 500, y: 500 },
     ];
     expect(dedupPlanPaths(paths)).toHaveLength(2);
+  });
+});
+
+describe('numérotation par identité de photo (incident Voltaire 27/11)', () => {
+  it('deux repères au même index périmé mais de photos différentes → deux numéros', () => {
+    const locs = [{ id: 'Z', planAnnotations: { paths: [
+      { type: 'viewpoint', photoIdx: 0, photoId: 'a', x: 1, y: 1 },
+      { type: 'viewpoint', photoIdx: 0, photoId: 'b', x: 50, y: 50 },
+    ] }, items: [{ id: 'A', photos: [{ _id: 'a', data: 'x' }, { _id: 'b', data: 'y' }] }] }];
+    const { vxxPhotoMap } = computeVpNumbering(locs);
+    expect(vxxPhotoMap.get('pid:a')).toBe(1);
+    expect(vxxPhotoMap.get('pid:b')).toBe(2);
   });
 });

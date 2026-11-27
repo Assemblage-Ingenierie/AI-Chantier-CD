@@ -8,7 +8,8 @@ import { savePlanBgNow, savePlanHdNow } from '../../lib/storage.js';
 import { addTombstone, liftTombstone } from '../../lib/tombstones.js';
 import { keepCollaboratorPhotos } from '../../lib/photoMerge.js';
 import { planTargetLoc, placementItems, placementPhotoIdx } from '../../lib/zonePlacement.js';
-import { syncViewpointsToPhotos } from '../../lib/vpPhotoSync.js';
+import { syncViewpointsToPhotos, repairViewpoints } from '../../lib/vpPhotoSync.js';
+import { logEvent } from '../../lib/logger.js';
 import EditTitle from '../ui/EditTitle.jsx';
 import SortList from '../vue/SortList.jsx';
 import ItemModal from '../vue/ItemModal.jsx';
@@ -320,7 +321,7 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
           // Photo supprimée / déplacée / réordonnée → les repères Vxx des plans suivent (le
           // repère d'une photo supprimée disparaît). Aucun changement de photo → no-op.
           const upd = visitUpd.localisations
-            ? { ...visitUpd, localisations: syncViewpointsToPhotos(v.localisations, visitUpd.localisations) }
+            ? { ...visitUpd, localisations: repairViewpoints(syncViewpointsToPhotos(v.localisations, visitUpd.localisations)).locs }
             : visitUpd;
           return { ...v, ...upd };
         }),
@@ -329,6 +330,24 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       onUpdate(projectUpd);
     }
   }, [selectedVisiteId, onUpdate]);
+
+  // RÉPARATION des repères photo des plans (incident Voltaire 27/11 : numéros qui ne pointaient
+  // plus la bonne photo + repères en double) : dès que les photos de la visite sont chargées, les
+  // repères dont l'index ne correspond plus à leur photo (photoId) sont recalés, et les doublons
+  // d'un même plan retirés (voir repairViewpoints). Mise à jour fonctionnelle sur l'état le plus
+  // récent ; rien à faire = aucun écrit.
+  useEffect(() => {
+    const r = repairViewpoints(visitProjet.localisations);
+    if (r.locs === visitProjet.localisations) return;
+    logEvent('vp.repair', { projet: projet.id, fixedIdx: r.fixedIdx, removedDup: r.removedDup });
+    onUpdate(prev => ({
+      visites: (prev.visites || []).map(v => {
+        if (v.id !== selectedVisiteId) return v;
+        const rr = repairViewpoints(v.localisations);
+        return rr.locs === v.localisations ? v : { ...v, localisations: rr.locs };
+      }),
+    }));
+  }, [visitProjet.localisations, selectedVisiteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateVisite = (visiteId, patch) => {
     const newVisites = visites.map(v => v.id === visiteId ? { ...v, ...patch } : v);
