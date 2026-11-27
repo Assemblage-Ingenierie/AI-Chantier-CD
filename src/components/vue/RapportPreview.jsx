@@ -981,6 +981,12 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               photoAnnotScales={photoAnnotScales}
                               photoFit={pageFit[pi] ?? null}
                               onAnnotatePhoto={onAnnotatePhoto}
+                              // Supprimer une photo depuis le rapport (même effet que la croix de l'onglet Visite).
+                              onDeletePhoto={onUpdateItem && !cutMode ? (ph) => {
+                                const list = block.item.photos || [];
+                                if (!list.includes(ph)) return;
+                                onUpdateItem(block.locId, block.item.id, { photos: list.filter(p => p !== ph), _photosHydrated: true });
+                              } : null}
                               onMovePhoto={onUpdateItem && !cutMode ? (fromPh, toPh) => {
                                 // Même ordre que dans l'observation : on déplace dans la liste complète
                                 // (identité des objets photo), le Vxx des plans suit (vpPhotoSync).
