@@ -368,7 +368,7 @@ export function PhotoCropEditor({ photo, initialX = 50, initialY = 50, initialZ 
 // Photo en cours de glisser dans le rapport (les rangées d'une observation sont des blocs séparés).
 let _photoDrag = null;
 
-export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null, isFirstPhotoRow = false, onSetRowCols = null, onSetBigW = null, onToggleBig = null }) {
+export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, vpPhotoOffset = 0, vxxPhotoMap = null, mode = 'full', textContent, photoRow = null, photoCols = null, isLastPhotoRow = true, chunkNext = false, cutMode = false, onParaCut, onPhotoCropChange = null, onAnnotatePhoto = null, photoAnnotScales = { text: 1, shape: 1, symbol: 1 }, photoFit = null, onMovePhoto = null, isFirstPhotoRow = false, onSetRowCols = null, onSetBigW = null, onToggleBig = null, onDeletePhoto = null }) {
   const allPhotos = (item.photos || []).filter(p => p.data || p.annotated);
   const urg    = URGENCE[item.urgence] || URGENCE.basse;
   const suivi  = item.suivi && item.suivi !== 'rien' ? SUIVI[item.suivi] : null;
@@ -386,6 +386,9 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   // Les photos ne se rendent que via les blocs-rangée (photoRow) construits par flattenBlocks.
   const showPhotos   = mode === 'photos' && photoRow && allPhotos.length > 0;
   const [cropEditingPi, setCropEditingPi] = React.useState(null);
+  // Suppression d'une photo depuis le rapport (retour Thomas 27/11 : « si je vois des photos en
+  // double ») : croix → « Supprimer ? » (2e clic pour confirmer, abandon en quittant la photo).
+  const [delAsk, setDelAsk] = React.useState(null);
   const [dropIdx, setDropIdx] = React.useState(null); // photo survolée pendant un glisser (contour rouge)
   // Réglages de mise en page des photos (retour Thomas 24/11), au survol dans l'aperçu (jamais
   // imprimés) : nombre de photos de CETTE LIGNE (1-3) ; taille d'une photo « en grand » (centrée).
@@ -398,8 +401,12 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
   const rowCount = photoRow ? (photoRow.idxs ? photoRow.idxs.length : 1 + (photoRow.stackIdxs?.length || 0)) : 0;
   const custom = photoRow?.kind === 'custom' ? photoRow.cols : null;
   const colsControl = onSetRowCols && gridHover && photoRow && photoRow.kind !== 'big' && photoRow.firstKey ? (
-    <div data-print="hide" style={ctlBox} title="Nombre de photos de CETTE ligne (re-cliquer pour revenir à la mise en page automatique)">
-      <span style={{ fontSize:9, color:DA.gray, fontWeight:700, padding:'0 3px' }}>Photos sur la ligne</span>
+    <div data-print="hide" style={ctlBox} title="Photos sur la ligne : nombre de photos de CETTE ligne (re-cliquer pour revenir à la mise en page automatique)">
+      {/* Icône compacte (le texte « Photos sur la ligne » recouvrait la croix « supprimer » de la
+          1re photo sur les lignes de 3) — le libellé complet est dans l'infobulle. */}
+      <svg aria-hidden="true" width="14" height="12" viewBox="0 0 14 12" style={{ margin:'0 2px', color:DA.gray }}>
+        <rect x="0.5" y="2" width="3.6" height="8" rx="0.8" fill="currentColor"/><rect x="5.2" y="2" width="3.6" height="8" rx="0.8" fill="currentColor"/><rect x="9.9" y="2" width="3.6" height="8" rx="0.8" fill="currentColor"/>
+      </svg>
       {[1, 2, 3].map(n => (
         <button key={n} onClick={(e) => { e.stopPropagation(); onSetRowCols(photoRow.firstKey, custom === n ? null : n); }}
           style={chip((custom ?? rowCount) === n, !!custom)}>{n}</button>
@@ -446,6 +453,7 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
     const fitWhole = !!ph.cropFit && !useAnnotOverlay;
     return (
       <div key={absIdx}
+        onMouseLeave={delAsk === absIdx ? () => setDelAsk(null) : undefined}
         {...(onMovePhoto ? {
           // Glisser-déposer (PC) pour réordonner les photos de l'observation depuis le rapport
           // (même ordre que dans l'observation — demande Thomas 23/11). Seulement au sein de la
@@ -481,20 +489,45 @@ export function ItemBlock({ item, ppl, onEdit, visitDate = null, locId = null, v
               transform: cz !== 1 ? `scale(${cz})` : undefined, transformOrigin:`${cx}% ${cy}%` }}/>
         {/* Bouton « Annoter » (haut-droite) : ouvre l'outil d'annotation sur la photo —
             permet de retoucher / déplacer les annotations directement depuis le rapport. */}
-        {onAnnotatePhoto && !!ph.data && (
-          <button data-print="hide"
-            onClick={(e) => { e.stopPropagation(); onAnnotatePhoto(locId, item, ph); }}
-            title="Annoter / modifier les annotations de la photo"
-            style={{ position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.62)',
-              color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
-              fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
-              display:'flex', alignItems:'center', gap:4 }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-            </svg>
-            Annoter
-          </button>
-        )}
+        {/* Haut-droite : [supprimer] [Annoter] côte à côte. */}
+        <div data-print="hide" style={{ position:'absolute', top:4, right:4, zIndex:2, display:'flex', alignItems:'center', gap:4 }}>
+          {onDeletePhoto && (
+            delAsk === absIdx ? (
+              <button data-print="hide"
+                onClick={(e) => { e.stopPropagation(); setDelAsk(null); onDeletePhoto(ph); }}
+                title="Confirmer : supprimer cette photo de l'observation"
+                style={{ background:'#B91C1C',
+                  color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'5px 9px',
+                  fontSize:10.5, fontWeight:800, lineHeight:1, whiteSpace:'nowrap', boxShadow:'0 1px 6px rgba(0,0,0,0.3)' }}>
+                Supprimer ?
+              </button>
+            ) : (
+              <button data-print="hide"
+                onClick={(e) => { e.stopPropagation(); setDelAsk(absIdx); }}
+                title="Supprimer cette photo"
+                aria-label="Supprimer la photo"
+                style={{ background:'rgba(0,0,0,0.62)',
+                  color:'white', border:'none', cursor:'pointer', borderRadius:'50%', width:20, height:20, padding:0,
+                  fontSize:13, fontWeight:700, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                ×
+              </button>
+            )
+          )}
+          {onAnnotatePhoto && !!ph.data && (
+            <button data-print="hide"
+              onClick={(e) => { e.stopPropagation(); onAnnotatePhoto(locId, item, ph); }}
+              title="Annoter / modifier les annotations de la photo"
+              style={{ background:'rgba(0,0,0,0.62)',
+                color:'white', border:'none', cursor:'pointer', borderRadius:5, padding:'4px 7px',
+                fontSize:10, fontWeight:700, letterSpacing:0.3, lineHeight:1,
+                display:'flex', alignItems:'center', gap:4 }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+              </svg>
+              Annoter
+            </button>
+          )}
+        </div>
         {vxxNum != null && (
           <div style={{ position:'absolute', top:2, left:2, background:'rgba(255,255,255,0.92)', color:'#333', fontSize:6, fontWeight:800, borderRadius:2, width:13, height:13, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid rgba(0,0,0,0.15)', pointerEvents:'none', lineHeight:1, flexShrink:0 }}>
             V{vxxNum}
