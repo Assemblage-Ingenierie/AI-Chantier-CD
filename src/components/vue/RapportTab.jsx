@@ -403,6 +403,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
 
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const showPanel = panelOpen || !!headerSlots;
 
   // Enregistrement du PDF sur le Drive (en haut du panneau Paramètres).
   const driveBar = projet?.id ? <DriveSaveBar compact onSave={async (dest, onProgress) => {
@@ -418,8 +419,9 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
   return (
     <div style={{ display:'flex', height:'100%', overflow:'hidden', position:'relative' }}>
 
-      {/* ── Panneau gauche : paramètres ── */}
-      {panelOpen && (
+      {/* ── Panneau gauche : paramètres ── (PC, barre unique : toujours ouvert, plus de bouton
+          « Paramètres » — retour Thomas 27/11) */}
+      {showPanel && (
       <div style={{ width: isMobile ? '100%' : panelW, display:'flex', flexDirection:'column', flexShrink:0, background:DA.white, position: isMobile ? 'absolute' : 'relative', inset: isMobile ? 0 : 'auto', zIndex: isMobile ? 10 : 'auto' }}>
 
         {/* Bouton retour — visible uniquement sur mobile */}
@@ -573,11 +575,25 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
           </div>
         </div>
 
+        {/* SAUT DE PAGE en bas du panneau, FIXE (ne défile pas avec le reste) — PC, barre unique
+            (retour Thomas 27/11 : « en bas du panneau, mais non scrollable »). */}
+        {headerSlots && (
+          <div style={{ flexShrink:0, padding:'10px 12px', borderTop:`1px solid ${DA.border}`, background:DA.white }}>
+            <button onClick={() => setCutMode(v => !v)} data-print="hide"
+              title={cutMode ? 'Terminer (Échap)' : 'Forcer un saut de page : clique ensuite sur les ciseaux entre deux blocs'}
+              style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'11px 12px', borderRadius:10, cursor:'pointer',
+                border: cutMode ? 'none' : `1.5px solid ${DA.red}`, background: cutMode ? DA.red : 'white', color: cutMode ? 'white' : DA.red, fontSize:13, fontWeight:800 }}>
+              <span style={{ fontSize:15, lineHeight:1 }}>✂</span>
+              {cutMode ? 'Terminer les sauts de page' : 'Saut de page'}
+            </button>
+          </div>
+        )}
+
       </div>
       )}
 
       {/* ── Poignée de redimensionnement ── */}
-      {panelOpen && !isMobile && (
+      {showPanel && !isMobile && (
         <div
           onMouseDown={startDrag}
           style={{ width:5, flexShrink:0, cursor:'col-resize', background:'transparent', borderRight:`1px solid ${DA.border}`, position:'relative', zIndex:5 }}
@@ -610,7 +626,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
         annexes={annexes}
         onUpdateItem={onUpdateItem}
         onTogglePanel={() => setPanelOpen(v => !v)}
-        panelOpen={panelOpen}
+        panelOpen={showPanel}
         panelW={isMobile ? 0 : panelW}
         cutMode={cutMode}
         onCutModeChange={setCutMode}
