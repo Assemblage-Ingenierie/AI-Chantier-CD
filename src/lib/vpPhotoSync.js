@@ -163,3 +163,70 @@ export function syncViewpointsToPhotos(prevLocs, nextLocs) {
   });
   return any ? result : nextLocs;
 }
+
+// RÉPARATION DES REPÈRES (incident Thomas 27/11, Voltaire : « les numéros de photo ne
+// correspondent pas aux photos » + repères en double). Pendant le doublon de photos du 27/11, des
+// photoIdx ont été recalés sur des listes qui contenaient des doublons → une fois les doublons
+// retirés, l'index (utilisé par l'annotateur et la numérotation) ne pointait plus la bonne photo,
+// alors que photoId (identité) restait juste. Ici, pour chaque plan :
+//   • repère dont la photo (photoId) est retrouvée dans la liste COMPLÈTE de son origine →
+//     photoIdx recalé sur sa vraie position (photoId fait foi) ;
+//   • deux repères du MÊME plan pointant la MÊME photo (photoId) → on garde le premier (R1 :
+//     une photo = un seul repère par plan).
+// Rien d'autre n'est touché (repère sans photoId, photo introuvable, traits, textes…). Renvoie
+// `locs` tel quel (même référence) si rien à réparer, sinon une copie + le détail.
+export function repairViewpoints(locs) {
+  if (!Array.isArray(locs)) return { locs, fixedIdx: 0, removedDup: 0 };
+  const idx = indexLocs(locs);
+  const cache = new Map();
+  const listFor = (originId) => { if (!cache.has(originId)) cache.set(originId, originList(locs, idx, originId)); return cache.get(originId); };
+  let fixedIdx = 0, removedDup = 0;
+  const fixPaths = (paths, ownerId) => {
+    if (!Array.isArray(paths) || !paths.some(p => p?.type === 'viewpoint' && p.photoId != null)) return paths;
+    const seen = new Set();
+    let dirty = false;
+    const out = [];
+    for (const m of paths) {
+      if (m?.type !== 'viewpoint' || m.photoId == null) { out.push(m); continue; }
+      if (seen.has(m.photoId)) { dirty = true; removedDup++; continue; }
+      seen.add(m.photoId);
+      const l = listFor(m.originLocId ?? ownerId);
+      if (l && l.complete) {
+        const ni = l.photos.findIndex(p => (p._id ?? p.id) === m.photoId);
+        if (ni >= 0 && ni !== m.photoIdx) { out.push({ ...m, photoIdx: ni }); dirty = true; fixedIdx++; continue; }
+      }
+      out.push(m);
+    }
+    return dirty ? out : paths;
+  };
+  const fixAnn = (ann, ownerId) => {
+    if (!ann?.paths) return ann;
+    const paths = fixPaths(ann.paths, ownerId);
+    return paths === ann.paths ? ann : { ...ann, paths };
+  };
+  let any = false;
+  const out = locs.map(loc => {
+    let l = loc;
+    const pa = fixAnn(loc?.planAnnotations, loc?.id);
+    if (pa !== loc?.planAnnotations) l = { ...l, planAnnotations: pa };
+    if (Array.isArray(loc?.extraPlans)) {
+      let d = false;
+      const eps = loc.extraPlans.map(ep => { const a = fixAnn(ep?.planAnnotations, loc.id); if (a === ep?.planAnnotations) return ep; d = true; return { ...ep, planAnnotations: a }; });
+      if (d) l = { ...l, extraPlans: eps };
+    }
+    if (Array.isArray(loc?.items)) {
+      let d = false;
+      const items = loc.items.map(it => {
+        if (!Array.isArray(it?.plans)) return it;
+        let pd = false;
+        const plans = it.plans.map(pl => { const a = fixAnn(pl?.planAnnotations, it.id); if (a === pl?.planAnnotations) return pl; pd = true; return { ...pl, planAnnotations: a }; });
+        if (!pd) return it;
+        d = true; return { ...it, plans };
+      });
+      if (d) l = { ...l, items };
+    }
+    if (l !== loc) any = true;
+    return l;
+  });
+  return { locs: any ? out : locs, fixedIdx, removedDup };
+}

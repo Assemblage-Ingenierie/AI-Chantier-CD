@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { syncViewpointsToPhotos } from './vpPhotoSync.js';
+import { syncViewpointsToPhotos, repairViewpoints } from './vpPhotoSync.js';
 
 const ph = (id) => ({ _id: id, data: `https://x/${id}` });
 const vp = (idx, extra = {}) => ({ type: 'viewpoint', _vpId: `v${idx}`, x: idx, y: idx, photoIdx: idx, ...extra });
@@ -86,5 +86,38 @@ describe('repères photo ↔ photos supprimées / déplacées', () => {
     const prev = visit([ph(1), ph(2)], [], [vp(0, { originLocId: 'ailleurs' }), vp(1)]);
     const out = syncViewpointsToPhotos(prev, withPhotos(prev, 'A', [ph(2)]));
     expect(zp(out).map(p => [p._vpId, p.photoIdx])).toEqual([['v0', 0], ['v1', 0]]);
+  });
+});
+
+describe('réparation des repères (incident Voltaire 27/11)', () => {
+  const ph = (id) => ({ _id: id, data: `d${id}` });
+  const vp = (photoId, photoIdx, extra = {}) => ({ type: 'viewpoint', photoId, photoIdx, x: 10, y: 10, ...extra });
+  const mk = (paths, itemPaths = []) => [{
+    id: 'Z', planAnnotations: { paths },
+    items: [
+      { id: 'A', _photosHydrated: true, photos: [ph('a'), ph('b')], plans: [{ planAnnotations: { paths: itemPaths } }] },
+      { id: 'B', _photosHydrated: true, photos: [ph('c')] },
+    ],
+  }];
+  it('index faux mais photoId juste → index recalé (zone et observation)', () => {
+    const r = repairViewpoints(mk([vp('c', 0), vp('a', 0)], [vp('b', 0)]));
+    expect(r.locs[0].planAnnotations.paths.map(p => p.photoIdx)).toEqual([2, 0]);
+    expect(r.locs[0].items[0].plans[0].planAnnotations.paths[0].photoIdx).toBe(1);
+    expect(r.fixedIdx).toBe(2);
+  });
+  it('deux repères de la même photo sur un même plan → un seul gardé', () => {
+    const r = repairViewpoints(mk([vp('a', 0, { _vpId: 'v1' }), vp('a', 0, { _vpId: 'v2' }), { type: 'text', text: 'x' }]));
+    expect(r.locs[0].planAnnotations.paths.map(p => p._vpId || p.type)).toEqual(['v1', 'text']);
+    expect(r.removedDup).toBe(1);
+  });
+  it('tout est juste → même référence (aucune sauvegarde inutile)', () => {
+    const locs = mk([vp('a', 0), vp('c', 2)], [vp('b', 1)]);
+    expect(repairViewpoints(locs).locs).toBe(locs);
+  });
+  it('photo introuvable ou liste incomplète → repère intact', () => {
+    const locs = mk([vp('zz', 5)]);
+    expect(repairViewpoints(locs).locs).toBe(locs);
+    const partial = [{ id: 'Z', planAnnotations: { paths: [vp('b', 0)] }, items: [{ id: 'A', photos: [ph('a'), { _id: 'b' }] }] }];
+    expect(repairViewpoints(partial).locs).toBe(partial);
   });
 });
