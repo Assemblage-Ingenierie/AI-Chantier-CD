@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { packPhotoRows } from './layout.js';
-import { activeRowCols, setRowColsFor, photoListSig } from './layout.js';
+import { activeRowCols, setRowColsFor, photoListSig, chunkByHeight } from './layout.js';
 
 const order = (rows) => rows.flatMap(r => (r.kind === 'mosaic'
   ? (r.side === 'right' ? [...r.stackIdxs, r.portraitIdx] : [r.portraitIdx, ...r.stackIdxs])
@@ -114,5 +114,18 @@ describe('ligne réglée qui précède une photo elle-même réglée (27/11)', (
   it('poser un réglage retire celui des photos absorbées', () => {
     const K = ['p0', 'p1', 'l2'];
     expect(Object.keys(setRowColsFor({ p1: 2 }, K, 'p0', 2))).toEqual([`p0~${photoListSig(K)}`]);
+  });
+});
+
+describe('tableau récapitulatif sur plusieurs pages', () => {
+  it('remplit chaque page puis passe à la suivante', () => {
+    expect(chunkByHeight([30, 30, 30, 30, 30], 70, 100)).toEqual([[0, 1], [2, 3, 4]]);
+  });
+  it('tout tient sur une page', () => {
+    expect(chunkByHeight([10, 10], 100, 100)).toEqual([[0, 1]]);
+    expect(chunkByHeight([], 100, 100)).toEqual([[]]);
+  });
+  it('ligne plus haute qu\'une page : seule sur sa page', () => {
+    expect(chunkByHeight([20, 500, 20], 100, 100)).toEqual([[0], [1], [2]]);
   });
 });

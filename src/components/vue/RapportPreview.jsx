@@ -345,6 +345,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   // qui incluent les lignes personnalisées/IA ET les observations sans intitulé) OU, en repli,
   // des items avec intitulé. Avant : basé uniquement sur recapItems (intitulé obligatoire) →
   // le tableau (ex. lignes générées par IA, ou observations sans titre) disparaissait à tort.
+  // Nombre de pages du tableau récapitulatif (il se répartit sur plusieurs pages s'il est long).
+  const [recapPages, setRecapPages] = useState(1);
   const hasTableau    = includeTableauRecap && (((recapRows?.length || 0) > 0) || recapItems.length > 0);
   const hasConclusion = includeConclusion;
 
@@ -405,7 +407,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annexList, projet.id]);
 
-  const totalPages    = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length + annexPageCount;
+  const totalPages    = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length + annexPageCount;
 
   // Suivi de la page courante via scroll
   useEffect(() => {
@@ -1015,28 +1017,29 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
           return (
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
-              <div ref={el => { pageRefs.current[pageIdx] = el; }}>
-                <TableauRecapPage
-                  localisations={localisations}
-                  projet={projet}
-                  pageNum={pageNum}
-                  totalPages={totalPages}
-                  tableauRecap={tableauRecap}
-                  recapRows={recapRows}
-                  onUpdateRecap={onUpdateRecap}
-                  onDeleteRecap={onDeleteRecap}
-                  onAddCustomRow={onAddCustomRow}
-                  onSetRecap={onSetRecap}
-                />
-              </div>
+              <TableauRecapPage
+                localisations={localisations}
+                projet={projet}
+                pageNum={pageNum}
+                totalPages={totalPages}
+                tableauRecap={tableauRecap}
+                recapRows={recapRows}
+                onUpdateRecap={onUpdateRecap}
+                onDeleteRecap={onDeleteRecap}
+                onAddCustomRow={onAddCustomRow}
+                onSetRecap={onSetRecap}
+                onPageCount={setRecapPages}
+                pageRef={(k, el) => { pageRefs.current[pageIdx + k] = el; }}
+                renderSep={(n) => <PageSepBanner pageNum={n} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>}
+              />
             </>
           );
         })()}
 
         {/* ── PAGE CONCLUSION ── */}
         {hasConclusion && (() => {
-          const pageNum = coverPageCount + pages.length + (hasTableau ? 1 : 0) + 1;
-          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0);
+          const pageNum = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + 1;
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? recapPages : 0);
           return (
             <>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
@@ -1058,8 +1061,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {planPageSegments.map((seg, pi) => {
           const isLastPlanPage = pi === planPageSegments.length - 1;
-          const pageNum = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi + 1;
-          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + pi;
+          const pageNum = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + (hasConclusion ? 1 : 0) + pi + 1;
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + (hasConclusion ? 1 : 0) + pi;
           return (
             <React.Fragment key={`plan-end-${seg.loc.id}-${seg.segIdx}`}>
               <PageSepBanner pageNum={pageNum} totalPages={totalPages} firstBlockId={null} isForced={false} onToggle={()=>{}}/>
@@ -1093,7 +1096,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {/* ── PLANS SUR PAGE À PART (A4 paysage ou portrait), en fin de rapport ── */}
         {landscapePlans.map((lp, k) => {
-          const pageIdx = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + k;
+          const pageIdx = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + k;
           const pageNum = pageIdx + 1;
           return (
             <React.Fragment key={`land-${lp.key}`}>
@@ -1116,7 +1119,7 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
 
         {/* ── ANNEXES : page de garde récap + une page par page de PDF joint ── */}
         {annexPageCount > 0 && (() => {
-          const base = coverPageCount + pages.length + (hasTableau ? 1 : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length;
+          const base = coverPageCount + pages.length + (hasTableau ? recapPages : 0) + (hasConclusion ? 1 : 0) + planPageSegments.length + landscapePlans.length;
           return (
             <React.Fragment key="annexes">
               {/* Page de garde « Annexes » (récap des noms) */}

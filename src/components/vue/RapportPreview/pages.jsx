@@ -10,7 +10,7 @@ import { callAIProxy } from '../../../lib/aiProxy.js';
 import RichTextArea from '../../ui/RichTextArea.jsx';
 import { zoneLabel } from '../../../lib/zoneGroups.js';
 import { isSynthMode, synthFlag, buildRecapDigest, RECAP_SYSTEM, recapUserPrompt, parseRecapReply, applySynthesis } from '../../../lib/recapSynth.js';
-import { FTR, HDR, MB, MT, MX, PH, PW } from './layout.js';
+import { FTR, HDR, MB, MT, MX, PH, PW, chunkByHeight } from './layout.js';
 import { SinglePlanImage, SymbolIcon, ViewpointIcon } from './blocks.jsx';
 
 // ── Bandeau header commun (logo + titre projet) ──────────────────────────────────────────
@@ -534,7 +534,7 @@ export function AutoTextarea({ value, style, ...props }) {
 export const RECAP_BATCH = 15;
 export let recapAutoPauseUntil = 0;
 
-export function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null }) {
+export function TableauRecapPage({ localisations, projet, pageNum, totalPages, tableauRecap, recapRows, onUpdateRecap, onDeleteRecap, onAddCustomRow, onSetRecap = null, onPageCount = null, pageRef = null, renderSep = null }) {
   const urgOrder = { haute: 0, moyenne: 1, basse: 2 };
   // Use passed recapRows when available (interactive preview), otherwise compute
   const ovMap = new Map((tableauRecap || []).map(r => [r.itemId, r]));
@@ -677,36 +677,27 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
     ? (isEditable ? '16px 0.8fr 1.6fr 1.6fr 60px 24px' : '16px 70px 1.5fr 1.5fr 60px')
     : (isEditable ? '5px 1fr 1.2fr 1.8fr 60px 40px' : '5px 70px 1fr 1.5fr 65px');
 
-  return (
-    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', minHeight:PH }}>
-      <HdrBar projet={projet} dateStr={dateStr}/>
-      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>
-        <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tableau récapitulatif</span>
-          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
-          {isEditable && onSetRecap && (
-            <button data-print="hide" onClick={genSynthesis} disabled={synthLoading}
-              title={synth ? 'Refaire la synthèse à partir du rapport (les lignes que tu as modifiées sont gardées)' : 'Remplacer ce tableau par une synthèse concise de tout le rapport : un point par désordre, avec sa préconisation'}
-              style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, border:'none', borderRadius:6, padding:'4px 10px', fontSize:9, fontWeight:800, cursor: synthLoading ? 'wait' : 'pointer',
-                color:'white', background: synthLoading ? '#9CA3AF' : DA.red }}>
-              {synthLoading ? <><Ic n="spn" s={10}/> Analyse du rapport…</> : synth ? '↻ Régénérer la synthèse' : '✨ Générer la synthèse'}
-            </button>
-          )}
-        </div>
-        {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
-        {/* En-tête */}
-        <div style={{ display:'grid', gridTemplateColumns: gridCols, background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
-          <div/>
-          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Zone</span>
-          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Désordre</span>
-          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>{synth ? 'Préconisation' : 'Solution'}</span>
-          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Urgence</span>
-          {isEditable && <div data-print="hide"/>}
-        </div>
-        {rows.map((row, i) => {
+  // ── Pagination (retour Thomas 27/11 : le tableau débordait de la page) : on mesure les lignes,
+  //    puis on les répartit sur autant de pages A4 que nécessaire, en-tête répété sur chaque page.
+  const rowEls = useRef([]);
+  const titleEl = useRef(null);
+  const headEl = useRef(null);
+  const [heights, setHeights] = useState({ rows: [], title: 40, head: 20 });
+  useLayoutEffect(() => {
+    const rh = rows.map((_, i) => rowEls.current[i]?.offsetHeight || 0);
+    const t = titleEl.current?.offsetHeight || 40;
+    const h = headEl.current?.offsetHeight || 20;
+    setHeights(prev => (prev.title === t && prev.head === h && prev.rows.length === rh.length && prev.rows.every((x, k) => x === rh[k]) ? prev : { rows: rh, title: t, head: h }));
+  });
+  const AVAIL = PH - MT - MB - FTR - 10; // hauteur utile d'une page (marge de sécurité)
+  const rowHeights = rows.map((_, i) => heights.rows[i] || 34);
+  const chunks = chunkByHeight(rowHeights, AVAIL - heights.title - heights.head, AVAIL - heights.head - 16);
+  useEffect(() => { onPageCount?.(chunks.length); }, [chunks.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const renderRow = (row, i) => {
           const u = URGENCE[row.urgence] || URGENCE.basse;
           return (
-            <div key={row.itemId ?? i} style={{ display:'grid', gridTemplateColumns: gridCols, gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
+            <div key={row.itemId ?? i} ref={el => { rowEls.current[i] = el; }} style={{ display:'grid', gridTemplateColumns: gridCols, gap:6, padding:'4px 8px', borderBottom:`1px solid #DFE4E8`, background: i % 2 === 0 ? '#F9F9F9' : 'white', alignItems:'start' }}>
               {synth
                 ? <div style={{ background:u.dot, borderRadius:3, minHeight:14, alignSelf:'stretch', color:'white', fontSize:7.5, fontWeight:800, display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:2 }}>{i + 1}</div>
                 : <div style={{ background:u.dot, borderRadius:2, minHeight:14, alignSelf:'stretch' }}/>}
@@ -754,18 +745,66 @@ export function TableauRecapPage({ localisations, projet, pageNum, totalPages, t
               )}
             </div>
           );
-        })}
+        };
+
+
+  return (
+    <>
+    {chunks.map((idxs, pi) => (
+    <div key={pi}>
+    {pi > 0 && renderSep?.(pageNum + pi)}
+    <div ref={el => pageRef?.(pi, el)}>
+    <div style={{ width:PW, background:'white', boxShadow:'0 2px 20px rgba(0,0,0,0.35)', flexShrink:0, fontFamily:"'Open Sans', sans-serif", position:'relative', height:PH, overflow:'hidden' }}>
+      <HdrBar projet={projet} dateStr={dateStr}/>
+      <div style={{ padding:`${MT - HDR}px ${MX}px ${MB + FTR}px` }}>
+        {pi === 0 ? (
+        <div ref={titleEl}>
+        <div style={{ borderBottom:`1px solid #B0B8C1`, paddingBottom:5, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:9, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Tableau récapitulatif</span>
+          <span style={{ fontSize:8, fontFamily:"'Open Sans', sans-serif", fontWeight:400, color:'#4D4D4D' }}>{rows.length} point{rows.length !== 1 ? 's' : ''} à traiter</span>
+          {isEditable && onSetRecap && (
+            <button data-print="hide" onClick={genSynthesis} disabled={synthLoading}
+              title={synth ? 'Refaire la synthèse à partir du rapport (les lignes que tu as modifiées sont gardées)' : 'Remplacer ce tableau par une synthèse concise de tout le rapport : un point par désordre, avec sa préconisation'}
+              style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5, border:'none', borderRadius:6, padding:'4px 10px', fontSize:9, fontWeight:800, cursor: synthLoading ? 'wait' : 'pointer',
+                color:'white', background: synthLoading ? '#9CA3AF' : DA.red }}>
+              {synthLoading ? <><Ic n="spn" s={10}/> Analyse du rapport…</> : synth ? '↻ Régénérer la synthèse' : '✨ Générer la synthèse'}
+            </button>
+          )}
+        </div>
+        {aiErr && <div data-print="hide" style={{ fontSize:8, color:DA.red, marginBottom:6, padding:'3px 6px', background:'#FFF0F0', borderRadius:4 }}>{aiErr}</div>}
+        </div>
+        ) : (
+          <div style={{ fontSize:8, fontWeight:600, color:DA.gray, marginBottom:6 }}>Tableau récapitulatif (suite)</div>
+        )}
+        <div ref={pi === 0 ? headEl : undefined}>
+        {/* En-tête */}
+        <div style={{ display:'grid', gridTemplateColumns: gridCols, background:'#F2F2F2', borderTop:`1px solid #B0B8C1`, borderBottom:`1px solid #B0B8C1`, padding:'4px 8px', gap:6 }}>
+          <div/>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Zone</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Désordre</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>{synth ? 'Préconisation' : 'Solution'}</span>
+          <span style={{ fontSize:7, fontFamily:"'Open Sans', sans-serif", fontWeight:600, color:DA.red, textTransform:'uppercase', letterSpacing:'0.06em' }}>Urgence</span>
+          {isEditable && <div data-print="hide"/>}
+        </div>
+        </div>
+        {idxs.map(i => renderRow(rows[i], i))}
+        {pi === chunks.length - 1 && (<>
         {isEditable && (
           <button data-print="hide" onClick={onAddCustomRow}
             style={{ width:'100%', marginTop:4, padding:'5px 0', borderRadius:4, border:`1.5px dashed ${DA.border}`, background:'white', color:DA.grayL, fontSize:9, fontWeight:600, cursor:'pointer' }}>
             + Ajouter une ligne
           </button>
         )}
+        </>)}
       </div>
       <div style={{ position:'absolute', top:PH - FTR, left:0, right:0 }}>
-        <PageFtr pageNum={pageNum} totalPages={totalPages}/>
+        <PageFtr pageNum={pageNum + pi} totalPages={totalPages}/>
       </div>
     </div>
+    </div>
+    </div>
+    ))}
+    </>
   );
 }
 
