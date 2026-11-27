@@ -90,7 +90,7 @@ function ConclusionEditor({ value, align, onChange, onAlignChange }) {
 
 // exportRef (optionnel) : rendu HORS ÉCRAN pour l'export groupé en zip (VisitesScreen) → expose
 // toPdfBlob() de l'aperçu ; Costar masqué. onUpdate est alors un no-op (lecture seule).
-export default function RapportTab({ projet, onUpdate, exportRef = null, visiteId = null }) {
+export default function RapportTab({ projet, onUpdate, exportRef = null, visiteId = null, headerSlots = null }) {
   const [cutMode, setCutMode] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false); // « Faire relire » (email)
   const previewRef = useRef();
@@ -590,6 +590,7 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
       {/* ── Panneau droit : aperçu A4 ── */}
       <RapportPreview
         ref={previewRef}
+        headerSlots={exportRef ? null : headerSlots}
         projet={projet}
         localisations={localisations}
         photosParLigne={projet.photosParLigne ?? 2}
