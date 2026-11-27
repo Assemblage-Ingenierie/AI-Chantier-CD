@@ -689,7 +689,9 @@ export default function RapportTab({ projet, onUpdate, exportRef = null, visiteI
               // était silencieusement perdue. Repli sur la référence si pas d'_id (aucune régression).
               const target = editingPhoto.photo;
               const updatedPhotos = (item.photos || []).map(p =>
-                (target?._id != null ? p._id === target._id : p === target)
+                // (sans _id : référence, ou même image — le rapport peut présenter une COPIE de la photo
+                //  avec son format détecté automatiquement, cf. photoAutoOrient.js)
+                (target?._id != null ? p._id === target._id : (p === target || (!!p.data && p.data === target?.data)))
                   ? { ...p, annotations: paths, annotated: exported, annotW: dims?.w, annotH: dims?.h, annotSizeScale: dims?.annotSizeScale ?? null, ...(dims?.reportCrop || {}) }
                   : p);
               onUpdateItem(editingPhoto.locId, editingPhoto.itemId, { photos: updatedPhotos, _photosHydrated: true });

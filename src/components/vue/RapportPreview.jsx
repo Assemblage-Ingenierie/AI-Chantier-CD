@@ -14,6 +14,7 @@ import { ItemBlock, ItemPlanBlock, PlanBlock, SymbolIcon, ViewpointIcon, ZoneHea
 import { A4Card, AnnexImagePage, AnnexRecapPage, ConclusionPage, CoverOverflowPage, CoverPage, PlanFullPage, TableauRecapPage, computeParticipantChunks } from './RapportPreview/pages.jsx';
 import { logEvent } from '../../lib/logger.js';
 import { photoKey } from '../../lib/photoMerge.js';
+import { photosToMeasure, applyAutoOrient, orientOfSize } from '../../lib/photoAutoOrient.js';
 export { flattenBlocks } from './RapportPreview/layout.js';
 
 // Pages d'annexes rendues en images (par annexId) — cache SESSION : re-parser/re-rendre un PDF
@@ -80,10 +81,30 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
   const annotScale = annotScales;
   // Zones présentes dans le rapport : celles qui ont du contenu, + les GROUPES (« R+4 ») dont une
   // sous-zone a du contenu (titre + plan du groupe). Sans groupe : liste identique à avant.
-  const locs = useMemo(() => {
+  const locsRaw = useMemo(() => {
     const has = (l) => (l.items || []).some(i => !isBrouillon(i) && itemHasReportContent(i));
     return localisations.filter(l => has(l) || childrenOf(localisations, l.id).some(has));
   }, [localisations]);
+  // Format AUTOMATIQUE des photos jamais réglées (portrait si l'image est plus haute que large —
+  // demande Thomas 27/11) : on lit les dimensions des images une fois, puis on applique.
+  const [autoOrient, setAutoOrient] = useState({});
+  const orientAskedRef = useRef(new Set()); // clés déjà mesurées ou en cours (jamais relancées)
+  useEffect(() => {
+    const todo = photosToMeasure(locsRaw, orientAskedRef.current);
+    if (!todo.length) return;
+    let pending = {};
+    let timer = null;
+    const flush = () => { timer = null; const p = pending; pending = {}; setAutoOrient(prev => ({ ...prev, ...p })); };
+    for (const { key, src } of todo) {
+      orientAskedRef.current.add(key);
+      const im = new Image();
+      const done = (o) => { pending[key] = o; if (!timer) timer = setTimeout(flush, 150); };
+      im.onload = () => done(orientOfSize(im.naturalWidth, im.naturalHeight));
+      im.onerror = () => done('landscape');
+      im.src = src;
+    }
+  }, [locsRaw]);
+  const locs = useMemo(() => applyAutoOrient(locsRaw, autoOrient), [locsRaw, autoOrient]);
   // Numérotation Vxx globale (badges photos + labels marqueurs) — calculée une fois, partagée
   // par le mode inline et le mode « plans en fin » → numéros identiques partout, zéro doublon.
   const { vxxPhotoMap, vpNumByPath } = useMemo(() => computeVpNumbering(localisations), [localisations]);
