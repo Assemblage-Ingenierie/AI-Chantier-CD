@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { packPhotoRows } from './layout.js';
+import { activeRowCols, setRowColsFor, photoListSig } from './layout.js';
 
 const order = (rows) => rows.flatMap(r => (r.kind === 'mosaic'
   ? (r.side === 'right' ? [...r.stackIdxs, r.portraitIdx] : [r.portraitIdx, ...r.stackIdxs])
@@ -76,5 +77,29 @@ describe('Photos par LIGNE et taille « en grand » (retour Thomas 24/11)', () =
       { kind: 'big', idxs: [0], portrait: false, w: 0.5 },
       { kind: 'landscape', idxs: [1] },
     ]);
+  });
+});
+
+describe('réglage « photos sur la ligne » lié à l\'ordre des photos (27/11)', () => {
+  const K = ['a', 'b', 'c', 'd'];
+  it('posé sur l\'ordre actuel → actif', () => {
+    const rc = setRowColsFor({}, K, 'b', 2);
+    expect(activeRowCols(rc, K)).toEqual([0, 2, 0, 0]);
+  });
+  it('photos ajoutées / retirées / réordonnées → ignoré (mise en page automatique)', () => {
+    const rc = setRowColsFor({}, K, 'b', 2);
+    expect(activeRowCols(rc, ['a', 'b', 'c', 'd', 'e'])).toEqual([0, 0, 0, 0, 0]);
+    expect(activeRowCols(rc, ['a', 'b', 'd'])).toEqual([0, 0, 0]);
+    expect(activeRowCols(rc, ['b', 'a', 'c', 'd'])).toEqual([0, 0, 0, 0]);
+  });
+  it('ancien réglage sans empreinte : toujours valable', () => {
+    expect(activeRowCols({ c: 3 }, K)).toEqual([0, 0, 3, 0]);
+  });
+  it('re-cliquer remplace / retire le réglage et purge les réglages périmés', () => {
+    const old = setRowColsFor({}, ['x', 'a'], 'a', 3);            // réglage d'une ancienne liste
+    let rc = setRowColsFor({ ...old, b: 1 }, K, 'b', 2);           // ancien réglage sans empreinte de b remplacé
+    expect(Object.keys(rc)).toEqual([`b~${photoListSig(K)}`]);
+    rc = setRowColsFor(rc, K, 'b', null);
+    expect(rc).toEqual({});
   });
 });

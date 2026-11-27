@@ -238,8 +238,8 @@ export function flattenBlocks(locs, plansEnFin, ppl = 2, paraBreaks = new Set(),
         const keys = photos.map(ph => photoKey(ph));
         const bigW = item.photoBigW || {};
         const rowCols = item.rowCols || {};
-        const rows = packPhotoRowsBig(photos.map(ph => ph?.orient === 'portrait'), keys.map(k => (big.has(k) ? (bigW[k] || 1) : 0)), itemCols, keys.map(k => rowCols[k] || 0))
-          .map(r => ({ ...r, firstKey: keys[r.idxs ? r.idxs[0] : (r.side === 'right' ? r.stackIdxs[0] : r.portraitIdx)] || null }));
+        const rows = packPhotoRowsBig(photos.map(ph => ph?.orient === 'portrait'), keys.map(k => (big.has(k) ? (bigW[k] || 1) : 0)), itemCols, activeRowCols(rowCols, keys))
+          .map(r => ({ ...r, firstKey: keys[r.idxs ? r.idxs[0] : (r.side === 'right' ? r.stackIdxs[0] : r.portraitIdx)] || null, photoKeys: keys }));
         rows.forEach((row, k) => {
           blocks.push({
             type:'item',
@@ -448,6 +448,41 @@ function mixed(idxs, isPortrait) {
 
 // Comme packPhotoRows, mais une photo « en grand » occupe SA rangée, seule et pleine largeur ;
 // les autres gardent l'ordre et la mise en page habituels avant et après elle.
+// RÉGLAGE « PHOTOS SUR LA LIGNE » LIÉ À L'ORDRE DES PHOTOS (retour Thomas 27/11 : un réglage
+// fait avant d'ajouter / retirer / déplacer des photos laissait une mise en page bizarre, ex. un
+// portrait seul alors que les deux portraits auraient dû être côte à côte). La clé du réglage
+// embarque une EMPREINTE de la liste des photos de l'observation (`<photo>~<empreinte>`) : dès
+// que les photos changent (ajout, suppression, déplacement, ordre), l'empreinte ne correspond
+// plus → le réglage est ignoré, la mise en page redevient automatique. Les clés SANS empreinte
+// (réglages antérieurs) restent valables tant qu'on ne les modifie pas.
+export function photoListSig(keys) {
+  let h = 5381;
+  const s = (keys || []).map(k => k || '?').join('|');
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+export const rowColsKey = (photoK, sig) => `${photoK}~${sig}`;
+// Réglage actif (1-3) pour chaque photo de `keys` (0 = automatique).
+export function activeRowCols(rowCols, keys) {
+  const rc = rowCols || {};
+  const sig = photoListSig(keys);
+  return keys.map(k => (k ? (rc[rowColsKey(k, sig)] || rc[k] || 0) : 0));
+}
+// Nouveau rowCols après un clic : retire tout réglage existant de cette photo et les réglages
+// périmés (empreinte d'une ancienne liste), puis pose le nouveau (n = null → automatique).
+export function setRowColsFor(rowCols, keys, photoK, n) {
+  const sig = photoListSig(keys);
+  const next = {};
+  for (const [k, v] of Object.entries(rowCols || {})) {
+    const [pk, ks] = k.split('~');
+    if (pk === photoK) continue;
+    if (ks !== undefined && ks !== sig) continue;
+    next[k] = v;
+  }
+  if (n) next[rowColsKey(photoK, sig)] = n;
+  return next;
+}
+
 export function packPhotoRowsBig(isPortrait, isBig, cols, rowCols = []) {
   // isBig[i] : 0 = normale, sinon largeur de la photo « en grand » (0.5 / 0.75 / 1, centrée).
   // rowCols[i] : nb de photos (1-3) imposé à la LIGNE qui commence par la photo i (retour Thomas
