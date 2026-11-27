@@ -559,3 +559,19 @@ export function packPhotoRows(isPortrait, cols) {
   }
   return rows;
 }
+
+// TABLEAU RÉCAPITULATIF SUR PLUSIEURS PAGES (retour Thomas 27/11 : « il dépassait de la page et
+// pas moyen de le couper en deux car très long »). Répartit des lignes de hauteurs `heights` sur
+// des pages : `firstAvail` px pour la 1re (titre + en-tête), `otherAvail` px pour les suivantes
+// (en-tête répété). Une ligne plus haute qu'une page reste seule sur la sienne. → [[i…], …]
+export function chunkByHeight(heights, firstAvail, otherAvail) {
+  const pages = [[]];
+  let left = firstAvail;
+  heights.forEach((h, i) => {
+    const hh = Math.max(0, h || 0);
+    if (hh > left && pages[pages.length - 1].length) { pages.push([]); left = otherAvail; }
+    pages[pages.length - 1].push(i);
+    left -= hh;
+  });
+  return pages;
+}
