@@ -8,7 +8,7 @@ import { fetchAnnexPdf } from '../../lib/storage.js';
 import { setPhotoPref } from '../../lib/photoPrefs.js';
 import { renderPdfPages } from '../../lib/pdfUtils.js';
 import { childrenOf } from '../../lib/zoneGroups.js';
-import { CW, FTR, HDR, MB, MT, PH, PW, VXX_DEBUG, buildPages, flattenBlocks, itemHasReportContent, splitPlanGroups, stripFullPagePlans } from './RapportPreview/layout.js';
+import { CW, FTR, HDR, MB, MT, PH, PW, VXX_DEBUG, buildPages, flattenBlocks, setRowColsFor, itemHasReportContent, splitPlanGroups, stripFullPagePlans } from './RapportPreview/layout.js';
 import { CutZone, PageSepBanner } from './RapportPreview/controls.jsx';
 import { ItemBlock, ItemPlanBlock, PlanBlock, SymbolIcon, ViewpointIcon, ZoneHeader } from './RapportPreview/blocks.jsx';
 import { A4Card, AnnexImagePage, AnnexRecapPage, ConclusionPage, CoverOverflowPage, CoverPage, PlanFullPage, TableauRecapPage, computeParticipantChunks } from './RapportPreview/pages.jsx';
@@ -942,8 +942,8 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
                               isFirstPhotoRow={!!block.isFirstPhotoRow}
                               // Réglages photos propres à l'observation (demande Thomas 24/11).
                               onSetRowCols={onUpdateItem && !cutMode ? (key, n) => {
-                                const next = { ...(block.item.rowCols || {}) };
-                                if (n) next[key] = n; else delete next[key];
+                                // Réglage lié à l'ordre actuel des photos (voir setRowColsFor dans layout.js).
+                                const next = setRowColsFor(block.item.rowCols, block.photoRow?.photoKeys || [], key, n);
                                 // Ancien réglage « par observation » remplacé par le réglage par ligne.
                                 onUpdateItem(block.locId, block.item.id, { rowCols: next, reportCols: null });
                               } : null}
