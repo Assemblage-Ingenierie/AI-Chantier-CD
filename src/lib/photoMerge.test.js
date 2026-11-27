@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { keepCollaboratorPhotos } from './photoMerge.js';
+import { keepCollaboratorPhotos, localOrphansToKeep } from './photoMerge.js';
 
 describe('enregistrer une observation sans perdre les photos du collègue', () => {
   const p = (id, extra = {}) => ({ _id: id, data: `https://x/${id}`, ...extra });
@@ -16,5 +16,18 @@ describe('enregistrer une observation sans perdre les photos du collègue', () =
   it('rien de nouveau → liste enregistrée inchangée (même objet)', () => {
     const saved = [p('a')];
     expect(keepCollaboratorPhotos([p('a')], saved, [p('a')])).toBe(saved);
+  });
+});
+
+describe('rechargement : photos locales gardées (anti-orphelin)', () => {
+  const db = new Set(['p1', 'p2']);
+  it('garde une photo prise ici pas encore en base', () => {
+    expect(localOrphansToKeep([{ _id: 'new', data: 'x' }], db).map(p => p._id)).toEqual(['new']);
+  });
+  it('ne garde PAS une photo que la base place dans une autre observation (photo déplacée → pas de doublon)', () => {
+    expect(localOrphansToKeep([{ _id: 'p2', data: 'x' }, { _id: 'p1', annotated: 'y' }], db)).toEqual([]);
+  });
+  it('ignore les photos sans id ou sans octets', () => {
+    expect(localOrphansToKeep([{ data: 'x' }, { _id: 'z' }, null], db)).toEqual([]);
   });
 });
