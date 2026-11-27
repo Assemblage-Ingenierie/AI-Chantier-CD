@@ -39,6 +39,7 @@ import { rotatePhoto } from '../../lib/photoRotate.js';
 import { unionPaths, propagatePaths, sameFps } from '../../lib/sharedPlanAnnots.js';
 import { getObsDrag, markObsDropped } from '../../lib/obsDrag.js';
 import ObsTouchMover from './ObsTouchMover.jsx';
+import { toggleSel, collectSelected, deleteSelected, moveSelected } from '../../lib/photoMulti.js';
 
 // Badge « X photos en attente d'envoi » — visible tant que la file d'upload n'est pas vide,
 // pour savoir sur site s'il reste des photos à pousser vers le serveur avant de ranger le
@@ -692,6 +693,45 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
   const annotatorRef = useRef(null);
   const [confirmDelPhotoAnnot, setConfirmDelPhotoAnnot] = useState(false); // confirmation suppression photo depuis l'annotateur
 
+  // SÉLECTION MULTIPLE DE PHOTOS (PC — demande Thomas 27/11) : Ctrl/Cmd + clic sur des vignettes ;
+  // Suppr (ou la croix d'une photo sélectionnée) les supprime toutes après confirmation ; en
+  // glisser une les déplace toutes. « Annuler » remet tout. Échap vide la sélection.
+  // ⚠️ Hooks AVANT les `return` conditionnels (voir planById ci-dessous).
+  const [photoSel, setPhotoSel] = useState([]);           // [{ locId, itemId, key }]
+  const [confirmDelSel, setConfirmDelSel] = useState(false);
+  const selCount = useMemo(() => collectSelected(visitProjet.localisations, photoSel).length, [visitProjet.localisations, photoSel]);
+  useEffect(() => { setPhotoSel([]); setConfirmDelSel(false); }, [selectedVisiteId]);
+  const togglePhotoSel = useCallback((locId, item, ph) => setPhotoSel(s => toggleSel(s, locId, item.id, ph)), []);
+  const askDeleteSel = useCallback(() => { if (selCount) setConfirmDelSel(true); }, [selCount]);
+  const deletePhotoSel = useCallback(() => {
+    const prev = visitProjet.localisations;
+    const { locs, count } = deleteSelected(prev, photoSel);
+    setConfirmDelSel(false);
+    setPhotoSel([]);
+    if (!count) return;
+    onUpdateVisit({ localisations: locs });
+    showUndo(`${count} photo${count > 1 ? 's' : ''} supprimée${count > 1 ? 's' : ''}`, () => onUpdateVisit({ localisations: prev }));
+  }, [visitProjet.localisations, photoSel, onUpdateVisit, showUndo]);
+  const movePhotoSel = useCallback((toLocId, toItemId, toIdx) => {
+    const prev = visitProjet.localisations;
+    const { locs, count } = moveSelected(prev, photoSel, toLocId, toItemId, toIdx);
+    setPhotoSel([]);
+    if (!count) return;
+    onUpdateVisit({ localisations: locs });
+    showUndo(`${count} photo${count > 1 ? 's' : ''} déplacée${count > 1 ? 's' : ''}`, () => onUpdateVisit({ localisations: prev }));
+  }, [visitProjet.localisations, photoSel, onUpdateVisit, showUndo]);
+  useEffect(() => {
+    if (!photoSel.length) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.key === 'Escape') { setPhotoSel([]); setConfirmDelSel(false); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !modal) { e.preventDefault(); askDeleteSel(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [photoSel.length, askDeleteSel, modal]);
+
   // Index mémoïsé planId → plan : évite un `.find` sur toute la bibliothèque pour CHAQUE
   // zone / plan d'observation à CHAQUE rendu (O(zones×plans) → O(1) par accès).
   // ⚠️ DOIT rester AVANT les `return` conditionnels ci-dessous (photoAnnot / annotate) :
@@ -1189,6 +1229,10 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
                               visitDate={visitProjet.dateVisite || null}
                               compactEmpty={kids.length > 0}
                               onMovePhotoAcross={movePhoto}
+                              photoSel={isDesktop ? photoSel : null}
+                              onTogglePhotoSel={isDesktop ? togglePhotoSel : null}
+                              onDeleteSelPhotos={isDesktop ? askDeleteSel : null}
+                              onMoveSelPhotos={isDesktop ? movePhotoSel : null}
                               onDropPlan={isDesktop ? dropPlan : null}
                               onMoveItemAcross={isDesktop ? moveObsToZone : null}
                               onTouchDragStart={(item, t) => setMobDrag({ fromLocId: loc.id, itemId: item.id, titre: item.titre, x: t.clientX, y: t.clientY })}
@@ -1488,6 +1532,35 @@ export default function VueProjet({ projet, visiteId, onBack, onUpdate, onDelete
       )}
 
       {mobDrag && <ObsTouchMover key={mobDrag.itemId + ':' + mobDrag.x + ':' + mobDrag.y} drag={mobDrag} locs={visitProjet.localisations} onDone={finishMobDrag}/>}
+      {/* Sélection multiple de photos (PC) : barre discrète, visible seulement pendant une sélection. */}
+      {isDesktop && selCount > 0 && !undoToast && (
+        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9998, background:'#222', color:'white', borderRadius:12, padding:'8px 10px 8px 16px', display:'flex', alignItems:'center', gap:10, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12.5, fontWeight:600, whiteSpace:'nowrap' }}>
+          <span><b>{selCount}</b> photo{selCount > 1 ? 's' : ''} sélectionnée{selCount > 1 ? 's' : ''}</span>
+          <span style={{ color:'rgba(255,255,255,0.55)', fontWeight:500 }}>glisser pour déplacer</span>
+          <button onClick={askDeleteSel}
+            style={{ background:DA.red, color:'white', border:'none', borderRadius:7, padding:'5px 10px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+            Supprimer
+          </button>
+          <button onClick={() => setPhotoSel([])} title="Désélectionner (Échap)"
+            style={{ background:'rgba(255,255,255,0.1)', border:'none', color:'rgba(255,255,255,0.7)', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontSize:12 }}>×</button>
+        </div>
+      )}
+      {confirmDelSel && selCount > 0 && (
+        <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={() => setConfirmDelSel(false)}>
+          <div style={{ background:'white', borderRadius:14, padding:'20px 18px', width:320, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }} onClick={e => e.stopPropagation()}>
+            <p style={{ margin:'0 0 16px', textAlign:'center', fontSize:15, fontWeight:800, color:DA.black }}>
+              Supprimer {selCount > 1 ? `ces ${selCount} photos` : 'cette photo'} ?
+            </p>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => setConfirmDelSel(false)}
+                style={{ flex:1, padding:'11px', background:'#F5F5F5', color:'#333', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' }}>Annuler</button>
+              <button autoFocus onClick={deletePhotoSel}
+                style={{ flex:1, padding:'11px', background:'#B91C1C', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:800, cursor:'pointer' }}>Supprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
       {undoToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'#222', color:'white', borderRadius:12, padding:'10px 16px', display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.4)', fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
           <span>{undoToast.label}</span>
