@@ -472,10 +472,13 @@ export function activeRowCols(rowCols, keys) {
 // périmés (empreinte d'une ancienne liste), puis pose le nouveau (n = null → automatique).
 export function setRowColsFor(rowCols, keys, photoK, n) {
   const sig = photoListSig(keys);
+  // Photos absorbées par la ligne réglée (les n-1 suivantes) : leur propre réglage est retiré.
+  const at = keys.indexOf(photoK);
+  const absorbed = new Set(n && at >= 0 ? keys.slice(at + 1, at + n) : []);
   const next = {};
   for (const [k, v] of Object.entries(rowCols || {})) {
     const [pk, ks] = k.split('~');
-    if (pk === photoK) continue;
+    if (pk === photoK || absorbed.has(pk)) continue;
     if (ks !== undefined && ks !== sig) continue;
     next[k] = v;
   }
@@ -505,7 +508,10 @@ export function packPhotoRowsBig(isPortrait, isBig, cols, rowCols = []) {
     if (rowCols[i]) {
       flushSeg(i);
       const idxs = [i];
-      for (let k = i + 1; k < n && idxs.length < rowCols[i] && !isBig[k] && !rowCols[k]; k++) idxs.push(k);
+      // La ligne réglée prend les photos SUIVANTES même si l'une d'elles portait son propre réglage
+      // (il est alors ignoré : elle ne commence plus de ligne). Avant, elle s'arrêtait dessus →
+      // ligne « 2 photos » avec UNE seule photo (retour Thomas 27/11).
+      for (let k = i + 1; k < n && idxs.length < rowCols[i] && !isBig[k]; k++) idxs.push(k);
       rows.push({ kind:'custom', idxs, cols: rowCols[i], portrait: idxs.every(k => isPortrait[k]) });
       i += idxs.length; start = i; continue;
     }

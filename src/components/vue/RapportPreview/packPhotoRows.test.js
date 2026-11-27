@@ -103,3 +103,16 @@ describe('réglage « photos sur la ligne » lié à l\'ordre des photos (27/11)
     expect(rc).toEqual({});
   });
 });
+
+describe('ligne réglée qui précède une photo elle-même réglée (27/11)', () => {
+  it('la ligne « 2 » prend bien 2 photos ; le réglage de la photo absorbée est ignoré', () => {
+    // P0 réglée à 2, P1 (ancien réglage 2), L2
+    const rows = packPhotoRowsBig([true, true, false], [0, 0, 0], 2, [2, 2, 0]);
+    expect(rows[0]).toMatchObject({ kind: 'custom', idxs: [0, 1], cols: 2, portrait: true });
+    expect(rows.slice(1).flatMap(r => r.idxs)).toEqual([2]);
+  });
+  it('poser un réglage retire celui des photos absorbées', () => {
+    const K = ['p0', 'p1', 'l2'];
+    expect(Object.keys(setRowColsFor({ p1: 2 }, K, 'p0', 2))).toEqual([`p0~${photoListSig(K)}`]);
+  });
+});
