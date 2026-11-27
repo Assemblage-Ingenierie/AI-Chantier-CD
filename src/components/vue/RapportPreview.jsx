@@ -849,8 +849,10 @@ const RapportPreview = React.forwardRef(function RapportPreview({ projet, locali
             )}
           </>
       );
-      if (!narrow && headerSlots?.left && headerSlots?.right) {
-        return <>{createPortal(leftBtns, headerSlots.left)}{createPortal(rightBtns, headerSlots.right)}</>;
+      // PC, barre unique : seulement Faire relire / Photos / PDF en haut. Paramètres est retiré
+      // (le panneau reste ouvert) et Saut de page est en bas du panneau (retour Thomas 27/11).
+      if (!narrow && headerSlots?.right) {
+        return createPortal(rightBtns, headerSlots.right);
       }
       return (
       <div style={{ background:'#1e1e1e', padding:'6px 10px', display:'flex', flexDirection:'column', gap:6, flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
